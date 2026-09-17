@@ -4,57 +4,175 @@
   "title": "Constraints on an extension-slot schema",
   "description": "Every JSON Schema registered for an extension slot (data, targets[].attributes, actor.attributes, context.<area>, meter.dimensions) must validate against this meta-schema. Unknown keywords are annotations and are ignored by standard validators.",
   "type": "object",
-  "required": ["$id", "type", "properties", "additionalProperties"],
+  "required": [
+    "$id",
+    "type",
+    "properties",
+    "additionalProperties"
+  ],
   "properties": {
-    "$id": { "type": "string", "format": "uri" },
-    "type": { "const": "object" },
-    "additionalProperties": { "const": false },
+    "$id": {
+      "type": "string",
+      "format": "uri"
+    },
+    "type": {
+      "const": "object"
+    },
+    "additionalProperties": {
+      "const": false
+    },
     "properties": {
       "type": "object",
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,63}$" },
-      "additionalProperties": { "$ref": "#/$defs/property" }
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/property"
+      }
     }
   },
   "$defs": {
     "property": {
       "type": "object",
-      "required": ["type", "x-audit-class", "x-audit-pii"],
+      "required": [
+        "type",
+        "x-audit-class",
+        "x-audit-pii"
+      ],
       "properties": {
-        "type": { "enum": ["string", "integer", "number", "boolean", "array", "object"] },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "boolean",
+            "array",
+            "object"
+          ],
+          "description": "Floating point is not available: the canonical form refuses a number a float64 cannot hold exactly, so a decimal quantity is carried as a string."
+        },
         "x-audit-class": {
           "description": "Which field class the property belongs to; decides which profile copies keep it.",
-          "enum": ["shared", "audit", "metering", "history", "evidence"]
+          "enum": [
+            "shared",
+            "audit",
+            "metering",
+            "history",
+            "evidence"
+          ]
         },
         "x-audit-pii": {
           "description": "none: not personal data. identifier: an id that a registry resolves to a person. direct: an identity attribute (name, e-mail) — refused by the validator. content: user content or presented attribute values — refused by the validator.",
-          "enum": ["none", "identifier", "direct", "content"]
+          "enum": [
+            "none",
+            "identifier",
+            "direct",
+            "content"
+          ]
         },
-        "x-audit-facet": { "type": "boolean", "default": false },
-        "x-audit-filter": { "type": "boolean", "default": false },
+        "x-audit-facet": {
+          "type": "boolean",
+          "default": false
+        },
+        "x-audit-filter": {
+          "type": "boolean",
+          "default": false
+        },
         "x-audit-sensitive": {
           "description": "Treatment at write time for values that must be findable but not readable.",
-          "enum": ["none", "hmac", "redact"],
+          "enum": [
+            "none",
+            "hmac",
+            "redact"
+          ],
           "default": "none"
         },
-        "x-ocsf-path": { "type": "string" },
-        "x-ecs-path": { "type": "string" },
-        "maxLength": { "type": "integer", "maximum": 4096 },
-        "items": { "$ref": "#/$defs/property" },
+        "x-ocsf-path": {
+          "type": "string"
+        },
+        "x-ecs-path": {
+          "type": "string"
+        },
+        "maxLength": {
+          "type": "integer",
+          "maximum": 4096
+        },
+        "items": {
+          "$ref": "#/$defs/property"
+        },
         "properties": {
           "type": "object",
-          "additionalProperties": { "$ref": "#/$defs/property" }
+          "additionalProperties": {
+            "$ref": "#/$defs/property"
+          }
         }
       },
       "allOf": [
-        { "not": { "properties": { "x-audit-pii": { "const": "direct" } }, "required": ["x-audit-pii"] } },
-        { "not": { "properties": { "x-audit-pii": { "const": "content" } }, "required": ["x-audit-pii"] } },
         {
-          "if": { "properties": { "x-audit-facet": { "const": true } }, "required": ["x-audit-facet"] },
-          "then": { "properties": { "type": { "enum": ["string", "integer", "boolean"] } } }
+          "not": {
+            "properties": {
+              "x-audit-pii": {
+                "const": "direct"
+              }
+            },
+            "required": [
+              "x-audit-pii"
+            ]
+          }
         },
         {
-          "if": { "properties": { "type": { "const": "object" } } },
-          "then": { "required": ["properties", "additionalProperties"], "properties": { "additionalProperties": { "const": false } } }
+          "not": {
+            "properties": {
+              "x-audit-pii": {
+                "const": "content"
+              }
+            },
+            "required": [
+              "x-audit-pii"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "x-audit-facet": {
+                "const": true
+              }
+            },
+            "required": [
+              "x-audit-facet"
+            ]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "string",
+                  "integer",
+                  "boolean"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "object"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "properties",
+              "additionalProperties"
+            ],
+            "properties": {
+              "additionalProperties": {
+                "const": false
+              }
+            }
+          }
         }
       ]
     }

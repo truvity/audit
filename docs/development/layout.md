@@ -6,34 +6,43 @@ For whoever implements this. Design is in `docs/`; do not re-decide what
 ## Repository layout (target)
 
 ```
-proto/audit/v1/            contracts
-gen/                       generated Go and TypeScript, committed
-schemas/                   catalogue, preset, extension meta-schemas
-presets/                   framework presets
-catalogue/                 common catalogue
-cmd/audit/                 CLI: validate, check-emitters, verify, reindex, replay
-cmd/audit-writer/          split writer service
-cmd/audit-query/           query service
-cmd/audit-digest/          digest and verify jobs
-cmd/audit-console/         standalone console server
-internal/record/           canonical record helpers, bounds, negative list
-internal/catalogue/        loading, validation, composition, templates
-internal/preset/           loading, composition, validation
-internal/emit/             emitter library core (Go)
-internal/sink/             Sink interface and transports
-internal/writer/           split, treat, roll, put, index, ack
-internal/keys/             KeyProvider and Signer with kms, transit, local
-internal/index/            Indexer and Searcher: memory, s3scan, postgres
-internal/query/            QueryService, cursors, grants
-internal/auth/             Authenticator and Authorizer
-internal/digest/           digest job and verify
-internal/metering/         rollups, statements, rating adapters
-internal/export/           OCSF, ECS, OpenTelemetry, Parquet
-adapters/                  openbao, keycloak, github, kubernetes
-ts/                        @truvity/audit: types, Node emitter, viewer hooks, MUI skin
-frontend/                  standalone console SPA
-charts/audit/              writer, query, console, digest cron, registry
+proto/audit/v1/     contracts (the schema of record)
+gen/                generated Go and TypeScript, committed
+schemas/            catalogue, preset and extension meta-schemas
+presets/            framework presets
+catalogue/          the common catalogue
+
+record/             canonical record: identifiers, bounds, negative list, canonical form
+catalogue/          catalogue loading, validation, composition, templates
+preset/             preset loading and profile composition
+emit/               the emitter an application imports
+sink/               Sink interface and transports (inprocess, s3, nats)
+keys/               KeyProvider and Signer interfaces, with kms, transit, local
+index/              Indexer and Searcher interfaces, with memory, s3scan, postgres
+auth/               Authenticator and Authorizer interfaces, with the defaults
+
+internal/writer/    split, treat, roll, put, index, ack
+internal/query/     the query service behind auth
+internal/digest/    the digest job and verification
+internal/metering/  rollups, statements, rating adapters
+internal/export/    OCSF, ECS, OpenTelemetry, Parquet
+internal/cli/       the commands of cmd/audit
+
+cmd/audit/          validate, check-emitters, verify, reindex, replay, conformance
+cmd/audit-writer/   split writer service
+cmd/audit-query/    query service
+cmd/audit-console/  standalone console server
+adapters/           openbao, keycloak, github, kubernetes
+ts/                 @truvity/audit: types, Node emitter, viewer hooks, MUI skin
+frontend/           standalone console SPA
+charts/audit/       writer, query, console, digest cron, registry
 ```
+
+**Public and internal.** A package a third party implements against or an
+emitter imports is a top-level package and part of the compatibility promise.
+A package only this repository's own services use is under `internal/`. This
+follows the other public repositories in the estate: they publish a small
+surface and keep the rest private.
 
 ## Build order
 

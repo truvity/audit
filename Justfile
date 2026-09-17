@@ -31,6 +31,12 @@ build: fmt
 test:
     go test ./... -coverprofile=coverage.out
 
+# Run the tests under the race detector. The emitter hands records to a
+# background writer, so a data race here would be a lost or duplicated record
+# rather than a crash, and would not show up in ordinary runs.
+race:
+    CGO_ENABLED=1 go test -race ./...
+
 # Run linters
 lint:
     golangci-lint config verify
@@ -48,4 +54,4 @@ vuln:
     govulncheck ./...
 
 # Everything CI runs
-check: build test lint proto schemas vuln
+check: build test race lint proto schemas vuln

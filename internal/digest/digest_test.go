@@ -65,7 +65,7 @@ func put(t *testing.T, b *built, day time.Time, name, body string) string {
 // seal builds and writes the digest of one window.
 func seal(t *testing.T, b *built, start time.Time) string {
 	t.Helper()
-	d, err := b.builder.Build(context.Background(), "security", "profile=security/tenant=acme",
+	d, err := b.builder.Build(context.Background(), "security", "profile=security",
 		start, start.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
@@ -309,5 +309,55 @@ func TestBuilderChecksItsParts(t *testing.T) {
 	}
 	if err := (&digest.Builder{Store: storetest.NewMemory()}).Check(); err == nil {
 		t.Error("want a refusal with no signer")
+	}
+}
+
+// putFor writes an object under a named tenant.
+func putFor(t *testing.T, b *built, tenant string, day time.Time, name, body string) string {
+	t.Helper()
+	key := "profile=security/tenant=" + tenant + "/year=" + day.Format("2006") +
+		"/month=" + day.Format("01") + "/day=" + day.Format("02") + "/" + name
+	b.store.Now = func() time.Time { return day.Add(10*time.Hour + 30*time.Minute) }
+	if err := b.store.Put(context.Background(), store.Object{
+		Key: key, Body: []byte(body), RetainUntil: day.AddDate(1, 0, 0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
+// A digest is per profile, and a profile holds every tenant's copies. The
+// tenant sits between the profile and the date in the key, so a builder that
+// treats the profile prefix as if the date came next covers one tenant and
+// silently leaves the rest to be reported as unaccounted for.
+func TestADigestCoversEveryTenantOfItsProfile(t *testing.T) {
+	b := setup(t)
+	day := at(t, "2026-09-17T00:00:00Z")
+	window := at(t, "2026-09-17T10:00:00Z")
+
+	acme := putFor(t, b, "acme", day, "a.ndjson.zst", "one")
+	globex := putFor(t, b, "globex", day, "b.ndjson.zst", "two")
+
+	d, err := b.builder.Build(context.Background(), "security", "profile=security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	covered := map[string]bool{}
+	for _, o := range d.Objects {
+		covered[o.Key] = true
+	}
+	if !covered[acme] || !covered[globex] {
+		t.Fatalf("the digest covers %d of 2 tenants: %v", len(d.Objects), covered)
+	}
+
+	if _, err := b.builder.Write(context.Background(), d, day.AddDate(1, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	report, err := b.verifier.Verify(context.Background(), "security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if problems := report.Problems(); len(problems) != 0 {
+		t.Fatalf("a chain covering both tenants still reports %d problems: %v", len(problems), problems)
 	}
 }

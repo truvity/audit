@@ -55,4 +55,13 @@ type Store interface {
 	Head(ctx context.Context, key string) (Entry, error)
 	// List returns entries under a prefix, in key order, starting after a key.
 	List(ctx context.Context, prefix, after string, limit int) ([]Entry, error)
+	// Prefixes returns the distinct groups one level under a prefix, as S3's
+	// common prefixes: listing "profile=security/" with "/" gives the tenants
+	// without walking the objects beneath them.
+	//
+	// The archive puts the tenant between the profile and the date, so a job
+	// that works a day at a time — the digest chain does — cannot build its
+	// prefix without first knowing which tenants exist. Walking every object to
+	// find out would cost the whole profile once an hour.
+	Prefixes(ctx context.Context, prefix, delimiter string) ([]string, error)
 }

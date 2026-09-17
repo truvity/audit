@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -186,6 +187,37 @@ func (s *Store) List(ctx context.Context, prefix, after string, limit int) ([]st
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// Prefixes implements store.Store.
+//
+// It pages to the end rather than taking the first response: a deployment with
+// more than a thousand tenants that silently lost the rest would produce
+// digests covering some of its archive, which is the one failure a digest chain
+// must not have.
+func (s *Store) Prefixes(ctx context.Context, prefix, delimiter string) ([]string, error) {
+	var out []string
+	var token *string
+	for {
+		result, err := s.api.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(s.bucket),
+			Prefix:            aws.String(s.key(prefix)),
+			Delimiter:         aws.String(delimiter),
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("s3store: prefixes of %s: %w", prefix, err)
+		}
+		for _, p := range result.CommonPrefixes {
+			out = append(out, s.unkey(aws.ToString(p.Prefix)))
+		}
+		if !aws.ToBool(result.IsTruncated) || aws.ToString(result.NextContinuationToken) == "" {
+			break
+		}
+		token = result.NextContinuationToken
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 func (s *Store) key(k string) string {

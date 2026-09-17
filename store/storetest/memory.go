@@ -186,3 +186,28 @@ func (m *Memory) Object(key string) (store.Object, bool) {
 	o, ok := m.objects[key]
 	return o, ok
 }
+
+// Prefixes implements store.Store.
+func (m *Memory) Prefixes(_ context.Context, prefix, delimiter string) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	found := map[string]bool{}
+	for key := range m.objects {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		rest := key[len(prefix):]
+		at := strings.Index(rest, delimiter)
+		if at < 0 {
+			// A key with nothing below it is an object, not a group.
+			continue
+		}
+		found[prefix+rest[:at+len(delimiter)]] = true
+	}
+	out := make([]string, 0, len(found))
+	for p := range found {
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out, nil
+}

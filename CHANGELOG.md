@@ -39,7 +39,10 @@ Foundation. No release.
   between the two costs a duplicate object rather than a lost record.
 - `audit validate`, `audit profile explain`, `audit check-emitters`,
   `audit verify`, `audit replay`, `audit migrate`, `audit reindex`,
-  `audit digest`, `audit purge`.
+  `audit digest`, `audit purge`, `audit clock-sync`.
+- `internal/clock`: an SNTP client with no dependencies, so that the daily
+  check ETSI EN 319 401 §7.10 asks for is recorded as an audit event rather
+  than assumed. It measures and records; it never sets the clock.
 - A digest covers every tenant of its profile. The chain is keyed by profile
   and the archive puts the tenant between the profile and the date, so a
   builder given the profile prefix covered nothing and one given a tenant's

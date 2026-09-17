@@ -46,6 +46,23 @@ Treat as an incident. `audit verify --verbose` names the object or digest.
 Check for re-uploads (a new version under the same key), lifecycle
 transitions that moved objects, or a KMS key change.
 
+## The clock-sync job is failing
+
+```
+audit clock-sync --ntp <server> --ntp <server> --sink <url> [--max-offset 1s]
+```
+
+It compares this machine's clock with the references and records the reading as
+`audit.clock.synchronised`. A failure means either that the offset is larger
+than `--max-offset` or that no reference answered; the report says which. The
+reading is recorded either way when a reference did answer, because an hour
+whose timestamps are suspect is the hour an auditor most wants the measurement
+from. Nothing is recorded when no reference answered, because the clock was not
+checked and saying it was would be worse than a red job.
+
+The offset is the correction this clock needs: positive means it is behind.
+The job never sets the clock — whatever runs the machine does that.
+
 ## The digest chain has a gap
 
 An hour with no digest cannot be told from one whose digest was removed, which

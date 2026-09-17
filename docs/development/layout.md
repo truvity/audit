@@ -28,6 +28,7 @@ auth/               Authenticator and Authorizer interfaces, with the defaults
 internal/writer/    split, treat, roll, put, index, dead-letter, dedupe, ack
 internal/query/     the query service behind auth
 internal/digest/    the digest chain: builder and verifier
+internal/clock/     an SNTP client, for the daily check ETSI asks be recorded
 internal/metering/  rollups, statements, rating adapters
 internal/export/    OCSF, ECS, OpenTelemetry, Parquet
 internal/cli/       the commands of cmd/audit

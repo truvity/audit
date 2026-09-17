@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/keys"
@@ -61,6 +62,11 @@ usage:
         profiles allow. It never touches the archive: those objects are
         released by their object lock, not by this.
 
+  audit clock-sync --ntp <server> [--sink <url>] [flags]
+        Compare this machine's clock with UTC and record the answer. Run it
+        daily. It does not set the clock: whatever runs the machine does that,
+        and recording the times of things is a separate job from setting them.
+
   audit migrate --database <url>
         Apply the index schema. Run it before the writers that will use it,
         and run it from one place: several replicas migrating at once is a
@@ -92,6 +98,8 @@ func main() {
 		err = verify(os.Args[2:])
 	case "replay":
 		err = replay(os.Args[2:])
+	case "clock-sync":
+		err = clockSync(os.Args[2:])
 	case "digest":
 		err = digestCmd(os.Args[2:])
 	case "purge":
@@ -632,5 +640,46 @@ func purge(args []string) error {
 		IdentifyingAfter: *identifying, DedupeWindow: window,
 		DryRun: *dryRun, JSON: *asJSON,
 	}.Run(ctx)
+	return err
+}
+
+// clockSync checks the clock against UTC and records what it found.
+func clockSync(args []string) error {
+	flags := flag.NewFlagSet("clock-sync", flag.ContinueOnError)
+	var servers repeated
+	flags.Var(&servers, "ntp", "a time reference, repeatable; the quickest to answer is believed")
+	var (
+		sinkURL   = flags.String("sink", "", "the writer the reading is recorded through")
+		maxOffset = flags.Duration("max-offset", time.Second,
+			"how far the clock may be out before the run fails; 0 accepts any offset and only records it")
+		timeout  = flags.Duration("timeout", 5*time.Second, "how long to wait for a reference")
+		instance = flags.String("instance", "", "the name this job records itself under")
+		version  = flags.String("version", "dev", "this build's version")
+		asJSON   = flags.Bool("json", false, "print the report as JSON")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	if len(servers) == 0 {
+		return errors.New("name at least one time reference with --ntp")
+	}
+
+	common, err := catalogue.Common()
+	if err != nil {
+		return err
+	}
+	name := *instance
+	if name == "" {
+		name = record.InstanceName()
+	}
+
+	run := cli.ClockSync{
+		Catalogue: common, Servers: servers, MaxOffset: *maxOffset,
+		Timeout: *timeout, Version: *version, Instance: name, JSON: *asJSON,
+	}
+	if *sinkURL != "" {
+		run.Sink = sink.NewClient(nil, *sinkURL)
+	}
+	_, err = run.Run(context.Background())
 	return err
 }

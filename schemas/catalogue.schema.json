@@ -4,22 +4,52 @@
   "title": "Action catalogue",
   "description": "What one source emits: its actions, extension schemas, actor kinds, target types, context areas and meters. Authored next to the emitting code, registered at deploy, copied into the archive on first use.",
   "type": "object",
-  "required": ["source", "version", "actions"],
+  "required": [
+    "source",
+    "version",
+    "actions"
+  ],
   "additionalProperties": false,
   "properties": {
-    "source": { "type": "string", "pattern": "^[a-z][a-z0-9_-]{1,31}$" },
-    "version": { "type": "string" },
-    "locales": { "type": "array", "items": { "type": "string" }, "default": ["en"] },
+    "source": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,31}$"
+    },
+    "version": {
+      "type": "string"
+    },
+    "locales": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": [
+        "en"
+      ]
+    },
     "actor_kinds": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": ["category"],
+        "required": [
+          "category"
+        ],
         "additionalProperties": false,
         "properties": {
-          "category": { "enum": ["internal", "external", "machine"] },
-          "description": { "type": "string" },
-          "attributes_schema": { "type": "string", "format": "uri" }
+          "category": {
+            "enum": [
+              "internal",
+              "external",
+              "machine"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "attributes_schema": {
+            "type": "string",
+            "format": "uri"
+          }
         }
       }
     },
@@ -29,63 +59,179 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "description": { "type": "string" },
-          "is_person": { "type": "boolean", "default": false },
-          "attributes_schema": { "type": "string", "format": "uri" }
+          "description": {
+            "type": "string"
+          },
+          "is_person": {
+            "type": "boolean",
+            "default": false
+          },
+          "attributes_schema": {
+            "type": "string",
+            "format": "uri"
+          }
         }
       }
     },
     "context_areas": {
       "type": "object",
-      "additionalProperties": { "type": "string", "format": "uri" }
+      "additionalProperties": {
+        "type": "string",
+        "format": "uri"
+      }
     },
     "meters": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": ["kind", "unit"],
+        "required": [
+          "kind",
+          "unit"
+        ],
         "additionalProperties": false,
         "properties": {
-          "kind": { "enum": ["count", "gauge"] },
-          "unit": { "type": "string" },
-          "description": { "type": "string" },
-          "dimensions_schema": { "type": "string", "format": "uri" }
+          "kind": {
+            "enum": [
+              "count",
+              "gauge"
+            ]
+          },
+          "unit": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "dimensions_schema": {
+            "type": "string",
+            "format": "uri"
+          }
         }
       }
     },
     "actions": {
       "type": "object",
-      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$" },
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+$"
+      },
       "additionalProperties": {
         "type": "object",
-        "required": ["operation", "profiles", "summary"],
+        "required": [
+          "operation",
+          "profiles",
+          "summary"
+        ],
         "additionalProperties": false,
         "properties": {
-          "summary": { "type": "string" },
-          "operation": { "enum": ["create", "access", "modify", "remove", "authentication", "transfer", "restore"] },
+          "summary": {
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "create",
+              "access",
+              "modify",
+              "remove",
+              "authentication",
+              "transfer",
+              "restore"
+            ]
+          },
           "categories": {
             "description": "Framework event categories the action satisfies; presets require categories, not actions.",
             "type": "array",
-            "items": { "enum": ["authentication", "privileged_access", "account_lifecycle", "authorization_decision", "configuration_change", "data_access", "data_change", "key_lifecycle", "credential_lifecycle", "log_access", "logging_control", "clock", "billing"] }
+            "items": {
+              "enum": [
+                "authentication",
+                "privileged_access",
+                "account_lifecycle",
+                "authorization_decision",
+                "configuration_change",
+                "data_access",
+                "data_change",
+                "key_lifecycle",
+                "credential_lifecycle",
+                "log_access",
+                "logging_control",
+                "clock",
+                "billing"
+              ]
+            }
           },
-          "profiles": { "type": "array", "minItems": 1, "items": { "type": "string" } },
-          "capture_level": { "enum": ["metadata", "request", "request_response"], "default": "metadata" },
-          "delivery": { "enum": ["block", "outbox", "best_effort"], "default": "best_effort" },
-          "target_types": { "type": "array", "items": { "type": "string" } },
-          "data_schema": { "type": "string", "format": "uri" },
-          "data_version": { "type": "string" },
+          "profiles": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "capture_level": {
+            "enum": [
+              "metadata",
+              "request",
+              "request_response"
+            ],
+            "default": "metadata"
+          },
+          "delivery": {
+            "enum": [
+              "block",
+              "outbox",
+              "best_effort"
+            ],
+            "default": "best_effort"
+          },
+          "target_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data_schema": {
+            "type": "string",
+            "format": "uri"
+          },
+          "data_version": {
+            "type": "string"
+          },
           "message": {
             "description": "ICU MessageFormat per locale. May reference only core fields and properties declared in data_schema.",
             "type": "object",
-            "additionalProperties": { "type": "string" }
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "meter": {
             "type": "object",
-            "required": ["name"],
+            "required": [
+              "name"
+            ],
             "additionalProperties": false,
             "properties": {
-              "name": { "type": "string" },
-              "quantity_path": { "type": "string", "description": "JSON pointer into data, or omitted for a count of 1." }
+              "name": {
+                "type": "string"
+              },
+              "quantity_path": {
+                "type": "string",
+                "description": "JSON pointer into data, or omitted for a count of 1."
+              },
+              "outcomes": {
+                "description": "Which outcomes count toward the meter. A refused call is not a billable one, so the default is success only; an action that bills attempts says so here.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "success",
+                    "failure",
+                    "denied",
+                    "unknown"
+                  ]
+                },
+                "default": [
+                  "success"
+                ]
+              }
             }
           }
         }

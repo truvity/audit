@@ -20,7 +20,8 @@ start-up. The registry copies every version into the archive on first use.
 - `meters`: name → kind (count, gauge), unit, dimensions schema.
 - `actions`: `source.resource.verb` → summary, operation, categories,
   profiles, capture level, delivery, target types, data schema and
-  version, message per locale, meter with quantity path.
+  version, message per locale, meter with quantity path and the outcomes
+  that count (success only unless the action says otherwise).
 
 ## Categories
 

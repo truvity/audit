@@ -31,6 +31,16 @@ read-only credentials. A nightly run marks verified windows so the viewer
 can show an integrity badge, and a failure emits `audit.digest.failed`
 with block delivery.
 
+**What the chain proves depends on who holds the signing key.** With a key
+the writer holds itself, the chain proves that objects have not changed since
+they were signed, by a party who could also have chosen what to sign. That is
+enough for a test and for a small deployment that accepts it, and it is what
+the local signer is for. A managed key, in KMS or a secret manager's transit
+engine, never leaves its provider, so the archive's writer cannot sign at will
+and the chain proves what an auditor wants it to: the operator did not choose
+what to sign. A deployment that must answer an assessor uses a managed key,
+and the verifier is the same either way.
+
 Time-stamp anchoring of the chain head with an RFC 3161 or ETSI time-stamp
 is a preset option, required by none of the shipped presets and
 recommended by the evidence preset.

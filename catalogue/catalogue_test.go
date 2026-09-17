@@ -371,3 +371,29 @@ func TestLoadSchemaKeepsTheStatedConstraints(t *testing.T) {
 		t.Fatalf("three levels must be accepted: %v", err)
 	}
 }
+
+// A refused call is not a billable one, unless the action says it is.
+func TestMeterCountsSuccessUnlessToldOtherwise(t *testing.T) {
+	c := wallet(t)
+	a, _ := c.Action("wallet.credential.issued")
+	if !a.Meter.Counts("success") || a.Meter.Counts("denied") {
+		t.Fatal("by default only a success is metered")
+	}
+	doc := strings.Replace(walletDoc, "      name: issued", "      name: issued\n      outcomes: [success, denied]", 1)
+	c, err := Load([]byte(doc), [][]byte{[]byte(walletSchema)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ = c.Action("wallet.credential.issued")
+	if !a.Meter.Counts("denied") || a.Meter.Counts("failure") {
+		t.Fatal("an action that bills refusals counts exactly what it lists")
+	}
+	var none *ActionMeter
+	if none.Counts("success") {
+		t.Fatal("an action with no meter counts nothing")
+	}
+	bad := strings.Replace(walletDoc, "      name: issued", "      name: issued\n      outcomes: [maybe]", 1)
+	if _, err := Load([]byte(bad), [][]byte{[]byte(walletSchema)}); err == nil {
+		t.Fatal("an outcome that is not one of the four must be refused")
+	}
+}

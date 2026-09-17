@@ -25,6 +25,15 @@ Hourly, per profile prefix, the digest job writes:
 Empty windows produce a digest with no objects. The digest object is locked
 with the same retention as the objects it covers.
 
+## Who holds the key
+
+With a signing key the writer holds itself, the chain proves that objects have
+not changed since signing, by a party who could also have chosen what to sign.
+A managed key, in KMS or a transit engine, never leaves its provider, so the
+chain also proves the operator did not choose what to sign. A deployment that
+must answer an assessor uses a managed key; the local signer is for tests and
+for a deployment that accepts the weaker claim knowingly.
+
 ## Verify
 
 `audit verify --profile <p> --from <t> --to <t> [--public-key <pem>]`

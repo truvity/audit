@@ -84,6 +84,26 @@ type Action struct {
 type ActionMeter struct {
 	Name         string `json:"name"`
 	QuantityPath string `json:"quantity_path,omitempty"`
+	// Outcomes are the outcomes that count. A refused call is not a billable
+	// one, so an absent list means success only; an action that bills
+	// attempts says so.
+	Outcomes []string `json:"outcomes,omitempty"`
+}
+
+// Counts reports whether a record with this outcome contributes to the meter.
+func (m *ActionMeter) Counts(outcome string) bool {
+	if m == nil {
+		return false
+	}
+	if len(m.Outcomes) == 0 {
+		return outcome == "success"
+	}
+	for _, o := range m.Outcomes {
+		if o == outcome {
+			return true
+		}
+	}
+	return false
 }
 
 // Load reads a catalogue document together with the extension schemas it

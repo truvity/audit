@@ -9,6 +9,15 @@ Billable actions carry `meter` with `name`, `quantity` (decimal string),
 keeps `id`, `occurred_at`, `recorded_at`, `source`, `action`, `tenant_id`,
 `meter` and `origin_hash`, and nothing about people.
 
+## Which records count
+
+The billing copy carries the outcome, because the first thing a customer
+disputing an invoice asks is whether the call succeeded. The catalogue says
+which outcomes a metered action counts, and the default is success only: a
+refused call is not a billable one. An action that bills attempts, say a
+verification that is charged whether or not it passes, lists the outcomes it
+counts. The rollup reads that from the catalogue and never guesses.
+
 ## Counts and gauges
 
 Counts are events. Stored bytes and similar levels are **absolute samples**

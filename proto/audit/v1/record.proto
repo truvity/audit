@@ -20,98 +20,96 @@ import "google/protobuf/timestamp.proto";
 
 // Record is one thing that happened, as seen by one source.
 //
-// Field classes (docs/concepts.md): shared fields appear in every profile
-// copy; audit-only fields appear only in profiles that keep them; metering
-// fields appear in billing profiles. The class of a core field is fixed
-// here; the class of an extension property is an annotation on its schema.
+// Which copies carry a given core field is decided by the profile a copy is
+// written under, through the presets it is composed from (docs/concepts.md);
+// the record itself does not say. An extension property, by contrast, carries
+// its class as an annotation on its schema.
 message Record {
   // Identity of the record. UUIDv7 minted by the emitter; the idempotency
-  // key at every hop. Shared.
+  // key at every hop.
   string id = 1;
 
-  // When the thing happened, from the emitter's synchronised clock. Shared.
+  // When the thing happened, from the emitter's synchronised clock.
   google.protobuf.Timestamp occurred_at = 2;
 
   // When the split writer accepted the record. Set by the writer, never by
-  // the emitter. Drives the tail cursor and lateness alerts. Shared.
+  // the emitter. Drives the tail cursor and lateness alerts.
   google.protobuf.Timestamp recorded_at = 3;
 
   // Core schema version, "major.minor". Equal-on-major, greater-or-equal-
-  // on-minor is the compatibility contract. Shared.
+  // on-minor is the compatibility contract.
   string schema_version = 4;
 
   // Version of the source's catalogue that describes this action and its
   // extension slots. Resolved by the writer; unknown versions dead-letter,
-  // never drop. Shared.
+  // never drop.
   string catalogue_version = 5;
 
   // The system the event is about ("keycloak", "wallet", "roster"). Also
-  // the namespace prefix of `action`. Shared.
+  // the namespace prefix of `action`.
   string source = 6;
 
   // Who reported the record. Stamped by the writer from the publisher's
-  // verified workload identity; an emitter cannot set it. Shared.
+  // verified workload identity; an emitter cannot set it.
   Observer observer = 7;
 
   // Sequence per producer instance, monotonic, for gap detection. The
-  // producer name is `observer.instance`. Shared.
+  // producer name is `observer.instance`.
   uint64 sequence = 8;
 
   // What happened, "resource.verb" under the source's namespace, from the
-  // catalogue. Shared.
+  // catalogue.
   string action = 9;
 
-  // Coarse classification of the action, orthogonal to `action`. Shared.
+  // Coarse classification of the action, orthogonal to `action`.
   Operation operation = 10;
 
-  // How it ended. Shared.
+  // How it ended.
   Outcome outcome = 11;
 
   // The customer the record belongs to. A legal entity, never a person.
   // Stays in clear in every profile. A reserved value names the platform
-  // itself for events with no tenant. Shared.
+  // itself for events with no tenant.
   string tenant_id = 12;
 
   // Whom it concerns, when that is not the actor. Identity treatment is
-  // decided by the subject kind's registration. Audit and history.
+  // decided by the subject kind's registration.
   Party subject = 13;
 
   // Who did it. Identity treatment is decided by the actor kind's
-  // registration. Audit and history.
+  // registration.
   Actor actor = 14;
 
-  // What it was done to. Audit, history and evidence.
+  // What it was done to.
   repeated Target targets = 15;
 
-  // Where it came from. Audit.
+  // Where it came from.
   Context context = 16;
 
-  // Request and response capture, level-gated and size-capped. Audit.
+  // Request and response capture, level-gated and size-capped.
   Capture capture = 17;
 
   // On update actions only: the prior values of changed attributes, whole
-  // arrays when any element changed. History.
+  // arrays when any element changed.
   google.protobuf.Struct previous_attributes = 18;
 
   // Extension slot keyed by `action`; validated against the schema the
   // catalogue registers for it. Class per property by annotation.
   google.protobuf.Struct data = 19;
 
-  // Usage measurement for billing profiles. Metering.
+  // Usage measurement for billing profiles.
   Meter meter = 20;
 
   // Bounded free-form attributes for what has no schema yet. Bounds are
   // enforced by the emitter library (key count, key and value length).
-  // Audit.
   map<string, string> attributes = 21;
 
   // Fields a source could not map onto the record. Kept so nothing is
-  // silently lost; promoted to `data` or the core when they recur. Audit.
+  // silently lost; promoted to `data` or the core when they recur.
   google.protobuf.Struct unmapped = 22;
 
   // Set by the writer on every profile copy: SHA-256 of the canonical wide
   // record before the split, so copies are provably the same original.
-  // Shared.
   string origin_hash = 23;
 
   // Set by the writer on a profile copy: which profile this copy is.

@@ -2,9 +2,6 @@
 
 - Status: accepted
 - Date: 2026-09-17
-- Revised: 2026-09-17, while implementing. Presets gained field classes and a
-  default-deny field list, because the decision as first written said which
-  fields a copy must carry but never which it may.
 
 ## Context
 

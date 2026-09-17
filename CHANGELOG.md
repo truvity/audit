@@ -19,5 +19,5 @@ Foundation. No release.
   validation of a record, message-template argument checks, and the category
   cross-check against a deployment's profiles.
 - `audit validate`, `audit profile explain`, `audit check-emitters`.
-- Decisions 0001 to 0009 accepted; 0001 and 0002 revised while implementing.
+- Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

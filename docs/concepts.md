@@ -13,8 +13,8 @@ For **core fields**, presets name what must, may and may never be kept, and a
 field no preset names is dropped. For **extension properties**, the schema
 annotates each with a **class** (shared, audit, metering, history or
 evidence) and a PII level, and a profile keeps the classes its presets keep.
-The class column in the record reference is how the shipped presets read each
-core field, not a property of the field itself.
+The record itself does not say which copies carry a core field;
+`audit profile explain <name>` prints what a profile keeps.
 
 The record carries **identifiers, never identity attributes**. Names and
 e-mail addresses are resolved at read time by whoever may see them.

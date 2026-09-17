@@ -31,24 +31,24 @@ export const file_audit_v1_record: GenFile = /*@__PURE__*/
 /**
  * Record is one thing that happened, as seen by one source.
  *
- * Field classes (docs/concepts.md): shared fields appear in every profile
- * copy; audit-only fields appear only in profiles that keep them; metering
- * fields appear in billing profiles. The class of a core field is fixed
- * here; the class of an extension property is an annotation on its schema.
+ * Which copies carry a given core field is decided by the profile a copy is
+ * written under, through the presets it is composed from (docs/concepts.md);
+ * the record itself does not say. An extension property, by contrast, carries
+ * its class as an annotation on its schema.
  *
  * @generated from message audit.v1.Record
  */
 export type Record = Message<"audit.v1.Record"> & {
   /**
    * Identity of the record. UUIDv7 minted by the emitter; the idempotency
-   * key at every hop. Shared.
+   * key at every hop.
    *
    * @generated from field: string id = 1;
    */
   id: string;
 
   /**
-   * When the thing happened, from the emitter's synchronised clock. Shared.
+   * When the thing happened, from the emitter's synchronised clock.
    *
    * @generated from field: google.protobuf.Timestamp occurred_at = 2;
    */
@@ -56,7 +56,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * When the split writer accepted the record. Set by the writer, never by
-   * the emitter. Drives the tail cursor and lateness alerts. Shared.
+   * the emitter. Drives the tail cursor and lateness alerts.
    *
    * @generated from field: google.protobuf.Timestamp recorded_at = 3;
    */
@@ -64,7 +64,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * Core schema version, "major.minor". Equal-on-major, greater-or-equal-
-   * on-minor is the compatibility contract. Shared.
+   * on-minor is the compatibility contract.
    *
    * @generated from field: string schema_version = 4;
    */
@@ -73,7 +73,7 @@ export type Record = Message<"audit.v1.Record"> & {
   /**
    * Version of the source's catalogue that describes this action and its
    * extension slots. Resolved by the writer; unknown versions dead-letter,
-   * never drop. Shared.
+   * never drop.
    *
    * @generated from field: string catalogue_version = 5;
    */
@@ -81,7 +81,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * The system the event is about ("keycloak", "wallet", "roster"). Also
-   * the namespace prefix of `action`. Shared.
+   * the namespace prefix of `action`.
    *
    * @generated from field: string source = 6;
    */
@@ -89,7 +89,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * Who reported the record. Stamped by the writer from the publisher's
-   * verified workload identity; an emitter cannot set it. Shared.
+   * verified workload identity; an emitter cannot set it.
    *
    * @generated from field: audit.v1.Observer observer = 7;
    */
@@ -97,7 +97,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * Sequence per producer instance, monotonic, for gap detection. The
-   * producer name is `observer.instance`. Shared.
+   * producer name is `observer.instance`.
    *
    * @generated from field: uint64 sequence = 8;
    */
@@ -105,21 +105,21 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * What happened, "resource.verb" under the source's namespace, from the
-   * catalogue. Shared.
+   * catalogue.
    *
    * @generated from field: string action = 9;
    */
   action: string;
 
   /**
-   * Coarse classification of the action, orthogonal to `action`. Shared.
+   * Coarse classification of the action, orthogonal to `action`.
    *
    * @generated from field: audit.v1.Operation operation = 10;
    */
   operation: Operation;
 
   /**
-   * How it ended. Shared.
+   * How it ended.
    *
    * @generated from field: audit.v1.Outcome outcome = 11;
    */
@@ -128,7 +128,7 @@ export type Record = Message<"audit.v1.Record"> & {
   /**
    * The customer the record belongs to. A legal entity, never a person.
    * Stays in clear in every profile. A reserved value names the platform
-   * itself for events with no tenant. Shared.
+   * itself for events with no tenant.
    *
    * @generated from field: string tenant_id = 12;
    */
@@ -136,7 +136,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * Whom it concerns, when that is not the actor. Identity treatment is
-   * decided by the subject kind's registration. Audit and history.
+   * decided by the subject kind's registration.
    *
    * @generated from field: audit.v1.Party subject = 13;
    */
@@ -144,28 +144,28 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * Who did it. Identity treatment is decided by the actor kind's
-   * registration. Audit and history.
+   * registration.
    *
    * @generated from field: audit.v1.Actor actor = 14;
    */
   actor?: Actor | undefined;
 
   /**
-   * What it was done to. Audit, history and evidence.
+   * What it was done to.
    *
    * @generated from field: repeated audit.v1.Target targets = 15;
    */
   targets: Target[];
 
   /**
-   * Where it came from. Audit.
+   * Where it came from.
    *
    * @generated from field: audit.v1.Context context = 16;
    */
   context?: Context | undefined;
 
   /**
-   * Request and response capture, level-gated and size-capped. Audit.
+   * Request and response capture, level-gated and size-capped.
    *
    * @generated from field: audit.v1.Capture capture = 17;
    */
@@ -173,7 +173,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * On update actions only: the prior values of changed attributes, whole
-   * arrays when any element changed. History.
+   * arrays when any element changed.
    *
    * @generated from field: google.protobuf.Struct previous_attributes = 18;
    */
@@ -188,7 +188,7 @@ export type Record = Message<"audit.v1.Record"> & {
   data?: JsonObject | undefined;
 
   /**
-   * Usage measurement for billing profiles. Metering.
+   * Usage measurement for billing profiles.
    *
    * @generated from field: audit.v1.Meter meter = 20;
    */
@@ -197,7 +197,6 @@ export type Record = Message<"audit.v1.Record"> & {
   /**
    * Bounded free-form attributes for what has no schema yet. Bounds are
    * enforced by the emitter library (key count, key and value length).
-   * Audit.
    *
    * @generated from field: map<string, string> attributes = 21;
    */
@@ -205,7 +204,7 @@ export type Record = Message<"audit.v1.Record"> & {
 
   /**
    * Fields a source could not map onto the record. Kept so nothing is
-   * silently lost; promoted to `data` or the core when they recur. Audit.
+   * silently lost; promoted to `data` or the core when they recur.
    *
    * @generated from field: google.protobuf.Struct unmapped = 22;
    */
@@ -214,7 +213,6 @@ export type Record = Message<"audit.v1.Record"> & {
   /**
    * Set by the writer on every profile copy: SHA-256 of the canonical wide
    * record before the split, so copies are provably the same original.
-   * Shared.
    *
    * @generated from field: string origin_hash = 23;
    */

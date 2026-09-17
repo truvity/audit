@@ -2,9 +2,6 @@
 
 - Status: accepted
 - Date: 2026-09-17
-- Revised: 2026-09-17, while implementing. Floating point is excluded from the
-  record; the constraints on extension schemas are stated as the validator
-  enforces them; composed validation is described as it is built.
 
 ## Context
 

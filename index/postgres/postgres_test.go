@@ -3,70 +3,14 @@ package postgres_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
+	"github.com/truvity/audit/internal/pgtest"
 )
-
-// open returns a pool with a schema of its own, so that tests do not have to
-// undo each other's rows. It skips when no database is configured: this package
-// is the one part of the library that cannot be tested without one, and a
-// contributor without Postgres should still be able to run everything else.
-func open(t *testing.T) *pgxpool.Pool {
-	t.Helper()
-	dsn := os.Getenv("AUDIT_POSTGRES_URL")
-	if dsn == "" {
-		t.Skip("set AUDIT_POSTGRES_URL to run the Postgres tests")
-	}
-	schema := "t_" + strings.Map(func(r rune) rune {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
-			return r
-		}
-		return '_'
-	}, strings.ToLower(t.Name()))
-
-	ctx := context.Background()
-	admin, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close()
-	if _, err := admin.Exec(ctx, "drop schema if exists "+schema+" cascade"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := admin.Exec(ctx, "create schema "+schema); err != nil {
-		t.Fatal(err)
-	}
-
-	config, err := pgxpool.ParseConfig(dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	config.ConnConfig.RuntimeParams["search_path"] = schema
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		pool.Close()
-		cleanup, err := pgxpool.New(context.Background(), dsn)
-		if err != nil {
-			return
-		}
-		defer cleanup.Close()
-		_, _ = cleanup.Exec(context.Background(), "drop schema if exists "+schema+" cascade")
-	})
-	if err := postgres.Migrate(ctx, pool); err != nil {
-		t.Fatal(err)
-	}
-	return pool
-}
 
 func at(t *testing.T, value string) time.Time {
 	t.Helper()
@@ -97,7 +41,7 @@ func row(t *testing.T, id string, recorded time.Time) index.Row {
 // The migration is applied by a job, and a job runs twice more often than
 // anybody plans for.
 func TestMigrateIsIdempotent(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		t.Fatalf("applying the schema twice: %v", err)
@@ -110,7 +54,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 // A writer whose database is at another version refuses to start, and the
 // refusal has to say what to do about it.
 func TestCheckVersionSaysWhatToRun(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	if _, err := pool.Exec(ctx, `insert into audit_schema_version (version) values (99)`); err != nil {
 		t.Fatal(err)
@@ -128,7 +72,7 @@ func TestCheckVersionSaysWhatToRun(t *testing.T) {
 // must leave the counts where they were, and only the transaction that inserted
 // the row can tell a repeat from a new record.
 func TestIndexingTheSameCopyTwiceCountsItOnce(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	i, err := postgres.New(pool)
 	if err != nil {
@@ -168,7 +112,7 @@ func TestIndexingTheSameCopyTwiceCountsItOnce(t *testing.T) {
 // A batch spanning a month boundary needs two partitions, and a writer running
 // at midnight on the first has nobody awake to create them.
 func TestPartitionsAreCreatedForTheRowsThatNeedThem(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	i, err := postgres.New(pool)
 	if err != nil {
@@ -199,7 +143,7 @@ func TestPartitionsAreCreatedForTheRowsThatNeedThem(t *testing.T) {
 
 // A profile keeps what happened for longer than it keeps who it happened to.
 func TestPurgeIdentifyingKeepsTheEvent(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	i, err := postgres.New(pool)
 	if err != nil {
@@ -238,7 +182,7 @@ func TestPurgeIdentifyingKeepsTheEvent(t *testing.T) {
 
 // When the retention itself expires, everything goes, counts included.
 func TestPurgeEverythingLeavesNothing(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	i, err := postgres.New(pool)
 	if err != nil {
@@ -267,7 +211,7 @@ func TestPurgeEverythingLeavesNothing(t *testing.T) {
 // would leave the identifier remembered and the record nowhere, and the
 // redelivery that would have saved it would look like a repeat.
 func TestAskingDoesNotMark(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	d, err := postgres.NewDedupe(pool, time.Hour)
 	if err != nil {
@@ -296,7 +240,7 @@ func TestAskingDoesNotMark(t *testing.T) {
 // A batch carrying a redelivery beside its original is an ordinary shape, and
 // an upsert of one key twice in one statement is an error in Postgres.
 func TestMarkingARepeatWithinOneBatch(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	d, err := postgres.NewDedupe(pool, time.Hour)
 	if err != nil {
@@ -316,7 +260,7 @@ func TestMarkingARepeatWithinOneBatch(t *testing.T) {
 
 // Past the window an identifier is forgotten, which is what bounds the table.
 func TestTheWindowForgets(t *testing.T) {
-	pool := open(t)
+	pool := pgtest.Open(t)
 	ctx := context.Background()
 	now := at(t, "2026-09-17T10:00:00Z")
 	d, err := postgres.NewDedupe(pool, time.Hour)

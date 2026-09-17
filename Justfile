@@ -50,11 +50,14 @@ build: fmt
 test:
     go test ./... -coverprofile=coverage.out
 
-# Run the tests against a real Postgres.
+# Run the whole suite against a real Postgres.
 #
-# `index/postgres` is the one package that cannot be tested without a database,
-# so its tests skip when AUDIT_POSTGRES_URL is unset: a contributor without
-# Postgres can still run everything else, and `check` stays runnable anywhere.
+# The index is the one part of this repository that cannot be tested without a
+# database, and mocking it would prove nothing about the idempotency that is its
+# whole contract. So those tests skip when AUDIT_POSTGRES_URL is unset: a
+# contributor without Postgres still runs everything else, and `check` stays
+# hermetic. This runs the whole suite rather than `./index/...`, because the
+# writer's end-to-end tests need the database too.
 # CI runs this as its own job with a service container.
 #
 # This starts a Postgres under .devbox, initialising it on first use.
@@ -68,7 +71,7 @@ test-postgres:
     pg_ctl status -D "$PGDATA" >/dev/null 2>&1 || \
         pg_ctl -D "$PGDATA" -o "-k $PGHOST -c listen_addresses=" -l "$PGHOST/log" start -w
     createdb -h "$PGHOST" -U postgres audit_test 2>/dev/null || true
-    AUDIT_POSTGRES_URL="postgres://postgres@/audit_test?host=$PGHOST" go test ./index/...
+    AUDIT_POSTGRES_URL="postgres://postgres@/audit_test?host=$PGHOST" go test ./...
 
 # Stop the Postgres that `test-postgres` started
 stop-postgres:

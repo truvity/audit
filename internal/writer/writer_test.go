@@ -33,7 +33,21 @@ type built struct {
 	unhandled  map[string][]string
 }
 
+// parts lets a test swap in the real index and deduplication store, or share a
+// store between two writers. Everything a test leaves out is the in-memory one.
+type parts struct {
+	store    *storetest.Memory
+	indexer  index.Indexer
+	dedupe   writer.Dedupe
+	instance string
+}
+
 func build(t *testing.T) *built {
+	t.Helper()
+	return buildWith(t, parts{})
+}
+
+func buildWith(t *testing.T, p parts) *built {
 	t.Helper()
 	c, err := catalogue.Load([]byte(walletDoc), [][]byte{[]byte(walletSchema)})
 	if err != nil {
@@ -52,7 +66,10 @@ func build(t *testing.T) *built {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 
-	s := storetest.NewMemory()
+	s := p.store
+	if s == nil {
+		s = storetest.NewMemory()
+	}
 	at := day(t, "2026-09-17T10:30:00Z")
 	b := &built{
 		store:     s,
@@ -60,16 +77,29 @@ func build(t *testing.T) *built {
 		index:     index.NewMemory(),
 		unhandled: map[string][]string{},
 	}
+	indexer, dedupe := index.Indexer(b.index), writer.Dedupe(b.dedupe)
+	if p.indexer != nil {
+		indexer = p.indexer
+	}
+	if p.dedupe != nil {
+		dedupe = p.dedupe
+	}
+	// Object keys are deterministic per writer instance and window, so two
+	// replicas naming themselves apart is what keeps them from colliding.
+	instance := "writer-1"
+	if p.instance != "" {
+		instance = p.instance
+	}
 
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,
 		Splitter:   &writer.Splitter{Profiles: profiles(t), Keys: provider},
 		Roller: &writer.Roller{
-			Store: s, Instance: "writer-1", Indexer: b.index,
+			Store: s, Instance: instance, Indexer: indexer,
 			Now: func() time.Time { return at },
 		},
-		Dedupe:     b.dedupe,
-		DeadLetter: &writer.StoreDeadLetter{Store: s, Instance: "writer-1", Now: func() time.Time { return at }},
+		Dedupe:     dedupe,
+		DeadLetter: &writer.StoreDeadLetter{Store: s, Instance: instance, Now: func() time.Time { return at }},
 		Identity:   func(context.Context) string { return "workload:wallet" },
 		Now:        func() time.Time { return at },
 		Hooks: writer.Hooks{

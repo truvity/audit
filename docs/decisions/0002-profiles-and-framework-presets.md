@@ -42,10 +42,17 @@ reason: one must know who acted and the other must not, which is why they are
 two copies rather than one with a compromise.
 
 The split writer produces **one copy per profile**. Scalar fields are
-copied into every profile that keeps them. Large payloads are stored once
-by content hash under a payload prefix, retained for the longest
-referencing profile, and referenced from the copies. Every copy carries the
-event id and the SHA-256 of the original wide record.
+copied into every profile that keeps them, and every copy carries the event
+id and the SHA-256 of the original wide record, so that copies can be shown
+to descend from one original once their identifiers differ.
+
+Bodies are copied too, not referenced. Storing them once under a payload
+prefix was the earlier reading, and it buys nothing with these presets: the
+only large field, `capture`, is kept by one profile. It would cost a
+seven-year lock on every body, since a writer cannot know which profile will
+reference a payload next and a lock can be extended but never shortened. See
+[the split writer](../design/split-writer.md) for the condition that would
+change this.
 
 Presets reference core fields and classes only, never an application's
 property, which keeps them framework-generic.

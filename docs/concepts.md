@@ -72,11 +72,17 @@ produces one copy per profile. See [presets](../presets/README.md).
 
 ## Prefixes
 
-Each profile copy lands under its own S3 prefix, partitioned by tenant,
-profile and day, with Object Lock retention set per copy at write time.
-Large payloads are stored once under a payload prefix by content hash and
-referenced from the copies. Schemas and catalogues used by the records are
-copied under a schema prefix.
+Each profile copy lands under its own prefix, partitioned by **profile,
+tenant and day**, with Object Lock retention set per object when it is opened.
+The profile comes first because a lifecycle rule filters by literal prefix and
+takes no wildcards, so a rule per profile is only expressible that way; a role
+scoped to one customer still works, because a policy's resource may carry a
+wildcard.
+
+What describes the records is copied under a schema prefix on first use: the
+catalogue as registered, its extension schemas, the record's own schema and its
+proto. A locked object outlives this repository, and a record whose schema has
+been deleted is a record nobody can read.
 
 ## Projections
 

@@ -16,8 +16,6 @@ durable pull consumer, or embedded in an application that has no stream.
    profile's allowed fields and classes.
 6. **Treat identities** per profile: clear, pseudonym (HMAC with the
    tenant-and-purpose key), scoped, or omit. Apply `x-audit-sensitive`.
-7. **Detach payloads** above the size threshold to the payload prefix by
-   content hash; leave the hash in the copy.
 8. **Buffer** per profile, tenant and day. Roll on interval (one to five
    minutes) or size, measured before compression. An object's retention is
    fixed when it is opened rather than when it is written, so every copy in
@@ -32,6 +30,24 @@ durable pull consumer, or embedded in an application that has no stream.
     only its shape.
 11. **Index**: insert facet rows and update the counts table.
 12. **Ack** the stream message only after the PUT and the index succeed.
+
+## Payloads are not detached, and why
+
+An earlier design stored a body above a threshold once under `payload/sha256=…`
+and referenced it from each copy, so that several copies would not each carry
+it. With the presets this repository ships there is nothing to duplicate:
+`capture` is kept by the security profile alone, and billing and history forbid
+it. The emitter already drops a body over its bound and caps the whole record,
+so object size is bounded without a payload prefix.
+
+The cost would not be small. A payload referenced later by a longer-lived
+profile would need its lock extended, and a writer cannot know its future
+referrers, so every payload would be locked for the longest profile: seven
+years on a request body kept for a copy that lives one.
+
+This comes back when a deployment keeps `capture` in more than one profile, or
+carries a large shared-class property that every copy gets. Until then it is
+machinery for a case that does not exist.
 
 ## Idempotency
 

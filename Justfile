@@ -7,13 +7,28 @@ export GOWORK := "off"
 fmt:
     golangci-lint fmt ./...
 
-# Regenerate Go, TypeScript and the published JSON Schema from the proto
+# Regenerate everything from the proto: Go, the published JSON Schema, and
+# TypeScript. The TypeScript plugin is fetched from the schema registry, so this
+# needs the network.
 generate:
     buf generate
 
+# Regenerate only what local plugins produce: Go, and the record's JSON Schema.
+generate-local:
+    buf generate --template buf.gen.local.yaml
+
 # Generated code is committed. A change to the proto that is not followed by
-# `just generate` leaves the tree dirty here, which CI reads as a failure.
-drift: generate
+# `just generate` leaves the tree dirty here.
+#
+# The gate checks only what local plugins produce, so that it needs nothing but
+# this checkout: the TypeScript plugin comes from a remote registry that rate
+# limits, and a gate that fails because somebody else was generating code is a
+# gate people learn to ignore. `drift-ts` is the same check for TypeScript and
+# belongs in CI, where a retry is cheap.
+drift: generate-local
+    git diff --exit-code -- gen
+
+drift-ts: generate
     git diff --exit-code -- gen ts/src/gen
 
 # Lint proto and check that nothing released has changed incompatibly

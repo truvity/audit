@@ -1,0 +1,24 @@
+# The generation a checkout can do on its own, with no remote plugin.
+#
+# `just drift` uses this so the gate needs nothing but this repository. The full
+# template, buf.gen.yaml, adds TypeScript from the schema registry.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/truvity/audit/gen
+plugins:
+  # Local plugins (installed via devbox: protoc-gen-go, protoc-gen-connect-go)
+  # to avoid BSR rate limits.
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: gen
+    opt: paths=source_relative
+  # The record's JSON Schema, with the proto's comments as descriptions. Run
+  # here and not in the binary, because only the plugin sees the comments.
+  - local: [go, run, ./cmd/protoc-gen-audit-jsonschema]
+    out: gen/jsonschema
+    strategy: all

@@ -29,10 +29,18 @@ one that links back.
 Tools come from `devbox.json` through direnv. Never hand-roll a PATH; add a
 missing tool with `devbox add <pkg>@<version>`.
 
-`just check` is the gate, and it runs with cgo off like everything else here.
-`just race` is separate, because the race detector is the one thing that needs
-a C toolchain; CI runs it as its own job. Run it yourself before changing
-anything that hands a record to a background goroutine.
+`just check` is the gate. It needs nothing but this checkout: no C toolchain,
+no network. Two checks are therefore separate recipes that CI runs as their own
+jobs, and both matter.
+
+- `just race` needs a C toolchain, which nothing else here does. Run it before
+  changing anything that hands a record to a background goroutine, because a
+  race there is a lost record rather than a crash.
+- `just drift-ts` regenerates TypeScript, whose plugin comes from a remote
+  schema registry that rate limits. `just drift`, in the gate, checks the same
+  thing for Go and the JSON Schema, which local plugins produce. A gate that
+  fails because somebody else was generating code is a gate people learn to
+  ignore.
 
 ## Commits and pull requests
 

@@ -40,7 +40,9 @@ func scanMessage(s []rune, add func(string)) {
 				i++
 				continue
 			}
-			for i++; i < len(s) && s[i] != '\''; i++ {
+			i++
+			for i < len(s) && s[i] != '\'' {
+				i++
 			}
 		case '{':
 			end, ok := matchBrace(s, i)
@@ -95,7 +97,9 @@ func matchBrace(s []rune, open int) (int, bool) {
 				i++
 				continue
 			}
-			for i++; i < len(s) && s[i] != '\''; i++ {
+			i++
+			for i < len(s) && s[i] != '\'' {
+				i++
 			}
 		case '{':
 			depth++

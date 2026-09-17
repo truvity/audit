@@ -189,6 +189,17 @@ func (p *Profile) RetainUntil(written time.Time, expiry *time.Time) time.Time {
 	return written.AddDate(0, 0, days)
 }
 
+// Keeps is every core field a copy under this profile carries, in order and
+// without repeats: a field may be required by one preset and optional in
+// another, and a reader wants the set, not the bookkeeping.
+func (p *Profile) Keeps() []string {
+	seen := map[string]bool{}
+	for _, f := range append(append([]string{}, p.RequiredFields...), p.OptionalFields...) {
+		seen[f] = true
+	}
+	return sorted(seen)
+}
+
 // Explain renders the composition as a person reads it, which is what
 // `audit profile explain` prints and what a reviewer checks a deployment
 // against.
@@ -203,7 +214,7 @@ func (p *Profile) Explain() string {
 	}
 	sort.Strings(classes)
 	fmt.Fprintf(&b, "  classes   %s\n", strings.Join(classes, ", "))
-	fmt.Fprintf(&b, "  keeps     %s\n", strings.Join(append(append([]string{}, p.RequiredFields...), p.OptionalFields...), " "))
+	fmt.Fprintf(&b, "  keeps     %s\n", strings.Join(p.Keeps(), " "))
 	if len(p.ForbiddenFields) > 0 {
 		fmt.Fprintf(&b, "  never     %s\n", strings.Join(p.ForbiddenFields, " "))
 	}

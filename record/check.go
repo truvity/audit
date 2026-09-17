@@ -189,8 +189,7 @@ func scanValue(path, key string, v *structpb.Value) []error {
 	var problems []error
 	if key != "" {
 		if word := forbiddenKey(key); word != "" {
-			problems = append(problems, fmt.Errorf(
-				"%s: a key named for %q may not be written; declare the property in the action's data schema with x-audit-sensitive if it must be carried", path, word))
+			problems = append(problems, fmt.Errorf("%s: %s", path, whyForbidden(word)))
 		}
 	}
 	switch t := v.GetKind().(type) {
@@ -213,13 +212,18 @@ func scanValue(path, key string, v *structpb.Value) []error {
 func scanPair(path, key, value string) []error {
 	var problems []error
 	if word := forbiddenKey(key); word != "" {
-		problems = append(problems, fmt.Errorf(
-			"%s.%s: a key named for %q may not be written; declare the property in the action's data schema with x-audit-sensitive if it must be carried", path, key, word))
+		problems = append(problems, fmt.Errorf("%s.%s: %s", path, key, whyForbidden(word)))
 	}
 	if why := forbiddenValue(value); why != "" {
 		problems = append(problems, fmt.Errorf("%s.%s: %s", path, key, why))
 	}
 	return problems
+}
+
+// whyForbidden says what is wrong and, as importantly, what to do instead.
+func whyForbidden(word string) string {
+	return fmt.Sprintf("a key named for %q may not be written; declare the property in the "+
+		"action's data schema with x-audit-sensitive if it must be carried", word)
 }
 
 // forbiddenKey reports the name that makes a key inadmissible, or "".

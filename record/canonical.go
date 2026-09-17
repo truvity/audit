@@ -194,7 +194,7 @@ func writeCanonicalString(b *strings.Builder, s string) {
 			b.WriteString(`\t`)
 		default:
 			if r < 0x20 {
-				b.WriteString(fmt.Sprintf(`\u%04x`, r))
+				fmt.Fprintf(b, `\u%04x`, r)
 				continue
 			}
 			if r == utf8.RuneError {

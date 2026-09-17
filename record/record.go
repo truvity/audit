@@ -18,19 +18,30 @@ import (
 // a record crosses package and process boundaries without conversion.
 type Record = auditv1.Record
 
-// The record's parts, aliased so callers need not import the generated package.
 type (
-	Actor     = auditv1.Actor
-	Capture   = auditv1.Capture
-	Context   = auditv1.Context
-	Meter     = auditv1.Meter
-	Observer  = auditv1.Observer
-	Outcome   = auditv1.Outcome
-	Party     = auditv1.Party
-	Target    = auditv1.Target
+	// Actor is who acted, by kind and identifier.
+	Actor = auditv1.Actor
+	// Capture is the level-gated request and response snapshot.
+	Capture = auditv1.Capture
+	// Context is where a record came from: address chain, agent, correlation.
+	Context = auditv1.Context
+	// Meter is the usage measurement of a billable action or a gauge sample.
+	Meter = auditv1.Meter
+	// Observer is the component that reported a record, stamped by the writer.
+	Observer = auditv1.Observer
+	// Outcome is how an action ended.
+	Outcome = auditv1.Outcome
+	// Party is a subject: a kind and an identifier, never a name.
+	Party = auditv1.Party
+	// Target is what an action was done to.
+	Target = auditv1.Target
+	// Operation is the coarse action class, one of seven.
 	Operation = auditv1.Operation
-	Result    = auditv1.Outcome_Result
-	Level     = auditv1.Capture_Level
+	// Result is the outcome of an action.
+	Result = auditv1.Outcome_Result
+	// Level is how much of a request and response a record captured.
+	Level = auditv1.Capture_Level
+	// MeterKind distinguishes a count from a gauge sample.
 	MeterKind = auditv1.Meter_Kind
 )
 

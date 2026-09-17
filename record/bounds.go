@@ -176,16 +176,16 @@ func normaliseAttributes(r *Record, b Bounds) bool {
 // capSlot drops a request or response body that is too large on its own, before
 // the whole-record budget is considered, so that one oversized body does not
 // cost the record its attributes as well.
-func capSlot(c *Capture, max int) bool {
-	if c == nil || max <= 0 {
+func capSlot(c *Capture, limit int) bool {
+	if c == nil || limit <= 0 {
 		return false
 	}
 	dropped := false
-	if s := c.GetResponse(); s != nil && structSize(s) > max {
+	if s := c.GetResponse(); s != nil && structSize(s) > limit {
 		c.Response = nil
 		dropped = true
 	}
-	if s := c.GetRequest(); s != nil && structSize(s) > max {
+	if s := c.GetRequest(); s != nil && structSize(s) > limit {
 		c.Request = nil
 		dropped = true
 	}
@@ -233,7 +233,7 @@ func structSize(s *structpb.Struct) int {
 
 // clean removes the control characters that let a value forge a line in a text
 // log, and cuts the value to length on a rune boundary.
-func clean(s string, max int) string {
+func clean(s string, limit int) string {
 	if s == "" {
 		return s
 	}
@@ -246,14 +246,14 @@ func clean(s string, max int) string {
 		}
 		return r
 	}, s)
-	return truncate(s, max)
+	return truncate(s, limit)
 }
 
-func truncate(s string, max int) string {
-	if max <= 0 || len(s) <= max {
+func truncate(s string, limit int) string {
+	if limit <= 0 || len(s) <= limit {
 		return s
 	}
-	cut := s[:max]
+	cut := s[:limit]
 	for len(cut) > 0 && !utf8ValidEnd(cut) {
 		cut = cut[:len(cut)-1]
 	}

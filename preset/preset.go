@@ -50,6 +50,8 @@ var strictness = map[Treatment]int{Clear: 0, Scoped: 1, Pseudonym: 2, Omit: 3}
 // field name.
 type Category string
 
+// Internal, External and Machine are the actor categories a preset sets a
+// treatment for.
 const (
 	Internal Category = "internal" // staff, operators
 	External Category = "external" // end users, a customer's people
@@ -59,6 +61,8 @@ const (
 // Class is the field class an extension property declares with x-audit-class.
 type Class string
 
+// Shared, Audit, Metering, History and Evidence are the field classes an
+// extension property declares and a preset keeps.
 const (
 	Shared   Class = "shared"
 	Audit    Class = "audit"

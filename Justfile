@@ -11,10 +11,16 @@ fmt:
 generate:
     buf generate
 
-# Lint proto and check for breaking changes against the last tag
+# Lint proto and check that nothing released has changed incompatibly
 proto:
     buf lint
-    buf breaking --against '.git#tag=$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)' || true
+    # A first release has nothing to be incompatible with, and saying so beats
+    # a recipe that always passes because its comparison silently failed.
+    if tag=$(git describe --tags --abbrev=0 2>/dev/null); then \
+        buf breaking --against ".git#tag=$tag"; \
+    else \
+        echo "no release tag yet: nothing to compare against"; \
+    fi
 
 # Build (compile check)
 build: fmt
@@ -32,9 +38,9 @@ lint:
     # splits the message and GitHub renders nothing. Keep them out of docs.
     ! grep -rn --include=*.md -E '^[[:space:]]*[A-Za-z][A-Za-z0-9_]*[[:space:]]*-?->>?.*;' docs/
 
-# Validate presets and the common catalogue against their schemas
+# Hold this repository's own presets and catalogue to the contracts it publishes
 schemas:
-    @echo "TODO(implementation): validate presets/*.yaml and catalogue/*.yaml against schemas/"
+    go run ./cmd/audit validate --presets presets catalogue/common.yaml
 
 # Run Go vulnerability check
 vuln:

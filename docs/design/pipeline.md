@@ -44,6 +44,23 @@ A file-backed JetStream stream with discard-new, TLS, a short horizon sized
 to the longest tolerated writer outage, and exactly one permitted consumer.
 Publish acknowledgement is the fail-closed boundary for block delivery.
 
+Discard-new matters: the default would drop the oldest records when the stream
+fills, which is silence exactly when a stalled writer most needs to be noticed.
+With discard-new a full stream refuses the publish, and a refused publish is a
+failed request for anything declared block.
+
+Every record is published under its own identifier as the message id, so the
+stream's duplicate window absorbs a repeat. That is what makes the outbox's
+redelivery and the emitter's retries harmless, and it is the first of the two
+places a record is deduplicated; the writer's own table is the second, and the
+one that outlives the window.
+
+The consumer acknowledges a batch only once the writer has taken it, so a
+writer that was briefly unable to write gets the records again rather than
+losing them. A message the build cannot decode is acknowledged and reported
+instead, because leaving it would wedge the stream behind it; a dead letter
+belongs to the writer, which is the component with a bucket.
+
 ## Split writer
 
 See [split-writer.md](split-writer.md). Dedupe, validate, split per

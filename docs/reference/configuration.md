@@ -52,5 +52,32 @@ first, from one place.
 |---|---|
 | `signer` | `kms`, `transit`, `local` |
 | `schedule` | hourly |
+| `lookback` | how far before a window to look for objects keyed under an older day. Default 7 days; the verifier's must be at least this |
+| `max_windows` | how many windows one run may seal when catching up. Default 168 |
 | `verify.schedule` | nightly |
 | `anchor` | `none`, `rfc3161` with a TSA URL |
+
+Built: `audit digest --deployment --key --key-id --bucket [--from --to
+--lookback --max-windows]`. The signing key and the job's identity are separate
+from the writer's.
+
+## Clock job
+
+| setting | meaning |
+|---|---|
+| `ntp[]` | time references; the quickest to answer is believed, and one being unreachable is survivable |
+| `max_offset` | the offset beyond which the run fails. Default 1s; 0 records any offset and never fails |
+| `sink` | the writer the reading is recorded through |
+
+Built: `audit clock-sync --ntp … --sink … [--max-offset --timeout]`.
+
+## Purge job
+
+| setting | meaning |
+|---|---|
+| `schedule` | daily |
+| `identifying_after` | how long the index keeps who an event happened to. No default: no shipped preset states one, so it is the deployment's own policy |
+| `dedupe_window` | how long a written identifier is remembered. Default the widest window the profiles ask for |
+
+Built: `audit purge --deployment --database [--identifying-after
+--dedupe-window --dry-run]`. It never touches the archive.

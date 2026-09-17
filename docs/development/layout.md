@@ -33,7 +33,8 @@ internal/metering/  rollups, statements, rating adapters
 internal/export/    OCSF, ECS, OpenTelemetry, Parquet
 internal/cli/       the commands of cmd/audit
 
-cmd/audit/          validate, check-emitters, verify, reindex, replay, conformance
+cmd/audit/          validate, check-emitters, verify, replay, migrate, reindex, digest,
+                    purge, clock-sync (conformance to come)
 cmd/protoc-gen-audit-jsonschema/  the buf plugin that writes the record's JSON Schema
 cmd/audit-writer/   split writer service
 cmd/audit-query/    query service
@@ -61,8 +62,9 @@ surface and keep the rest private.
 3. `emit` + `sink` (inprocess, connect, nats) + outbox — **done**.
 4. `internal/writer` + `keys` (local) + `store` (s3) + `cmd/audit-writer` —
    **done**. Payload detach was dropped; the split-writer page says why.
-5. `internal/digest` + `cmd/audit verify` — **done** but for the scheduled
-   jobs and their meta-events, which come with the chart.
+5. `internal/digest` + `cmd/audit verify` + `audit digest` + `audit
+   clock-sync` — **done**. What the digest and verify jobs record about
+   themselves comes with the chart.
 6. `index`, write side: the `Indexer` interface, the Postgres schema, the
    facet counts, the shared deduplication table, `audit migrate` and
    `audit reindex` — **done**. This closes the write path: it is what lets

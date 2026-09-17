@@ -2,7 +2,8 @@
 
 ## Digest chain
 
-Hourly, per profile prefix, the digest job writes:
+Hourly, per profile, `audit digest` writes one digest covering every tenant's
+objects written in the window:
 
 ```json
 {
@@ -48,11 +49,46 @@ The nightly run verifies the previous day, records `audit.digest.verified`
 or `audit.digest.failed`, and marks the windows in the index so the viewer
 shows a badge.
 
+### The job
+
+`audit digest` resumes from the hour after the last digest, so a job that
+missed its runs seals the windows it missed. That matters more than it sounds:
+an hour with no digest cannot be told from one whose digest was removed, and
+the verifier reports both the same way, so a gap left by a missed run is
+evidence of tampering that nobody can resolve. It never seals the hour it wakes
+in — objects are still being written into it — and it bounds one run to a week
+of windows and reports how many are left. A window already sealed is left alone.
+
+Objects are keyed by the day their records happened, and an outbox delay puts a
+record under a day older than the window it was written in, so both the builder
+and the verifier look back seven days from the window. The verifier's lookback
+wants to be at least the builder's, or an object the builder covered from
+further back is not looked at.
+
+The tenant sits between the profile and the date in the archive, so neither the
+builder nor the verifier can ask for a profile's day as a prefix. Both ask for
+the tenants first and walk one bounded listing per tenant and day
+(`store.WalkDays`). Listing the whole profile would be right until the archive
+outgrew a page and wrong in silence after.
+
+Sealing is a different privilege from writing. The signing key lives where the
+writer's credentials do not, and the job runs as its own identity.
+
 ## Time
 
-Emitters and writers run on synchronised clocks. A daily job checks the
-offset against UTC and emits `audit.clock.synchronised`, which the evidence
-and PCI presets require.
+Emitters and writers run on synchronised clocks. `audit clock-sync` checks the
+offset against UTC daily and records `audit.clock.synchronised`, which the
+evidence and PCI presets require. It measures and records; it never sets the
+clock, because a component that both set the time and recorded the times of
+things would be marking its own paper.
+
+The recorded `offset_ms` is the correction this clock needs, as RFC 5905 §8 has
+it: positive means the clock is behind. Given several references it believes
+the quickest to answer, since the error in an offset is bounded by half the
+round trip that carried it. A clock outside the deployment's tolerance fails the
+run and is recorded anyway — that hour is exactly the one an auditor wants the
+measurement from. Nothing is recorded when no reference answered: the clock was
+not checked, and saying it was would be worse than a failed job.
 
 ## Anchoring
 

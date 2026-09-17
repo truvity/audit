@@ -9,10 +9,11 @@ import (
 	"github.com/truvity/audit/internal/digest"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/store"
+	"github.com/truvity/audit/store/storetest"
 )
 
 type built struct {
-	store    *store.Memory
+	store    *storetest.Memory
 	builder  *digest.Builder
 	verifier *digest.Verifier
 	signer   *keys.LocalSigner
@@ -28,7 +29,7 @@ func setup(t *testing.T) *built {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	return &built{
 		store:    s,
 		builder:  &digest.Builder{Store: s, Signer: signer},
@@ -306,7 +307,7 @@ func TestBuilderChecksItsParts(t *testing.T) {
 	if err := (&digest.Builder{}).Check(); err == nil {
 		t.Error("want a refusal with no store")
 	}
-	if err := (&digest.Builder{Store: store.NewMemory()}).Check(); err == nil {
+	if err := (&digest.Builder{Store: storetest.NewMemory()}).Check(); err == nil {
 		t.Error("want a refusal with no signer")
 	}
 }

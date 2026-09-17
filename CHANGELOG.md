@@ -18,6 +18,16 @@ Foundation. No release.
 - `catalogue`: catalogue loading, extension-schema annotations, composed
   validation of a record, message-template argument checks, and the category
   cross-check against a deployment's profiles.
-- `audit validate`, `audit profile explain`, `audit check-emitters`.
+- `emit`: the emitter, with block, outbox and best-effort delivery, request
+  provenance middleware and a durable file outbox.
+- `sink`: the write contract with memory, Connect and JetStream transports.
+- `keys`: pseudonyms per tenant and purpose, never rotated; a local signer.
+- `store`: the object store interface, the S3 bucket, and a memory store for
+  tests that can be tampered with on purpose.
+- `internal/writer`: the split into per-profile copies, rolling into locked
+  objects, deduplication, and the dead letter.
+- `internal/digest`: the signed digest chain and its verifier.
+- `audit validate`, `audit profile explain`, `audit check-emitters`,
+  `audit verify`.
 - Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

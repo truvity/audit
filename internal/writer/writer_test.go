@@ -15,12 +15,12 @@ import (
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
-	"github.com/truvity/audit/store"
+	"github.com/truvity/audit/store/storetest"
 )
 
 type built struct {
 	writer     *writer.Writer
-	store      *store.Memory
+	store      *storetest.Memory
 	deadLetter []string
 	duplicates int
 	unhandled  map[string][]string
@@ -45,7 +45,7 @@ func build(t *testing.T) *built {
 	}
 	t.Cleanup(func() { _ = provider.Close() })
 
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	b := &built{store: s, unhandled: map[string][]string{}}
 
@@ -298,8 +298,8 @@ func TestNewChecksItsParts(t *testing.T) {
 			w := &writer.Writer{
 				Catalogues: &writer.Registry{},
 				Splitter:   &writer.Splitter{},
-				Roller:     &writer.Roller{Store: store.NewMemory()},
-				DeadLetter: &writer.StoreDeadLetter{Store: store.NewMemory()},
+				Roller:     &writer.Roller{Store: storetest.NewMemory()},
+				DeadLetter: &writer.StoreDeadLetter{Store: storetest.NewMemory()},
 			}
 			tc.edit(w)
 			if _, err := writer.New(w); err == nil || !strings.Contains(err.Error(), tc.want) {
@@ -310,7 +310,7 @@ func TestNewChecksItsParts(t *testing.T) {
 }
 
 // decode reads every copy the writer put, from every object.
-func decode(t *testing.T, s *store.Memory) []*record.Record {
+func decode(t *testing.T, s *storetest.Memory) []*record.Record {
 	t.Helper()
 	decoder, err := zstd.NewReader(nil)
 	if err != nil {

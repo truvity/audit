@@ -13,6 +13,7 @@ import (
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/store"
+	"github.com/truvity/audit/store/storetest"
 )
 
 func day(t *testing.T, value string) time.Time {
@@ -43,7 +44,7 @@ func roller(t *testing.T, s store.Store, now func() time.Time) *writer.Roller {
 // A lifecycle rule matches a literal prefix, so the profile has to come first
 // for a per-profile rule to be expressible at all.
 func TestObjectKeysArePartitionedProfileFirst(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
 	p := profiles(t)["security"]
@@ -74,7 +75,7 @@ func TestObjectKeysArePartitionedProfileFirst(t *testing.T) {
 
 // One object holds one profile, for one tenant, for one day.
 func TestRollerSeparatesProfilesTenantsAndDays(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
 	all := profiles(t)
@@ -106,7 +107,7 @@ func TestRollerSeparatesProfilesTenantsAndDays(t *testing.T) {
 // Every copy in an object is kept at least as long as the profile asks of the
 // oldest, so the retention is fixed when the object is opened.
 func TestObjectsCarryTheProfilesRetention(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
 	all := profiles(t)
@@ -148,7 +149,7 @@ func TestObjectsCarryTheProfilesRetention(t *testing.T) {
 // rather than replacing anything, so a writer that reuses a key writes objects
 // a digest cannot account for.
 func TestRollerNeverReusesAKey(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
 	p := profiles(t)["security"]
@@ -168,7 +169,7 @@ func TestRollerNeverReusesAKey(t *testing.T) {
 }
 
 func TestRollerRollsOnSize(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
 	r.MaxBytes = 2000
@@ -189,7 +190,7 @@ func TestRollerRollsOnSize(t *testing.T) {
 }
 
 func TestRollerRollsOnTime(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	now := at
 	r := roller(t, s, func() time.Time { return now })
@@ -218,7 +219,7 @@ func TestRollerRollsOnTime(t *testing.T) {
 // The object holds exactly the copies that went into it, readable by anything
 // that can decompress.
 func TestObjectHoldsTheCopies(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
 	p := profiles(t)["security"]
@@ -267,7 +268,7 @@ func TestObjectHoldsTheCopies(t *testing.T) {
 // A store that will not take an object must not lose the copies the writer has
 // already taken responsibility for.
 func TestAFailedPutKeepsTheCopies(t *testing.T) {
-	s := store.NewMemory()
+	s := storetest.NewMemory()
 	s.FailPut = errors.New("the bucket is unreachable")
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })

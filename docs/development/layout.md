@@ -17,13 +17,15 @@ catalogue/          catalogue loading, validation, composition, templates
 preset/             preset loading and profile composition
 emit/               the emitter an application imports
 sink/               Sink interface and transports (inprocess, s3, nats)
-keys/               KeyProvider and Signer interfaces, with kms, transit, local
+keys/               Provider and Signer interfaces, with local (kms, transit to come)
+store/              the object store interface; s3store/ the bucket; storetest/ the memory
+                    store a test writes to, which can also be tampered with on purpose
 index/              Indexer and Searcher interfaces, with memory, s3scan, postgres
 auth/               Authenticator and Authorizer interfaces, with the defaults
 
-internal/writer/    split, treat, roll, put, index, ack
+internal/writer/    split, treat, roll, put, dead-letter, dedupe, ack (index to come)
 internal/query/     the query service behind auth
-internal/digest/    the digest job and verification
+internal/digest/    the digest chain: builder and verifier
 internal/metering/  rollups, statements, rating adapters
 internal/export/    OCSF, ECS, OpenTelemetry, Parquet
 internal/cli/       the commands of cmd/audit
@@ -41,7 +43,10 @@ charts/audit/       writer, query, console, digest cron, registry
 
 **Public and internal.** A package a third party implements against or an
 emitter imports is a top-level package and part of the compatibility promise.
-A package only this repository's own services use is under `internal/`. This
+A package only this repository's own services use is under `internal/`. A
+helper that only a test should use lives in a `*test` package beside what it
+helps with, as `store/storetest` does, so that importing it from production
+code reads as wrong in the import path itself. This
 follows the other public repositories in the estate: they publish a small
 surface and keep the rest private.
 
@@ -50,9 +55,12 @@ surface and keep the rest private.
 1. `proto` → `buf generate`; generated JSON Schema of the core; a test
    corpus of records that parse as proto and validate as JSON Schema.
 2. `record`, `preset`, `catalogue`, `cmd/audit validate` — **done**.
-3. `emit` + `sink` (inprocess, s3, nats) + outbox.
-4. `internal/writer` + `keys` (local first, then kms, transit).
-5. `internal/digest` + `cmd/audit verify`.
+3. `emit` + `sink` (inprocess, connect, nats) + outbox — **done**.
+4. `internal/writer` + `keys` (local) + `store` (s3) — **done** but for payload
+   detach, schema archiving on first use, the index step and the service
+   binary.
+5. `internal/digest` + `cmd/audit verify` — **done** but for the scheduled
+   jobs and their meta-events, which come with the chart.
 6. `index` (memory, s3scan, postgres) + `cmd/audit reindex`.
 7. `internal/query` + `auth` + `cmd/audit-query`.
 8. `ts/` types and Node emitter; viewer hooks; MUI skin; console.

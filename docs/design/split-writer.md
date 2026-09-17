@@ -18,8 +18,10 @@ durable pull consumer, or embedded in an application that has no stream.
    tenant-and-purpose key), scoped, or omit. Apply `x-audit-sensitive`.
 7. **Detach payloads** above the size threshold to the payload prefix by
    content hash; leave the hash in the copy.
-8. **Buffer** per profile and tenant. Roll on interval (one to five
-   minutes) or size. Split at day boundaries.
+8. **Buffer** per profile, tenant and day. Roll on interval (one to five
+   minutes) or size, measured before compression. An object's retention is
+   fixed when it is opened rather than when it is written, so every copy in
+   it is kept at least as long as the profile asks of the oldest.
 9. **PUT** each rolled object with `ObjectLockMode=COMPLIANCE` and
    `RetainUntilDate` from the profile's retention, SSE-KMS, a checksum, and
    `Content-Encoding: zstd`.

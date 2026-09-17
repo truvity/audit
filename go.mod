@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	connectrpc.com/connect v1.20.0
 	github.com/google/uuid v1.6.0
+	github.com/klauspost/compress v1.20.0
 	github.com/nats-io/nats-server/v2 v2.15.0
 	github.com/nats-io/nats.go v1.53.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
@@ -15,7 +16,6 @@ require (
 require (
 	github.com/antithesishq/antithesis-sdk-go v0.8.0-default-no-op // indirect
 	github.com/google/go-tpm v0.9.8 // indirect
-	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/minio/highwayhash v1.0.4 // indirect
 	github.com/nats-io/jwt/v2 v2.8.2 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect

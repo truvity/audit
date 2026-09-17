@@ -71,13 +71,20 @@ schemas on first use, index, count, ack.
 
 ```
 s3://<bucket>/
-  tenant=<id>/profile=<name>/year=/month=/day=/<first-occurred-nanos>-<writer>-<seq>.ndjson.zst
+  profile=<name>/tenant=<id>/year=/month=/day=/<first-occurred-nanos>-<writer>-<seq>.ndjson.zst
   payload/sha256=<hash>                              large blobs, referenced by hash
   schema/<source>/<catalogue_version>/...             catalogues and extension schemas
   schema/audit/v<major>/record.schema.json, record.proto   the record's own schema and proto
   digest/profile=<name>/year=/month=/day=/hour=/...   hourly signed digests
   dlq/year=/month=/day=/...                            records the writer could not process
 ```
+
+**Profile first, and deliberately.** A lifecycle rule filters by literal prefix
+and takes no wildcards, so a rule that moves one profile's objects to colder
+storage after its hot window, or that expires them when their lock ends, can
+only exist if the profile is the leading component. Per-tenant credentials are
+unaffected: a policy's resource may carry a wildcard where a lifecycle filter
+may not, so `.../*/tenant=<id>/*` still scopes a role to one customer.
 
 ## Projections
 

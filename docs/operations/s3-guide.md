@@ -24,7 +24,7 @@ sets per-object retention; the bucket must allow and protect it.
 
 | prefix | retention |
 |---|---|
-| `tenant=*/profile=<p>/...` | the profile's, set per object at PUT |
+| `profile=<p>/tenant=*/...` | the profile's, set per object at PUT |
 | `payload/` | the longest referencing profile |
 | `schema/` | the longest profile any action in the catalogue belongs to |
 | `digest/profile=<p>/...` | the profile's |
@@ -33,6 +33,12 @@ sets per-object retention; the bucket must allow and protect it.
 Lifecycle: transition to an infrequent-access tier after the hot window;
 never to deep archive for objects under a few megabytes; expiration only
 after lock expiry, which S3 enforces anyway.
+
+Write one rule per profile, filtered on `profile=<name>/`. This is why the
+profile is the leading component of every key: a lifecycle filter matches a
+literal prefix and takes no wildcards, so a rule per profile is possible only
+in that order. A role scoped to one customer is unaffected, because a policy's
+resource may carry a wildcard: `arn:aws:s3:::<bucket>/*/tenant=<id>/*`.
 
 ## Legal hold
 

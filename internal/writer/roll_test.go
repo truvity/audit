@@ -10,6 +10,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/store"
@@ -49,7 +50,7 @@ func TestObjectKeysArePartitionedProfileFirst(t *testing.T) {
 	r := roller(t, s, func() time.Time { return at })
 	p := profiles(t)["security"]
 
-	if err := r.Add(context.Background(), p, copyFor(t, "security", "acme", at)); err != nil {
+	if err := r.Add(context.Background(), p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Flush(context.Background()); err != nil {
@@ -92,7 +93,7 @@ func TestRollerSeparatesProfilesTenantsAndDays(t *testing.T) {
 		{"billing", "acme", at},
 		{"security", "acme", at.AddDate(0, 0, -1)},
 	} {
-		if err := r.Add(ctx, all[c.profile], copyFor(t, c.profile, c.tenant, c.at)); err != nil {
+		if err := r.Add(ctx, all[c.profile], copyFor(t, c.profile, c.tenant, c.at), index.Fields{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -114,7 +115,7 @@ func TestObjectsCarryTheProfilesRetention(t *testing.T) {
 	ctx := context.Background()
 
 	for name := range all {
-		if err := r.Add(ctx, all[name], copyFor(t, name, "acme", at)); err != nil {
+		if err := r.Add(ctx, all[name], copyFor(t, name, "acme", at), index.Fields{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -156,7 +157,7 @@ func TestRollerNeverReusesAKey(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 20; i++ {
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
 			t.Fatal(err)
 		}
 		if err := r.Flush(ctx); err != nil {
@@ -177,7 +178,7 @@ func TestRollerRollsOnSize(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -198,7 +199,7 @@ func TestRollerRollsOnTime(t *testing.T) {
 	p := profiles(t)["security"]
 	ctx := context.Background()
 
-	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
+	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
 		t.Fatal(err)
 	}
 	if r.Due() {
@@ -208,7 +209,7 @@ func TestRollerRollsOnTime(t *testing.T) {
 	if !r.Due() {
 		t.Fatal("an object open past the interval is due")
 	}
-	if err := r.Add(ctx, p, copyFor(t, "security", "acme", now)); err != nil {
+	if err := r.Add(ctx, p, copyFor(t, "security", "acme", now), index.Fields{}); err != nil {
 		t.Fatal(err)
 	}
 	if s.Len() != 1 {
@@ -226,7 +227,7 @@ func TestObjectHoldsTheCopies(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -275,7 +276,7 @@ func TestAFailedPutKeepsTheCopies(t *testing.T) {
 	p := profiles(t)["security"]
 	ctx := context.Background()
 
-	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
+	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Flush(ctx); err == nil {

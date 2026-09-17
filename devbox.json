@@ -15,7 +15,8 @@
     "protoc-gen-connect-go": "latest",
     "protoc-gen-go":         "latest",
     "nodejs":                "latest",
-    "yarn":                  "latest"
+    "yarn":                  "latest",
+    "postgresql":            "17"
   },
   "env": {
     "CGO_ENABLED":  "0",

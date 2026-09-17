@@ -6,9 +6,11 @@ regulatory evidence.
 
 **Status: write path.** A record can be emitted, validated against its
 catalogue, carried over a stream or an outbox, split into one copy per
-profile, written to a locked bucket with per-profile retention, and later
-proved unaltered by an auditor who trusts nobody. The read path, the viewer,
-the chart and the metering projection do not exist yet. Read [docs/why.md](docs/why.md) first, then
+profile, written to a locked bucket with per-profile retention, indexed for
+search, and later proved unaltered by an auditor who trusts nobody. The index
+is a projection: `audit reindex` rebuilds it from the archive, and a test holds
+the rebuild equal to what the writer wrote. The read path, the viewer, the
+chart and the metering projection do not exist yet. Read [docs/why.md](docs/why.md) first, then
 [docs/concepts.md](docs/concepts.md), then the decisions in
 [docs/decisions/](docs/decisions/), then
 [docs/development/layout.md](docs/development/layout.md) for what is built

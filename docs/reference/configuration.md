@@ -24,10 +24,16 @@ Draft. Names are stable; defaults are the presets' where they exist.
 | `profiles` | composition of presets and prefixes |
 | `roll.interval`, `roll.max_bytes` | object rolling |
 | `payload.threshold_bytes` | detach above this |
-| `dedupe.window` | from the strictest preset by default |
+| `dedupe.window` | from the widest preset window the deployment's profiles ask for. The table is shared by every profile, so a record one profile remembers for a fortnight must not be re-written because another's window was shorter |
 | `keys.provider` | `kms`, `transit`, `local` |
-| `index.postgres` | connection for the facet index |
+| `index.postgres` | the index and the shared deduplication table, one database. Without it the writer indexes nothing and deduplicates in process, which is why it then refuses to run more than one replica |
 | `dlq.prefix` | dead-letter prefix |
+
+The built `audit-writer` takes these as flags or environment variables:
+`--database`/`AUDIT_DATABASE` is the index, `--replicas`/`AUDIT_REPLICAS` is how
+many writers share the stream. A writer whose database is at a schema version
+this build does not know refuses to start; run `audit migrate --database <url>`
+first, from one place.
 
 ## Query service
 

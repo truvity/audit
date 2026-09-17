@@ -139,6 +139,18 @@ func Stamp(r *Record, observer *Observer, at time.Time) error {
 	return nil
 }
 
+// OperationName is the short spelling of an operation, as a catalogue writes it
+// and as an index and a query use it. The generated constant is
+// OPERATION_CREATE; nothing outside the wire format should have to say that.
+func OperationName(op Operation) string {
+	return strings.ToLower(strings.TrimPrefix(op.String(), "OPERATION_"))
+}
+
+// ResultName is the short spelling of an outcome.
+func ResultName(r Result) string {
+	return strings.ToLower(strings.TrimPrefix(r.String(), "RESULT_"))
+}
+
 // ParseSchemaVersion splits a "major.minor" version.
 func ParseSchemaVersion(v string) (major, minor int, err error) {
 	if _, err := fmt.Sscanf(v, "%d.%d", &major, &minor); err != nil {

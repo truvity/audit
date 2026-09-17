@@ -9,6 +9,7 @@ import (
 
 	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/emit"
+	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
 )
@@ -59,6 +60,12 @@ type Hooks struct {
 	OnDeadLettered func(r *record.Record, reason string)
 	// OnDuplicate is called for each record seen before.
 	OnDuplicate func(r *record.Record)
+	// OnDuplicatesLikely is called when records were written but could not be
+	// marked as written. Nothing is lost; a redelivery of those records will
+	// be taken again and the archive will hold a second copy of each, which
+	// the index absorbs by identifier. A deployment watches this because a
+	// store that has stopped accepting marks stops deduplicating entirely.
+	OnDuplicatesLikely func(ids []string, err error)
 	// OnUnhandled is called with the profiles an action names that this
 	// deployment does not have.
 	OnUnhandled func(action string, profiles []string)
@@ -159,8 +166,14 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 	}
 
 	result := &sink.Result{}
+	written := make([]string, 0, len(req.Records))
+	inBatch := make(map[string]bool, len(req.Records))
 	for _, r := range req.Records {
-		if seen[r.GetId()] {
+		// A batch may carry the same record twice — a redelivery bundled with
+		// the original is an ordinary shape. Asking the store does not settle
+		// that, because the store is not told anything until the batch is
+		// durable, so the batch keeps its own account of what it has taken.
+		if seen[r.GetId()] || inBatch[r.GetId()] {
 			// Every hop below is at-least-once on purpose. This is where the
 			// repeats stop.
 			result.Accepted++
@@ -172,6 +185,10 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 		if err := w.one(ctx, r); err != nil {
 			return nil, err
 		}
+		if id := r.GetId(); id != "" {
+			inBatch[id] = true
+			written = append(written, id)
+		}
 		result.Accepted++
 	}
 
@@ -180,6 +197,18 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 	// could lose a record while reporting success.
 	if err := w.Roller.Flush(ctx); err != nil {
 		return nil, err
+	}
+
+	// Only now, with the copies durable, are the identifiers marked. See the
+	// Dedupe interface for why this is not done before the write.
+	if err := w.Dedupe.Mark(ctx, written); err != nil {
+		// The records are in the archive; what failed is the note that says so.
+		// Failing the batch here would ask the caller to redeliver records that
+		// are already written, which is the one thing marking afterwards is
+		// meant to keep rare. A deployment watches this instead.
+		if w.Hooks.OnDuplicatesLikely != nil {
+			w.Hooks.OnDuplicatesLikely(written, err)
+		}
 	}
 	return result, nil
 }
@@ -235,13 +264,25 @@ func (w *Writer) one(ctx context.Context, r *record.Record) error {
 		// but the record has nowhere to go and must not disappear.
 		return w.deadLetter(ctx, r, "no configured profile keeps this action")
 	}
+	fields := indexFields(x)
 	for _, copied := range copies {
 		profile := w.Splitter.Profiles[copied.GetProfile()]
-		if err := w.Roller.Add(ctx, profile, copied); err != nil {
+		if err := w.Roller.Add(ctx, profile, copied, fields); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// indexFields is what the action's catalogue says about its data slot: which
+// properties a query may name, and which a searcher may count. The index takes
+// the answer rather than the catalogue, so that an implementation of the
+// Indexer interface needs neither.
+func indexFields(x *catalogue.Composed) index.Fields {
+	if x.Data == nil {
+		return index.Fields{}
+	}
+	return index.Fields{Filter: x.Data.Filterable(), Facet: x.Data.Facets()}
 }
 
 func (w *Writer) deadLetter(ctx context.Context, r *record.Record, reason string) error {

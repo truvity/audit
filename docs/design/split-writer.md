@@ -5,8 +5,9 @@ durable pull consumer, or embedded in an application that has no stream.
 
 ## Per record
 
-1. **Dedupe** by `id` against a table with a configurable window (preset
-   `pipeline.dedupe_window_days`).
+1. **Ask** the deduplication table whether the `id` has been written, within a
+   configurable window (preset `pipeline.dedupe_window_days`). Asking marks
+   nothing; see below.
 2. **Resolve** the catalogue by `source` and `catalogue_version`. Unknown
    version: dead-letter, alert, never drop.
 3. **Validate** against the composed schema. Violation: dead-letter.
@@ -28,8 +29,35 @@ durable pull consumer, or embedded in an application that has no stream.
     to. On first use of a record major, copy the record's JSON Schema and
     its proto there too: the archive keeps the meaning of every field, not
     only its shape.
-11. **Index**: insert facet rows and update the counts table.
-12. **Ack** the stream message only after the PUT and the index succeed.
+11. **Index** the object's rows, which moves the facet counts for the rows the
+    insert actually created. A failure here does not fail the write: the index
+    is a projection and `audit reindex` rebuilds it from the objects. The
+    deployment is told, because an index nobody notices is behind is one that
+    quietly answers wrongly.
+12. **Mark** the identifiers as written, now that the copies are durable.
+13. **Ack** the stream message only after the PUT.
+
+## Asking and marking are two calls
+
+The order is the interesting part, and it is the opposite of what reads best.
+
+Claiming an identifier before writing it is the natural shape, and it loses
+records. With deduplication in one process a crash takes the table with it, so
+the redelivery is accepted and nothing is lost. With a shared table the mark
+survives the crash: a writer that claims an identifier and dies before its PUT
+leaves the record nowhere, and the redelivery that would have saved it arrives
+looking like a duplicate. That is a silent hole in an audit trail, produced by
+the component whose job is to have none.
+
+Marking afterwards can only fail the other way. A crash between the PUT and the
+mark means a redelivery is written again, and the archive holds a second copy:
+the index keeps one row per identifier, the digest chain accounts for both
+objects, and a reader sees the record once. A duplicate costs an object. A loss
+cannot be repaired at all.
+
+Because nothing is marked until the batch is durable, a batch carrying a
+redelivery beside its original is not settled by asking. The writer keeps its
+own account within the batch, and the second copy is absorbed there.
 
 ## Payloads are not detached, and why
 

@@ -18,8 +18,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/truvity/audit/catalogue"
+	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
@@ -49,9 +52,11 @@ func run() error {
 		keyRoot    = flag.String("key-root", env("AUDIT_KEY_ROOT", ""), "file holding the 32-byte root the data keys are wrapped under")
 		keyDir     = flag.String("key-dir", env("AUDIT_KEY_DIR", ""), "where wrapped data keys are kept")
 		replicas   = flag.Int("replicas", envInt("AUDIT_REPLICAS", 1), "how many writers share this stream")
-		listen     = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
-		rollEvery  = flag.Duration("roll-interval", 5*time.Minute, "how long an object stays open")
-		version    = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
+		database   = flag.String("database", env("AUDIT_DATABASE", ""),
+			"the Postgres URL of the index; without it the writer indexes nothing and deduplicates in process")
+		listen    = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
+		rollEvery = flag.Duration("roll-interval", 5*time.Minute, "how long an object stays open")
+		version   = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
 	)
 	flag.Parse()
 
@@ -113,7 +118,31 @@ func run() error {
 		registered = append(registered, found...)
 	}
 
+	// The index and the deduplication table live in the same database on
+	// purpose: both sit on the write path, and it is having them that turns
+	// the writer from a single instance into a deployment. Without a database
+	// the writer still writes the archive, which is the part that is evidence.
 	dedupe := writer.Dedupe(&writer.MemoryDedupe{})
+	var indexer index.Indexer
+	if *database != "" {
+		pool, err := pgxpool.New(ctx, *database)
+		if err != nil {
+			return err
+		}
+		defer pool.Close()
+		// A writer whose database is at another schema version refuses to
+		// start. Migrating is a step an operator takes, not something several
+		// replicas race each other to do.
+		if err := postgres.CheckVersion(ctx, pool); err != nil {
+			return err
+		}
+		if indexer, err = postgres.New(pool); err != nil {
+			return err
+		}
+		if dedupe, err = postgres.NewDedupe(pool, longestDedupe(profiles)); err != nil {
+			return err
+		}
+	}
 	if err := writer.GuardReplicas(*replicas, dedupe); err != nil {
 		return err
 	}
@@ -125,8 +154,18 @@ func run() error {
 		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider},
 		Roller: &writer.Roller{
 			Store: archive, Instance: instance, Interval: *rollEvery,
+			Indexer: indexer,
 			OnPut: func(key string, records int) {
 				slog.Info("object written", "key", key, "records", records)
+			},
+			// The object is durable and the records are safe; what is behind is
+			// the projection, which a reindex of that day repairs. A deployment
+			// alerts on this, because an index nobody notices is behind is one
+			// that quietly answers wrongly.
+			OnIndexDeferred: func(key string, rows int, err error) {
+				slog.Error("object written but not indexed",
+					"key", key, "rows", rows, "error", err,
+					"repair", "audit reindex --profile <name> --from <day> --to <day>")
 			},
 		},
 		Dedupe: dedupe,
@@ -226,6 +265,23 @@ func registerAll(r *writer.Registry, dir string) ([]*catalogue.Catalogue, error)
 
 // longestRetention is how long the longest-lived profile keeps a copy, which is
 // what anything that has to outlive every record is kept for.
+// longestDedupe is how long a written identifier is remembered.
+//
+// It is the widest window the deployment's presets ask for, because the table
+// is shared by every profile and a record that one profile keeps for a fortnight
+// must not be re-written because another profile's window was shorter. The
+// window wants to cover the longest redelivery the stream below permits, which
+// is what the presets are expressing when they declare it.
+func longestDedupe(profiles map[string]*preset.Profile) time.Duration {
+	var longest time.Duration
+	for _, p := range profiles {
+		if d := time.Duration(p.Pipeline.DedupeWindowDays) * 24 * time.Hour; d > longest {
+			longest = d
+		}
+	}
+	return longest
+}
+
 func longestRetention(profiles map[string]*preset.Profile) time.Duration {
 	now := time.Now().UTC()
 	var longest time.Duration

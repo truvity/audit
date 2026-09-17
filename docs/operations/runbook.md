@@ -48,9 +48,24 @@ transitions that moved objects, or a KMS key change.
 
 ## The index is behind
 
-`audit reindex --profile <p> --from <day> --to <day>`. Safe at any time.
-The tail cursor advances on recorded order, so pollers catch up on their
-own.
+The writer logs `object written but not indexed` with the object's key when it
+puts an object it could not index. The records are safe and the object is in
+the archive under its lock; what is behind is the projection.
+
+```
+audit reindex --profile <p> --from <day> --to <day> \
+    --database <url> --bucket <b> --catalogue <file>...
+```
+
+Safe at any time and over a range already indexed, which is the usual case: a
+record is counted once however many times it is read. The catalogues are
+required — without them the rebuild would omit the data columns and a later run
+could not repair it. The tail cursor advances on recorded order, so pollers
+catch up on their own.
+
+If the index is not merely behind but wrong — a bad migration, a partial
+restore — drop it, run `audit migrate`, and reindex the range. Nothing in the
+index is evidence, and the archive is unaffected.
 
 ## A tenant asks for erasure
 

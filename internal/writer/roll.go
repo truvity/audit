@@ -11,6 +11,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/store"
@@ -36,10 +37,21 @@ type Roller struct {
 	// MaxBytes rolls an object that has grown this large, measured before
 	// compression. Default 8 MiB.
 	MaxBytes int
+	// Indexer, when set, receives the rows of every object after it is
+	// written. The index is a projection: it may be behind, be rebuilt from the
+	// prefixes, or be a different implementation entirely, and none of that
+	// changes what the trail says.
+	Indexer index.Indexer
 	// Now is the clock, for tests.
 	Now func() time.Time
 	// OnPut is called after each object is written.
 	OnPut func(key string, records int)
+	// OnIndexDeferred is called when an object was written but its rows were
+	// not. The object is durable and the records are safe; the index is behind
+	// until a reindex of that day repairs it. A deployment alerts on this,
+	// because an index nobody notices is behind is one that quietly answers
+	// wrongly.
+	OnIndexDeferred func(key string, rows int, err error)
 
 	mu      sync.Mutex
 	open    map[partition]*batch
@@ -54,17 +66,24 @@ type partition struct {
 }
 
 type batch struct {
-	profile  *preset.Profile
-	opened   time.Time
-	first    time.Time
-	bytes    int
-	lines    [][]byte
+	profile *preset.Profile
+	opened  time.Time
+	first   time.Time
+	bytes   int
+	lines   [][]byte
+	// rows are the index rows of the same copies, in the same order, built
+	// where the record is still in hand. They carry no object key yet: the
+	// object does not have one until it is sealed.
+	rows     []index.Row
 	retainAt time.Time
 }
 
 // Add puts one copy into the object being gathered for its profile, tenant and
 // day, rolling that object first if it is full or old.
-func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record) error {
+//
+// The fields are the action's indexed extension properties, which only the
+// caller's catalogue knows.
+func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record, fields index.Fields) error {
 	line, err := record.Canonical(c)
 	if err != nil {
 		return fmt.Errorf("writer: %w", err)
@@ -96,6 +115,9 @@ func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record) e
 		r.open[key] = b
 	}
 	b.lines = append(b.lines, line)
+	if r.Indexer != nil {
+		b.rows = append(b.rows, index.RowOf(c, index.ObjectAt{}, fields))
+	}
 	b.bytes += len(line) + 1
 	if occurred.Before(b.first) {
 		b.first = occurred
@@ -206,6 +228,7 @@ func (r *Roller) put(ctx context.Context, key partition, b *batch) error {
 	if r.OnPut != nil {
 		r.OnPut(objectKey, len(b.lines))
 	}
+	r.index(ctx, b, objectKey)
 	delete(r.open, key)
 	return nil
 }
@@ -253,4 +276,29 @@ func tenantOf(c *record.Record) string {
 	// A copy whose profile drops the tenant still has to land somewhere, and
 	// the platform partition is where records with no customer belong.
 	return record.TenantPlatform
+}
+
+// index writes the object's rows, after the object and before the caller is
+// told the batch is safe.
+//
+// A failure here is not a failure of the write. The object is in the archive
+// under its lock and is accounted for by the digest chain, which is what the
+// trail rests on; the index is a projection that a reindex of the day rebuilds
+// from the objects themselves. Failing the put instead would mean an outage of
+// the search database could stop the audit trail, which is the wrong way round.
+func (r *Roller) index(ctx context.Context, b *batch, objectKey string) {
+	if r.Indexer == nil || len(b.rows) == 0 {
+		return
+	}
+	rows := make([]index.Row, len(b.rows))
+	for i, row := range b.rows {
+		// Lines are numbered from one, as a person counts them.
+		row.ObjectKey, row.Line = objectKey, i+1
+		rows[i] = row
+	}
+	if err := r.Indexer.Index(ctx, b.profile.Name, rows); err != nil {
+		if r.OnIndexDeferred != nil {
+			r.OnIndexDeferred(objectKey, len(rows), err)
+		}
+	}
 }

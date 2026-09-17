@@ -17,7 +17,9 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
@@ -47,6 +49,15 @@ usage:
         Send dead letters back to a writer once the cause is fixed. Without
         --sink it reads and summarises them and sends nothing.
 
+  audit migrate --database <url>
+        Apply the index schema. Run it before the writers that will use it,
+        and run it from one place: several replicas migrating at once is a
+        race the writers cannot see.
+
+  audit reindex --profile <name> --from <date> --to <date> [flags]
+        Rebuild a profile's index from the archive. Safe to run over a range
+        that is already indexed, and the way an index is repaired or replaced.
+
   audit version
 
 Run a command with -h for its flags.
@@ -69,6 +80,10 @@ func main() {
 		err = verify(os.Args[2:])
 	case "replay":
 		err = replay(os.Args[2:])
+	case "migrate":
+		err = migrate(os.Args[2:])
+	case "reindex":
+		err = reindex(os.Args[2:])
 	case "version":
 		fmt.Printf("audit, record schema %s\n", record.SchemaVersion)
 	case "-h", "--help", "help":
@@ -323,3 +338,127 @@ func replay(args []string) error {
 	}
 	return nil
 }
+
+// migrate applies the index schema.
+//
+// It is a command of its own rather than something a writer does on start-up
+// because several replicas migrating at once is a race, and because a schema
+// change to the index should be a step an operator takes deliberately. Nothing
+// in it touches the archive: the index is a projection, and this is the
+// database that holds it.
+func migrate(args []string) error {
+	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
+	var (
+		database = flags.String("database", "", "the Postgres URL of the index")
+		printSQL = flags.Bool("print", false, "print the schema and apply nothing")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	if *printSQL {
+		fmt.Print(postgres.Schema())
+		return nil
+	}
+	if *database == "" {
+		return errors.New("give the index's Postgres URL with --database, or use --print")
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, *database)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	if err := postgres.Migrate(ctx, pool); err != nil {
+		return err
+	}
+	fmt.Printf("index schema version %d applied\n", postgres.Version)
+	return nil
+}
+
+// reindex rebuilds a profile's index from the archive.
+func reindex(args []string) error {
+	flags := flag.NewFlagSet("reindex", flag.ContinueOnError)
+	var (
+		profile   = flags.String("profile", "", "the profile to rebuild")
+		from      = flags.String("from", "", "start of the range, a date or a timestamp")
+		to        = flags.String("to", "", "end of the range, a date or a timestamp")
+		database  = flags.String("database", "", "the Postgres URL of the index")
+		bucket    = flags.String("bucket", "", "the bucket the archive is in")
+		prefix    = flags.String("prefix", "", "the prefix within the bucket")
+		region    = flags.String("region", "", "the region, when it is not in the environment")
+		batchSize = flags.Int("batch", 0, "how many rows to index at a time")
+		asJSON    = flags.Bool("json", false, "print the report as JSON")
+	)
+	var catalogueFiles repeated
+	flags.Var(&catalogueFiles, "catalogue",
+		"a catalogue document, repeatable; the index takes its indexed properties from these")
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	switch {
+	case *profile == "":
+		return errors.New("name a profile with --profile")
+	case *database == "":
+		return errors.New("give the index's Postgres URL with --database")
+	case *bucket == "":
+		return errors.New("name the archive's bucket with --bucket")
+	case len(catalogueFiles) == 0:
+		return errors.New(
+			"give the catalogues with --catalogue: without them the index would be " +
+				"rebuilt without its data columns, and a later run could not repair it")
+	}
+	start, err := cli.ParseDay(*from)
+	if err != nil {
+		return fmt.Errorf("--from: %w", err)
+	}
+	end, err := cli.ParseDay(*to)
+	if err != nil {
+		return fmt.Errorf("--to: %w", err)
+	}
+	fields, err := cli.CatalogueFields(catalogueFiles)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if *region != "" {
+		cfg.Region = *region
+	}
+	archive, err := s3store.FromConfig(cfg, s3store.Options{Bucket: *bucket, Prefix: *prefix})
+	if err != nil {
+		return err
+	}
+
+	pool, err := pgxpool.New(ctx, *database)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := postgres.CheckVersion(ctx, pool); err != nil {
+		return err
+	}
+	target, err := postgres.New(pool)
+	if err != nil {
+		return err
+	}
+
+	_, err = cli.Reindex{
+		Store: archive, Index: target, Fields: fields,
+		Profile: *profile, From: start, To: end,
+		Batch: *batchSize, JSON: *asJSON,
+	}.Run(ctx)
+	return err
+}
+
+// repeated collects a flag that may be given more than once, which is how a
+// deployment names its catalogues: it has several, and they are separate files.
+type repeated []string
+
+func (r *repeated) String() string     { return strings.Join(*r, ", ") }
+func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }

@@ -20,10 +20,12 @@ sink/               Sink interface and transports (inprocess, s3, nats)
 keys/               Provider and Signer interfaces, with local (kms, transit to come)
 store/              the object store interface; s3store/ the bucket; storetest/ the memory
                     store a test writes to, which can also be tampered with on purpose
-index/              Indexer and Searcher interfaces, with memory, s3scan, postgres
+index/              Indexer and Searcher interfaces; memory/ in this package,
+                    postgres/ the default index and the shared dedupe table,
+                    s3scan to come with the read side
 auth/               Authenticator and Authorizer interfaces, with the defaults
 
-internal/writer/    split, treat, roll, put, dead-letter, dedupe, ack (index to come)
+internal/writer/    split, treat, roll, put, index, dead-letter, dedupe, ack
 internal/query/     the query service behind auth
 internal/digest/    the digest chain: builder and verifier
 internal/metering/  rollups, statements, rating adapters
@@ -57,14 +59,13 @@ surface and keep the rest private.
 2. `record`, `preset`, `catalogue`, `cmd/audit validate` — **done**.
 3. `emit` + `sink` (inprocess, connect, nats) + outbox — **done**.
 4. `internal/writer` + `keys` (local) + `store` (s3) + `cmd/audit-writer` —
-   **done** but for the index step, the writer's own meta-events and
-   `audit replay`. Payload detach was dropped; the split-writer page says why.
+   **done**. Payload detach was dropped; the split-writer page says why.
 5. `internal/digest` + `cmd/audit verify` — **done** but for the scheduled
    jobs and their meta-events, which come with the chart.
 6. `index`, write side: the `Indexer` interface, the Postgres schema, the
-   facet counts, the shared deduplication table, `cmd/audit reindex`. This
-   closes the write path: it is what lets the writer run with more than one
-   replica.
+   facet counts, the shared deduplication table, `audit migrate` and
+   `audit reindex` — **done**. This closes the write path: it is what lets
+   the writer run with more than one replica.
 7. `charts/audit`, write side: writer, digest and verify jobs, clock-sync.
 8. `index`, read side: the `Searcher`, cursors, facets, tail.
 9. `internal/query` + `auth` + `cmd/audit-query`.

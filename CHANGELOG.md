@@ -28,8 +28,17 @@ Foundation. No release.
   objects, deduplication, the dead letter, and the writer's own account of
   itself, emitted into itself over the in-process sink.
 - `internal/digest`: the signed digest chain and its verifier.
+- `index`: the index contract and the rows it holds, the facet deltas a record
+  produces, and an in-memory implementation. Indexing is idempotent by
+  `(profile, id)` and counting has no call of its own, because only the
+  transaction that inserted a row can tell a re-delivery from a new record.
+- `index/postgres`: the default index and the shared deduplication table, with
+  a checked-in schema, monthly partitions created on demand, and row-level
+  security by tenant.
+- Deduplication asks before the write and marks after it, so that a crash
+  between the two costs a duplicate object rather than a lost record.
 - `audit validate`, `audit profile explain`, `audit check-emitters`,
-  `audit verify`, `audit replay`.
+  `audit verify`, `audit replay`, `audit migrate`, `audit reindex`.
 - `audit-writer`, the writer as a service behind Connect.
 - Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

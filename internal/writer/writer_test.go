@@ -4,13 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/truvity/audit/catalogue"
+
+	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/record"
@@ -21,6 +26,8 @@ import (
 type built struct {
 	writer     *writer.Writer
 	store      *storetest.Memory
+	dedupe     *writer.MemoryDedupe
+	index      *index.Memory
 	deadLetter []string
 	duplicates int
 	unhandled  map[string][]string
@@ -47,12 +54,21 @@ func build(t *testing.T) *built {
 
 	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
-	b := &built{store: s, unhandled: map[string][]string{}}
+	b := &built{
+		store:     s,
+		dedupe:    &writer.MemoryDedupe{},
+		index:     index.NewMemory(),
+		unhandled: map[string][]string{},
+	}
 
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,
 		Splitter:   &writer.Splitter{Profiles: profiles(t), Keys: provider},
-		Roller:     &writer.Roller{Store: s, Instance: "writer-1", Now: func() time.Time { return at }},
+		Roller: &writer.Roller{
+			Store: s, Instance: "writer-1", Indexer: b.index,
+			Now: func() time.Time { return at },
+		},
+		Dedupe:     b.dedupe,
 		DeadLetter: &writer.StoreDeadLetter{Store: s, Instance: "writer-1", Now: func() time.Time { return at }},
 		Identity:   func(context.Context) string { return "workload:wallet" },
 		Now:        func() time.Time { return at },
@@ -370,4 +386,165 @@ func TestGuardReplicas(t *testing.T) {
 type shared struct{}
 
 func (shared) Seen(context.Context, []string) (map[string]bool, error) { return nil, nil }
+func (shared) Mark(context.Context, []string) error                    { return nil }
 func (shared) Purge(context.Context, time.Time) error                  { return nil }
+
+// A record is remembered only once its copies are durable. The other order
+// reads better and loses records: a crash between remembering and writing would
+// leave the identifier marked in a table that survives the crash, and the
+// redelivery that would have saved the record would arrive looking like a
+// repeat.
+func TestARecordIsNotRememberedUntilItIsWritten(t *testing.T) {
+	b := build(t)
+	b.store.FailPut = errors.New("the bucket is unreachable")
+	r := fresh(t)
+	if _, err := b.writer.Write(context.Background(), &sink.Request{
+		Records: []*record.Record{r},
+	}); err == nil {
+		t.Fatal("want the store's error")
+	}
+	if b.dedupe.Len() != 0 {
+		t.Fatal("a record that was never written must not be remembered as written")
+	}
+
+	// The redelivery has to land, which is the whole point.
+	b.store.FailPut = nil
+	write(t, b, r)
+	if got := len(decode(t, b.store)); got == 0 {
+		t.Fatal("the redelivery of a failed write was dropped")
+	}
+	if b.dedupe.Len() == 0 {
+		t.Fatal("a written record must be remembered")
+	}
+}
+
+// A redelivery bundled with its original is an ordinary shape of batch, and
+// asking the store does not settle it: nothing is marked until the batch is
+// durable, so the batch keeps its own account.
+func TestARepeatWithinOneBatchIsAbsorbed(t *testing.T) {
+	b := build(t)
+	r := fresh(t)
+	result := write(t, b, r, r)
+	if result.Accepted != 2 {
+		t.Fatalf("accepted %d, want both records answered for", result.Accepted)
+	}
+	if b.duplicates != 1 {
+		t.Fatalf("%d duplicates reported, want 1", b.duplicates)
+	}
+	var security int
+	for _, c := range decode(t, b.store) {
+		if c.GetProfile() == "security" {
+			security++
+		}
+	}
+	if security != 1 {
+		t.Fatalf("%d copies kept by the security profile, want 1", security)
+	}
+}
+
+// The index is written after the object and says where in it each record is,
+// so that an answer can be checked against the copy the digest chain accounts
+// for.
+func TestWrittenRecordsAreIndexed(t *testing.T) {
+	b := build(t)
+	r := fresh(t)
+	write(t, b, r)
+
+	rows := b.index.Rows("security")
+	if len(rows) != 1 {
+		t.Fatalf("%d rows indexed, want 1", len(rows))
+	}
+	row := rows[0]
+	if row.ID != r.GetId() || row.Action != r.GetAction() {
+		t.Fatalf("the row is not the record: %+v", row)
+	}
+	if row.ObjectKey == "" || row.Line != 1 {
+		t.Fatalf("the row does not say where the copy is: %+v", row)
+	}
+	if _, found := b.store.Object(row.ObjectKey); !found {
+		t.Fatalf("the row points at %q, which is not in the archive", row.ObjectKey)
+	}
+}
+
+// The index is a projection that a reindex rebuilds. Failing the write when it
+// is unreachable would let an outage of the search database stop the audit
+// trail, which is the wrong way round.
+func TestAnIndexFailureDoesNotFailTheWrite(t *testing.T) {
+	b := build(t)
+	var deferred int
+	b.writer.Roller.Indexer = failingIndex{}
+	b.writer.Roller.OnIndexDeferred = func(string, int, error) { deferred++ }
+
+	write(t, b, fresh(t))
+	if len(decode(t, b.store)) == 0 {
+		t.Fatal("an unreachable index stopped the archive")
+	}
+	// One report per object, so that a deployment can tell a single unlucky
+	// object from an index that has stopped accepting anything.
+	if deferred != b.store.Len() {
+		t.Fatalf("%d of %d written objects were reported as deferred", deferred, b.store.Len())
+	}
+}
+
+type failingIndex struct{}
+
+func (failingIndex) Index(context.Context, string, []index.Row) error {
+	return errors.New("the index is unreachable")
+}
+
+func (failingIndex) Purge(context.Context, string, time.Time, index.Scope) error { return nil }
+
+// The index is a projection, and this is what that claim means: what the writer
+// put in the index is exactly what a rebuild from the archive produces. If the
+// two ever diverged, the archive would have stopped being the record and the
+// database would have quietly become one.
+func TestAReindexReproducesWhatTheWriterIndexed(t *testing.T) {
+	b := build(t)
+	for i := 0; i < 5; i++ {
+		write(t, b, fresh(t))
+	}
+
+	rebuilt := index.NewMemory()
+	day := day(t, "2026-09-17T10:30:00Z")
+	report, err := cli.Reindex{
+		Store: b.store, Index: rebuilt,
+		Fields:  func(context.Context, *record.Record) (index.Fields, error) { return walletFields(), nil },
+		Profile: "security", From: day, To: day, Out: io.Discard,
+	}.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Records == 0 {
+		t.Fatal("the rebuild read nothing")
+	}
+
+	was, now := b.index.Rows("security"), rebuilt.Rows("security")
+	if len(was) != len(now) {
+		t.Fatalf("the writer indexed %d rows and the rebuild produced %d", len(was), len(now))
+	}
+	for i := range was {
+		if diff := cmp.Diff(was[i], now[i]); diff != "" {
+			t.Fatalf("row %d differs between the writer and the rebuild (-writer +rebuild):\n%s", i, diff)
+		}
+	}
+	if diff := cmp.Diff(b.index.Counts("security"), rebuilt.Counts("security")); diff != "" {
+		t.Fatalf("the facet counts differ (-writer +rebuild):\n%s", diff)
+	}
+}
+
+// walletFields is what the test catalogue marks indexable, which the writer
+// resolved through the catalogue and a rebuild resolves the same way.
+func walletFields() index.Fields {
+	c, err := catalogue.Load([]byte(walletDoc), [][]byte{[]byte(walletSchema)})
+	if err != nil {
+		panic(err)
+	}
+	x, err := c.Compose("wallet.credential.issued")
+	if err != nil {
+		panic(err)
+	}
+	if x.Data == nil {
+		return index.Fields{}
+	}
+	return index.Fields{Filter: x.Data.Filterable(), Facet: x.Data.Facets()}
+}

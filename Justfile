@@ -50,6 +50,30 @@ build: fmt
 test:
     go test ./... -coverprofile=coverage.out
 
+# Run the tests against a real Postgres.
+#
+# `index/postgres` is the one package that cannot be tested without a database,
+# so its tests skip when AUDIT_POSTGRES_URL is unset: a contributor without
+# Postgres can still run everything else, and `check` stays runnable anywhere.
+# CI runs this as its own job with a service container.
+#
+# This starts a Postgres under .devbox, initialising it on first use.
+test-postgres:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PGDATA="$PWD/.devbox/virtenv/postgresql/data"
+    export PGHOST="$PWD/.devbox/virtenv/postgresql"
+    mkdir -p "$PGHOST"
+    [ -d "$PGDATA/base" ] || initdb -U postgres --auth=trust >/dev/null
+    pg_ctl status -D "$PGDATA" >/dev/null 2>&1 || \
+        pg_ctl -D "$PGDATA" -o "-k $PGHOST -c listen_addresses=" -l "$PGHOST/log" start -w
+    createdb -h "$PGHOST" -U postgres audit_test 2>/dev/null || true
+    AUDIT_POSTGRES_URL="postgres://postgres@/audit_test?host=$PGHOST" go test ./index/...
+
+# Stop the Postgres that `test-postgres` started
+stop-postgres:
+    pg_ctl stop -D "$PWD/.devbox/virtenv/postgresql/data" || true
+
 # Run the tests under the race detector. The emitter hands records to a
 # background writer, so a data race there would be a lost or duplicated record
 # rather than a crash, and would not show up in an ordinary run.

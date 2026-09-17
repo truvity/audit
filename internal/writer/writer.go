@@ -74,7 +74,12 @@ type Writer struct {
 	Roller     *Roller
 	Dedupe     Dedupe
 	DeadLetter DeadLetter
-	Hooks      Hooks
+	// Archive copies what a reader needs to make sense of the records: the
+	// catalogue, its extension schemas, and the record's own schema and proto.
+	// Without it the archive is a heap of JSON whose meaning lives somewhere
+	// else.
+	Archive *SchemaArchive
+	Hooks   Hooks
 
 	// Identity returns the verified identity of whoever published, which the
 	// writer stamps on the record. A transport that cannot say returns "", and
@@ -157,6 +162,17 @@ func (w *Writer) one(ctx context.Context, r *record.Record) error {
 	c, err := w.Catalogues.Get(ctx, r.GetSource(), r.GetCatalogueVersion())
 	if err != nil {
 		return w.deadLetter(ctx, r, err.Error())
+	}
+	if w.Archive != nil {
+		// Before the first record of a catalogue version lands, what describes
+		// it is beside it. Doing this after would leave a window in which the
+		// archive holds records nothing explains.
+		if err := w.Archive.EnsureCatalogue(ctx, c); err != nil {
+			return fmt.Errorf("writer: archive catalogue %s %s: %w", c.Source, c.Version, err)
+		}
+		if err := w.Archive.EnsureRecord(ctx, r.GetSchemaVersion()); err != nil {
+			return fmt.Errorf("writer: archive record schema: %w", err)
+		}
 	}
 	x, err := c.Compose(r.GetAction())
 	if err != nil {

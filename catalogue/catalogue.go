@@ -35,6 +35,22 @@ type Catalogue struct {
 
 	// schemas are the extension schemas this catalogue references, by $id.
 	schemas map[string]*Schema
+	// document is the catalogue as it was registered. It is kept because the
+	// archive keeps a copy of it beside the records it describes, and a
+	// re-serialised catalogue would not be the one that was registered.
+	document []byte
+}
+
+// Document returns the catalogue as it was registered.
+func (c *Catalogue) Document() []byte { return c.document }
+
+// Schemas returns every extension schema, by $id, as registered.
+func (c *Catalogue) Schemas() map[string][]byte {
+	out := make(map[string][]byte, len(c.schemas))
+	for id, s := range c.schemas {
+		out[id] = s.Raw
+	}
+	return out
 }
 
 // ActorKind declares a kind of actor and, through its category, how its
@@ -127,6 +143,7 @@ func Load(doc []byte, schemas [][]byte) (*Catalogue, error) {
 		}
 		c.schemas[s.ID] = s
 	}
+	c.document = append([]byte(nil), doc...)
 	if err := c.check(); err != nil {
 		return nil, fmt.Errorf("catalogue %s %s: %w", c.Source, c.Version, err)
 	}

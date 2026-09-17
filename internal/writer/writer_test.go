@@ -344,3 +344,30 @@ func decode(t *testing.T, s *storetest.Memory) []*record.Record {
 	}
 	return out
 }
+
+// Two copies of a record look exactly like two records, so a configuration
+// that could produce them is refused at start-up rather than at audit time.
+func TestGuardReplicas(t *testing.T) {
+	inProcess := &writer.MemoryDedupe{}
+	if err := writer.GuardReplicas(1, inProcess); err != nil {
+		t.Fatalf("one replica with an in-process table is the case it is for: %v", err)
+	}
+	err := writer.GuardReplicas(3, inProcess)
+	if err == nil {
+		t.Fatal("several replicas sharing a stream must not deduplicate in process")
+	}
+	for _, want := range []string{"written twice", "shared", "run one replica"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal should say %q: %v", want, err)
+		}
+	}
+	if err := writer.GuardReplicas(3, shared{}); err != nil {
+		t.Fatalf("a shared store is what makes several replicas safe: %v", err)
+	}
+}
+
+// shared stands in for a deduplication store two replicas both see.
+type shared struct{}
+
+func (shared) Seen(context.Context, []string) (map[string]bool, error) { return nil, nil }
+func (shared) Purge(context.Context, time.Time) error                  { return nil }

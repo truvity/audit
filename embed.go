@@ -25,6 +25,13 @@ var Schemas embed.FS
 //go:embed proto/audit/v1/*.proto
 var Proto embed.FS
 
+// Generated holds what this build published for readers outside Go: the
+// record's JSON Schema, with the proto's comments carried as descriptions. The
+// writer puts a copy of it in the archive beside the records it describes.
+//
+//go:embed gen/jsonschema/*.json
+var Generated embed.FS
+
 // Catalogue is the common catalogue: the component's own meta-events, which
 // every deployment carries.
 //

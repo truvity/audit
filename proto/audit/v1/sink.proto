@@ -1,0 +1,44 @@
+// The write contract. One interface for every hop: an emitter calls it, a
+// queue publisher implements it, a queue consumer calls it on the split
+// writer, an adapter outside the cluster calls it over Connect. The queue
+// in between is invisible to both ends. See
+// docs/decisions/0004-sink-interface-and-transports.md.
+syntax = "proto3";
+
+package audit.v1;
+
+import "audit/v1/record.proto";
+
+service SinkService {
+  // Write accepts a batch. With DELIVERY_BLOCK the call returns only after
+  // the records are durable at the next hop; the emitter then completes
+  // the business request. With DELIVERY_BEST_EFFORT the call may return
+  // before durability. DELIVERY_OUTBOX is an emitter-side mode and never
+  // reaches the wire.
+  rpc Write(WriteRequest) returns (WriteResponse);
+}
+
+message WriteRequest {
+  repeated Record records = 1;
+  Delivery delivery = 2;
+}
+
+enum Delivery {
+  DELIVERY_UNSPECIFIED = 0;
+  DELIVERY_BLOCK = 1;
+  DELIVERY_OUTBOX = 2;
+  DELIVERY_BEST_EFFORT = 3;
+}
+
+message WriteResponse {
+  int32 accepted = 1;
+  // Records refused at this hop, by id, with a machine-readable reason.
+  // A whole batch is refused before any record is accepted when the
+  // refusal is structural (unknown catalogue version, schema violation).
+  repeated Rejection rejected = 2;
+}
+
+message Rejection {
+  string id = 1;
+  string reason = 2;
+}

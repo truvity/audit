@@ -1,0 +1,54 @@
+name: nen-7513
+framework: "NEN 7513:2018 (logging of access to patient records) and the Dutch Besluit elektronische gegevensverwerking door zorgaanbieders"
+version: "2026.09"
+summary: Add-on for healthcare deployments. Every access to a person's record is an event with actor, role, subject, on-behalf-of and reason, kept at least five years, and the person may request an overview.
+disclaimer: "This preset is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "NEN 7513 — per event: who (user id and role), what (create, read, modify, delete, copy, print, export, search, break-glass), when, which object or patient, source system, on behalf of; changes to authorisations; enabling and disabling of logging; all access to the log itself"
+    url: https://www.nen.nl/nen-7513-2018-nl-247289
+  - clause: "Staatscourant 2019-38007 — minimum retention of five years for access logs of medical records"
+    url: https://zoek.officielebekendmakingen.nl/stcrt-2019-38007.pdf
+required_fields:
+  - /id
+  - /occurred_at
+  - /source
+  - /action
+  - /operation
+  - /outcome/result
+  - /actor/kind
+  - /actor/id
+  - /subject/kind
+  - /subject/id
+  - /targets
+forbidden_pii: [direct, content]
+required_categories:
+  - data_access
+  - data_change
+  - authorization_decision
+  - log_access
+  - logging_control
+identity:
+  internal: clear
+  external: scoped
+  machine: clear
+retention:
+  policy: fixed
+  days: 1826
+  hot_days: 365
+  configurable: true
+  minimum_days: 1826
+  delete_at_end: true
+integrity:
+  digest: required
+  object_lock_mode: compliance
+  timestamp_anchor: none
+  legal_hold: recommended
+  clock_sync_event: daily
+  log_access_logged: true
+review:
+  automated_alerting: true
+  cadence: monthly
+  evidence: "Reviews of access patterns and the overviews produced on a person's request."
+pipeline:
+  dedupe_window_days: 14
+  stream_horizon_days: 7

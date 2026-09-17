@@ -1,0 +1,164 @@
+source: audit
+version: "1.0.0"
+locales: [en]
+
+actor_kinds:
+  system:
+    category: machine
+    description: The component's own background work.
+  service:
+    category: machine
+    description: A workload identity (service account) calling an API.
+  api_key:
+    category: machine
+    description: A long-lived credential held by a person or a system; identified by credential_hash, never by the key.
+  operator:
+    category: internal
+    description: A person operating the platform through a console or CLI.
+
+target_types:
+  tenant: { description: A customer organisation. }
+  profile: { description: A composed profile. }
+  preset: { description: A framework preset. }
+  catalogue: { description: A registered source catalogue and version. }
+  export: { description: An export job. }
+  digest: { description: One hourly digest object. }
+  key: { description: A pseudonymisation or signing key, by identifier. }
+  hold: { description: A legal hold on a prefix or object. }
+  record: { description: One audit record, by id. }
+
+actions:
+  audit.search:
+    summary: A search was executed against a profile.
+    operation: access
+    categories: [log_access]
+    profiles: [security]
+    target_types: [profile, tenant]
+    delivery: best_effort
+    message: { en: "{actor} searched the {profile} profile" }
+  audit.facets:
+    summary: Facet counts were read for a profile.
+    operation: access
+    categories: [log_access]
+    profiles: [security]
+    target_types: [profile, tenant]
+    message: { en: "{actor} read facets of the {profile} profile" }
+  audit.get:
+    summary: One record was read by id.
+    operation: access
+    categories: [log_access]
+    profiles: [security]
+    target_types: [record]
+    message: { en: "{actor} read record {targets.0.id}" }
+  audit.export.requested:
+    summary: An export job was started.
+    operation: access
+    categories: [log_access]
+    profiles: [security]
+    target_types: [export, profile, tenant]
+    delivery: block
+    message: { en: "{actor} requested an export of the {profile} profile" }
+  audit.export.completed:
+    summary: An export job finished and its signed URL was issued.
+    operation: access
+    categories: [log_access]
+    profiles: [security]
+    target_types: [export]
+    message: { en: "export {targets.0.id} completed with {data.records} records" }
+  audit.catalogue.registered:
+    summary: A source registered a catalogue version.
+    operation: create
+    categories: [logging_control, configuration_change]
+    profiles: [security, evidence]
+    target_types: [catalogue]
+    delivery: block
+    message: { en: "{actor} registered catalogue {targets.0.id}" }
+  audit.profile.changed:
+    summary: A profile's composition or retention changed.
+    operation: modify
+    categories: [logging_control, configuration_change]
+    profiles: [security, evidence]
+    target_types: [profile]
+    delivery: block
+    message: { en: "{actor} changed profile {targets.0.id}" }
+  audit.preset.changed:
+    summary: A preset version in use changed.
+    operation: modify
+    categories: [logging_control, configuration_change]
+    profiles: [security, evidence]
+    target_types: [preset]
+    delivery: block
+    message: { en: "{actor} changed preset {targets.0.id}" }
+  audit.key.destroyed:
+    summary: A pseudonymisation key was destroyed, unlinking its pseudonyms.
+    operation: remove
+    categories: [key_lifecycle, privileged_access]
+    profiles: [security, evidence]
+    target_types: [key, tenant]
+    delivery: block
+    message: { en: "{actor} destroyed key {targets.0.id}" }
+  audit.hold.placed:
+    summary: A legal hold was placed.
+    operation: modify
+    categories: [logging_control, privileged_access]
+    profiles: [security, evidence]
+    target_types: [hold]
+    delivery: block
+    message: { en: "{actor} placed hold {targets.0.id}" }
+  audit.hold.released:
+    summary: A legal hold was released.
+    operation: modify
+    categories: [logging_control, privileged_access]
+    profiles: [security, evidence]
+    target_types: [hold]
+    delivery: block
+    message: { en: "{actor} released hold {targets.0.id}" }
+  audit.digest.written:
+    summary: An hourly digest was signed and written.
+    operation: create
+    categories: [logging_control]
+    profiles: [security, evidence]
+    target_types: [digest]
+    message: { en: "digest {targets.0.id} written covering {data.objects} objects" }
+  audit.digest.verified:
+    summary: A digest chain window was verified.
+    operation: access
+    categories: [logging_control]
+    profiles: [security, evidence]
+    target_types: [digest]
+    message: { en: "digest window {targets.0.id} verified" }
+  audit.digest.failed:
+    summary: Digest verification failed.
+    operation: access
+    categories: [logging_control]
+    profiles: [security, evidence]
+    target_types: [digest]
+    delivery: block
+    message: { en: "digest window {targets.0.id} FAILED verification: {outcome.reason}" }
+  audit.writer.started:
+    summary: A split writer instance started.
+    operation: create
+    categories: [logging_control]
+    profiles: [security]
+    message: { en: "writer {observer.instance} started" }
+  audit.writer.stopped:
+    summary: A split writer instance stopped.
+    operation: remove
+    categories: [logging_control]
+    profiles: [security]
+    message: { en: "writer {observer.instance} stopped" }
+  audit.writer.dead_lettered:
+    summary: A record could not be processed and was written to the dead-letter prefix.
+    operation: create
+    categories: [logging_control]
+    profiles: [security]
+    target_types: [record]
+    delivery: block
+    message: { en: "record {targets.0.id} dead-lettered: {outcome.reason}" }
+  audit.clock.synchronised:
+    summary: The daily clock-synchronisation check ran.
+    operation: access
+    categories: [clock]
+    profiles: [security, evidence]
+    delivery: block
+    message: { en: "clock on {observer.instance} synchronised with UTC, offset {data.offset_ms} ms" }

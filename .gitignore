@@ -1,0 +1,21 @@
+# Binaries and build output
+bin/
+/dist/
+/gen/
+coverage.out
+
+# TypeScript
+ts/node_modules/
+ts/dist/
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Devbox
+.devbox/

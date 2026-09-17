@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.truvity.dev/audit/v1/preset.schema.json",
+  "title": "Framework preset",
+  "description": "What a framework requires of a profile: fields, categories, identity treatment, retention, integrity, review. Profiles are composed from presets; the validator enforces the union of their minimum field sets.",
+  "type": "object",
+  "required": ["name", "framework", "version", "disclaimer", "citations", "required_fields", "identity", "retention", "integrity"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "framework": { "type": "string" },
+    "version": { "type": "string" },
+    "summary": { "type": "string" },
+    "disclaimer": { "type": "string" },
+    "citations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["clause", "url"],
+        "additionalProperties": false,
+        "properties": { "clause": { "type": "string" }, "url": { "type": "string", "format": "uri" }, "note": { "type": "string" } }
+      }
+    },
+    "required_fields": {
+      "description": "JSON pointers into the record that every copy under this preset must carry.",
+      "type": "array",
+      "items": { "type": "string", "pattern": "^/" }
+    },
+    "forbidden_fields": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^/" }
+    },
+    "forbidden_pii": {
+      "type": "array",
+      "items": { "enum": ["identifier", "direct", "content"] }
+    },
+    "required_categories": {
+      "description": "Every source in scope must have at least one action carrying each category.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["internal", "external", "machine"],
+      "additionalProperties": false,
+      "properties": {
+        "internal": { "$ref": "#/$defs/treatment" },
+        "external": { "$ref": "#/$defs/treatment" },
+        "machine": { "$ref": "#/$defs/treatment" }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "required": ["policy"],
+      "additionalProperties": false,
+      "properties": {
+        "policy": { "enum": ["fixed", "after_expiry"] },
+        "days": { "type": "integer", "minimum": 1 },
+        "years_after_expiry": { "type": "integer", "minimum": 1 },
+        "fallback_days": { "type": "integer", "minimum": 1, "description": "Used under after_expiry when the expiry is unknown." },
+        "hot_days": { "type": "integer", "minimum": 1, "description": "How long the record must be immediately searchable." },
+        "configurable": { "type": "boolean", "default": true },
+        "minimum_days": { "type": "integer", "minimum": 1, "description": "A deployment may raise `days` but never below this." },
+        "published_in_terms": { "type": "boolean", "default": false },
+        "delete_at_end": { "type": "boolean", "default": true },
+        "note": { "type": "string" }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "enum": ["required", "recommended"] },
+        "object_lock_mode": { "enum": ["compliance", "governance"] },
+        "timestamp_anchor": { "enum": ["none", "recommended", "required"], "default": "none" },
+        "legal_hold": { "enum": ["available", "recommended"], "default": "available" },
+        "clock_sync_event": { "enum": ["none", "daily"], "default": "none" },
+        "log_access_logged": { "type": "boolean", "default": true }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "automated_alerting": { "type": "boolean" },
+        "cadence": { "enum": ["daily", "weekly", "monthly", "quarterly"] },
+        "evidence": { "type": "string" }
+      }
+    },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dedupe_window_days": { "type": "integer", "minimum": 1 },
+        "stream_horizon_days": { "type": "integer", "minimum": 1 },
+        "close_after_hours": { "type": "integer", "minimum": 0, "description": "Billing: hours after period end before the period closes to late events." }
+      }
+    }
+  },
+  "$defs": {
+    "treatment": {
+      "description": "clear: identifier kept as is. pseudonym: keyed per tenant and purpose. scoped: the source's own identifier, visible only within the tenant. omit: not carried.",
+      "enum": ["clear", "pseudonym", "scoped", "omit"]
+    }
+  }
+}

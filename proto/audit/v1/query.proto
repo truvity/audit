@@ -1,0 +1,273 @@
+// The read contract. Search takes a filter in disjunctive normal form (up
+// to four OR-joined conjunctions of typed predicates) plus sort, and
+// returns a page object with opaque cursors. Cursors bind to the query;
+// `next` never disappears, so the same call is the tail. See
+// docs/decisions/0006-search-contract.md.
+syntax = "proto3";
+
+package audit.v1;
+
+import "audit/v1/record.proto";
+import "google/protobuf/timestamp.proto";
+
+service QueryService {
+  rpc Search(SearchRequest) returns (SearchResponse);
+  rpc Facets(FacetsRequest) returns (FacetsResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  // Export starts an asynchronous job; GetExport polls it and, when ready,
+  // returns a short-lived signed URL.
+  rpc Export(ExportRequest) returns (ExportResponse);
+  rpc GetExport(GetExportRequest) returns (GetExportResponse);
+}
+
+message SearchRequest {
+  // Which profile to read. The caller's grant must include it.
+  string profile = 1;
+  // OR-joined conjunctions. At most 4.
+  repeated Filter filter = 2;
+  // At most 4. Default: occurred_at DESC, id ASC.
+  repeated Sort sort = 3;
+  // A suggestion. Default 100, ceiling 1000.
+  int32 limit = 4;
+  // Opaque. Must come from a response to the same normalised query.
+  string cursor = 5;
+  // Reserved for free text. Ignored until a searcher declares it.
+  string q = 6;
+}
+
+// Filter is a conjunction. Every set predicate must hold.
+message Filter {
+  StringPredicate id = 1;
+  TimePredicate occurred_at = 2;
+  TimePredicate recorded_at = 3;
+  StringPredicate source = 4;
+  StringPredicate action = 5;
+  StringPredicate operation = 6;
+  StringPredicate outcome = 7;
+  StringPredicate tenant_id = 8;
+  StringPredicate subject_kind = 9;
+  StringPredicate subject_id = 10;
+  StringPredicate actor_kind = 11;
+  StringPredicate actor_id = 12;
+  TargetPredicate targets = 13;
+  StringPredicate request_id = 14;
+  StringPredicate trace_id = 15;
+  StringPredicate client_address = 16;
+  StringPredicate observer_id = 17;
+  StringPredicate meter_name = 18;
+  // Predicates on extension properties the catalogue marks filterable,
+  // addressed by JSON pointer under `data` ("/credential_format").
+  repeated PathPredicate data = 19;
+  KeyValuePredicate attributes = 20;
+}
+
+message StringPredicate {
+  oneof operator {
+    string equal = 1;
+    string not_equal = 2;
+    StringList in = 3;
+    StringList not_in = 4;
+    string prefix = 5;
+    bool is_null = 6;
+    bool is_not_null = 7;
+  }
+}
+
+message StringList {
+  // At most 100.
+  repeated string values = 1;
+}
+
+message IntegerPredicate {
+  oneof operator {
+    int64 equal = 1;
+    int64 not_equal = 2;
+    IntegerList in = 3;
+    IntegerList not_in = 4;
+    IntegerRange between = 5;
+    int64 greater_than = 6;
+    int64 greater_than_or_equal = 7;
+    int64 less_than = 8;
+    int64 less_than_or_equal = 9;
+  }
+}
+
+message IntegerList {
+  repeated int64 values = 1;
+}
+
+message IntegerRange {
+  int64 from = 1;
+  int64 to = 2;
+}
+
+message TimePredicate {
+  oneof operator {
+    TimeRange between = 1;
+    google.protobuf.Timestamp greater_than = 2;
+    google.protobuf.Timestamp greater_than_or_equal = 3;
+    google.protobuf.Timestamp less_than = 4;
+    google.protobuf.Timestamp less_than_or_equal = 5;
+  }
+}
+
+message TimeRange {
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to = 2;
+}
+
+message TargetPredicate {
+  oneof operator {
+    TargetList in = 1;
+    TargetList not_in = 2;
+  }
+}
+
+message TargetList {
+  repeated TargetRef values = 1;
+}
+
+message TargetRef {
+  string type = 1;
+  // Empty id matches any target of the type.
+  string id = 2;
+}
+
+message KeyValuePredicate {
+  oneof operator {
+    KeyValue equal = 1;
+    KeyValue not_equal = 2;
+    string key_is_null = 3;
+    string key_is_not_null = 4;
+  }
+}
+
+message KeyValue {
+  string key = 1;
+  string value = 2;
+}
+
+message PathPredicate {
+  string path = 1;
+  oneof predicate {
+    StringPredicate string = 2;
+    IntegerPredicate integer = 3;
+    TimePredicate time = 4;
+  }
+}
+
+message Sort {
+  Field field = 1;
+  Order order = 2;
+
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    FIELD_OCCURRED_AT = 1;
+    FIELD_RECORDED_AT = 2;
+    FIELD_ID = 3;
+    FIELD_ACTION = 4;
+    FIELD_TENANT_ID = 5;
+    FIELD_ACTOR_ID = 6;
+    FIELD_SOURCE = 7;
+  }
+
+  enum Order {
+    ORDER_UNSPECIFIED = 0;
+    ORDER_ASC = 1;
+    ORDER_DESC = 2;
+  }
+}
+
+// SearchResponse is the page object: items, the normalised query the
+// cursors are bound to, and the cursors themselves. `last` is omitted
+// because counting is expensive. `next` is always present.
+message SearchResponse {
+  repeated Record items = 1;
+  SearchRequest query = 2;
+  Cursors cursors = 3;
+}
+
+message Cursors {
+  string self = 1;
+  string first = 2;
+  string prev = 3;
+  string next = 4;
+}
+
+message FacetsRequest {
+  string profile = 1;
+  repeated Filter filter = 2;
+  // Facetable fields per the catalogue and the searcher's capabilities.
+  repeated string fields = 3;
+  // Values per field. Default 20, ceiling 100.
+  int32 limit_per_field = 4;
+}
+
+message FacetsResponse {
+  repeated Facet facets = 1;
+}
+
+message Facet {
+  string field = 1;
+  repeated FacetValue values = 2;
+}
+
+message FacetValue {
+  string value = 1;
+  int64 count = 2;
+}
+
+message GetRequest {
+  string profile = 1;
+  string id = 2;
+}
+
+message GetResponse {
+  Record record = 1;
+  Provenance provenance = 2;
+}
+
+// Provenance says where the copy was read from and whether a digest has
+// covered it.
+message Provenance {
+  string object_key = 1;
+  int64 line = 2;
+  string digest_id = 3;
+  google.protobuf.Timestamp verified_at = 4;
+}
+
+message ExportRequest {
+  string profile = 1;
+  repeated Filter filter = 2;
+  Format format = 3;
+
+  enum Format {
+    FORMAT_UNSPECIFIED = 0;
+    FORMAT_NDJSON = 1;
+    FORMAT_CSV = 2;
+  }
+}
+
+message ExportResponse {
+  string job_id = 1;
+  ExportState state = 2;
+}
+
+enum ExportState {
+  EXPORT_STATE_UNSPECIFIED = 0;
+  EXPORT_STATE_PENDING = 1;
+  EXPORT_STATE_READY = 2;
+  EXPORT_STATE_ERROR = 3;
+}
+
+message GetExportRequest {
+  string job_id = 1;
+}
+
+message GetExportResponse {
+  ExportState state = 1;
+  string url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+  int64 records = 4;
+  string error = 5;
+}

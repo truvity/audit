@@ -1,0 +1,66 @@
+name: evidence-etsi
+framework: "ETSI EN 319 401 V3.2.1 clause 7.10 (collection of evidence) and 7.9.1; ETSI EN 319 411-1 V1.5.1 clauses 6.4.5–6.4.6; ETSI EN 319 411-2; ETSI TS 119 461; eIDAS Regulation (EU) 2024/1183 Art. 24(2)(h)"
+version: "2026.09"
+summary: The legal-evidence profile for trust-service and credential-lifecycle facts. What a conformity assessment body and a court read.
+disclaimer: "This preset is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "EN 319 401 REQ-7.10-01/-02/-04 — record and keep accessible all relevant information for legal evidence and continuity, including after cessation; confidentiality and integrity of current and archived records"
+    url: https://www.etsi.org/deliver/etsi_en/319400_319499/319401/03.02.01_60/en_319401v030201p.pdf
+  - clause: "EN 319 401 REQ-7.10-05/-06 — precise time of key-management and clock-synchronisation events recorded; time synchronised with UTC at least once a day"
+    url: https://www.etsi.org/deliver/etsi_en/319400_319499/319401/03.02.01_60/en_319401v030201p.pdf
+  - clause: "EN 319 401 REQ-7.10-07/-08 — retention period as notified in the terms and conditions; logged so they cannot be easily deleted or destroyed"
+    url: https://www.etsi.org/deliver/etsi_en/319400_319499/319401/03.02.01_60/en_319401v030201p.pdf
+  - clause: "EN 319 411-1 OVR-6.4.6-01 — key-lifecycle logs and documentation retained at least seven years after any certificate based on these records ceases to be valid"
+    url: https://www.etsi.org/deliver/etsi_en/319400_319499/31941101/01.05.01_60/en_31941101v010501p.pdf
+  - clause: "EN 319 411-2 OVR-6.4.5-03 — maintained beyond TSP termination"
+    url: https://www.etsi.org/deliver/etsi_en/319400_319499/31941102/02.06.01_60/en_31941102v020601p.pdf
+  - clause: "TS 119 461 ISS-8.5.2-05/-05A/-08 — evidence stored tamper-proof; a (qualified) timestamp proves time and protects against tampering; deleted at the end of retention"
+    url: https://www.etsi.org/deliver/etsi_ts/119400_119499/119461/02.01.01_60/ts_119461v020101p.pdf
+  - clause: "Regulation (EU) 2024/1183 Art. 24(2)(h) — record and keep accessible all relevant information concerning data issued and received, for evidence in legal proceedings"
+    url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ:L_202401183
+required_fields:
+  - /id
+  - /occurred_at
+  - /recorded_at
+  - /source
+  - /observer/id
+  - /action
+  - /operation
+  - /outcome/result
+  - /tenant_id
+  - /targets
+  - /actor/kind
+  - /actor/id
+  - /origin_hash
+forbidden_pii: [direct, content]
+required_categories:
+  - credential_lifecycle
+  - key_lifecycle
+  - clock
+identity:
+  internal: clear
+  external: pseudonym
+  machine: clear
+retention:
+  policy: after_expiry
+  years_after_expiry: 7
+  fallback_days: 3653
+  hot_days: 90
+  configurable: true
+  published_in_terms: true
+  delete_at_end: true
+  note: "Retention runs from the expiry of the last credential or certificate that relies on the record. When expiry is unknown at write time the fallback applies and a later addendum record may extend the lock; Object Lock retention can be extended, never shortened."
+integrity:
+  digest: required
+  object_lock_mode: compliance
+  timestamp_anchor: recommended
+  legal_hold: recommended
+  clock_sync_event: daily
+  log_access_logged: true
+review:
+  automated_alerting: true
+  cadence: quarterly
+  evidence: "Digest-chain verification report per quarter and the daily clock-synchronisation events."
+pipeline:
+  dedupe_window_days: 45
+  stream_horizon_days: 7

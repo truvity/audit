@@ -1,0 +1,55 @@
+name: dora
+framework: "DORA (Regulation (EU) 2022/2554) and Commission Delegated Regulation (EU) 2024/1774 Art. 12 (logging)"
+version: "2026.09"
+summary: Add-on for suppliers to financial entities. Adds the logging-failure detection and reference-time-source expectations that flow down through contracts.
+disclaimer: "This preset is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "CDR (EU) 2024/1774 Art. 12(2)(a)–(c) — identify events to log, retention period and measures to secure logs; level of detail sufficient to detect anomalies; log access control, identity management, capacity, change management, operations, network traffic"
+    url: https://eur-lex.europa.eu/eli/reg_del/2024/1774/oj/eng
+  - clause: "CDR (EU) 2024/1774 Art. 12(2)(d)–(f) — protect logs against tampering, deletion and unauthorised access at rest, in transit and in use; detect failures of logging systems; synchronise clocks to a documented reliable reference"
+    url: https://eur-lex.europa.eu/eli/reg_del/2024/1774/oj/eng
+  - clause: "Regulation (EU) 2022/2554 Art. 30 — contractual flow-down to ICT third-party service providers"
+    url: https://eur-lex.europa.eu/eli/reg/2022/2554/oj
+required_fields:
+  - /id
+  - /occurred_at
+  - /recorded_at
+  - /source
+  - /action
+  - /outcome/result
+  - /actor/kind
+  - /actor/id
+  - /tenant_id
+forbidden_pii: [direct, content]
+required_categories:
+  - authentication
+  - privileged_access
+  - account_lifecycle
+  - configuration_change
+  - logging_control
+identity:
+  internal: clear
+  external: pseudonym
+  machine: clear
+retention:
+  policy: fixed
+  days: 365
+  hot_days: 90
+  configurable: true
+  minimum_days: 180
+  delete_at_end: true
+  note: "DORA leaves the period to the entity's ICT risk assessment. The default is the security preset's; a financial-entity customer may contractually require more."
+integrity:
+  digest: required
+  object_lock_mode: compliance
+  timestamp_anchor: none
+  legal_hold: available
+  clock_sync_event: daily
+  log_access_logged: true
+review:
+  automated_alerting: true
+  cadence: monthly
+  evidence: "Logging-failure alerts and their handling; the documented reference time source."
+pipeline:
+  dedupe_window_days: 14
+  stream_horizon_days: 7

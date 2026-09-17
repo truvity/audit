@@ -1,0 +1,47 @@
+name: history
+framework: "Product policy for tenant-facing activity history; GDPR Art. 5(1)(c) and 5(1)(e)"
+version: "2026.09"
+summary: The tenant administrator's view. Who in their organisation changed what, with sentences and diffs. Staff appear as roles, never names.
+disclaimer: "This preset is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "GDPR Art. 5(1)(c) data minimisation; Art. 5(1)(e) storage limitation"
+    url: https://gdpr-info.eu/art-5-gdpr/
+  - clause: "GDPR Art. 15 — a person's right to know what processing concerns them, which a tenant-scoped history supports"
+    url: https://gdpr-info.eu/art-15-gdpr/
+required_fields:
+  - /id
+  - /occurred_at
+  - /source
+  - /action
+  - /operation
+  - /outcome/result
+  - /tenant_id
+  - /actor/kind
+  - /actor/id
+  - /targets
+forbidden_fields:
+  - /capture
+  - /unmapped
+forbidden_pii: [direct, content]
+identity:
+  internal: pseudonym
+  external: scoped
+  machine: clear
+retention:
+  policy: fixed
+  days: 365
+  hot_days: 365
+  configurable: true
+  minimum_days: 30
+  delete_at_end: true
+  note: "A product decision. Contracts may set it per tenant; the writer sets Object Lock per copy, so a longer tenant term is a per-tenant profile."
+integrity:
+  digest: recommended
+  object_lock_mode: compliance
+  timestamp_anchor: none
+  legal_hold: available
+  clock_sync_event: none
+  log_access_logged: true
+pipeline:
+  dedupe_window_days: 14
+  stream_horizon_days: 7

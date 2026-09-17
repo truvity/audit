@@ -1,0 +1,55 @@
+name: pci-dss
+framework: "PCI DSS v4.0.1 Requirement 10"
+version: "2026.09"
+summary: Add-on for deployments in cardholder-data scope. Raises the security minimums to PCI's numbers and adds daily review.
+disclaimer: "This preset is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "10.2.1.1–10.2.1.7 — events: user access to cardholder data, administrative actions, access to audit logs, invalid access attempts, credential and privilege changes, starting and stopping of audit logs, creation and deletion of system objects"
+    url: https://www.pcisecuritystandards.org/document_library/
+  - clause: "10.2.2 — user identification, type of event, date and time, success or failure, origination, identity of affected data, component or resource"
+    url: https://www.pcisecuritystandards.org/document_library/
+  - clause: "10.3.1–10.3.4 — read access on need, protection from modification, prompt backup to a central log server, file-integrity monitoring"
+    url: https://www.pcisecuritystandards.org/document_library/
+  - clause: "10.4.1 — daily review of security events; 10.5.1 — 12 months retained, 3 months immediately available; 10.6 — time synchronisation"
+    url: https://www.pcisecuritystandards.org/document_library/
+required_fields:
+  - /actor/id
+  - /action
+  - /occurred_at
+  - /outcome/result
+  - /context/client_addresses
+  - /targets
+  - /source
+forbidden_pii: [direct, content]
+required_categories:
+  - authentication
+  - privileged_access
+  - account_lifecycle
+  - data_access
+  - log_access
+  - logging_control
+identity:
+  internal: clear
+  external: pseudonym
+  machine: clear
+retention:
+  policy: fixed
+  days: 365
+  hot_days: 90
+  configurable: true
+  minimum_days: 365
+  delete_at_end: true
+integrity:
+  digest: required
+  object_lock_mode: compliance
+  timestamp_anchor: none
+  legal_hold: available
+  clock_sync_event: daily
+  log_access_logged: true
+review:
+  automated_alerting: true
+  cadence: daily
+  evidence: "Daily alert dispositions for security events; periodic review of other components per targeted risk analysis."
+pipeline:
+  dedupe_window_days: 14
+  stream_horizon_days: 7

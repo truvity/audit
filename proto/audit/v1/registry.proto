@@ -1,0 +1,52 @@
+// Catalogue registration. An application registers its catalogue and the
+// JSON Schemas of its extension slots at deploy time; the writer, the
+// indexer, the viewer and the exporters read them from here. The first use
+// of a catalogue version also copies it into the locked bucket next to the
+// records it describes.
+syntax = "proto3";
+
+package audit.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service RegistryService {
+  rpc RegisterCatalogue(RegisterCatalogueRequest) returns (RegisterCatalogueResponse);
+  rpc GetCatalogue(GetCatalogueRequest) returns (GetCatalogueResponse);
+  rpc ListCatalogues(ListCataloguesRequest) returns (ListCataloguesResponse);
+}
+
+message Catalogue {
+  // Source namespace ("wallet"). Must equal the publisher's declared source.
+  string source = 1;
+  // Catalogue version, a string the source controls (semver recommended).
+  string version = 2;
+  // The catalogue document, validated against schemas/catalogue.schema.json.
+  bytes document = 3;
+  // Extension schemas referenced by the document, keyed by $id.
+  map<string, bytes> schemas = 4;
+  google.protobuf.Timestamp registered_at = 5;
+}
+
+message RegisterCatalogueRequest {
+  Catalogue catalogue = 1;
+}
+
+message RegisterCatalogueResponse {
+  // Validation findings; empty means registered.
+  repeated string problems = 1;
+}
+
+message GetCatalogueRequest {
+  string source = 1;
+  string version = 2;
+}
+
+message GetCatalogueResponse {
+  Catalogue catalogue = 1;
+}
+
+message ListCataloguesRequest {}
+
+message ListCataloguesResponse {
+  repeated Catalogue catalogues = 1;
+}

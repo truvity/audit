@@ -213,7 +213,9 @@ func verify(args []string) error {
 		bucket    = flags.String("bucket", "", "the bucket the archive is in")
 		prefix    = flags.String("prefix", "", "the prefix within the bucket")
 		region    = flags.String("region", "", "the region, when it is not in the environment")
-		asJSON    = flags.Bool("json", false, "print the report as JSON")
+		lookback  = flags.Duration("lookback", 0,
+			"how far before the range to look for objects keyed under an older day; at least what audit digest used")
+		asJSON = flags.Bool("json", false, "print the report as JSON")
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
@@ -254,7 +256,7 @@ func verify(args []string) error {
 
 	problems, err := cli.Verify{
 		Store: archive, PublicKeyPEM: pem, Profile: *profile,
-		From: start, To: end, JSON: *asJSON,
+		From: start, To: end, Lookback: *lookback, JSON: *asJSON,
 	}.Run(ctx)
 	if err != nil {
 		return err

@@ -63,8 +63,9 @@ surface and keep the rest private.
 4. `internal/writer` + `keys` (local) + `store` (s3) + `cmd/audit-writer` —
    **done**. Payload detach was dropped; the split-writer page says why.
 5. `internal/digest` + `cmd/audit verify` + `audit digest` + `audit
-   clock-sync` — **done**. What the digest and verify jobs record about
-   themselves comes with the chart.
+   clock-sync` — **done**, but the digest and verify jobs do not yet emit the
+   `audit.digest.written`, `verified` and `failed` events the catalogue
+   declares for them. Open on the digest issue; the clock job shows the shape.
 6. `index`, write side: the `Indexer` interface, the Postgres schema, the
    facet counts, the shared deduplication table, `audit migrate` and
    `audit reindex` — **done**. This closes the write path: it is what lets
@@ -82,6 +83,14 @@ surface and keep the rest private.
 13. `adapters/`, `internal/export`.
 
 ## Test infrastructure
+
+A test double must be no kinder than the thing it stands in for. Two bugs in
+the archive walks — a digest covering one tenant, a listing stopping at S3's
+first thousand keys — passed every test because the memory store returned
+everything a caller asked for, in any layout, on one page. The S3 double in
+`store/s3store` now sorts, pages and groups as S3 does, with a page size a test
+can lower, and the conformance harness should run the archive walks against
+MinIO for the same reason.
 
 Object Lock: MinIO with object locking enabled, or LocalStack. Stream:
 `nats-server` in-process with JetStream. Postgres: a container. Keys:

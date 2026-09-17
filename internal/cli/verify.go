@@ -26,8 +26,12 @@ type Verify struct {
 	// MinimumRetention lets the check also say whether an object's lock is
 	// shorter than its profile requires.
 	MinimumRetention map[string]time.Duration
-	JSON             bool
-	Out              io.Writer
+	// Lookback is how far before the range to look for objects written in it
+	// but keyed under an older day. It wants to be at least what the digest job
+	// used, or an object the job covered from further back is not looked at.
+	Lookback time.Duration
+	JSON     bool
+	Out      io.Writer
 }
 
 // Run reports the number of problems found.
@@ -40,6 +44,7 @@ func (v Verify) Run(ctx context.Context) (int, error) {
 		Store:            v.Store,
 		PublicKeyPEM:     v.PublicKeyPEM,
 		MinimumRetention: v.MinimumRetention,
+		Lookback:         v.Lookback,
 	}
 	report, err := verifier.Verify(ctx, v.Profile, v.From, v.To)
 	if err != nil {

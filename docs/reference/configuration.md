@@ -58,8 +58,9 @@ first, from one place.
 | `anchor` | `none`, `rfc3161` with a TSA URL |
 
 Built: `audit digest --deployment --key --key-id --bucket [--from --to
---lookback --max-windows]`. The signing key and the job's identity are separate
-from the writer's.
+--lookback --max-windows]` and `audit verify … [--lookback]`, which takes the
+same value. The signing key and the job's identity are separate from the
+writer's.
 
 ## Clock job
 

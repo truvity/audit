@@ -58,6 +58,12 @@ type Options struct {
 	Bounds record.Bounds
 	// Timeout bounds a blocking write. Default 10s.
 	Timeout time.Duration
+	// Outbox, when set, makes outbox delivery available. Without one, an
+	// emitter refuses a catalogue that declares it.
+	Outbox Outbox
+	// Publish is how often the outbox is drained. Default one second.
+	Publish time.Duration
+
 	// Queue is how many best-effort records may wait. Default 1024.
 	Queue int
 	// Batch and Flush are how best-effort records are grouped. Defaults 100
@@ -78,6 +84,8 @@ type Emitter struct {
 	bounds    record.Bounds
 	timeout   time.Duration
 	hooks     Hooks
+	outbox    Outbox
+	publish   time.Duration
 
 	seq record.Sequencer
 
@@ -116,10 +124,10 @@ func New(o Options) (*Emitter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("emit: action %s: %w", name, err)
 		}
-		if d == sink.Outbox {
+		if d == sink.Outbox && o.Outbox == nil {
 			return nil, fmt.Errorf(
-				"emit: action %s declares outbox delivery, which this build cannot provide; "+
-					"declare block or best_effort, or configure an outbox", name)
+				"emit: action %s declares outbox delivery and no outbox is configured; "+
+					"give one, or declare block or best_effort", name)
 		}
 	}
 
@@ -134,6 +142,8 @@ func New(o Options) (*Emitter, error) {
 		hooks:     o.Hooks,
 		batch:     o.Batch,
 		flush:     o.Flush,
+		outbox:    o.Outbox,
+		publish:   o.Publish,
 		done:      make(chan struct{}),
 	}
 	if e.instance == "" {
@@ -155,9 +165,16 @@ func New(o Options) (*Emitter, error) {
 	if queue <= 0 {
 		queue = 1024
 	}
+	if e.publish <= 0 {
+		e.publish = time.Second
+	}
 	e.queue = make(chan *record.Record, queue)
 	e.wg.Add(1)
 	go e.run()
+	if e.outbox != nil {
+		e.wg.Add(1)
+		go e.publisher()
+	}
 	return e, nil
 }
 
@@ -194,6 +211,7 @@ func (e *Emitter) Record(ctx context.Context, r *record.Record) error {
 	if r.GetSequence() == 0 {
 		r.Sequence = e.seq.Next()
 	}
+	applyRequestContext(ctx, r)
 	record.Normalise(r, e.bounds)
 
 	if err := e.validate(r); err != nil {
@@ -209,10 +227,22 @@ func (e *Emitter) Record(ctx context.Context, r *record.Record) error {
 			delivery = d
 		}
 	}
-	if delivery == sink.Block {
+	switch delivery {
+	case sink.Block:
 		return e.writeNow(ctx, r)
+	case sink.Outbox:
+		// The record is on the disk before the request completes. What is left
+		// is a delay, not a loss.
+		if err := e.outbox.Append(ctx, r); err != nil {
+			if e.hooks.OnFailed != nil {
+				e.hooks.OnFailed(err, sink.Outbox, 1)
+			}
+			return fmt.Errorf("emit: the record did not reach the outbox: %w", err)
+		}
+		return nil
+	default:
+		return e.enqueue(r)
 	}
-	return e.enqueue(r)
 }
 
 // validate holds a record to the core rules and then to its catalogue.
@@ -334,11 +364,56 @@ func (e *Emitter) run() {
 	}
 }
 
+// publisher drains the outbox until the emitter stops.
+func (e *Emitter) publisher() {
+	defer e.wg.Done()
+	ticker := time.NewTicker(e.publish)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			e.drain()
+		case <-e.done:
+			// One last pass, so a clean shutdown delivers what it can. What it
+			// cannot deliver stays on the disk for the next process.
+			e.drain()
+			return
+		}
+	}
+}
+
+// drain hands the outbox's batches to the sink. A failure is left for the next
+// pass: the records are on the disk, which is the whole point of them being
+// there.
+func (e *Emitter) drain() {
+	ctx, cancel := context.WithTimeout(context.Background(), e.timeout)
+	defer cancel()
+	err := e.outbox.Deliver(ctx, func(ctx context.Context, batch []*record.Record) error {
+		res, err := e.sink.Write(ctx, &sink.Request{Records: batch, Delivery: sink.Outbox})
+		if err == nil {
+			err = res.Err()
+		}
+		if err != nil {
+			return err
+		}
+		if e.hooks.OnWritten != nil {
+			e.hooks.OnWritten(len(batch), sink.Outbox)
+		}
+		return nil
+	})
+	if err != nil && e.hooks.OnFailed != nil {
+		e.hooks.OnFailed(err, sink.Outbox, 0)
+	}
+}
+
 // Close stops the emitter and writes what is still queued. A process that exits
 // without calling it loses whatever had not been flushed, which is the
 // difference between best-effort and the other two modes.
 func (e *Emitter) Close() error {
 	e.stopped.Do(func() { close(e.done) })
 	e.wg.Wait()
+	if e.outbox != nil {
+		return e.outbox.Close()
+	}
 	return nil
 }

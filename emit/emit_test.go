@@ -51,9 +51,11 @@ actions:
       en: "{actor} read order {targets.0.id}"
 `
 
-func shop(t *testing.T) *catalogue.Catalogue {
+func shop(t *testing.T) *catalogue.Catalogue { return catalogueFrom(t, doc) }
+
+func catalogueFrom(t *testing.T, document string) *catalogue.Catalogue {
 	t.Helper()
-	c, err := catalogue.Load([]byte(doc), nil)
+	c, err := catalogue.Load([]byte(document), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

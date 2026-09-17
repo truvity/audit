@@ -22,9 +22,21 @@ library:
 4. Chooses the delivery mode from the catalogue: block, outbox or
    best_effort.
 
-Transports: in-process (the split writer embedded), direct object storage
-(no stream available; break-glass), stream publisher (NATS JetStream).
-Adapters are separate binaries using the same library.
+Transports: in-process (the split writer embedded), Connect to another
+process, direct object storage (no stream available; break-glass), stream
+publisher (NATS JetStream). Adapters are separate binaries using the same
+library.
+
+Delivery is per action, from the catalogue. **Block** returns only once the
+record is durable at the next hop, and writes under a context of its own so a
+request whose client has gone away still recorded what it did. **Outbox**
+appends to a durable local store, flushed to the disk before the call returns,
+and a background pass delivers it: an outage of the trail becomes a delay
+rather than a loss. **Best effort** batches, and gives up loudly under
+pressure.
+
+An emitter refuses at start-up a catalogue that declares a delivery it cannot
+provide, rather than quietly using another.
 
 ## Stream
 

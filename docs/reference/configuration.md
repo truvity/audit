@@ -10,9 +10,10 @@ Draft. Names are stable; defaults are the presets' where they exist.
 | `catalogue` | path or embedded catalogue |
 | `transport` | `inprocess`, `s3`, `nats` |
 | `delivery_default` | when the catalogue does not say |
-| `outbox.path` or `outbox.postgres` | durable local store for outbox mode |
+| `outbox.path` | directory of the durable local store that outbox delivery needs |
+| `publish` | how often the outbox is drained. Default one second |
 | `capture.max_bytes`, `attributes.max_keys` | bounds |
-| `trusted_hops` | how many forwarded-for entries belong to your own edge |
+| `trusted_hops` | how many entries at the near end of the forwarded chain belong to your own edge. No safe default but zero: with no proxy in front, the peer is the client, and getting this wrong records a load balancer as the actor's address |
 
 ## Split writer
 

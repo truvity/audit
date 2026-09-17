@@ -342,3 +342,32 @@ func TestMissingCategories(t *testing.T) {
 		t.Fatalf("missing = %v, want both categories", got)
 	}
 }
+
+// The decision says extension schemas nest no deeper than three levels and
+// carry no binary. A claim the validator does not keep is not a contract.
+func TestLoadSchemaKeepsTheStatedConstraints(t *testing.T) {
+	deep := `{
+  "$id": "https://schemas.example/deep.json",
+  "type": "object", "additionalProperties": false,
+  "properties": {"a": {"type": "object", "additionalProperties": false, "x-audit-class": "audit", "x-audit-pii": "none",
+    "properties": {"b": {"type": "object", "additionalProperties": false, "x-audit-class": "audit", "x-audit-pii": "none",
+      "properties": {"c": {"type": "object", "additionalProperties": false, "x-audit-class": "audit", "x-audit-pii": "none",
+        "properties": {"d": {"type": "string", "x-audit-class": "audit", "x-audit-pii": "none"}}}}}}}}
+}`
+	if _, err := LoadSchema([]byte(deep)); err == nil || !strings.Contains(err.Error(), "deeper than") {
+		t.Fatalf("want a depth refusal, got %v", err)
+	}
+	binary := `{
+  "$id": "https://schemas.example/binary.json",
+  "type": "object", "additionalProperties": false,
+  "properties": {"blob": {"type": "string", "contentEncoding": "base64", "x-audit-class": "audit", "x-audit-pii": "none"}}
+}`
+	if _, err := LoadSchema([]byte(binary)); err == nil {
+		t.Fatal("binary content must be refused")
+	}
+	shallow := strings.Replace(deep, `"properties": {"d": {"type": "string", "x-audit-class": "audit", "x-audit-pii": "none"}}`,
+		`"properties": {}`, 1)
+	if _, err := LoadSchema([]byte(shallow)); err != nil {
+		t.Fatalf("three levels must be accepted: %v", err)
+	}
+}

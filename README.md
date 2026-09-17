@@ -4,10 +4,13 @@ A company-wide audit trail: one record format, one write path, one
 immutable store, and projections for security, billing, history and
 regulatory evidence.
 
-**Status: design.** The documents under `docs/` are complete enough to
-build from; the code is not written yet. Read [docs/why.md](docs/why.md)
-first, then [docs/concepts.md](docs/concepts.md), then the decisions in
-[docs/decisions/](docs/decisions/).
+**Status: foundation.** The record, preset and catalogue packages and the
+`audit` command exist and are tested; the write path, the read path, the
+viewer and the chart do not yet. Read [docs/why.md](docs/why.md) first, then
+[docs/concepts.md](docs/concepts.md), then the decisions in
+[docs/decisions/](docs/decisions/), then
+[docs/development/layout.md](docs/development/layout.md) for what is built
+and in what order the rest comes.
 
 ## What it is
 

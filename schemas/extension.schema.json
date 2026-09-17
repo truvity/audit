@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.truvity.com/audit/v1/extension.schema.json",
   "title": "Constraints on an extension-slot schema",
-  "description": "Every JSON Schema registered for an extension slot (data, targets[].attributes, actor.attributes, context.<area>, meter.dimensions) must validate against this meta-schema. Unknown keywords are annotations and are ignored by standard validators.",
+  "description": "Every JSON Schema registered for an extension slot (data, targets[].attributes, actor.attributes, context.<area>, meter.dimensions) must validate against this meta-schema. Unknown keywords are annotations and are ignored by standard validators. Nesting is limited to three levels; the loader enforces that, since a meta-schema cannot count.",
   "type": "object",
   "required": [
     "$id",
@@ -172,6 +172,33 @@
                 "const": false
               }
             }
+          }
+        },
+        {
+          "description": "No binary: a record carries identifiers and measurements, and anything larger belongs in the payload prefix by hash.",
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "contentEncoding"
+                ]
+              },
+              {
+                "required": [
+                  "contentMediaType"
+                ]
+              },
+              {
+                "properties": {
+                  "format": {
+                    "const": "binary"
+                  }
+                },
+                "required": [
+                  "format"
+                ]
+              }
+            ]
           }
         }
       ]

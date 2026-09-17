@@ -63,16 +63,25 @@ func LoadSchema(raw []byte) (*Schema, error) {
 	}
 	s := &Schema{ID: doc.ID, Raw: raw, Properties: map[string]Property{}, compiled: compiled}
 	for name, sub := range doc.Properties {
-		if err := s.index("/"+name, sub); err != nil {
+		if err := s.index("/"+name, sub, 1); err != nil {
 			return nil, fmt.Errorf("extension schema %s: %w", doc.ID, err)
 		}
 	}
 	return s, nil
 }
 
+// maxDepth is how deeply an extension property may nest. Three levels is
+// enough for any structured fact and shallow enough that a facet, a filter or
+// an export mapping can still name every property by a short pointer. A
+// meta-schema cannot count, so the loader does.
+const maxDepth = 3
+
 // index records one property and walks into whatever it contains, so a nested
 // object is annotated property by property rather than wholesale.
-func (s *Schema) index(pointer string, raw json.RawMessage) error {
+func (s *Schema) index(pointer string, raw json.RawMessage, depth int) error {
+	if depth > maxDepth {
+		return fmt.Errorf("%s: nested deeper than %d levels", pointer, maxDepth)
+	}
 	var p struct {
 		Type       string                     `json:"type"`
 		Class      preset.Class               `json:"x-audit-class"`
@@ -93,7 +102,7 @@ func (s *Schema) index(pointer string, raw json.RawMessage) error {
 		Filter: p.Filter, Sensitive: p.Sensitive, OCSFPath: p.OCSFPath, ECSPath: p.ECSPath,
 	}
 	for name, sub := range p.Properties {
-		if err := s.index(pointer+"/"+name, sub); err != nil {
+		if err := s.index(pointer+"/"+name, sub, depth+1); err != nil {
 			return err
 		}
 	}
@@ -103,7 +112,7 @@ func (s *Schema) index(pointer string, raw json.RawMessage) error {
 		}
 		if err := json.Unmarshal(p.Items, &item); err == nil {
 			for name, sub := range item.Properties {
-				if err := s.index(pointer+"/"+name, sub); err != nil {
+				if err := s.index(pointer+"/"+name, sub, depth+1); err != nil {
 					return err
 				}
 			}

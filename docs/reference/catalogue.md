@@ -34,18 +34,35 @@ must have at least one action per required category:
 
 ## Message templates
 
-ICU MessageFormat per locale. Arguments are core fields (`actor`,
-`targets.0.id`, `outcome.reason`, `observer.instance`) and properties
-declared in the action's data schema (`data.records`). The validator
-refuses a template that references anything else. The viewer renders in
-the browser; exports render a constrained subset server-side.
+ICU MessageFormat per locale, one per declared locale, all required. The
+validator reads enough of the grammar to tell an argument from a plural or
+select submessage, and refuses a template that names anything a record of the
+action does not carry. The viewer renders in the browser; exports render a
+constrained subset server-side.
+
+Arguments a template may name:
+
+| argument | value |
+|---|---|
+| `id`, `source`, `action`, `operation`, `tenant`, `profile` | the core fields |
+| `occurred_at`, `recorded_at` | timestamps |
+| `actor`, `actor.id`, `actor.kind` | the actor; `actor` alone renders as the viewer resolves it |
+| `subject`, `subject.id`, `subject.kind` | the subject |
+| `outcome`, `outcome.result`, `outcome.reason`, `outcome.code` | how it ended |
+| `observer.id`, `observer.instance` | who reported it |
+| `targets.N.id`, `targets.N.name`, `targets.N.type` for N in 0..3 | the first four targets |
+| `data.<property>` | any property the action's data schema declares, nested with dots |
+| `meter.name`, `meter.quantity`, `meter.unit` | when the action is metered |
 
 ## Validation in CI
 
 ```
-audit catalogue validate ./catalogue.yaml --schemas ./schemas/
-audit catalogue check-emitters ./... --catalogue ./catalogue.yaml
+audit validate ./catalogue.yaml
+audit check-emitters ./ --catalogue ./catalogue.yaml
 ```
 
-The second command scans Go or TypeScript sources for emitted action names
-and fails on any not in the catalogue.
+`validate` loads the document and every `.json` schema beside it. With
+`--deployment <file>` it also composes the deployment's profiles and reports
+any category a profile requires that nothing emits. `check-emitters` reads the
+string literals in a source tree and fails on an action the catalogue does not
+declare; it says plainly that it cannot see a name assembled at run time.

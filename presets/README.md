@@ -5,19 +5,24 @@ must be present, which are forbidden, how identities are treated, how long
 copies are kept, what integrity controls apply, and how often the trail is
 reviewed. Each preset cites the clauses it reads and carries a disclaimer.
 
+A preset also names the core fields a copy under it must, may and may never
+carry, and the field classes of extension properties it keeps. A copy is
+default-deny: what no preset names is dropped.
+
 A deployment composes presets into **profiles**. Composition is a union:
 
-- `required_fields`, `required_categories`: union.
-- `forbidden_fields`, `forbidden_pii`: union.
+- `field_classes`, `required_fields`, `optional_fields`, `required_categories`: union.
+- `forbidden_fields`, `forbidden_pii`: union; forbidden beats optional.
 - `identity`: the stricter treatment wins (`omit` > `pseudonym` > `scoped` > `clear`).
 - `retention`: the longest wins, and `minimum_days` can only be raised.
 - `integrity`: `required` wins over `recommended`, `compliance` over `governance`.
 - `review`: the most frequent cadence wins.
 
 The validator (`schemas/preset.schema.json` plus the composition rules in
-`docs/reference/presets.md`) refuses a profile that would drop a field a
-preset requires, and refuses a catalogue whose sources lack a required
-category.
+`docs/reference/presets.md`) refuses a profile whose presets both require and
+forbid a field, directly or through an ancestor, and a deployment whose
+catalogues do not emit a category a profile requires. `audit profile explain
+<name>` prints what a profile keeps.
 
 | preset | framework | retention default |
 |---|---|---|

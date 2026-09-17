@@ -3,6 +3,10 @@
 Source of truth: [record.proto](../../proto/audit/v1/record.proto). The
 generated JSON Schema is published at build time under `gen/jsonschema/`.
 
+The class column is how the shipped presets read each core field. The presets
+are authoritative: a profile keeps a core field because a preset names it, not
+because of its class (see [presets](presets.md)).
+
 | field | class | set by | notes |
 |---|---|---|---|
 | `id` | shared | emitter | UUIDv7; idempotency key at every hop |
@@ -16,7 +20,7 @@ generated JSON Schema is published at build time under `gen/jsonschema/`.
 | `action` | shared | emitter | `resource.verb` under `source` |
 | `operation` | shared | emitter | seven values |
 | `outcome` | shared | emitter | result, reason, code |
-| `tenant_id` | shared | emitter | legal entity; reserved value for the platform |
+| `tenant_id` | shared | emitter | legal entity; `@platform` for the installation's own records |
 | `subject` | audit, history | emitter | kind and id; treated by kind category |
 | `actor` | audit, history | emitter | kind, id, session, auth method, credential hash, attributes |
 | `targets[]` | audit, history, evidence | emitter | type, id, name (non-person only), attributes |
@@ -38,7 +42,7 @@ generated JSON Schema is published at build time under `gen/jsonschema/`.
 | `outcome.reason` | 512 chars |
 | `context.user_agent` | 256 chars |
 | `context.client_addresses` | 8 entries |
-| `capture.request`, `capture.response` | 64 KiB each before detach to payload |
+| `capture.request`, `capture.response` | 64 KiB each; a larger body is dropped by the emitter. The writer detaches bodies above its own, smaller, threshold to the payload prefix |
 | `targets` | 32 entries |
 | truncation order | response, request, unmapped, attributes, reason |
 

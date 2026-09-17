@@ -8,9 +8,13 @@ One thing that happened, as seen by one source. Described in
 `tenant_id`, `actor`, `targets`, `context`. Around the spine: `subject`,
 `capture`, `previous_attributes`, `data`, `meter`, `attributes`, `unmapped`.
 
-Every field belongs to a **class**: shared, audit, metering, history or
-evidence. The class of a core field is fixed. The class of an extension
-property is an annotation on its schema.
+Which fields a copy carries is decided by the profile it is written under.
+For **core fields**, presets name what must, may and may never be kept, and a
+field no preset names is dropped. For **extension properties**, the schema
+annotates each with a **class** (shared, audit, metering, history or
+evidence) and a PII level, and a profile keeps the classes its presets keep.
+The class column in the record reference is how the shipped presets read each
+core field, not a property of the field itself.
 
 The record carries **identifiers, never identity attributes**. Names and
 e-mail addresses are resolved at read time by whoever may see them.

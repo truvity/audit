@@ -12,8 +12,11 @@ deployment-specific decisions live with the deployer.
 Every decision that a stranger deploying this component would also face is
 recorded under `docs/decisions/` in the MADR format (see the template).
 A decision that only applies to one deployment is not recorded here.
-Decisions are never edited after acceptance; they are superseded by a new
-one that links back.
+Until the first release a decision may be revised in place, with a
+"Revised" line under its status saying what changed and why. From the first
+release on, decisions are never edited; they are superseded by a new one that
+links back. Nothing anyone deploys can be surprised by a decision changing
+before anything is deployed.
 
 ## Documentation
 

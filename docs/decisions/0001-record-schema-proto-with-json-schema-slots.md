@@ -2,6 +2,9 @@
 
 - Status: accepted
 - Date: 2026-09-17
+- Revised: 2026-09-17, while implementing. Floating point is excluded from the
+  record; the constraints on extension schemas are stated as the validator
+  enforces them; composed validation is described as it is built.
 
 ## Context
 
@@ -29,12 +32,25 @@ generated from the proto and published.
 Predefined **extension slots** (`data`, `targets[].attributes`,
 `actor.attributes`, `context.areas.<area>`, `meter.dimensions`) are
 described in JSON Schema by the registering source. Extension schemas must
-validate against `schemas/extension.schema.json`: closed objects, bounded
-depth, every property annotated with `x-audit-class` and `x-audit-pii`,
-optional facet, filter, sensitivity and export-path annotations.
+validate against `schemas/extension.schema.json`: closed objects, nesting no
+deeper than three levels, no binary content, every property annotated with
+`x-audit-class` and `x-audit-pii`, optional facet, filter, sensitivity and
+export-path annotations. A property annotated as a direct identity attribute
+or as user content is refused at load, not filtered at write.
 
-The composed schema per action, core plus extensions, is what emitters
-validate against and what is copied into the archive next to the records.
+**The record carries no floating point.** A number must be an integer a
+`float64` holds exactly; decimal quantities are strings (`meter.quantity`).
+The canonical form (RFC 8785 over the protobuf JSON mapping) therefore needs
+no floating-point formatter, which removes the one place a stored byte could
+read back differently from how it was written. The extension meta-schema
+offers no `number` type.
+
+Validation of a record against its catalogue happens in two layers that both
+an emitter and the writer run: the `record` package checks the core (required
+fields, names, bounds, the negative list) and the `catalogue` package checks
+every slot against the schema the catalogue registers for it. The composed
+JSON Schema per action, core plus extensions, is the same contract published
+for readers outside Go and copied into the archive next to the records.
 
 JSON encoding uses proto field names (snake_case) on output and accepts both
 spellings on input. Timestamps are RFC 3339 in UTC.

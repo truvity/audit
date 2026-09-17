@@ -48,12 +48,12 @@ surface and keep the rest private.
 
 1. `proto` → `buf generate`; generated JSON Schema of the core; a test
    corpus of records that parse as proto and validate as JSON Schema.
-2. `internal/catalogue`, `internal/preset`, `cmd/audit validate`.
-3. `internal/emit` + `internal/sink` (inprocess, s3, nats) + outbox.
-4. `internal/writer` + `internal/keys` (local first, then kms, transit).
+2. `record`, `preset`, `catalogue`, `cmd/audit validate` — **done**.
+3. `emit` + `sink` (inprocess, s3, nats) + outbox.
+4. `internal/writer` + `keys` (local first, then kms, transit).
 5. `internal/digest` + `cmd/audit verify`.
-6. `internal/index` (memory, s3scan, postgres) + `cmd/audit reindex`.
-7. `internal/query` + `internal/auth` + `cmd/audit-query`.
+6. `index` (memory, s3scan, postgres) + `cmd/audit reindex`.
+7. `internal/query` + `auth` + `cmd/audit-query`.
 8. `ts/` types and Node emitter; viewer hooks; MUI skin; console.
 9. `charts/audit`.
 10. `internal/metering`.

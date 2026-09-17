@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
+	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 )
 
@@ -223,4 +224,21 @@ func captureOf(name string) (auditv1.Capture_Level, bool) {
 func meterKindOf(name string) (auditv1.Meter_Kind, bool) {
 	v, ok := auditv1.Meter_Kind_value["KIND_"+strings.ToUpper(name)]
 	return auditv1.Meter_Kind(v), ok && name != ""
+}
+
+// Category is the actor category a kind belongs to, which is what a profile's
+// identity treatment follows. An unknown kind is treated as external, the
+// strictest of the three, because a kind nobody declared is not one to take
+// chances with.
+func (x *Composed) Category(kind string) preset.Category {
+	if k, ok := x.catalogue.ActorKinds[kind]; ok && k.Category != "" {
+		return k.Category
+	}
+	return preset.External
+}
+
+// TargetIsPerson reports whether a target type names a person, whose identifier
+// is treated like any other person's.
+func (x *Composed) TargetIsPerson(targetType string) bool {
+	return x.catalogue.TargetTypes[targetType].IsPerson
 }

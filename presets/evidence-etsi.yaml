@@ -18,6 +18,20 @@ citations:
     url: https://www.etsi.org/deliver/etsi_ts/119400_119499/119461/02.01.01_60/ts_119461v020101p.pdf
   - clause: "Regulation (EU) 2024/1183 Art. 24(2)(h) — record and keep accessible all relevant information concerning data issued and received, for evidence in legal proceedings"
     url: https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=OJ:L_202401183
+field_classes: [shared, evidence]
+optional_fields:
+  - /recorded_at
+  - /schema_version
+  - /catalogue_version
+  - /sequence
+  - /observer
+  - /origin_hash
+  - /profile
+  - /subject
+  - /actor
+  - /targets
+  - /data
+  - /attributes
 required_fields:
   - /id
   - /occurred_at

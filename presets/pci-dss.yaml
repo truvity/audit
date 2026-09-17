@@ -12,6 +12,23 @@ citations:
     url: https://www.pcisecuritystandards.org/document_library/
   - clause: "10.4.1 — daily review of security events; 10.5.1 — 12 months retained, 3 months immediately available; 10.6 — time synchronisation"
     url: https://www.pcisecuritystandards.org/document_library/
+field_classes: [shared, audit]
+optional_fields:
+  - /recorded_at
+  - /schema_version
+  - /catalogue_version
+  - /sequence
+  - /observer
+  - /origin_hash
+  - /profile
+  - /subject
+  - /actor
+  - /targets
+  - /context
+  - /capture
+  - /data
+  - /attributes
+  - /unmapped
 required_fields:
   - /actor/id
   - /action

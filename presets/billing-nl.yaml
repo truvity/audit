@@ -14,12 +14,23 @@ citations:
     url: https://uitspraken.rechtspraak.nl/details?id=ECLI:NL:HR:2021:987
   - clause: "GDPR Art. 5(1)(c) data minimisation; Art. 17(3)(b) erasure does not apply to records kept under a legal obligation"
     url: https://gdpr-info.eu/art-17-gdpr/
+field_classes: [shared, metering]
+optional_fields:
+  - /recorded_at
+  - /schema_version
+  - /catalogue_version
+  - /sequence
+  - /observer
+  - /origin_hash
+  - /profile
+  - /data
 required_fields:
   - /id
   - /occurred_at
   - /recorded_at
   - /source
   - /action
+  - /outcome/result
   - /tenant_id
   - /meter/name
   - /meter/quantity

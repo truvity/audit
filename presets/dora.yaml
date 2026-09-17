@@ -10,6 +10,23 @@ citations:
     url: https://eur-lex.europa.eu/eli/reg_del/2024/1774/oj/eng
   - clause: "Regulation (EU) 2022/2554 Art. 30 — contractual flow-down to ICT third-party service providers"
     url: https://eur-lex.europa.eu/eli/reg/2022/2554/oj
+field_classes: [shared, audit]
+optional_fields:
+  - /recorded_at
+  - /schema_version
+  - /catalogue_version
+  - /sequence
+  - /observer
+  - /origin_hash
+  - /profile
+  - /subject
+  - /actor
+  - /targets
+  - /context
+  - /capture
+  - /data
+  - /attributes
+  - /unmapped
 required_fields:
   - /id
   - /occurred_at

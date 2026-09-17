@@ -18,6 +18,23 @@ citations:
     url: https://www.pcisecuritystandards.org/document_library/
   - clause: "GDPR Recital 49 — network and information security as a legitimate interest; Art. 5(1)(e) storage limitation"
     url: https://gdpr-info.eu/recitals/no-49/
+field_classes: [shared, audit]
+optional_fields:
+  - /recorded_at
+  - /schema_version
+  - /catalogue_version
+  - /sequence
+  - /observer
+  - /origin_hash
+  - /profile
+  - /subject
+  - /actor
+  - /targets
+  - /context
+  - /capture
+  - /data
+  - /attributes
+  - /unmapped
 required_fields:
   - /id
   - /occurred_at

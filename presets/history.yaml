@@ -8,6 +8,21 @@ citations:
     url: https://gdpr-info.eu/art-5-gdpr/
   - clause: "GDPR Art. 15 — a person's right to know what processing concerns them, which a tenant-scoped history supports"
     url: https://gdpr-info.eu/art-15-gdpr/
+field_classes: [shared, history]
+optional_fields:
+  - /recorded_at
+  - /schema_version
+  - /catalogue_version
+  - /sequence
+  - /observer
+  - /origin_hash
+  - /profile
+  - /subject
+  - /actor
+  - /targets
+  - /previous_attributes
+  - /data
+  - /attributes
 required_fields:
   - /id
   - /occurred_at

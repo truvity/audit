@@ -8,6 +8,23 @@ citations:
     url: https://www.nen.nl/nen-7513-2018-nl-247289
   - clause: "Staatscourant 2019-38007 — minimum retention of five years for access logs of medical records"
     url: https://zoek.officielebekendmakingen.nl/stcrt-2019-38007.pdf
+field_classes: [shared, audit]
+optional_fields:
+  - /recorded_at
+  - /schema_version
+  - /catalogue_version
+  - /sequence
+  - /observer
+  - /origin_hash
+  - /profile
+  - /subject
+  - /actor
+  - /targets
+  - /context
+  - /capture
+  - /data
+  - /attributes
+  - /unmapped
 required_fields:
   - /id
   - /occurred_at

@@ -2,6 +2,12 @@
 
 One stream, two projections, two locked prefixes.
 
+This projection reads only what the write path already produces: the billing
+profile's copies, the outcome rule on metered actions, and pseudonyms that
+differ per purpose. It is what validates the design's central claim, that two
+projections of one stream cannot be joined on a person, and so it is built
+before the first adopter rather than after.
+
 ## Fields
 
 Billable actions carry `meter` with `name`, `quantity` (decimal string),

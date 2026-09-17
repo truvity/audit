@@ -56,17 +56,26 @@ surface and keep the rest private.
    corpus of records that parse as proto and validate as JSON Schema.
 2. `record`, `preset`, `catalogue`, `cmd/audit validate` — **done**.
 3. `emit` + `sink` (inprocess, connect, nats) + outbox — **done**.
-4. `internal/writer` + `keys` (local) + `store` (s3) — **done** but for payload
-   detach, schema archiving on first use, the index step and the service
-   binary.
+4. `internal/writer` + `keys` (local) + `store` (s3) + `cmd/audit-writer` —
+   **done** but for the index step, the writer's own meta-events and
+   `audit replay`. Payload detach was dropped; the split-writer page says why.
 5. `internal/digest` + `cmd/audit verify` — **done** but for the scheduled
    jobs and their meta-events, which come with the chart.
-6. `index` (memory, s3scan, postgres) + `cmd/audit reindex`.
-7. `internal/query` + `auth` + `cmd/audit-query`.
-8. `ts/` types and Node emitter; viewer hooks; MUI skin; console.
-9. `charts/audit`.
-10. `internal/metering`.
-11. `adapters/`, `internal/export`.
+6. `index`, write side: the `Indexer` interface, the Postgres schema, the
+   facet counts, the shared deduplication table, `cmd/audit reindex`. This
+   closes the write path: it is what lets the writer run with more than one
+   replica.
+7. `charts/audit`, write side: writer, digest and verify jobs, clock-sync.
+8. `index`, read side: the `Searcher`, cursors, facets, tail.
+9. `internal/query` + `auth` + `cmd/audit-query`.
+10. `internal/metering`. It reads only what the write path already produces,
+    and it is what validates the design's central claim, so it comes before
+    the adopters rather than after them.
+11. The conformance suite, as its own recipe and CI job. It signs off the
+    first adoption, so it precedes it.
+12. `ts/` types and Node emitter; viewer hooks; MUI skin; console; the read
+    side of the chart.
+13. `adapters/`, `internal/export`.
 
 ## Test infrastructure
 

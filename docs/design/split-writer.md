@@ -69,6 +69,23 @@ object without rows; the nightly reindex of the day repairs it.
 `audit.writer.started`, `audit.writer.stopped`,
 `audit.writer.dead_lettered`, `audit.catalogue.registered`.
 
+They are records like any other, so the writer holds an emitter bound to the
+common catalogue whose sink is the writer itself, over the in-process
+transport. That is a loop by construction and it is the right one: the
+writer's own account of itself lands in the same archive under the same rules,
+and there is no second path to keep honest. Two rules keep the loop safe. The
+emitter uses best-effort delivery, because a block write from inside the
+writer's own batch would wait on itself. And a dead letter caused by one of
+these records is dead-lettered and logged, never emitted about, or one bad
+meta-record would beget another.
+
+## Replay
+
+A dead letter carries the reason and the full record. Once the cause is fixed,
+`audit replay --dlq --from --to` reads the dead letters of a range and hands the
+records back to the writer as a batch. Deduplication makes a replay of
+something that did get through harmless.
+
 ## Embedded mode
 
 The same library inside an application, with the in-process transport.

@@ -105,3 +105,19 @@ func repoRoot(t *testing.T) string {
 	t.Fatal("cannot find the repository root")
 	return ""
 }
+
+func TestParseDayAcceptsWhatAnAuditorWouldType(t *testing.T) {
+	for _, in := range []string{"2026-09-17", "2026-09-17T10", "2026-09-17T10:00:00Z"} {
+		at, err := ParseDay(in)
+		if err != nil {
+			t.Errorf("ParseDay(%q): %v", in, err)
+			continue
+		}
+		if at.Year() != 2026 || at.Month() != 9 || at.Day() != 17 {
+			t.Errorf("ParseDay(%q) = %s", in, at)
+		}
+	}
+	if _, err := ParseDay("last tuesday"); err == nil {
+		t.Error("want a refusal for something that is not a date")
+	}
+}

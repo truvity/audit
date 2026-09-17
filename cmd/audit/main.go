@@ -7,15 +7,20 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/config"
+
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/store/s3store"
 )
 
 const usage = `audit — the audit trail toolchain
@@ -31,6 +36,10 @@ usage:
   audit check-emitters <dir> --catalogue <file>
         Check that the actions the code emits are the actions the catalogue
         declares.
+
+  audit verify --profile <name> --from <date> --to <date> [flags]
+        Walk a profile's digest chain and report what it finds. Needs the
+        archive and a public key, and nothing that has to be trusted.
 
   audit version
 
@@ -50,6 +59,8 @@ func main() {
 		err = profile(os.Args[2:])
 	case "check-emitters":
 		err = checkEmitters(os.Args[2:])
+	case "verify":
+		err = verify(os.Args[2:])
 	case "version":
 		fmt.Printf("audit, record schema %s\n", record.SchemaVersion)
 	case "-h", "--help", "help":
@@ -140,6 +151,68 @@ func checkEmitters(args []string) error {
 	}
 	c := cli.CheckEmitters{Root: dirs[0], Catalogue: *cat}
 	if problems := c.Run(); problems > 0 {
+		return fmt.Errorf("%d problems", problems)
+	}
+	return nil
+}
+
+func verify(args []string) error {
+	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
+	var (
+		profile   = flags.String("profile", "", "the profile whose chain to walk")
+		from      = flags.String("from", "", "start of the range, a date or a timestamp")
+		to        = flags.String("to", "", "end of the range, a date or a timestamp")
+		publicKey = flags.String("public-key", "", "the PEM public key the digests were signed with")
+		bucket    = flags.String("bucket", "", "the bucket the archive is in")
+		prefix    = flags.String("prefix", "", "the prefix within the bucket")
+		region    = flags.String("region", "", "the region, when it is not in the environment")
+		asJSON    = flags.Bool("json", false, "print the report as JSON")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	switch {
+	case *profile == "":
+		return errors.New("name a profile with --profile")
+	case *publicKey == "":
+		return errors.New("give the signing key's public half with --public-key")
+	case *bucket == "":
+		return errors.New("name the archive's bucket with --bucket")
+	}
+	start, err := cli.ParseDay(*from)
+	if err != nil {
+		return fmt.Errorf("--from: %w", err)
+	}
+	end, err := cli.ParseDay(*to)
+	if err != nil {
+		return fmt.Errorf("--to: %w", err)
+	}
+	pem, err := os.ReadFile(*publicKey)
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if *region != "" {
+		cfg.Region = *region
+	}
+	archive, err := s3store.FromConfig(cfg, s3store.Options{Bucket: *bucket, Prefix: *prefix})
+	if err != nil {
+		return err
+	}
+
+	problems, err := cli.Verify{
+		Store: archive, PublicKeyPEM: pem, Profile: *profile,
+		From: start, To: end, JSON: *asJSON,
+	}.Run(ctx)
+	if err != nil {
+		return err
+	}
+	if problems > 0 {
 		return fmt.Errorf("%d problems", problems)
 	}
 	return nil

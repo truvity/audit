@@ -25,7 +25,9 @@ durable pull consumer, or embedded in an application that has no stream.
    `Content-Encoding: zstd`.
 10. **Copy schemas** on first use of a catalogue version to the schema
     prefix, locked for the longest profile the catalogue's actions belong
-    to.
+    to. On first use of a record major, copy the record's JSON Schema and
+    its proto there too: the archive keeps the meaning of every field, not
+    only its shape.
 11. **Index**: insert facet rows and update the counts table.
 12. **Ack** the stream message only after the PUT and the index succeed.
 

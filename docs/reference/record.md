@@ -3,13 +3,16 @@
 Source of truth: [record.proto](../../proto/audit/v1/record.proto), which is
 also where a reader goes for what each field means.
 
-Its JSON Schema is generated from that proto by `audit schema` and published as
+Its JSON Schema is generated from that proto by a buf plugin during
+`just generate` and published as
 [`gen/jsonschema/record.v1.schema.json`](../../gen/jsonschema/record.v1.schema.json),
 under the identifier `https://schemas.truvity.com/audit/v1/record.schema.json`.
 It describes the form this project writes — proto field names, enums as names,
-64-bit integers as strings, unpopulated fields absent — so that a reader outside
-Go can validate an archived record without this repository. A test fails when
-the published file is not what the proto says.
+64-bit integers as strings, unpopulated fields absent — and carries every proto
+comment as a description, so that a reader outside Go can both validate an
+archived record and understand it without this repository. The writer archives
+the proto of a record's major beside the schema on first use. A proto change not
+followed by `just generate` leaves the tree dirty, which CI reads as a failure.
 
 Which profile copies carry a field is decided by the profile's presets
 ([presets](presets.md)); `audit profile explain <name>` prints the result. The

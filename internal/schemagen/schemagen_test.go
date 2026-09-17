@@ -1,6 +1,7 @@
 package schemagen_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,31 +9,57 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/schemagen"
 	"github.com/truvity/audit/record"
 )
 
-// The generated schema on disk must be what the proto now says. A schema that
-// has drifted from the record is worse than none: it would tell a reader in a
-// later year that a valid record is invalid.
-func TestGeneratedSchemaIsCurrent(t *testing.T) {
-	want, err := schemagen.Record()
-	if err != nil {
+// The published schema carries the proto's comments. Without them an archived
+// record would be structurally described and semantically mute, for exactly the
+// reader the archive is kept for.
+func TestPublishedSchemaCarriesTheProtoComments(t *testing.T) {
+	var s struct {
+		ID         string                     `json:"$id"`
+		Comment    string                     `json:"$comment"`
+		Desc       string                     `json:"description"`
+		Properties map[string]json.RawMessage `json:"properties"`
+		Defs       map[string]struct {
+			Desc string `json:"description"`
+		} `json:"$defs"`
+	}
+	if err := json.Unmarshal(published(t), &s); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(repoRoot(t), schemagen.OutDir, schemagen.FileName)
-	got, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("%v\n\nrun: go run ./cmd/audit schema", err)
+	if s.ID != schemagen.ID {
+		t.Fatalf("$id = %q, want %q", s.ID, schemagen.ID)
 	}
-	if string(got) != string(want) {
-		t.Fatalf("%s is not what the proto says\n\nrun: go run ./cmd/audit schema", path)
+	if !strings.HasPrefix(s.Desc, "Record is one thing that happened") {
+		t.Fatalf("the root description is not the proto's: %q", s.Desc)
+	}
+	if !strings.Contains(s.Comment, "archived beside it") {
+		t.Fatalf("the generator's note is not in $comment: %q", s.Comment)
+	}
+	for _, field := range []string{"id", "actor", "tenant_id", "meter", "origin_hash"} {
+		var p struct {
+			Desc string `json:"description"`
+		}
+		if err := json.Unmarshal(s.Properties[field], &p); err != nil {
+			t.Fatal(err)
+		}
+		if p.Desc == "" {
+			t.Errorf("field %s has no description; the proto comment did not reach the schema", field)
+		}
+	}
+	for _, def := range []string{"Actor", "Outcome", "Meter"} {
+		if s.Defs[def].Desc == "" {
+			t.Errorf("$defs.%s has no description", def)
+		}
 	}
 }
 
-// Every record in the corpus must parse as protobuf and validate against the
-// generated schema. The two descriptions of the record are held to each other
-// here, which is the only place they meet.
+// Every record in the corpus must parse as protobuf, satisfy the emitter's own
+// rules, and validate against the published schema. The two descriptions of
+// the record are held to each other here, which is the only place they meet.
 func TestCorpusParsesAndValidates(t *testing.T) {
 	schema := compiled(t)
 	for _, path := range corpus(t) {
@@ -41,26 +68,17 @@ func TestCorpusParsesAndValidates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			var r record.Record
 			if err := record.Unmarshal(raw, &r); err != nil {
 				t.Fatalf("does not parse as a record: %v", err)
 			}
-
 			// The corpus is what the system accepts, not merely what it can
 			// parse: a sample the emitter would refuse teaches the wrong thing
 			// to everyone who reads it.
 			if err := record.Check(&r, record.Default); err != nil {
 				t.Fatalf("the corpus carries a record the emitter would refuse: %v", err)
 			}
-
-			doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := schema.Validate(doc); err != nil {
-				t.Fatalf("does not satisfy the published schema: %v", err)
-			}
+			validate(t, schema, raw, "the corpus file")
 
 			// What the record package writes must itself satisfy the schema,
 			// which is what makes the schema a description of this project's
@@ -69,13 +87,7 @@ func TestCorpusParsesAndValidates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			doc, err = jsonschema.UnmarshalJSON(strings.NewReader(string(canonical)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := schema.Validate(doc); err != nil {
-				t.Fatalf("the canonical form does not satisfy the published schema: %v\n%s", err, canonical)
-			}
+			validate(t, schema, canonical, "the canonical form")
 
 			// Reading a record back and writing it again must produce the same
 			// bytes, or an archived object could not be verified after a
@@ -112,16 +124,14 @@ func TestSchemaRefusesAnUnknownField(t *testing.T) {
 // them all exactly. A reader that expects a number would silently lose the
 // end of a sequence.
 func TestSchemaWritesLargeIntegersAsStrings(t *testing.T) {
-	asNumber, err := jsonschema.UnmarshalJSON(strings.NewReader(
-		`{"id":"x","sequence":42}`))
+	asNumber, err := jsonschema.UnmarshalJSON(strings.NewReader(`{"id":"x","sequence":42}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := compiled(t).Validate(asNumber); err == nil {
 		t.Fatal("a sequence written as a number must be refused")
 	}
-	asString, err := jsonschema.UnmarshalJSON(strings.NewReader(
-		`{"id":"x","sequence":"42"}`))
+	asString, err := jsonschema.UnmarshalJSON(strings.NewReader(`{"id":"x","sequence":"42"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,13 +140,58 @@ func TestSchemaWritesLargeIntegersAsStrings(t *testing.T) {
 	}
 }
 
-func compiled(t *testing.T) *jsonschema.Schema {
-	t.Helper()
-	raw, err := schemagen.Record()
+// The generator itself, without a plugin: comments given are carried, and the
+// message's own comment is the description while the note goes to $comment.
+func TestGenerateCarriesComments(t *testing.T) {
+	md := (&auditv1.Record{}).ProtoReflect().Descriptor()
+	comments := schemagen.Comments{
+		md.FullName():                                    "Record is one thing.",
+		md.Fields().ByName("id").FullName():              "Identity of the record.",
+		md.Fields().ByName("actor").Message().FullName(): "Actor is who acted.",
+	}
+	b, err := schemagen.Generate(md, "urn:test", "t", "a note", comments)
 	if err != nil {
 		t.Fatal(err)
 	}
+	s := string(b)
+	for _, want := range []string{
+		`"description": "Record is one thing."`,
+		`"description": "Identity of the record."`,
+		`"description": "Actor is who acted."`,
+		`"$comment": "a note"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("generated schema lacks %s", want)
+		}
+	}
+	if schemagen.Flatten("  a\n  b  \n\n c ") != "a b  c" {
+		t.Fatalf("Flatten = %q", schemagen.Flatten("  a\n  b  \n\n c "))
+	}
+}
+
+func validate(t *testing.T, s *jsonschema.Schema, raw []byte, what string) {
+	t.Helper()
 	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Validate(doc); err != nil {
+		t.Fatalf("%s does not satisfy the published schema: %v\n%s", what, err, raw)
+	}
+}
+
+func published(t *testing.T) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(repoRoot(t), schemagen.OutDir, schemagen.FileName))
+	if err != nil {
+		t.Fatalf("%v\n\nrun: just generate", err)
+	}
+	return raw
+}
+
+func compiled(t *testing.T) *jsonschema.Schema {
+	t.Helper()
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(published(t))))
 	if err != nil {
 		t.Fatal(err)
 	}

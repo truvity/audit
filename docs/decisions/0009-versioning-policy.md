@@ -25,7 +25,10 @@ change, including incompatibly.
   per-action payloads version inside the catalogue. Presets, profiles and
   the digest format version independently.
 - Every schema and catalogue version is copied into the archive on first
-  use, so the archive is self-describing without this repository.
+  use, together with the proto of the record's major, so the archive is
+  self-describing without this repository: the JSON Schema carries the proto's
+  comments as descriptions, and the proto itself is there for what a schema
+  cannot say.
 
 ## Consequences
 

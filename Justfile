@@ -10,7 +10,11 @@ fmt:
 # Regenerate Go, TypeScript and the published JSON Schema from the proto
 generate:
     buf generate
-    go run ./cmd/audit schema
+
+# Generated code is committed. A change to the proto that is not followed by
+# `just generate` leaves the tree dirty here, which CI reads as a failure.
+drift: generate
+    git diff --exit-code -- gen ts/src/gen
 
 # Lint proto and check that nothing released has changed incompatibly
 proto:
@@ -32,8 +36,15 @@ test:
     go test ./... -coverprofile=coverage.out
 
 # Run the tests under the race detector. The emitter hands records to a
-# background writer, so a data race here would be a lost or duplicated record
-# rather than a crash, and would not show up in ordinary runs.
+# background writer, so a data race there would be a lost or duplicated record
+# rather than a crash, and would not show up in an ordinary run.
+#
+# This is not part of `check`, and deliberately. Everything else in this
+# repository builds with cgo off, which is what makes the binaries static and
+# the images small; the race detector is the one thing that needs a C
+# toolchain. Putting it in the gate would mean every contributor needs one to
+# run the gate at all. CI runs this as its own job, where the toolchain is the
+# runner's own.
 race:
     CGO_ENABLED=1 go test -race ./...
 
@@ -54,4 +65,4 @@ vuln:
     govulncheck ./...
 
 # Everything CI runs
-check: build test race lint proto schemas vuln
+check: build test lint proto drift schemas vuln

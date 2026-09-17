@@ -45,6 +45,7 @@ s3://<bucket>/
   tenant=<id>/profile=<name>/year=/month=/day=/<first-occurred-nanos>-<writer>-<seq>.ndjson.zst
   payload/sha256=<hash>                              large blobs, referenced by hash
   schema/<source>/<catalogue_version>/...             catalogues and extension schemas
+  schema/audit/v<major>/record.schema.json, record.proto   the record's own schema and proto
   digest/profile=<name>/year=/month=/day=/hour=/...   hourly signed digests
   dlq/year=/month=/day=/...                            records the writer could not process
 ```

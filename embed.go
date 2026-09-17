@@ -18,6 +18,13 @@ var Presets embed.FS
 //go:embed schemas/*.json
 var Schemas embed.FS
 
+// Proto is the schema of record itself. The writer copies the proto of a
+// record's major beside the record's JSON Schema on first use, so the archive
+// keeps the meaning of every field and not only its shape.
+//
+//go:embed proto/audit/v1/*.proto
+var Proto embed.FS
+
 // Catalogue is the common catalogue: the component's own meta-events, which
 // every deployment carries.
 //

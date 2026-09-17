@@ -13,6 +13,11 @@ plugins:
   - local: protoc-gen-connect-go
     out: gen
     opt: paths=source_relative
+  # The record's JSON Schema, with the proto's comments as descriptions. Run
+  # here and not in the binary, because only the plugin sees the comments.
+  - local: [go, run, ./cmd/protoc-gen-audit-jsonschema]
+    out: gen/jsonschema
+    strategy: all
   # TypeScript: protobuf-es v2 emits message schemas and service descriptors;
   # @connectrpc/connect v2 consumes them via createClient.
   - remote: buf.build/bufbuild/es

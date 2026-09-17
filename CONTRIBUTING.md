@@ -29,6 +29,11 @@ one that links back.
 Tools come from `devbox.json` through direnv. Never hand-roll a PATH; add a
 missing tool with `devbox add <pkg>@<version>`.
 
+`just check` is the gate, and it runs with cgo off like everything else here.
+`just race` is separate, because the race detector is the one thing that needs
+a C toolchain; CI runs it as its own job. Run it yourself before changing
+anything that hands a record to a background goroutine.
+
 ## Commits and pull requests
 
 Small, reviewable pull requests. A pull request that changes a contract

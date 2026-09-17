@@ -29,6 +29,7 @@ internal/export/    OCSF, ECS, OpenTelemetry, Parquet
 internal/cli/       the commands of cmd/audit
 
 cmd/audit/          validate, check-emitters, verify, reindex, replay, conformance
+cmd/protoc-gen-audit-jsonschema/  the buf plugin that writes the record's JSON Schema
 cmd/audit-writer/   split writer service
 cmd/audit-query/    query service
 cmd/audit-console/  standalone console server

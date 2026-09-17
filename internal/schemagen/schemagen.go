@@ -8,9 +8,11 @@
 // whole point of publishing it: the archive is self-describing for as long as
 // it is kept, without this repository.
 //
-// It carries structure, not commentary. The generated Go descriptor has no
-// source information in it, so the proto's comments cannot be copied across;
-// proto/audit/v1/record.proto is where a reader goes for what a field means.
+// It carries the proto's comments as descriptions, which is why it is produced
+// by a buf plugin at generation time and not by the binary at run time: the
+// descriptor compiled into a Go binary has no source information in it, and a
+// schema without its meaning would leave an archive structurally described and
+// semantically mute.
 package schemagen
 
 import (
@@ -20,15 +22,22 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// Generate returns the JSON Schema of a message and everything it contains.
-func Generate(md protoreflect.MessageDescriptor, id, title, description string) ([]byte, error) {
-	g := &generator{defs: map[string]map[string]any{}, seen: map[string]bool{}}
+// Comments are the leading comments of descriptors, by full name, flattened to
+// one paragraph each.
+type Comments map[protoreflect.FullName]string
+
+// Generate returns the JSON Schema of a message and everything it contains,
+// carrying the comments given as descriptions. The description argument is a
+// note about the schema itself and lands in $comment; what the record means is
+// the proto's to say.
+func Generate(md protoreflect.MessageDescriptor, id, title, description string, comments Comments) ([]byte, error) {
+	g := &generator{defs: map[string]map[string]any{}, seen: map[string]bool{}, comments: comments}
 	root := g.message(md)
 	schema := map[string]any{
-		"$schema":     "https://json-schema.org/draft/2020-12/schema",
-		"$id":         id,
-		"title":       title,
-		"description": description,
+		"$schema":  "https://json-schema.org/draft/2020-12/schema",
+		"$id":      id,
+		"title":    title,
+		"$comment": description,
 	}
 	for k, v := range root {
 		schema[k] = v
@@ -44,8 +53,9 @@ func Generate(md protoreflect.MessageDescriptor, id, title, description string) 
 }
 
 type generator struct {
-	defs map[string]map[string]any
-	seen map[string]bool
+	defs     map[string]map[string]any
+	seen     map[string]bool
+	comments Comments
 }
 
 // message describes one message inline. Nested message types go to $defs and
@@ -55,13 +65,22 @@ func (g *generator) message(md protoreflect.MessageDescriptor) map[string]any {
 	fields := md.Fields()
 	for i := 0; i < fields.Len(); i++ {
 		fd := fields.Get(i)
-		properties[string(fd.TextName())] = g.field(fd)
+		p := g.field(fd)
+		// The field's own comment says more than its type's, and wins.
+		if c := g.comments[fd.FullName()]; c != "" {
+			p["description"] = c
+		}
+		properties[string(fd.TextName())] = p
 	}
-	return map[string]any{
+	out := map[string]any{
 		"type":                 "object",
 		"additionalProperties": false,
 		"properties":           properties,
 	}
+	if c := g.comments[md.FullName()]; c != "" {
+		out["description"] = c
+	}
+	return out
 }
 
 func (g *generator) field(fd protoreflect.FieldDescriptor) map[string]any {
@@ -146,7 +165,24 @@ func (g *generator) enum(ed protoreflect.EnumDescriptor) map[string]any {
 	for i := 0; i < values.Len(); i++ {
 		names = append(names, string(values.Get(i).Name()))
 	}
-	return map[string]any{"type": "string", "enum": names}
+	out := map[string]any{"type": "string", "enum": names}
+	if c := g.comments[ed.FullName()]; c != "" {
+		out["description"] = c
+	}
+	return out
+}
+
+// Flatten turns a leading comment into one paragraph.
+func Flatten(comment string) string {
+	text := strings.TrimSpace(comment)
+	if text == "" {
+		return ""
+	}
+	var lines []string
+	for _, l := range strings.Split(text, "\n") {
+		lines = append(lines, strings.TrimSpace(l))
+	}
+	return strings.TrimSpace(strings.Join(lines, " "))
 }
 
 // defName is the message's name without the package, so that a reader sees

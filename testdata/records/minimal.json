@@ -1,0 +1,12 @@
+{
+  "id": "0199b100-0000-7000-8000-000000000001",
+  "occurred_at": "2026-09-17T09:00:00Z",
+  "schema_version": "1.0",
+  "catalogue_version": "1.0.0",
+  "source": "audit",
+  "sequence": "1",
+  "action": "audit.search",
+  "operation": "OPERATION_ACCESS",
+  "outcome": { "result": "RESULT_SUCCESS" },
+  "tenant_id": "@platform"
+}

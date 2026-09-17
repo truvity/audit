@@ -1,0 +1,20 @@
+{
+  "id": "0199b100-0000-7000-8000-000000000003",
+  "occurred_at": "2026-09-17T10:00:00Z",
+  "schema_version": "1.0",
+  "catalogue_version": "1.0.0",
+  "source": "wallet",
+  "sequence": "91",
+  "action": "wallet.storage.sampled",
+  "operation": "OPERATION_ACCESS",
+  "outcome": { "result": "RESULT_SUCCESS" },
+  "tenant_id": "acme",
+  "meter": {
+    "name": "storage",
+    "quantity": "10737418240",
+    "unit": "byte",
+    "kind": "KIND_GAUGE",
+    "dimensions": { "region": "eu-central-1", "tier": "hot" }
+  },
+  "data": { "buckets": 3 }
+}

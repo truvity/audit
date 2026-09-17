@@ -1,0 +1,24 @@
+{
+  "id": "0199b100-0000-7000-8000-000000000004",
+  "occurred_at": "2026-09-17T11:30:00Z",
+  "schema_version": "1.0",
+  "catalogue_version": "1.0.0",
+  "source": "issuer",
+  "sequence": "12",
+  "action": "issuer.workspace.groups-changed",
+  "operation": "OPERATION_MODIFY",
+  "outcome": { "result": "RESULT_SUCCESS" },
+  "tenant_id": "acme",
+  "subject": { "kind": "workspace", "id": "w_11" },
+  "actor": { "kind": "operator", "id": "p_8c2f1a" },
+  "targets": [
+    { "type": "workspace", "id": "w_11", "name": "Engineering" }
+  ],
+  "capture": {
+    "level": "LEVEL_REQUEST",
+    "request": { "groups": ["all:roster:operator"] },
+    "truncated": true
+  },
+  "previous_attributes": { "groups": [] },
+  "unmapped": { "legacy_field": "kept so nothing is silently lost" }
+}

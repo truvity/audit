@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/schemagen"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 )
@@ -31,6 +32,9 @@ usage:
   audit check-emitters <dir> --catalogue <file>
         Check that the actions the code emits are the actions the catalogue
         declares.
+
+  audit schema [--out dir]
+        Write the JSON Schema of the record, generated from the proto.
 
   audit version
 
@@ -50,6 +54,8 @@ func main() {
 		err = profile(os.Args[2:])
 	case "check-emitters":
 		err = checkEmitters(os.Args[2:])
+	case "schema":
+		err = schema(os.Args[2:])
 	case "version":
 		fmt.Printf("audit, record schema %s\n", record.SchemaVersion)
 	case "-h", "--help", "help":
@@ -162,6 +168,23 @@ func parse(flags *flag.FlagSet, args []string) ([]string, error) {
 		args = rest[1:]
 	}
 	return positional, nil
+}
+
+// schema writes the record's JSON Schema. It is generated from the proto on
+// every run rather than kept by hand, and a test fails when the file on disk is
+// not what the proto now says.
+func schema(args []string) error {
+	flags := flag.NewFlagSet("schema", flag.ContinueOnError)
+	out := flags.String("out", schemagen.OutDir, "directory to write into")
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	path, err := schemagen.Write(*out)
+	if err != nil {
+		return err
+	}
+	fmt.Println(path)
+	return nil
 }
 
 type stringList []string

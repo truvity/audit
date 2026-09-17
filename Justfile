@@ -7,9 +7,10 @@ export GOWORK := "off"
 fmt:
     golangci-lint fmt ./...
 
-# Regenerate Go and TypeScript from proto
+# Regenerate Go, TypeScript and the published JSON Schema from the proto
 generate:
     buf generate
+    go run ./cmd/audit schema
 
 # Lint proto and check that nothing released has changed incompatibly
 proto:

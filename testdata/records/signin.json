@@ -1,0 +1,37 @@
+{
+  "id": "0199b100-0000-7000-8000-000000000002",
+  "occurred_at": "2026-09-17T09:01:02.250Z",
+  "recorded_at": "2026-09-17T09:01:04Z",
+  "schema_version": "1.0",
+  "catalogue_version": "2.4.1",
+  "source": "issuer",
+  "observer": { "id": "issuer", "version": "1.2.0", "instance": "issuer-7c9f" },
+  "sequence": "4210",
+  "action": "issuer.sign-in.refused",
+  "operation": "OPERATION_AUTHENTICATION",
+  "outcome": {
+    "result": "RESULT_DENIED",
+    "reason": "the client requires a group the identity does not hold",
+    "code": "requires_unmet"
+  },
+  "tenant_id": "acme",
+  "actor": {
+    "kind": "person",
+    "id": "p_8c2f1a",
+    "session_id": "s_4419",
+    "auth_method": "oidc",
+    "credential_hash": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+  },
+  "targets": [
+    { "type": "client", "id": "console" }
+  ],
+  "context": {
+    "client_addresses": ["203.0.113.7"],
+    "user_agent": "Mozilla/5.0",
+    "request_id": "req_01J8",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+  },
+  "attributes": { "how": "browser" },
+  "origin_hash": "a3f1c2d4e5b60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  "profile": "security"
+}

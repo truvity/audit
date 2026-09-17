@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/store/s3store"
 )
 
@@ -41,6 +43,10 @@ usage:
         Walk a profile's digest chain and report what it finds. Needs the
         archive and a public key, and nothing that has to be trusted.
 
+  audit replay --dlq --from <date> --to <date> [flags]
+        Send dead letters back to a writer once the cause is fixed. Without
+        --sink it reads and summarises them and sends nothing.
+
   audit version
 
 Run a command with -h for its flags.
@@ -61,6 +67,8 @@ func main() {
 		err = checkEmitters(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
+	case "replay":
+		err = replay(os.Args[2:])
 	case "version":
 		fmt.Printf("audit, record schema %s\n", record.SchemaVersion)
 	case "-h", "--help", "help":
@@ -242,5 +250,76 @@ type stringList []string
 func (s *stringList) String() string { return strings.Join(*s, ",") }
 func (s *stringList) Set(v string) error {
 	*s = append(*s, v)
+	return nil
+}
+
+func replay(args []string) error {
+	flags := flag.NewFlagSet("replay", flag.ContinueOnError)
+	var (
+		dlq = flags.Bool("dlq", false,
+			"replay the dead-letter prefix; naming the source is required so that a later one cannot become the default")
+		from    = flags.String("from", "", "start of the range, a date or a timestamp")
+		to      = flags.String("to", "", "end of the range, a date or a timestamp")
+		reason  = flags.String("reason", "", "keep only dead letters whose reason contains this text")
+		action  = flags.String("action", "", "keep only dead letters of this action")
+		sinkURL = flags.String("sink", "", "the writer's base URL; without it nothing is sent")
+		bucket  = flags.String("bucket", "", "the bucket the archive is in")
+		prefix  = flags.String("prefix", "", "the prefix within the bucket")
+		region  = flags.String("region", "", "the region, when it is not in the environment")
+		batch   = flags.Int("batch", 100, "how many records to send at a time")
+		asJSON  = flags.Bool("json", false, "print the report as JSON")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	switch {
+	case !*dlq:
+		return errors.New("name the source with --dlq")
+	case *bucket == "":
+		return errors.New("name the archive's bucket with --bucket")
+	}
+	start, err := cli.ParseDay(*from)
+	if err != nil {
+		return fmt.Errorf("--from: %w", err)
+	}
+	end, err := cli.ParseDay(*to)
+	if err != nil {
+		return fmt.Errorf("--to: %w", err)
+	}
+
+	ctx := context.Background()
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if *region != "" {
+		cfg.Region = *region
+	}
+	archive, err := s3store.FromConfig(cfg, s3store.Options{Bucket: *bucket, Prefix: *prefix})
+	if err != nil {
+		return err
+	}
+
+	r := cli.Replay{
+		Store: archive, From: start, To: end,
+		Reason: *reason, Action: *action, Batch: *batch,
+	}
+	if *sinkURL != "" {
+		r.Sink = sink.NewClient(nil, *sinkURL)
+	}
+	report, err := r.Run(ctx)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		body, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s\n", body)
+	}
+	if report.DeadEnd > 0 {
+		return fmt.Errorf("%d records could not be processed and are back under the dead-letter prefix", report.DeadEnd)
+	}
 	return nil
 }

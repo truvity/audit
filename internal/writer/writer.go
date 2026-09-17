@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/truvity/audit/catalogue"
+	"github.com/truvity/audit/emit"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
 )
@@ -61,6 +62,10 @@ type Hooks struct {
 	// OnUnhandled is called with the profiles an action names that this
 	// deployment does not have.
 	OnUnhandled func(action string, profiles []string)
+	// OnMetaDropped is called when the writer's account of itself could not be
+	// recorded. It is best-effort by construction, so this is the only place a
+	// deployment learns that the writer's own trail has a hole in it.
+	OnMetaDropped func(action, reason string)
 }
 
 // Writer takes records and puts the copies their profiles keep.
@@ -79,7 +84,13 @@ type Writer struct {
 	// Without it the archive is a heap of JSON whose meaning lives somewhere
 	// else.
 	Archive *SchemaArchive
-	Hooks   Hooks
+	// Meta is the catalogue of the writer's own actions, normally the common
+	// one. Given it, the writer keeps an account of itself in the archive it
+	// writes: see meta.go for why that loop is the right one. Without it the
+	// writer is silent about itself, and a reader cannot tell a quiet hour from
+	// a stopped writer.
+	Meta  *catalogue.Catalogue
+	Hooks Hooks
 
 	// Identity returns the verified identity of whoever published, which the
 	// writer stamps on the record. A transport that cannot say returns "", and
@@ -91,6 +102,7 @@ type Writer struct {
 	// Now is the clock, for tests.
 	Now func() time.Time
 
+	self      *emit.Emitter
 	unhandled sync.Map
 }
 
@@ -108,6 +120,21 @@ func New(w *Writer) (*Writer, error) {
 	}
 	if w.Dedupe == nil {
 		w.Dedupe = &MemoryDedupe{}
+	}
+	if w.Meta != nil {
+		// The writer resolves every record's catalogue through Catalogues,
+		// including its own. A meta catalogue that is not also registered there
+		// would make every one of the writer's own records dead-letter, and
+		// because a meta dead letter is not emitted about, it would do so in
+		// silence. Refusing to start is the only honest answer.
+		if _, err := w.Catalogues.Get(context.Background(), w.Meta.Source, w.Meta.Version); err != nil {
+			return nil, fmt.Errorf(
+				"writer: the writer's own catalogue %s %s must be registered like any other: %w",
+				w.Meta.Source, w.Meta.Version, err)
+		}
+		if err := w.startMeta(w.Meta); err != nil {
+			return nil, err
+		}
 	}
 	return w, nil
 }
@@ -224,6 +251,12 @@ func (w *Writer) deadLetter(ctx context.Context, r *record.Record, reason string
 	if w.Hooks.OnDeadLettered != nil {
 		w.Hooks.OnDeadLettered(r, reason)
 	}
+	if _, self := metaInstance(ctx); !self {
+		// A meta-record that cannot be written is kept and reported, never
+		// emitted about: one bad meta-record would otherwise beget another for
+		// as long as the process ran.
+		w.metaDeadLettered(ctx, r, reason)
+	}
 	return nil
 }
 
@@ -238,6 +271,10 @@ func (w *Writer) reportUnhandled(action string, profiles []string) {
 }
 
 func (w *Writer) identity(ctx context.Context) string {
+	if instance, self := metaInstance(ctx); self {
+		// The writer's own identity is the one it need take nobody's word for.
+		return instance
+	}
 	if w.Identity == nil {
 		return ""
 	}
@@ -252,7 +289,18 @@ func (w *Writer) now() time.Time {
 }
 
 // Close flushes whatever is still gathered.
+//
+// The writer's last act is to say that it stopped. That record is queued, then
+// the emitter is closed, which drains it back into this writer, and only then
+// is the archive flushed: a stopped event written after the flush would be a
+// stopped event nobody could read.
 func (w *Writer) Close(ctx context.Context) error {
+	if w.self != nil {
+		w.stopped(ctx)
+		if err := w.self.Close(); err != nil {
+			return fmt.Errorf("writer: closing its own emitter: %w", err)
+		}
+	}
 	if err := w.Roller.Flush(ctx); err != nil {
 		return err
 	}

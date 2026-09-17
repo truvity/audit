@@ -95,11 +95,22 @@ func run() error {
 	}
 	defer provider.Close() //nolint:errcheck // shutting down
 
+	// The common catalogue is registered whether or not a deployment brought
+	// any of its own: it is what describes the writer's own actions, and the
+	// writer resolves those through the registry like anyone else's.
+	common, err := catalogue.Common()
+	if err != nil {
+		return err
+	}
 	registry := &writer.Registry{}
+	registry.Register(common)
+	registered := []*catalogue.Catalogue{common}
 	if *catalogues != "" {
-		if err := registerAll(registry, *catalogues); err != nil {
+		found, err := registerAll(registry, *catalogues)
+		if err != nil {
 			return err
 		}
+		registered = append(registered, found...)
 	}
 
 	dedupe := writer.Dedupe(&writer.MemoryDedupe{})
@@ -108,18 +119,19 @@ func run() error {
 	}
 
 	longest := longestRetention(profiles)
+	instance := record.InstanceName()
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,
 		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider},
 		Roller: &writer.Roller{
-			Store: archive, Instance: record.InstanceName(), Interval: *rollEvery,
+			Store: archive, Instance: instance, Interval: *rollEvery,
 			OnPut: func(key string, records int) {
 				slog.Info("object written", "key", key, "records", records)
 			},
 		},
 		Dedupe: dedupe,
 		DeadLetter: &writer.StoreDeadLetter{
-			Store: archive, Instance: record.InstanceName(),
+			Store: archive, Instance: instance,
 			RetainUntil: func(at time.Time) time.Time { return at.Add(longest) },
 		},
 		Archive: &writer.SchemaArchive{
@@ -128,6 +140,9 @@ func run() error {
 			// read, so what describes records outlives the longest of them.
 			RetainUntil: func(at time.Time) time.Time { return at.Add(longest) },
 		},
+		// The writer keeps an account of itself in the archive it writes, so
+		// that a reader can tell a quiet hour from a stopped writer.
+		Meta:    common,
 		Version: *version,
 		Hooks: writer.Hooks{
 			OnDeadLettered: func(r *record.Record, reason string) {
@@ -135,6 +150,9 @@ func run() error {
 			},
 			OnUnhandled: func(action string, p []string) {
 				slog.Warn("no configured profile keeps these", "action", action, "profiles", p)
+			},
+			OnMetaDropped: func(action, reason string) {
+				slog.Error("the writer could not record itself", "action", action, "reason", reason)
 			},
 		},
 	})
@@ -161,6 +179,13 @@ func run() error {
 		}
 	}()
 
+	// Said once the writer is built and about to serve, so that the record
+	// means what a reader will take it to mean.
+	w.Started(ctx)
+	for _, c := range registered {
+		w.Registered(ctx, c)
+	}
+
 	slog.Info("audit-writer", "listen", *listen, "bucket", *bucket, "profiles", len(profiles))
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -181,20 +206,22 @@ func keyProvider(rootPath, dir string) (keys.Provider, error) {
 	return keys.NewLocal(root, dir)
 }
 
-func registerAll(r *writer.Registry, dir string) error {
+func registerAll(r *writer.Registry, dir string) ([]*catalogue.Catalogue, error) {
 	found, err := cli.FindCatalogues(dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	out := make([]*catalogue.Catalogue, 0, len(found))
 	for _, path := range found {
 		c, err := catalogue.LoadFS(os.DirFS(dirOf(path)), baseOf(path))
 		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
+			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		r.Register(c)
+		out = append(out, c)
 		slog.Info("catalogue registered", "source", c.Source, "version", c.Version)
 	}
-	return nil
+	return out, nil
 }
 
 // longestRetention is how long the longest-lived profile keeps a copy, which is

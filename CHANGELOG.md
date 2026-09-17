@@ -25,9 +25,11 @@ Foundation. No release.
 - `store`: the object store interface, the S3 bucket, and a memory store for
   tests that can be tampered with on purpose.
 - `internal/writer`: the split into per-profile copies, rolling into locked
-  objects, deduplication, and the dead letter.
+  objects, deduplication, the dead letter, and the writer's own account of
+  itself, emitted into itself over the in-process sink.
 - `internal/digest`: the signed digest chain and its verifier.
 - `audit validate`, `audit profile explain`, `audit check-emitters`,
-  `audit verify`.
+  `audit verify`, `audit replay`.
+- `audit-writer`, the writer as a service behind Connect.
 - Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

@@ -64,6 +64,23 @@ type Options struct {
 	// Publish is how often the outbox is drained. Default one second.
 	Publish time.Duration
 
+	// SelfReporting marks an emitter whose sink is the component it emits
+	// about: the writer's account of itself, and the scheduled jobs' accounts
+	// of themselves. Every action it records is delivered best-effort, whatever
+	// the catalogue declares, and the deployment alerts on OnDropped.
+	//
+	// This is the one place a declared delivery is not honoured, and the reason
+	// is that honouring it would be incoherent rather than merely slow. A
+	// blocking write from inside the component performing the write waits on
+	// its own batch, and a record that cannot be made durable would fail the
+	// very work whose failure it is reporting.
+	//
+	// An application emitting about work it does for somebody else must leave
+	// this false. For those, an action declared block and not recorded is meant
+	// to fail: that is what makes a privileged or billable action fail rather
+	// than go unrecorded.
+	SelfReporting bool
+
 	// Queue is how many best-effort records may wait. Default 1024.
 	Queue int
 	// Batch and Flush are how best-effort records are grouped. Defaults 100
@@ -86,6 +103,7 @@ type Emitter struct {
 	hooks     Hooks
 	outbox    Outbox
 	publish   time.Duration
+	self      bool
 
 	seq record.Sequencer
 
@@ -124,7 +142,7 @@ func New(o Options) (*Emitter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("emit: action %s: %w", name, err)
 		}
-		if d == sink.Outbox && o.Outbox == nil {
+		if d == sink.Outbox && o.Outbox == nil && !o.SelfReporting {
 			return nil, fmt.Errorf(
 				"emit: action %s declares outbox delivery and no outbox is configured; "+
 					"give one, or declare block or best_effort", name)
@@ -144,6 +162,7 @@ func New(o Options) (*Emitter, error) {
 		flush:     o.Flush,
 		outbox:    o.Outbox,
 		publish:   o.Publish,
+		self:      o.SelfReporting,
 		done:      make(chan struct{}),
 	}
 	if e.instance == "" {
@@ -222,7 +241,7 @@ func (e *Emitter) Record(ctx context.Context, r *record.Record) error {
 	}
 
 	delivery := sink.BestEffort
-	if a, ok := e.catalogue.Action(r.GetAction()); ok {
+	if a, ok := e.catalogue.Action(r.GetAction()); ok && !e.self {
 		if d, err := sink.ParseDelivery(a.Delivery); err == nil {
 			delivery = d
 		}

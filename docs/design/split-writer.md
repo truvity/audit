@@ -84,7 +84,16 @@ meta-record would beget another.
 A dead letter carries the reason and the full record. Once the cause is fixed,
 `audit replay --dlq --from --to` reads the dead letters of a range and hands the
 records back to the writer as a batch. Deduplication makes a replay of
-something that did get through harmless.
+something that did get through harmless. Without a sink it reads and groups the
+reasons and sends nothing, which is how an operator decides what to replay;
+`--reason` and `--action` then narrow it to the cause that was fixed.
+
+Replay reports what failed again by listing the prefix before and after. That
+works because the writer dead-letters within the call that carried the record,
+so once a blocking write returns, whatever it could not process is already
+back. It is also the only way to tell: the writer *accepts* a record it
+dead-letters, and is right to, because a record that can never become valid
+must not be retried forever by every hop below.
 
 ## Embedded mode
 

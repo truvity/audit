@@ -18,8 +18,27 @@ original `occurred_at`; `recorded_at` shows the delay.
 ## A record was dead-lettered
 
 `audit.writer.dead_lettered` names the reason: unknown catalogue version,
-schema violation, oversized. Fix the cause (register the catalogue, fix the
-emitter), then replay from `dlq/` with `audit replay --dlq --from --to`.
+schema violation, oversized. Read what is waiting first, which sends nothing
+and groups the reasons:
+
+```
+audit replay --dlq --bucket <b> --from 2026-09-17 --to 2026-09-17
+```
+
+Fix the cause: register the catalogue version, configure the missing profile,
+correct the emitter and deploy it. Then replay the one cause you fixed, not
+the rest:
+
+```
+audit replay --dlq --bucket <b> --from 2026-09-17 --to 2026-09-17 \
+  --reason "no catalogue" --sink https://audit-writer:8080
+```
+
+The records keep their identifiers, so a replay of something that did get
+through is deduplicated and costs nothing. The command reports what came back
+under `dlq/` and exits non-zero if anything did. A record refused for not
+satisfying its schema will be refused again, and should be: the archive is not
+where an emitter's mistakes are corrected.
 
 ## Digest verification failed
 

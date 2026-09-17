@@ -78,6 +78,11 @@ func OriginHash(r *Record) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
+// CanonicalJSON re-serialises arbitrary JSON per RFC 8785. It is exported
+// because a digest is signed over its own canonical form, and signing and
+// checking must not be able to disagree about whitespace or key order.
+func CanonicalJSON(raw []byte) ([]byte, error) { return canonicalJSON(raw) }
+
 // canonicalJSON re-serialises arbitrary JSON per RFC 8785.
 func canonicalJSON(raw []byte) ([]byte, error) {
 	dec := json.NewDecoder(strings.NewReader(string(raw)))

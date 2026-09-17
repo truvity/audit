@@ -68,6 +68,9 @@ type Store interface {
 type Memory struct {
 	// FailPut, when set, is returned instead of writing.
 	FailPut error
+	// Now is the clock that stamps write times, for tests that care when an
+	// object appeared.
+	Now func() time.Time
 
 	mu      sync.RWMutex
 	objects map[string]Object
@@ -99,7 +102,7 @@ func (m *Memory) Put(_ context.Context, o Object) error {
 	copy(body, o.Body)
 	o.Body = body
 	m.objects[o.Key] = o
-	m.written[o.Key] = time.Now().UTC()
+	m.written[o.Key] = m.now()
 	return nil
 }
 
@@ -169,6 +172,48 @@ func (m *Memory) Keys() []string {
 		out = append(out, e.Key)
 	}
 	return out
+}
+
+func (m *Memory) now() time.Time {
+	if m.Now != nil {
+		return m.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
+// Replace overwrites an object, Forget removes one, and Backdate changes when
+// one appeared.
+//
+// A bucket configured as this system asks would refuse all three. They exist so
+// that a test can do them anyway and show that the digest chain catches what
+// the bucket was relied on to prevent — which is the only way to know that the
+// chain is worth having and not just another thing that agrees with itself.
+func (m *Memory) Replace(key string, body []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.objects[key]
+	if !ok {
+		return
+	}
+	o.Body = append([]byte(nil), body...)
+	m.objects[key] = o
+}
+
+// Forget removes an object.
+func (m *Memory) Forget(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.objects, key)
+	delete(m.written, key)
+}
+
+// Backdate changes when an object appears to have been written.
+func (m *Memory) Backdate(key string, at time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.objects[key]; ok {
+		m.written[key] = at.UTC()
+	}
 }
 
 // Object returns what was written under a key, for a test to look at.

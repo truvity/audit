@@ -15,12 +15,14 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
@@ -48,6 +50,16 @@ usage:
   audit replay --dlq --from <date> --to <date> [flags]
         Send dead letters back to a writer once the cause is fixed. Without
         --sink it reads and summarises them and sends nothing.
+
+  audit digest --deployment <file> --key <file> [flags]
+        Seal the windows since the last digest into the signed chain. Run it
+        hourly. It catches up on windows a missed run left behind, because a
+        gap in the chain cannot be told from a digest somebody removed.
+
+  audit purge --deployment <file> --database <url> [flags]
+        Bring the index and the deduplication table back within what the
+        profiles allow. It never touches the archive: those objects are
+        released by their object lock, not by this.
 
   audit migrate --database <url>
         Apply the index schema. Run it before the writers that will use it,
@@ -80,6 +92,10 @@ func main() {
 		err = verify(os.Args[2:])
 	case "replay":
 		err = replay(os.Args[2:])
+	case "digest":
+		err = digestCmd(os.Args[2:])
+	case "purge":
+		err = purge(os.Args[2:])
 	case "migrate":
 		err = migrate(os.Args[2:])
 	case "reindex":
@@ -462,3 +478,159 @@ type repeated []string
 
 func (r *repeated) String() string     { return strings.Join(*r, ", ") }
 func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
+
+// archiveFor opens the archive a command reads or writes.
+func archiveFor(ctx context.Context, bucket, prefix, region string) (*s3store.Store, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if region != "" {
+		cfg.Region = region
+	}
+	return s3store.FromConfig(cfg, s3store.Options{Bucket: bucket, Prefix: prefix})
+}
+
+// profilesFor composes the deployment's profiles, which is what says how long
+// anything is kept.
+func profilesFor(path string) (map[string]*preset.Profile, error) {
+	presets, err := preset.Builtin()
+	if err != nil {
+		return nil, err
+	}
+	d, err := cli.LoadDeployment(path)
+	if err != nil {
+		return nil, err
+	}
+	return d.Compose(presets)
+}
+
+// digestCmd seals windows into the signed chain.
+func digestCmd(args []string) error {
+	flags := flag.NewFlagSet("digest", flag.ContinueOnError)
+	var (
+		deployment = flags.String("deployment", "", "the profile configuration")
+		only       = flags.String("profile", "", "seal only this profile; default every one")
+		key        = flags.String("key", "", "PEM private key the digests are signed with")
+		keyID      = flags.String("key-id", "", "the name a digest records the signing key under")
+		from       = flags.String("from", "", "first window; default the hour after the last digest")
+		to         = flags.String("to", "", "last window; default the hour that has just closed")
+		bucket     = flags.String("bucket", "", "the bucket the archive is in")
+		prefix     = flags.String("prefix", "", "the prefix within the bucket")
+		region     = flags.String("region", "", "the region, when it is not in the environment")
+		lookback   = flags.Duration("lookback", 0, "how far back to look for objects keyed under an older day")
+		maxWindows = flags.Int("max-windows", 0, "how many windows one run may seal")
+		asJSON     = flags.Bool("json", false, "print the report as JSON")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	switch {
+	case *deployment == "":
+		return errors.New("give the profile configuration with --deployment")
+	case *bucket == "":
+		return errors.New("name the archive's bucket with --bucket")
+	case *key == "":
+		return errors.New("give the signing key with --key: an unsigned chain proves nothing")
+	}
+
+	profiles, err := profilesFor(*deployment)
+	if err != nil {
+		return err
+	}
+	if *only != "" {
+		p, ok := profiles[*only]
+		if !ok {
+			return fmt.Errorf("the deployment has no profile %q", *only)
+		}
+		profiles = map[string]*preset.Profile{*only: p}
+	}
+	signer, err := keys.LoadLocalSignerFile(*keyID, *key)
+	if err != nil {
+		return err
+	}
+
+	run := cli.Digest{
+		Profiles: profiles, Signer: signer,
+		Lookback: *lookback, MaxWindows: *maxWindows, JSON: *asJSON,
+	}
+	if *from != "" {
+		if run.From, err = cli.ParseDay(*from); err != nil {
+			return fmt.Errorf("--from: %w", err)
+		}
+	}
+	if *to != "" {
+		if run.To, err = cli.ParseDay(*to); err != nil {
+			return fmt.Errorf("--to: %w", err)
+		}
+	}
+
+	ctx := context.Background()
+	if run.Store, err = archiveFor(ctx, *bucket, *prefix, *region); err != nil {
+		return err
+	}
+	_, err = run.Run(ctx)
+	return err
+}
+
+// purge brings the index and the deduplication table within the profiles.
+func purge(args []string) error {
+	flags := flag.NewFlagSet("purge", flag.ContinueOnError)
+	var (
+		deployment  = flags.String("deployment", "", "the profile configuration")
+		database    = flags.String("database", "", "the Postgres URL of the index")
+		identifying = flags.Duration("identifying-after", 0,
+			"how long the index keeps who an event happened to; your policy, as no shipped preset states one")
+		dedupeWindow = flags.Duration("dedupe-window", 0,
+			"how long a written identifier is remembered; default the widest the profiles ask for")
+		dryRun = flags.Bool("dry-run", false, "report what would be purged and purge nothing")
+		asJSON = flags.Bool("json", false, "print the report as JSON")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	switch {
+	case *deployment == "":
+		return errors.New("give the profile configuration with --deployment")
+	case *database == "":
+		return errors.New("give the index's Postgres URL with --database")
+	}
+
+	profiles, err := profilesFor(*deployment)
+	if err != nil {
+		return err
+	}
+	window := *dedupeWindow
+	if window == 0 {
+		for _, p := range profiles {
+			if d := time.Duration(p.Pipeline.DedupeWindowDays) * 24 * time.Hour; d > window {
+				window = d
+			}
+		}
+	}
+
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, *database)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := postgres.CheckVersion(ctx, pool); err != nil {
+		return err
+	}
+	target, err := postgres.New(pool)
+	if err != nil {
+		return err
+	}
+	dedupe, err := postgres.NewDedupe(pool, window)
+	if err != nil {
+		return err
+	}
+
+	_, err = cli.Purge{
+		Index: target, Dedupe: dedupe, Profiles: profiles,
+		IdentifyingAfter: *identifying, DedupeWindow: window,
+		DryRun: *dryRun, JSON: *asJSON,
+	}.Run(ctx)
+	return err
+}

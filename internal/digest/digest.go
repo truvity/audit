@@ -238,6 +238,31 @@ func Key(profile string, start time.Time) string {
 
 func profilePrefix(profile string) string { return Prefix + "/profile=" + profile }
 
+// LastWindow is the window of a profile's most recent digest.
+//
+// It is what lets an hourly job catch up rather than only ever sealing the hour
+// it woke in: a job that missed three runs must seal those three windows, or
+// the chain has gaps that nothing later can fill. A gap cannot be told from a
+// digest somebody removed, which is the whole point of the chain.
+func LastWindow(ctx context.Context, s store.Store, profile string) (time.Time, bool, error) {
+	entries, err := s.List(ctx, profilePrefix(profile), "", 0)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	var latest time.Time
+	var found bool
+	for _, e := range entries {
+		start, ok := windowOf(e.Key)
+		if !ok {
+			continue
+		}
+		if !found || start.After(latest) {
+			latest, found = start, true
+		}
+	}
+	return latest, found, nil
+}
+
 // marshal is the form a signature covers: the digest without its own signature,
 // canonical, so that signing and checking cannot disagree about whitespace or
 // key order.

@@ -46,6 +46,24 @@ Treat as an incident. `audit verify --verbose` names the object or digest.
 Check for re-uploads (a new version under the same key), lifecycle
 transitions that moved objects, or a KMS key change.
 
+## The digest chain has a gap
+
+An hour with no digest cannot be told from one whose digest was removed, which
+is why `audit verify` reports both the same way. `audit digest` resumes from the
+hour after the last one sealed, so a job that missed its runs catches up on its
+own; run it by hand to catch up now:
+
+```
+audit digest --deployment <file> --key <file> --bucket <b>
+```
+
+It never seals the hour it wakes in — objects are still being written into it —
+and it seals at most a week of windows per run, reporting how many are left. To
+backfill a specific range, name it with `--from` and `--to`; a window already
+sealed is left alone.
+
+An unsigned chain proves nothing, so the command refuses without `--key`.
+
 ## The index is behind
 
 The writer logs `object written but not indexed` with the object's key when it
@@ -66,6 +84,24 @@ catch up on their own.
 If the index is not merely behind but wrong — a bad migration, a partial
 restore — drop it, run `audit migrate`, and reindex the range. Nothing in the
 index is evidence, and the archive is unaffected.
+
+## The index or the deduplication table is growing without end
+
+Neither is bounded by anything but this:
+
+```
+audit purge --deployment <file> --database <url> [--dry-run]
+```
+
+It removes index rows past each profile's own retention and forgets written
+identifiers past the deduplication window. It never touches the archive: those
+objects are released by their object lock, which is what makes the retention a
+retention rather than a setting.
+
+`--identifying-after <duration>` additionally clears who an event happened to
+while keeping what happened. It has no default on purpose: the presets cite
+retention for the record, and none of them states a separate, shorter life for
+the actor and subject columns, so the number is a deployment's own policy.
 
 ## A tenant asks for erasure
 

@@ -38,7 +38,13 @@ Foundation. No release.
 - Deduplication asks before the write and marks after it, so that a crash
   between the two costs a duplicate object rather than a lost record.
 - `audit validate`, `audit profile explain`, `audit check-emitters`,
-  `audit verify`, `audit replay`, `audit migrate`, `audit reindex`.
+  `audit verify`, `audit replay`, `audit migrate`, `audit reindex`,
+  `audit digest`, `audit purge`.
+- A digest covers every tenant of its profile. The chain is keyed by profile
+  and the archive puts the tenant between the profile and the date, so a
+  builder given the profile prefix covered nothing and one given a tenant's
+  prefix covered one tenant. `store.Store` gained `Prefixes` to ask which
+  tenants exist without walking every object.
 - `audit-writer`, the writer as a service behind Connect.
 - Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

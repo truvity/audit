@@ -1,0 +1,20 @@
+{
+  "$id": "https://schemas.truvity.com/audit/v1/common/digest-written.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "objects": {
+      "type": "integer",
+      "description": "How many objects the digest covers. Zero is meaningful: a digest is written for a quiet hour too, so that absence is provable.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "window_start": {
+      "type": "string",
+      "description": "The start of the window the digest covers, RFC 3339.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none",
+      "x-audit-filter": true
+    }
+  }
+}

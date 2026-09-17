@@ -1,0 +1,21 @@
+{
+  "$id": "https://schemas.truvity.com/audit/v1/common/export-completed.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "records": {
+      "type": "integer",
+      "description": "How many records the export carried.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "format": {
+      "type": "string",
+      "enum": ["ndjson", "csv"],
+      "description": "The form the export was written in.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none",
+      "x-audit-facet": true
+    }
+  }
+}

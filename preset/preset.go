@@ -18,10 +18,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/santhosh-tekuri/jsonschema/v6"
 	"sigs.k8s.io/yaml"
 
 	"github.com/truvity/audit"
+	"github.com/truvity/audit/internal/metaschema"
 )
 
 // Treatment is what happens to an identifier of a given actor category in a
@@ -139,7 +139,7 @@ type Pipeline struct {
 
 // Load reads and validates one preset document.
 func Load(data []byte) (*Preset, error) {
-	if err := validateAgainst("preset.schema.json", data); err != nil {
+	if err := metaschema.Validate("preset.schema.json", data); err != nil {
 		return nil, err
 	}
 	var p Preset
@@ -221,43 +221,6 @@ func (p *Preset) check() error {
 		problems = append(problems, errors.New("a preset is an engineering reading and must say so"))
 	}
 	return errors.Join(problems...)
-}
-
-var compiled = map[string]*jsonschema.Schema{}
-
-// validateAgainst checks a document against one of the embedded meta-schemas.
-func validateAgainst(name string, data []byte) error {
-	schema, ok := compiled[name]
-	if !ok {
-		raw, err := audit.Schemas.ReadFile(path.Join("schemas", name))
-		if err != nil {
-			return err
-		}
-		doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
-		if err != nil {
-			return err
-		}
-		c := jsonschema.NewCompiler()
-		if err := c.AddResource(name, doc); err != nil {
-			return err
-		}
-		if schema, err = c.Compile(name); err != nil {
-			return err
-		}
-		compiled[name] = schema
-	}
-	asJSON, err := yaml.YAMLToJSON(data)
-	if err != nil {
-		return fmt.Errorf("not valid YAML or JSON: %w", err)
-	}
-	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(asJSON)))
-	if err != nil {
-		return err
-	}
-	if err := schema.Validate(doc); err != nil {
-		return fmt.Errorf("does not satisfy %s: %w", name, err)
-	}
-	return nil
 }
 
 func index(ss []string) map[string]bool {

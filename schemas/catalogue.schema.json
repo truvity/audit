@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.truvity.dev/audit/v1/catalogue.schema.json",
+  "$id": "https://schemas.truvity.com/audit/v1/catalogue.schema.json",
   "title": "Action catalogue",
   "description": "What one source emits: its actions, extension schemas, actor kinds, target types, context areas and meters. Authored next to the emitting code, registered at deploy, copied into the archive on first use.",
   "type": "object",

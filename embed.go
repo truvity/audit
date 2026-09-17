@@ -21,5 +21,5 @@ var Schemas embed.FS
 // Catalogue is the common catalogue: the component's own meta-events, which
 // every deployment carries.
 //
-//go:embed catalogue/*.yaml
+//go:embed catalogue/*.yaml catalogue/*.json
 var Catalogue embed.FS

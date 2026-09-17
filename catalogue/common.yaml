@@ -17,15 +17,15 @@ actor_kinds:
     description: A person operating the platform through a console or CLI.
 
 target_types:
-  tenant: { description: A customer organisation. }
-  profile: { description: A composed profile. }
-  preset: { description: A framework preset. }
-  catalogue: { description: A registered source catalogue and version. }
-  export: { description: An export job. }
-  digest: { description: One hourly digest object. }
-  key: { description: A pseudonymisation or signing key, by identifier. }
-  hold: { description: A legal hold on a prefix or object. }
-  record: { description: One audit record, by id. }
+  tenant: { description: "A customer organisation." }
+  profile: { description: "A composed profile." }
+  preset: { description: "A framework preset." }
+  catalogue: { description: "A registered source catalogue and version." }
+  export: { description: "An export job." }
+  digest: { description: "One hourly digest object." }
+  key: { description: "A pseudonymisation or signing key, by identifier." }
+  hold: { description: "A legal hold on a prefix or object." }
+  record: { description: "One audit record, by id." }
 
 actions:
   audit.search:
@@ -64,6 +64,7 @@ actions:
     categories: [log_access]
     profiles: [security]
     target_types: [export]
+    data_schema: https://schemas.truvity.com/audit/v1/common/export-completed.json
     message: { en: "export {targets.0.id} completed with {data.records} records" }
   audit.catalogue.registered:
     summary: A source registered a catalogue version.
@@ -119,6 +120,7 @@ actions:
     categories: [logging_control]
     profiles: [security, evidence]
     target_types: [digest]
+    data_schema: https://schemas.truvity.com/audit/v1/common/digest-written.json
     message: { en: "digest {targets.0.id} written covering {data.objects} objects" }
   audit.digest.verified:
     summary: A digest chain window was verified.
@@ -161,4 +163,5 @@ actions:
     categories: [clock]
     profiles: [security, evidence]
     delivery: block
+    data_schema: https://schemas.truvity.com/audit/v1/common/clock-synchronised.json
     message: { en: "clock on {observer.instance} synchronised with UTC, offset {data.offset_ms} ms" }

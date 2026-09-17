@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas.truvity.dev/audit/v1/preset.schema.json",
+  "$id": "https://schemas.truvity.com/audit/v1/preset.schema.json",
   "title": "Framework preset",
   "description": "What a framework requires of a profile: fields, categories, identity treatment, retention, integrity, review. Profiles are composed from presets; the validator enforces the union of their minimum field sets.",
   "type": "object",

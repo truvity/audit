@@ -1,0 +1,20 @@
+{
+  "$id": "https://schemas.truvity.com/audit/v1/common/clock-synchronised.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "offset_ms": {
+      "type": "integer",
+      "description": "The offset from UTC, in milliseconds, at the moment of the check.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "source": {
+      "type": "string",
+      "description": "The reference the clock was compared against.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none",
+      "x-audit-facet": true
+    }
+  }
+}

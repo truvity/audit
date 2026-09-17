@@ -1,0 +1,226 @@
+package catalogue
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+
+	"google.golang.org/protobuf/types/known/structpb"
+
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
+	"github.com/truvity/audit/record"
+)
+
+// Composed is one action resolved against its catalogue: the schema of every
+// slot a record of that action may fill. It is what an emitter validates
+// against before publishing and what the writer validates against before
+// writing.
+type Composed struct {
+	Source  string
+	Version string
+	Name    string
+	Action  Action
+	Data    *Schema
+
+	catalogue *Catalogue
+}
+
+// Compose resolves an action.
+func (c *Catalogue) Compose(action string) (*Composed, error) {
+	a, ok := c.Actions[action]
+	if !ok {
+		return nil, fmt.Errorf("catalogue %s %s declares no action %s", c.Source, c.Version, action)
+	}
+	x := &Composed{Source: c.Source, Version: c.Version, Name: action, Action: a, catalogue: c}
+	if a.DataSchema != "" {
+		if s, ok := c.schemas[a.DataSchema]; ok {
+			x.Data = s
+		}
+	}
+	return x, nil
+}
+
+// Validate holds a record to what its catalogue says it may be. An emitter runs
+// it before publishing and the writer runs it again before writing, because the
+// writer cannot take an emitter's word for what a record contains.
+func (x *Composed) Validate(r *record.Record) error {
+	var problems []error
+	fail := func(format string, args ...any) { problems = append(problems, fmt.Errorf(format, args...)) }
+
+	if r.GetSource() != x.Source {
+		fail("record names source %q but was validated against the catalogue of %q", r.GetSource(), x.Source)
+	}
+	if r.GetCatalogueVersion() != x.Version {
+		fail("record names catalogue version %q but was validated against %q", r.GetCatalogueVersion(), x.Version)
+	}
+	if r.GetAction() != x.Name {
+		fail("record names action %q but was validated against %q", r.GetAction(), x.Name)
+	}
+	if want, ok := operationOf(x.Action.Operation); ok && r.GetOperation() != want {
+		fail("action %s is declared as %s, but the record says %s",
+			x.Name, x.Action.Operation, strings.ToLower(strings.TrimPrefix(r.GetOperation().String(), "OPERATION_")))
+	}
+	if level, ok := captureOf(x.Action.CaptureLevel); ok && r.GetCapture().GetLevel() > level {
+		fail("action %s may capture at most %s, but the record captures more", x.Name, x.Action.CaptureLevel)
+	}
+
+	problems = append(problems, x.validateData(r)...)
+	problems = append(problems, x.validateActor(r)...)
+	problems = append(problems, x.validateTargets(r)...)
+	problems = append(problems, x.validateContext(r)...)
+	problems = append(problems, x.validateMeter(r)...)
+	return errors.Join(problems...)
+}
+
+func (x *Composed) validateData(r *record.Record) []error {
+	if x.Data == nil {
+		if r.GetData() != nil && len(r.GetData().GetFields()) > 0 {
+			return []error{fmt.Errorf("action %s declares no data schema, so it may carry no data", x.Name)}
+		}
+		return nil
+	}
+	if err := x.Data.Validate(asAny(r.GetData())); err != nil {
+		return []error{fmt.Errorf("data: %w", err)}
+	}
+	return nil
+}
+
+func (x *Composed) validateActor(r *record.Record) []error {
+	a := r.GetActor()
+	if a == nil || a.GetKind() == "" {
+		return nil
+	}
+	kind, ok := x.catalogue.ActorKinds[a.GetKind()]
+	if !ok {
+		return []error{fmt.Errorf("actor kind %q is not declared by catalogue %s", a.GetKind(), x.Source)}
+	}
+	if kind.AttributesSchema == "" {
+		if len(a.GetAttributes().GetFields()) > 0 {
+			return []error{fmt.Errorf("actor kind %q declares no attributes schema, so it may carry no attributes", a.GetKind())}
+		}
+		return nil
+	}
+	s, ok := x.catalogue.schemas[kind.AttributesSchema]
+	if !ok {
+		return []error{fmt.Errorf("actor kind %q references schema %s, which is not loaded", a.GetKind(), kind.AttributesSchema)}
+	}
+	if err := s.Validate(asAny(a.GetAttributes())); err != nil {
+		return []error{fmt.Errorf("actor.attributes: %w", err)}
+	}
+	return nil
+}
+
+func (x *Composed) validateTargets(r *record.Record) []error {
+	var problems []error
+	allowed := map[string]bool{}
+	for _, t := range x.Action.TargetTypes {
+		allowed[t] = true
+	}
+	for i, t := range r.GetTargets() {
+		declared, ok := x.catalogue.TargetTypes[t.GetType()]
+		if !ok {
+			problems = append(problems, fmt.Errorf("targets[%d]: type %q is not declared by catalogue %s", i, t.GetType(), x.Source))
+			continue
+		}
+		if len(allowed) > 0 && !allowed[t.GetType()] {
+			problems = append(problems, fmt.Errorf("targets[%d]: action %s is not declared to act on %q", i, x.Name, t.GetType()))
+		}
+		// A person is named by identifier, never by display name: a name in a
+		// target is an identity attribute, and the record carries none.
+		if declared.IsPerson && t.GetName() != "" {
+			problems = append(problems, fmt.Errorf("targets[%d]: target type %q is a person, so it may carry no name", i, t.GetType()))
+		}
+		if declared.AttributesSchema == "" {
+			if len(t.GetAttributes().GetFields()) > 0 {
+				problems = append(problems, fmt.Errorf("targets[%d]: type %q declares no attributes schema", i, t.GetType()))
+			}
+			continue
+		}
+		s, ok := x.catalogue.schemas[declared.AttributesSchema]
+		if !ok {
+			problems = append(problems, fmt.Errorf("targets[%d]: schema %s is not loaded", i, declared.AttributesSchema))
+			continue
+		}
+		if err := s.Validate(asAny(t.GetAttributes())); err != nil {
+			problems = append(problems, fmt.Errorf("targets[%d].attributes: %w", i, err))
+		}
+	}
+	return problems
+}
+
+func (x *Composed) validateContext(r *record.Record) []error {
+	var problems []error
+	for area, value := range r.GetContext().GetAreas() {
+		id, ok := x.catalogue.ContextAreas[area]
+		if !ok {
+			problems = append(problems, fmt.Errorf("context area %q is not declared by catalogue %s", area, x.Source))
+			continue
+		}
+		s, ok := x.catalogue.schemas[id]
+		if !ok {
+			problems = append(problems, fmt.Errorf("context area %q references schema %s, which is not loaded", area, id))
+			continue
+		}
+		if err := s.Validate(asAny(value)); err != nil {
+			problems = append(problems, fmt.Errorf("context.areas.%s: %w", area, err))
+		}
+	}
+	return problems
+}
+
+func (x *Composed) validateMeter(r *record.Record) []error {
+	declared := x.Action.Meter
+	carried := r.GetMeter()
+	switch {
+	case declared == nil && carried == nil:
+		return nil
+	case declared == nil:
+		return []error{fmt.Errorf("action %s is not metered, so it may carry no meter", x.Name)}
+	case carried == nil:
+		return []error{fmt.Errorf("action %s meters %q, so every record of it must carry the measurement", x.Name, declared.Name)}
+	}
+
+	var problems []error
+	m := x.catalogue.Meters[declared.Name]
+	if carried.GetName() != declared.Name {
+		problems = append(problems, fmt.Errorf("meter.name is %q, but action %s meters %q", carried.GetName(), x.Name, declared.Name))
+	}
+	if m.Unit != "" && carried.GetUnit() != m.Unit {
+		problems = append(problems, fmt.Errorf("meter %q is measured in %q, but the record says %q", declared.Name, m.Unit, carried.GetUnit()))
+	}
+	if want, ok := meterKindOf(m.Kind); ok && carried.GetKind() != want {
+		problems = append(problems, fmt.Errorf("meter %q is a %s", declared.Name, m.Kind))
+	}
+	if m.DimensionsSchema != "" {
+		if s, ok := x.catalogue.schemas[m.DimensionsSchema]; ok {
+			if err := s.Validate(asAny(carried.GetDimensions())); err != nil {
+				problems = append(problems, fmt.Errorf("meter.dimensions: %w", err))
+			}
+		}
+	} else if len(carried.GetDimensions().GetFields()) > 0 {
+		problems = append(problems, fmt.Errorf("meter %q declares no dimensions schema", declared.Name))
+	}
+	return problems
+}
+
+func asAny(s *structpb.Struct) any {
+	if s == nil {
+		return map[string]any{}
+	}
+	return s.AsMap()
+}
+
+func operationOf(name string) (auditv1.Operation, bool) {
+	v, ok := auditv1.Operation_value["OPERATION_"+strings.ToUpper(name)]
+	return auditv1.Operation(v), ok && name != ""
+}
+
+func captureOf(name string) (auditv1.Capture_Level, bool) {
+	v, ok := auditv1.Capture_Level_value["LEVEL_"+strings.ToUpper(name)]
+	return auditv1.Capture_Level(v), ok && name != ""
+}
+
+func meterKindOf(name string) (auditv1.Meter_Kind, bool) {
+	v, ok := auditv1.Meter_Kind_value["KIND_"+strings.ToUpper(name)]
+	return auditv1.Meter_Kind(v), ok && name != ""
+}

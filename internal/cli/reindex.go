@@ -160,52 +160,20 @@ func (r Reindex) Run(ctx context.Context) (ReindexReport, error) {
 	return report, nil
 }
 
-// objects lists the profile's objects over the range.
-//
-// The archive puts the tenant between the profile and the date, so a day is not
-// a prefix and cannot be listed as one. The profile is listed once and the days
-// are matched, which costs one pass rather than one pass per day.
+// objects lists the profile's objects over the range, tenant by tenant and day
+// by day, which is the shape the archive has and the only one that stays
+// bounded as it grows.
 func (r Reindex) objects(ctx context.Context) ([]string, error) {
-	prefix := "profile=" + r.Profile + "/"
-	entries, err := r.Store.List(ctx, prefix, "", 0)
-	if err != nil {
-		return nil, fmt.Errorf("reindex: listing %s: %w", prefix, err)
-	}
-	wanted := map[string]bool{}
-	for day := r.From.UTC().Truncate(24 * time.Hour); !day.After(r.To.UTC()); day = day.AddDate(0, 0, 1) {
-		wanted[day.Format("2006-01-02")] = true
-	}
-
 	var keys []string
-	for _, e := range entries {
-		if day, ok := dayOf(e.Key); ok && wanted[day] {
-			keys = append(keys, e.Key)
-		}
+	err := store.WalkDays(ctx, r.Store, "profile="+r.Profile, r.From, r.To, func(e store.Entry) error {
+		keys = append(keys, e.Key)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("reindex: listing profile %s: %w", r.Profile, err)
 	}
 	sort.Strings(keys)
 	return keys, nil
-}
-
-// dayOf reads the date out of an object key. The key is
-// profile=<name>/tenant=<id>/year=YYYY/month=MM/day=DD/<object>, so the date is
-// read by name rather than by position: a layout that gains a segment should
-// not silently reindex the wrong day.
-func dayOf(key string) (string, bool) {
-	var year, month, day string
-	for _, segment := range strings.Split(key, "/") {
-		switch {
-		case strings.HasPrefix(segment, "year="):
-			year = strings.TrimPrefix(segment, "year=")
-		case strings.HasPrefix(segment, "month="):
-			month = strings.TrimPrefix(segment, "month=")
-		case strings.HasPrefix(segment, "day="):
-			day = strings.TrimPrefix(segment, "day=")
-		}
-	}
-	if year == "" || month == "" || day == "" {
-		return "", false
-	}
-	return year + "-" + month + "-" + day, true
 }
 
 func (r Reindex) batch() int {

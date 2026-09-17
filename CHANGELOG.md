@@ -45,6 +45,12 @@ Foundation. No release.
   builder given the profile prefix covered nothing and one given a tenant's
   prefix covered one tenant. `store.Store` gained `Prefixes` to ask which
   tenants exist without walking every object.
+- `s3store.List` pages to the end when asked for everything. It took S3's
+  first thousand keys for the whole, which the verifier, the reindex, the
+  replay and the digest's own chain-linking all relied on; every walk of the
+  archive now goes tenant by tenant and day by day through `store.WalkDays`,
+  and the S3 test double pages, sorts and groups as S3 does so that the next
+  listing that stops early is caught here.
 - `audit-writer`, the writer as a service behind Connect.
 - Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

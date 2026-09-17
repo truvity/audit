@@ -46,9 +46,9 @@ create index if not exists events_core_time
 create index if not exists events_core_targets
     on events_core using gin (target_ids);
 
--- events_context is who it happened to. It is kept apart because a profile
--- purges it on a shorter schedule than the event, and because a deployment can
--- then grant a reader the event without the person.
+-- events_context is who it happened to. It is kept apart so that a deployment
+-- can purge it on a shorter schedule than the event, and can grant a reader the
+-- event without the person.
 --
 -- client_address is text, not inet: one malformed address from one emitter must
 -- not fail the batch that carries it, and the trail records what was reported.

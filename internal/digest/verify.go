@@ -79,6 +79,11 @@ type Verifier struct {
 	// Profiles is the retention each profile requires, so that an object whose
 	// lock is shorter than its profile asks can be reported. Optional.
 	MinimumRetention map[string]time.Duration
+	// Lookback is how far before the range to look for objects written in it
+	// but keyed under an older day, which an outbox delay produces. It wants to
+	// be at least the builder's, or an object the builder covered from further
+	// back is not looked at here. Default 7 days.
+	Lookback time.Duration
 }
 
 // Verify walks a profile's chain from newest to oldest across a range.
@@ -205,15 +210,15 @@ func (v *Verifier) checkObject(ctx context.Context, digestKey, profile string, o
 func (v *Verifier) checkUncovered(
 	ctx context.Context, profile string, from, to time.Time, covered map[string]bool,
 ) []Finding {
-	prefix := "profile=" + profile + "/"
-	entries, err := v.Store.List(ctx, prefix, "", 0)
-	if err != nil {
-		return []Finding{{Digest: prefix, Reason: err.Error()}}
+	lookback := v.Lookback
+	if lookback <= 0 {
+		lookback = 7 * 24 * time.Hour
 	}
+	prefix := "profile=" + profile
 	var findings []Finding
-	for _, e := range entries {
+	err := store.WalkDays(ctx, v.Store, prefix, from.Add(-lookback), to, func(e store.Entry) error {
 		if e.Modified.Before(from) || !e.Modified.Before(to) {
-			continue
+			return nil
 		}
 		if !covered[e.Key] {
 			findings = append(findings, Finding{
@@ -221,6 +226,10 @@ func (v *Verifier) checkUncovered(
 				Reason: "no digest accounts for this object",
 			})
 		}
+		return nil
+	})
+	if err != nil {
+		return []Finding{{Digest: prefix, Reason: err.Error()}}
 	}
 	return findings
 }

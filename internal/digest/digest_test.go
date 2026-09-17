@@ -361,3 +361,37 @@ func TestADigestCoversEveryTenantOfItsProfile(t *testing.T) {
 		t.Fatalf("a chain covering both tenants still reports %d problems: %v", len(problems), problems)
 	}
 }
+
+// An object nothing accounts for must be found whichever tenant it is under.
+// The verifier used to list the whole profile for this, which was right until
+// the archive outgrew one page of a listing and wrong in silence after.
+func TestVerifyFindsAnUncoveredObjectUnderAnyTenant(t *testing.T) {
+	b := setup(t)
+	day := at(t, "2026-09-17T00:00:00Z")
+	window := at(t, "2026-09-17T10:00:00Z")
+
+	putFor(t, b, "acme", day, "a.ndjson.zst", "one")
+	d, err := b.builder.Build(context.Background(), "security", "profile=security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.builder.Write(context.Background(), d, day.AddDate(1, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Written into the sealed window after it was sealed, under another tenant.
+	stray := putFor(t, b, "globex", day, "b.ndjson.zst", "two")
+	report, err := b.verifier.Verify(context.Background(), "security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, p := range report.Problems() {
+		if p.Object == stray {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("an object under a second tenant that no digest accounts for was not reported: %v", report.Problems())
+	}
+}

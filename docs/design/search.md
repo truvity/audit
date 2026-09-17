@@ -49,8 +49,8 @@ Facets fall in the hour a record was **recorded**, not the hour it occurred. A
 late record must land in a window still open to counting, or the counts drift
 from the rows they are meant to summarise.
 
-`Purge` takes a scope because a profile keeps what happened for longer than it
-keeps who it happened to. `Identifying` clears the actor, the subject, the
+`Purge` takes a scope because a deployment may keep what happened for longer
+than it keeps who it happened to. `Identifying` clears the actor, the subject, the
 client address and the correlation identifiers and leaves the event and the
 actor's *kind*; `Everything` removes the rows.
 
@@ -73,8 +73,10 @@ rebuilt against 1.2.0.
 ## Postgres layout
 
 `events_core` is what happened; `events_context` is who it happened to, kept
-apart because it is purged on a shorter schedule and because a deployment can
-grant a reader the event without the person. `events_data` holds the filterable
+apart so that a deployment can purge it on a shorter schedule of its own, and
+can grant a reader the event without the person. No shipped preset states such
+a schedule — the frameworks they cite want the actor for the whole retention —
+so `audit purge --identifying-after` has no default. `events_data` holds the filterable
 extension properties. `facet_counts` is what the viewer's navigation reads.
 
 The three event tables are partitioned monthly on `recorded_at`, because a

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,8 @@ type fake struct {
 	puts    []*s3.PutObjectInput
 	putErr  error
 	objects map[string][]byte
+	// pageSize is how many keys one listing answers, for tests about paging.
+	pageSize int
 }
 
 func (f *fake) PutObject(_ context.Context, in *s3.PutObjectInput, _ ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
@@ -62,15 +65,65 @@ func (f *fake) HeadObject(_ context.Context, in *s3.HeadObjectInput, _ ...func(*
 	}, nil
 }
 
+// ListObjectsV2 behaves as S3 does, not as a test would like: keys come sorted,
+// a page holds at most pageSize (a thousand, as S3 has it, unless a test lowers
+// it), a truncated answer carries a continuation token, and a delimiter turns
+// the level below into common prefixes. A kinder fake is how a listing that
+// stopped at one page went unnoticed.
 func (f *fake) ListObjectsV2(_ context.Context, in *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
 	prefix := aws.ToString(in.Prefix)
-	var contents []types.Object
-	for key, body := range f.objects {
+	delimiter := aws.ToString(in.Delimiter)
+	var keys []string
+	for key := range f.objects {
 		if strings.HasPrefix(key, prefix) {
-			contents = append(contents, types.Object{Key: aws.String(key), Size: aws.Int64(int64(len(body)))})
+			keys = append(keys, key)
 		}
 	}
-	return &s3.ListObjectsV2Output{Contents: contents}, nil
+	sort.Strings(keys)
+
+	start := aws.ToString(in.StartAfter)
+	if token := aws.ToString(in.ContinuationToken); token != "" {
+		start = token
+	}
+	size := f.pageSize
+	if size == 0 {
+		size = 1000
+	}
+	if asked := int(aws.ToInt32(in.MaxKeys)); asked > 0 && asked < size {
+		size = asked
+	}
+
+	out := &s3.ListObjectsV2Output{}
+	seen := map[string]bool{}
+	count := 0
+	for _, key := range keys {
+		if key <= start {
+			continue
+		}
+		if count == size {
+			out.IsTruncated = aws.Bool(true)
+			break
+		}
+		if delimiter != "" {
+			if at := strings.Index(key[len(prefix):], delimiter); at >= 0 {
+				group := key[:len(prefix)+at+len(delimiter)]
+				if !seen[group] {
+					seen[group] = true
+					out.CommonPrefixes = append(out.CommonPrefixes, types.CommonPrefix{Prefix: aws.String(group)})
+					count++
+					out.NextContinuationToken = aws.String(key)
+				}
+				continue
+			}
+		}
+		out.Contents = append(out.Contents, types.Object{Key: aws.String(key), Size: aws.Int64(int64(len(f.objects[key])))})
+		out.NextContinuationToken = aws.String(key)
+		count++
+	}
+	if !aws.ToBool(out.IsTruncated) {
+		out.NextContinuationToken = nil
+	}
+	return out, nil
 }
 
 func newStore(t *testing.T, o s3store.Options) (*s3store.Store, *fake) {
@@ -238,5 +291,84 @@ func TestNewChecksItsArguments(t *testing.T) {
 	}
 	if _, err := s3store.New(&fake{}, s3store.Options{}); err == nil {
 		t.Error("want a refusal with no bucket")
+	}
+}
+
+// seed puts keys straight into the fake, as if written long ago.
+func seed(f *fake, keys ...string) {
+	if f.objects == nil {
+		f.objects = map[string][]byte{}
+	}
+	for _, key := range keys {
+		f.objects[key] = []byte("x")
+	}
+}
+
+// S3 answers a thousand keys at a time whatever is asked. A listing that took
+// the first answer for the whole would be right until the archive outgrew it,
+// and every job that walks the archive would then be wrong in silence.
+func TestListWithoutALimitPagesToTheEnd(t *testing.T) {
+	s, f := newStore(t, s3store.Options{})
+	f.pageSize = 3
+	seed(f, "p/a", "p/b", "p/c", "p/d", "p/e", "p/f", "p/g", "q/zzz")
+
+	entries, err := s.List(context.Background(), "p/", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 7 {
+		t.Fatalf("listed %d of 7 keys: a page was taken for the whole", len(entries))
+	}
+	for i := 1; i < len(entries); i++ {
+		if entries[i].Key <= entries[i-1].Key {
+			t.Fatalf("out of order at %d: %v", i, entries)
+		}
+	}
+}
+
+// With a limit the caller is paging, and gets one page from after its key.
+func TestListWithALimitReturnsOnePageAfterAKey(t *testing.T) {
+	s, f := newStore(t, s3store.Options{})
+	seed(f, "p/a", "p/b", "p/c", "p/d")
+
+	entries, err := s.List(context.Background(), "p/", "p/b", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Key != "p/c" {
+		t.Fatalf("got %v, want the one key after p/b", entries)
+	}
+}
+
+// The tenants under a profile, without the objects beneath them, and all of
+// them however many pages they span.
+func TestPrefixesListsEveryGroupAcrossPages(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Prefix: "archive"})
+	f.pageSize = 2
+	seed(f,
+		"archive/profile=security/tenant=acme/year=2026/month=09/day=17/a",
+		"archive/profile=security/tenant=acme/year=2026/month=09/day=17/b",
+		"archive/profile=security/tenant=globex/year=2026/month=09/day=17/a",
+		"archive/profile=security/tenant=initech/year=2026/month=09/day=17/a",
+		"archive/profile=security/tenant=umbrella/year=2026/month=09/day=17/a",
+		"archive/profile=security/tenant=wayne/year=2026/month=09/day=17/a",
+		"archive/profile=history/tenant=acme/year=2026/month=09/day=17/a",
+	)
+	groups, err := s.Prefixes(context.Background(), "profile=security/", "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"profile=security/tenant=acme/", "profile=security/tenant=globex/",
+		"profile=security/tenant=initech/", "profile=security/tenant=umbrella/",
+		"profile=security/tenant=wayne/",
+	}
+	if len(groups) != len(want) {
+		t.Fatalf("got %v, want %v", groups, want)
+	}
+	for i := range want {
+		if groups[i] != want[i] {
+			t.Fatalf("got %v, want %v", groups, want)
+		}
 	}
 }

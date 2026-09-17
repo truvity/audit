@@ -163,30 +163,42 @@ func (s *Store) Head(ctx context.Context, key string) (store.Entry, error) {
 }
 
 // List implements store.Store.
+//
+// With a limit it returns one page and the caller continues from the last key.
+// Without one it pages to the end itself: S3 answers a thousand keys at a time
+// whatever is asked, and a caller that took the first answer for the whole
+// would be right until the archive outgrew it and wrong in silence after.
 func (s *Store) List(ctx context.Context, prefix, after string, limit int) ([]store.Entry, error) {
-	in := &s3.ListObjectsV2Input{
-		Bucket: aws.String(s.bucket),
-		Prefix: aws.String(s.key(prefix)),
-	}
-	if after != "" {
-		in.StartAfter = aws.String(s.key(after))
-	}
-	if limit > 0 {
-		in.MaxKeys = aws.Int32(int32(limit))
-	}
-	out, err := s.api.ListObjectsV2(ctx, in)
-	if err != nil {
-		return nil, fmt.Errorf("s3store: list %s: %w", prefix, err)
-	}
-	entries := make([]store.Entry, 0, len(out.Contents))
-	for _, o := range out.Contents {
-		e := store.Entry{Key: s.unkey(aws.ToString(o.Key)), Size: aws.ToInt64(o.Size)}
-		if o.LastModified != nil {
-			e.Modified = o.LastModified.UTC()
+	var entries []store.Entry
+	var token *string
+	for {
+		in := &s3.ListObjectsV2Input{
+			Bucket:            aws.String(s.bucket),
+			Prefix:            aws.String(s.key(prefix)),
+			ContinuationToken: token,
 		}
-		entries = append(entries, e)
+		if after != "" && token == nil {
+			in.StartAfter = aws.String(s.key(after))
+		}
+		if limit > 0 {
+			in.MaxKeys = aws.Int32(int32(limit))
+		}
+		out, err := s.api.ListObjectsV2(ctx, in)
+		if err != nil {
+			return nil, fmt.Errorf("s3store: list %s: %w", prefix, err)
+		}
+		for _, o := range out.Contents {
+			e := store.Entry{Key: s.unkey(aws.ToString(o.Key)), Size: aws.ToInt64(o.Size)}
+			if o.LastModified != nil {
+				e.Modified = o.LastModified.UTC()
+			}
+			entries = append(entries, e)
+		}
+		if limit > 0 || !aws.ToBool(out.IsTruncated) || aws.ToString(out.NextContinuationToken) == "" {
+			return entries, nil
+		}
+		token = out.NextContinuationToken
 	}
-	return entries, nil
 }
 
 // Prefixes implements store.Store.

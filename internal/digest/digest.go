@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/truvity/audit/keys"
@@ -143,57 +142,44 @@ func (b *Builder) covered(ctx context.Context, prefix string, start, end time.Ti
 	if lookback <= 0 {
 		lookback = 7 * 24 * time.Hour
 	}
-	// A digest is per profile, and a profile holds every tenant's copies. The
-	// tenant sits between the profile and the date, so the tenants are asked
-	// for first: treating the profile prefix as though the date came next would
-	// cover nothing, and using one tenant's prefix would cover one tenant and
-	// leave the rest for the verifier to report as unaccounted for.
-	tenants, err := b.Store.Prefixes(ctx, strings.TrimSuffix(prefix, "/")+"/", "/")
+	var out []Covered
+	err := store.WalkDays(ctx, b.Store, prefix, start.Add(-lookback), end, func(e store.Entry) error {
+		if e.Modified.Before(start) || !e.Modified.Before(end) {
+			return nil
+		}
+		body, err := b.Store.Get(ctx, e.Key)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(body)
+		out = append(out, Covered{
+			Key: e.Key, SHA256: hex.EncodeToString(sum[:]),
+			Size: int64(len(body)), RetainUntil: e.RetainUntil,
+		})
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	var out []Covered
-	for _, tenant := range tenants {
-		for day := start.Add(-lookback).UTC().Truncate(24 * time.Hour); !day.After(end); day = day.AddDate(0, 0, 1) {
-			dayPrefix := fmt.Sprintf("%syear=%s/month=%s/day=%s/",
-				tenant, day.Format("2006"), day.Format("01"), day.Format("02"))
-			after := ""
-			for {
-				entries, err := b.Store.List(ctx, dayPrefix, after, 1000)
-				if err != nil {
-					return nil, err
-				}
-				if len(entries) == 0 {
-					break
-				}
-				for _, e := range entries {
-					after = e.Key
-					if e.Modified.Before(start) || !e.Modified.Before(end) {
-						continue
-					}
-					body, err := b.Store.Get(ctx, e.Key)
-					if err != nil {
-						return nil, err
-					}
-					sum := sha256.Sum256(body)
-					out = append(out, Covered{
-						Key: e.Key, SHA256: hex.EncodeToString(sum[:]),
-						Size: int64(len(body)), RetainUntil: e.RetainUntil,
-					})
-				}
-				if len(entries) < 1000 {
-					break
-				}
-			}
-		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out, nil
 }
 
 // previous finds the digest immediately before a window.
+//
+// Every window produces a digest, empty ones included, so the previous one is
+// almost always the hour before and one head finds it. The listing is for the
+// rest: the first window ever, or the one after a gap.
 func (b *Builder) previous(ctx context.Context, profile string, start time.Time) (*Digest, string, error) {
+	if key := Key(profile, start.Add(-time.Hour)); key != "" {
+		if _, err := b.Store.Head(ctx, key); err == nil {
+			d, err := Read(ctx, b.Store, key)
+			if err != nil {
+				return nil, "", err
+			}
+			return d, key, nil
+		}
+	}
 	entries, err := b.Store.List(ctx, profilePrefix(profile), "", 0)
 	if err != nil {
 		return nil, "", err

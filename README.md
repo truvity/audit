@@ -4,17 +4,30 @@ A company-wide audit trail: one record format, one write path, one
 immutable store, and projections for security, billing, history and
 regulatory evidence.
 
-**Status: write path.** A record can be emitted, validated against its
-catalogue, carried over a stream or an outbox, split into one copy per
-profile, written to a locked bucket with per-profile retention, indexed for
-search, and later proved unaltered by an auditor who trusts nobody. The index
-is a projection: `audit reindex` rebuilds it from the archive, and a test holds
-the rebuild equal to what the writer wrote. The write side of the chart deploys all of it. The read path, the viewer and
-the metering projection do not exist yet. Read [docs/why.md](docs/why.md) first, then
-[docs/concepts.md](docs/concepts.md), then the decisions in
-[docs/decisions/](docs/decisions/), then
-[docs/development/layout.md](docs/development/layout.md) for what is built
-and in what order the rest comes.
+## Start here
+
+| you want to | read |
+|---|---|
+| run it in a cluster | [Deploying](docs/guides/deploy.md) — what to prepare, the chart, a diagram, how to check it works |
+| record what your application does | [Emitting records](docs/guides/emit.md) — the catalogue, registering it, the Go emitter; [`examples/emit`](examples/emit/main.go) |
+| search and read the trail, or audit it | [Reading the trail](docs/guides/read.md) — access, the API, Go and TypeScript clients, `audit verify`; [`examples/read`](examples/read/main.go) |
+| understand why it is built this way | [why](docs/why.md), then [concepts](docs/concepts.md), then [the decisions](docs/decisions/) |
+
+## Status
+
+| part | state |
+|---|---|
+| Record, catalogues, presets, `audit validate` / `check-emitters` | built |
+| Go emitter: block, outbox and best-effort delivery; Connect and JetStream sinks | built |
+| Writer: split per profile, pseudonyms, Object Lock, index, dead letters, legal holds | built |
+| Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
+| Query service: search, facets, get with provenance, export, tail, resolve; JWT sign-in with grants | built |
+| Helm chart: writer, registry, digest / verify / clock / purge jobs | built |
+| Helm chart: the query service | not yet — run it yourself, see [Deploying](docs/guides/deploy.md#the-query-service) |
+| TypeScript: generated types and service descriptors | built, not yet published as a package |
+| TypeScript emitter, the viewer (React package and console) | not yet |
+| Metering projection | not yet |
+| A published release | not yet — build the images with `just snapshot` |
 
 ## What it is
 
@@ -49,10 +62,12 @@ and in what order the rest comes.
 ## Layout
 
 ```
+examples/           an application that emits, a program that reads — compiled in CI
 proto/audit/v1/     record, sink and query contracts (canonical schema)
 schemas/            JSON Schema for catalogues, presets and the annotation vocabulary
 presets/            one file per framework: required fields, retention, citations
 catalogue/          the common catalogue (the component's own meta-events)
+docs/guides/        deploying, emitting, reading: start here
 docs/why.md         what this is and is not
 docs/concepts.md    record, catalogue, slots, profiles, presets, prefixes
 docs/design/        pipeline, split writer, search, authz, integrity, metering, viewer
@@ -61,7 +76,7 @@ docs/research/      the surveys the design rests on, with sources
 docs/reference/     record, catalogue, presets, API, configuration
 docs/operations/    S3 guide, key custody, verification, runbook
 docs/development/   package layout and build order for implementers
-charts/audit/       the write path, deployable; refuses what the binaries would
+charts/audit/       writer, registry and jobs, deployable; refuses what the binaries would
 ```
 
 ## Licence

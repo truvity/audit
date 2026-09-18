@@ -44,6 +44,7 @@ spec:
             - --version={{ .Chart.AppVersion }}
           env:
             {{- include "audit.databaseEnv" . | nindent 12 }}
+            {{- include "audit.trustEnv" . | nindent 12 }}
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 12 }}{{- end }}
           ports:
             - name: http
@@ -67,11 +68,13 @@ spec:
               readOnly: true
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.workloadsMount" . | nindent 12 }}{{- end }}
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 12 }}{{- end }}
+            {{- include "audit.trustMount" . | nindent 12 }}
       volumes:
         - name: deployment
           configMap:
             name: {{ include "audit.fullname" . }}-deployment
         {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 8 }}{{- end }}
+        {{- include "audit.trustVolume" . | nindent 8 }}
 ---
 apiVersion: v1
 kind: Service

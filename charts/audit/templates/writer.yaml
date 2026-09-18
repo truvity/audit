@@ -78,10 +78,8 @@ spec:
             - --key-root=/etc/audit/keys/{{ .Values.keys.local.secretKey }}
             - --key-dir=/var/lib/audit/keys
             {{- else if eq .Values.keys.provider "transit" }}
-            - --transit-address={{ .Values.keys.transit.address }}
-            - --transit-mount={{ .Values.keys.transit.mount }}
             - --transit-prefix={{ .Values.keys.transit.prefix }}
-            - --transit-token-file={{ .Values.keys.transit.tokenFile | default (printf "/etc/audit/transit/%s" .Values.keys.transit.token.secretKey) }}
+            {{- include "audit.openbaoArgs" (dict "root" . "creds" .Values.keys.transit) | nindent 12 }}
             {{- end }}
             {{- if .Values.stream.url }}
             - --stream-url={{ .Values.stream.url }}
@@ -94,6 +92,7 @@ spec:
           env:
             {{- include "audit.archiveEnv" . | nindent 12 }}
             {{- include "audit.databaseEnv" . | nindent 12 }}
+            {{- include "audit.trustEnv" . | nindent 12 }}
             {{- with .Values.telemetry.otlpEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ . | quote }}
@@ -130,11 +129,10 @@ spec:
               readOnly: true
             - name: keys
               mountPath: /var/lib/audit/keys
-            {{- else if and (eq .Values.keys.provider "transit") .Values.keys.transit.token.existingSecret }}
-            - name: transit-token
-              mountPath: /etc/audit/transit
-              readOnly: true
+            {{- else if eq .Values.keys.provider "transit" }}
+            {{- include "audit.openbaoMount" (dict "root" . "creds" .Values.keys.transit) | nindent 12 }}
             {{- end }}
+            {{- include "audit.trustMount" . | nindent 12 }}
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -158,11 +156,10 @@ spec:
           # Acknowledged as disposable: pseudonyms change on every restart.
           emptyDir: {}
           {{- end }}
-        {{- else if and (eq .Values.keys.provider "transit") .Values.keys.transit.token.existingSecret }}
-        - name: transit-token
-          secret:
-            secretName: {{ .Values.keys.transit.token.existingSecret }}
+        {{- else if eq .Values.keys.provider "transit" }}
+        {{- include "audit.openbaoVolume" (dict "root" . "creds" .Values.keys.transit) | nindent 8 }}
         {{- end }}
+        {{- include "audit.trustVolume" . | nindent 8 }}
         - name: tmp
           emptyDir: {}
 ---

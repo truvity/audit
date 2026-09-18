@@ -173,6 +173,7 @@ spec:
             - name: AUDIT_BUCKET
               value: "audit-archive"
             
+            
           ports:
             - name: http
               containerPort: 8080
@@ -202,6 +203,7 @@ spec:
               readOnly: true
             - name: keys
               mountPath: /var/lib/audit/keys
+            
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -214,6 +216,7 @@ spec:
         - name: keys
           persistentVolumeClaim:
             claimName: audit-keys
+        
         - name: tmp
           emptyDir: {}
 

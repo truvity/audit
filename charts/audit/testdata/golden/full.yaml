@@ -370,6 +370,7 @@ spec:
                   key: url
             - name: AUDIT_TOKEN_FILE
               value: /var/run/audit/token
+            
           ports:
             - name: http
               containerPort: 8080
@@ -407,6 +408,7 @@ spec:
             - name: keys
               mountPath: /var/lib/audit/keys
               readOnly: true
+            
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -430,6 +432,7 @@ spec:
           persistentVolumeClaim:
             claimName: audit-keys
             readOnly: true
+        
         - name: tmp
           emptyDir: {}
 
@@ -494,6 +497,7 @@ spec:
                 secretKeyRef:
                   name: audit-database
                   key: url
+            
             - name: AUDIT_TOKEN_FILE
               value: /var/run/audit/token
           ports:
@@ -527,6 +531,7 @@ spec:
             - name: audit-token
               mountPath: /var/run/audit
               readOnly: true
+            
       volumes:
         - name: deployment
           configMap:
@@ -538,6 +543,7 @@ spec:
                   path: token
                   audience: "audit"
                   expirationSeconds: 3600
+        
 
 ---
 # Source: audit/templates/writer.yaml
@@ -612,6 +618,7 @@ spec:
                 secretKeyRef:
                   name: audit-database
                   key: url
+            
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.observability.svc:4318"
           ports:
@@ -647,6 +654,7 @@ spec:
               readOnly: true
             - name: keys
               mountPath: /var/lib/audit/keys
+            
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -659,6 +667,7 @@ spec:
         - name: keys
           persistentVolumeClaim:
             claimName: audit-keys
+        
         - name: tmp
           emptyDir: {}
 
@@ -1074,6 +1083,7 @@ spec:
                     secretKeyRef:
                       name: audit-database
                       key: url
+                
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -1085,10 +1095,12 @@ spec:
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
+                
           volumes:
             - name: deployment
               configMap:
                 name: audit-deployment
+            
 
 ---
 # Source: audit/templates/cronjobs.yaml
@@ -1215,6 +1227,7 @@ spec:
                 secretKeyRef:
                   name: audit-database
                   key: url
+            
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

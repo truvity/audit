@@ -208,10 +208,14 @@ spec:
             - --sink=http://audit:8080
             - --listen=:8080
             - --key-provider=transit
+            - --transit-prefix=audit
             - --transit-address=https://openbao.example:8200
             - --transit-mount=transit
-            - --transit-prefix=audit
-            - --transit-token-file=/etc/audit/transit/token
+            - --transit-namespace=devel
+            - --transit-ca-file=/etc/audit/trust/ca.crt
+            - --transit-auth-mount=jwt-devel
+            - --transit-auth-role=audit-resolve
+            - --transit-jwt-file=/var/run/openbao/token
             - --version=0.1.0
           env:
             - name: AUDIT_BUCKET
@@ -221,6 +225,9 @@ spec:
                 secretKeyRef:
                   name: audit-query-database
                   key: url
+            
+            - name: PGSSLROOTCERT
+              value: /etc/audit/trust/ca.crt
           ports:
             - name: http
               containerPort: 8080
@@ -249,8 +256,13 @@ spec:
               mountPath: /etc/audit/grants.yaml
               subPath: grants.yaml
               readOnly: true
-            - name: transit-token
-              mountPath: /etc/audit/transit
+            
+            - name: openbao-token
+              mountPath: /var/run/openbao
+              readOnly: true
+            
+            - name: trust
+              mountPath: /etc/audit/trust
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -261,9 +273,18 @@ spec:
         - name: grants
           configMap:
             name: audit-grants
-        - name: transit-token
-          secret:
-            secretName: audit-query-transit
+        
+        - name: openbao-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "openbao"
+                  expirationSeconds: 600
+        
+        - name: trust
+          configMap:
+            name: private-ca-bundle
         - name: tmp
           emptyDir: {}
 
@@ -318,10 +339,14 @@ spec:
             - --replicas=3
             - --anonymous-writes
             - --key-provider=transit
+            - --transit-prefix=audit
             - --transit-address=https://openbao.example:8200
             - --transit-mount=transit
-            - --transit-prefix=audit
-            - --transit-token-file=/etc/audit/transit/token
+            - --transit-namespace=devel
+            - --transit-ca-file=/etc/audit/trust/ca.crt
+            - --transit-auth-mount=jwt-devel
+            - --transit-auth-role=audit-writer
+            - --transit-jwt-file=/var/run/openbao/token
             - --version=0.1.0
           env:
             - name: AUDIT_BUCKET
@@ -332,6 +357,9 @@ spec:
                 secretKeyRef:
                   name: audit-database
                   key: url
+            
+            - name: PGSSLROOTCERT
+              value: /etc/audit/trust/ca.crt
           ports:
             - name: http
               containerPort: 8080
@@ -356,8 +384,13 @@ spec:
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
               readOnly: true
-            - name: transit-token
-              mountPath: /etc/audit/transit
+            
+            - name: openbao-token
+              mountPath: /var/run/openbao
+              readOnly: true
+            
+            - name: trust
+              mountPath: /etc/audit/trust
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -365,9 +398,18 @@ spec:
         - name: deployment
           configMap:
             name: audit-deployment
-        - name: transit-token
-          secret:
-            secretName: audit-writer-transit
+        
+        - name: openbao-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "openbao"
+                  expirationSeconds: 600
+        
+        - name: trust
+          configMap:
+            name: private-ca-bundle
         - name: tmp
           emptyDir: {}
 
@@ -416,7 +458,14 @@ spec:
               args:
                 - digest
                 - --deployment=/etc/audit/deployment.yaml
-                - --key=/etc/audit/signing/key.pem
+                - --transit-key=audit-digest
+                - --transit-address=https://openbao.example:8200
+                - --transit-mount=transit
+                - --transit-namespace=devel
+                - --transit-ca-file=/etc/audit/trust/ca.crt
+                - --transit-auth-mount=jwt-devel
+                - --transit-auth-role=audit-digest
+                - --transit-jwt-file=/var/run/openbao/token
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
               env:
@@ -437,16 +486,30 @@ spec:
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
-                - name: signing
-                  mountPath: /etc/audit/signing
+                
+                - name: openbao-token
+                  mountPath: /var/run/openbao
+                  readOnly: true
+                
+                - name: trust
+                  mountPath: /etc/audit/trust
                   readOnly: true
           volumes:
             - name: deployment
               configMap:
                 name: audit-deployment
-            - name: signing
-              secret:
-                secretName: audit-signing-key
+            
+            - name: openbao-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "openbao"
+                      expirationSeconds: 600
+            
+            - name: trust
+              configMap:
+                name: private-ca-bundle
 
 ---
 # Source: audit/templates/cronjobs.yaml
@@ -700,10 +763,23 @@ spec:
                 secretKeyRef:
                   name: audit-database
                   key: url
+            
+            - name: PGSSLROOTCERT
+              value: /etc/audit/trust/ca.crt
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+          volumeMounts:
+            
+            - name: trust
+              mountPath: /etc/audit/trust
+              readOnly: true
+      volumes:
+        
+        - name: trust
+          configMap:
+            name: private-ca-bundle
 

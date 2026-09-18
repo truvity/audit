@@ -108,7 +108,10 @@ query:
   #    resolves and nothing else (docs/operations/openbao-keys.md).
   resolve:
     enabled: false
+    # With transit: how the query service signs in, one of three, never the
+    # writer's — its policy grants decrypt and nothing else.
     transit:
+      role: ""
       token:
         existingSecret: ""
         secretKey: token
@@ -179,14 +182,16 @@ keys:
   # replica asks the same one, and there is no directory to lose. See
   # docs/operations/openbao-keys.md for the policies the engine needs.
   provider: local
+  # Under `openbao` below.
   transit:
-    address: ""
-    mount: transit
     # Every key is <prefix>.<purpose>.<tenant>; the policies glob on it.
     prefix: audit
-    # The writer's token: from a Secret, or from a file an agent keeps renewed
-    # (tokenFile, a path inside the pod). One of the two. Its policy grants
-    # hmac and encrypt on this writer's purposes and nothing on transit/keys.
+    # How the writer signs in, one of three. `role` is a role on
+    # `openbao.auth.mount`, taken with the writer's projected service-account
+    # token: nothing stored. Otherwise a token Secret, or a file something else
+    # keeps renewed. Its policy grants hmac and encrypt on the writer's
+    # purposes and nothing on transit/keys.
+    role: ""
     token:
       existingSecret: ""
       secretKey: token
@@ -210,6 +215,31 @@ keys:
     # Set only for a throwaway install. It acknowledges that pseudonyms will
     # change on every restart, which makes the trail unlinkable across one.
     ephemeralIsAcceptable: false
+
+# The OpenBAO this release reaches: for the transit key provider, and for the
+# digest signer if it signs with a transit key.
+openbao:
+  address: ""
+  mount: transit
+  # The namespace the engine and the auth mount are in; in an estate with a
+  # namespace per environment, the environment's. Empty is root.
+  namespace: ""
+  # A JWT auth mount that takes this cluster's service-account tokens, e.g.
+  # jwt-devel. Each component that names a `role` signs in on it with a
+  # projected token of this audience, replaced by the kubelet before it
+  # expires, and signs in again when its session's lease runs out.
+  auth:
+    mount: ""
+    audience: openbao
+    expirationSeconds: 600
+
+# A CA bundle trusted beside the system roots — typically trust-manager's
+# ConfigMap of a private chain. Every pod that reaches OpenBAO or Postgres
+# mounts it: OpenBAO calls take it as their CA, and Postgres connections read it
+# through PGSSLROOTCERT, so a server certificate from that chain is verified.
+trust:
+  configMap: ""
+  key: ca.crt
 
 # The wide stream. Without a URL the writer only serves its own sink, which is
 # what an application that publishes straight to it wants.
@@ -254,15 +284,16 @@ jobs:
     # `audit key public --kms-key <id>`.
     kmsKey: ""
     # Or sign with an OpenBAO transit ed25519 key: the same separation, for a
-    # deployment whose secrets live in OpenBAO. The token (or one an agent
-    # keeps renewed) is read from a Secret on every call.
+    # deployment whose secrets live in OpenBAO. The engine is `openbao`; this
+    # is the key and how the job signs in — one of three, as for the writer,
+    # and never the writer's.
     transit:
       key: ""
-      address: ""
-      mount: transit
+      role: ""
       token:
         existingSecret: ""
         secretKey: token
+      tokenFile: ""
     lookback: ""
     maxWindows: 0
   verify:

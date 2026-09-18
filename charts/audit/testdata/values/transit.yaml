@@ -6,16 +6,25 @@ anonymousWrites: true
 replicas: 3
 database:
   existingSecret: audit-database
+# OpenBAO as the estate runs it: a namespace per environment, each component
+# signing in with its own projected token on the cluster's JWT mount, and a
+# server certificate from a private chain that trust-manager distributes.
+openbao:
+  address: https://openbao.example:8200
+  namespace: devel
+  auth:
+    mount: jwt-devel
+trust:
+  configMap: private-ca-bundle
 keys:
   provider: transit
   transit:
-    address: https://openbao.example:8200
-    token:
-      existingSecret: audit-writer-transit
+    role: audit-writer
 jobs:
   digest:
-    signingKey:
-      existingSecret: audit-signing-key
+    transit:
+      key: audit-digest
+      role: audit-digest
   verify:
     publicKey:
       existingSecret: audit-signing-public
@@ -34,5 +43,4 @@ query:
   resolve:
     enabled: true
     transit:
-      token:
-        existingSecret: audit-query-transit
+      role: audit-resolve

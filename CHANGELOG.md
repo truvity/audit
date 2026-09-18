@@ -99,9 +99,14 @@ Foundation. No release.
   engine's HMAC and a sealed identifier its encryption, both pinned to the
   key's first version, so the key never leaves the engine and every replica
   agrees without a shared directory. Destroy trims the first version and
-  leaves the key as its own erasure marker. `--key-provider local|transit` on
-  the writer, the query service and `audit key destroy`; the chart's
-  `keys.provider: transit`.
+  leaves the key as its own erasure marker. It and the transit digest signer
+  sign in with the pod's projected service-account token on a JWT auth mount
+  (`keys.JWTLogin`), signing in again as the lease runs out; they address an
+  OpenBAO namespace and trust a private chain's bundle. `--key-provider
+  local|transit` and the shared `--transit-*` flags on the writer, the query
+  service, `audit key destroy` and `audit digest`; the chart's `openbao`,
+  `keys.provider: transit`, a role per component, and `trust.configMap` for
+  OpenBAO and Postgres alike.
 - Retention addenda: an action that `extends` the records a data property
   names lengthens the lock on the objects holding them — a renewal on the
   issuance, a credential on the identity proofing it relied on — to its own

@@ -29,11 +29,53 @@ Every call is pinned to the key's **first version**. Keys are never rotated
 (rotating would break linkability for one person across time), and pinning
 means a rotation by somebody else changes nothing.
 
+## What the engine needs
+
+In the namespace the keys live in (in an estate with a namespace per
+environment, the environment's):
+
+- a **transit** engine, at `openbao.mount` (`transit`);
+- a **JWT auth mount** that takes this cluster's service-account tokens, e.g.
+  `jwt-devel`, with one **role per component**. Each role binds the
+  component's service account as the subject and `openbao` as the audience,
+  and names the component's policy:
+
+| component | service account (chart default) | chart value | policy |
+|---|---|---|---|
+| writer | `<release>` | `keys.transit.role` | writer |
+| query service, if it resolves | `<release>-query` | `query.resolve.transit.role` | resolve |
+| digest job, if it signs with transit | `<release>-digest` | `jobs.digest.transit.role` | digest |
+
+The chart refuses to give two components the same role or token. Each is a
+separate privilege, and one identity holding two of them is the thing the
+separation exists to prevent.
+
+## Signing in
+
+Each component signs in with its **projected service-account token**. The chart
+mounts one with audience `openbao.auth.audience` (default `openbao`) that the
+kubelet replaces before it expires. The component presents it on
+`openbao.auth.mount` under its role, and signs in again once three quarters of
+the session's lease has passed, or at once if the engine refuses a session that
+was revoked early. No token is stored anywhere, so there is nothing to leak and
+nothing to rotate.
+
+A token Secret or a token file is accepted instead, for an engine that is not
+set up for JWT logins. `audit key destroy`, run from an operator's shell, takes
+`BAO_ADDR`, `BAO_NAMESPACE`, `BAO_CACERT` and `BAO_TOKEN`, or the `VAULT_`
+names.
+
+If the engine's certificate comes from a private chain, give the chart that
+chain's bundle as `trust.configMap`. trust-manager's ConfigMap is the usual
+source. Every pod that reaches OpenBAO or Postgres mounts it.
+
 ## Policies
 
-What each role may do is the engine's policy, not this code's. A glob on the
-prefix and purpose is what scopes a role. The dot after the purpose keeps
-`billing` from also matching `billing2`.
+Written here as HCL to show their shape. Where policies are generated from
+configuration, as they should be, these are what the generator must produce,
+and the tests below run each one as its own token.
+
+The dot after the purpose keeps `billing` from also matching `billing2`.
 
 The **writer** pseudonymises and seals for every profile it writes, and
 creates keys through the encrypt endpoint:
@@ -64,7 +106,15 @@ profiles it resolves:
 path "transit/decrypt/audit.security.*" { capabilities = ["update"] }
 ```
 
-The **erasure operator**, who runs `audit key destroy`:
+The **digest job**, if it signs with transit:
+
+```hcl
+path "transit/sign/audit-digest" { capabilities = ["update"] }
+path "transit/keys/audit-digest" { capabilities = ["read"] }
+```
+
+The **erasure operator**, who runs `audit key destroy`. This is a person, so
+it is granted to a human group rather than to a workload's role:
 
 ```hcl
 path "transit/keys/audit.*"    { capabilities = ["read", "update"] }
@@ -81,15 +131,6 @@ destroyed at once.
 with `deletion_allowed`. A deleted key would be created afresh the next time
 the tenant appears. The same person would then get a second identity, and
 nothing would say so.
-
-## Tokens
-
-The writer reads its token from a file on every call (`--transit-token-file`),
-so an agent can keep it renewed. With the chart that is either a Secret
-(`keys.transit.token.existingSecret`) or a path where an agent writes the
-token (`keys.transit.tokenFile`). `audit key destroy` run from an operator's
-shell takes `BAO_ADDR` and `BAO_TOKEN` (or the `VAULT_` names) when no flags
-are given.
 
 ## Destroying a key
 
@@ -126,9 +167,17 @@ docker run -d --rm --name bao -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
 AUDIT_OPENBAO_URL=http://127.0.0.1:8200 AUDIT_OPENBAO_TOKEN=root go test ./keys/ ./internal/writer/
 ```
 
-They cover two writers with separate stores agreeing on a pseudonym, purposes
-and tenants not joining, and destroy leaving a tombstone that a fresh provider
-respects. Every policy on this page is also run as its own token: a
-single-purpose role refuses another purpose and cannot destroy, the writer
-seals but cannot open, resolve opens and does nothing else, and the eraser
-destroys but cannot delete.
+They cover:
+
+- two writers with separate stores agreeing on a pseudonym;
+- purposes and tenants not joining;
+- destroy leaving a tombstone that a fresh provider respects;
+- a login with a projected token inside a namespace, signing in again after the
+  lease runs out and after a revoke, and a token for the wrong audience refused
+  at start-up;
+- the digest signer signing in the same way;
+- every policy on this page run as its own token: a single-purpose role refuses
+  another purpose and cannot destroy, the writer seals but cannot open, resolve
+  opens and does nothing else, and the eraser destroys but cannot delete.
+
+The private-chain handshake is tested without a server, in the ordinary suite.

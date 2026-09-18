@@ -37,9 +37,7 @@ spec:
                 - --kms-key={{ .Values.jobs.digest.kmsKey }}
                 {{- else if .Values.jobs.digest.transit.key }}
                 - --transit-key={{ .Values.jobs.digest.transit.key }}
-                - --transit-address={{ .Values.jobs.digest.transit.address }}
-                - --transit-mount={{ .Values.jobs.digest.transit.mount }}
-                - --transit-token-file=/etc/audit/transit/{{ .Values.jobs.digest.transit.token.secretKey }}
+                {{- include "audit.openbaoArgs" (dict "root" . "creds" .Values.jobs.digest.transit) | nindent 16 }}
                 {{- else }}
                 - --key=/etc/audit/signing/{{ .Values.jobs.digest.signingKey.secretKey }}
                 {{- with .Values.jobs.digest.signingKey.keyID }}
@@ -74,9 +72,8 @@ spec:
                   readOnly: true
                 {{- end }}
                 {{- if .Values.jobs.digest.transit.key }}
-                - name: transit
-                  mountPath: /etc/audit/transit
-                  readOnly: true
+                {{- include "audit.openbaoMount" (dict "root" . "creds" .Values.jobs.digest.transit) | nindent 16 }}
+                {{- include "audit.trustMount" . | nindent 16 }}
                 {{- end }}
                 {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 16 }}{{- end }}
           volumes:
@@ -89,9 +86,8 @@ spec:
                 secretName: {{ .Values.jobs.digest.signingKey.existingSecret }}
             {{- end }}
             {{- if .Values.jobs.digest.transit.key }}
-            - name: transit
-              secret:
-                secretName: {{ .Values.jobs.digest.transit.token.existingSecret }}
+            {{- include "audit.openbaoVolume" (dict "root" . "creds" .Values.jobs.digest.transit) | nindent 12 }}
+            {{- include "audit.trustVolume" . | nindent 12 }}
             {{- end }}
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 12 }}{{- end }}
 {{- end }}
@@ -202,6 +198,7 @@ spec:
                 {{- end }}
               env:
                 {{- include "audit.databaseEnv" . | nindent 16 }}
+                {{- include "audit.trustEnv" . | nindent 16 }}
               securityContext:
                 {{- toYaml .Values.securityContext | nindent 16 }}
               volumeMounts:
@@ -209,10 +206,12 @@ spec:
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
+                {{- include "audit.trustMount" . | nindent 16 }}
           volumes:
             - name: deployment
               configMap:
                 name: {{ $full }}-deployment
+            {{- include "audit.trustVolume" . | nindent 12 }}
 {{- end }}
 {{- if .Values.jobs.clockSync.enabled }}
 ---

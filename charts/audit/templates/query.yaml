@@ -82,10 +82,8 @@ spec:
             - --key-dir=/var/lib/audit/keys
             {{- else if $resolveTransit }}
             - --key-provider=transit
-            - --transit-address={{ .Values.keys.transit.address }}
-            - --transit-mount={{ .Values.keys.transit.mount }}
             - --transit-prefix={{ .Values.keys.transit.prefix }}
-            - --transit-token-file={{ .Values.query.resolve.transit.tokenFile | default (printf "/etc/audit/transit/%s" .Values.query.resolve.transit.token.secretKey) }}
+            {{- include "audit.openbaoArgs" (dict "root" . "creds" .Values.query.resolve.transit) | nindent 12 }}
             {{- end }}
             - --version={{ .Chart.AppVersion }}
           env:
@@ -98,6 +96,7 @@ spec:
                   key: {{ .Values.query.database.secretKey }}
             {{- end }}
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 12 }}{{- end }}
+            {{- include "audit.trustEnv" . | nindent 12 }}
           ports:
             - name: http
               containerPort: {{ .Values.query.service.port }}
@@ -130,11 +129,10 @@ spec:
             - name: keys
               mountPath: /var/lib/audit/keys
               readOnly: true
-            {{- else if and $resolveTransit .Values.query.resolve.transit.token.existingSecret }}
-            - name: transit-token
-              mountPath: /etc/audit/transit
-              readOnly: true
+            {{- else if $resolveTransit }}
+            {{- include "audit.openbaoMount" (dict "root" . "creds" .Values.query.resolve.transit) | nindent 12 }}
             {{- end }}
+            {{- include "audit.trustMount" . | nindent 12 }}
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -153,11 +151,10 @@ spec:
           persistentVolumeClaim:
             claimName: {{ $keysClaim }}
             readOnly: true
-        {{- else if and $resolveTransit .Values.query.resolve.transit.token.existingSecret }}
-        - name: transit-token
-          secret:
-            secretName: {{ .Values.query.resolve.transit.token.existingSecret }}
+        {{- else if $resolveTransit }}
+        {{- include "audit.openbaoVolume" (dict "root" . "creds" .Values.query.resolve.transit) | nindent 8 }}
         {{- end }}
+        {{- include "audit.trustVolume" . | nindent 8 }}
         - name: tmp
           emptyDir: {}
 ---

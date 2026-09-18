@@ -39,11 +39,21 @@ type Transit struct {
 	Mount string
 	// Prefix starts every key's name. Empty means "audit".
 	Prefix string
-	// Token authenticates; TokenFile, read on every call, is for a token an
-	// agent keeps renewed. One of the two.
+	// Namespace is the OpenBAO namespace the engine lives in — in the estate,
+	// the environment's. Empty is the root namespace.
+	Namespace string
+	// CAFile is a PEM bundle trusted beside the system roots, for a server
+	// whose certificate comes from a private chain.
+	CAFile string
+	// One way to authenticate: Login, which signs in with the pod's projected
+	// service-account token and needs no stored secret; or Token; or
+	// TokenFile, read on every call, for a token something else keeps renewed.
+	Login     *JWTLogin
 	Token     string
 	TokenFile string
 	HTTP      *http.Client
+
+	state baoState
 }
 
 // transitVersion is the version every pseudonym and seal is made under.
@@ -61,13 +71,14 @@ func NewTransit(ctx context.Context, t *Transit) (*Transit, error) {
 	if t.Address == "" {
 		return nil, errors.New("keys: the transit provider needs an address")
 	}
-	if _, err := t.conn().token(); err != nil {
+	if err := t.conn().check(); err != nil {
 		return nil, err
 	}
 	// lookup-self is in every token's default policy, so this proves the
-	// server answers and the token is alive without asking for more rights
-	// than the provider will use.
-	self := openbao{Address: t.Address, Mount: "auth/token", HTTP: t.HTTP, Token: t.Token, TokenFile: t.TokenFile}
+	// server answers, the login works and the token is alive, without asking
+	// for more rights than the provider will use.
+	self := t.conn()
+	self.Mount = "auth/token"
 	if err := self.call(ctx, http.MethodGet, "lookup-self", nil, nil); err != nil {
 		return nil, fmt.Errorf("keys: the transit engine does not take this token: %w", err)
 	}
@@ -75,7 +86,10 @@ func NewTransit(ctx context.Context, t *Transit) (*Transit, error) {
 }
 
 func (t *Transit) conn() openbao {
-	return openbao{Address: t.Address, Mount: t.Mount, Token: t.Token, TokenFile: t.TokenFile, HTTP: t.HTTP}
+	return openbao{
+		Address: t.Address, Mount: t.Mount, Namespace: t.Namespace, CAFile: t.CAFile,
+		Login: t.Login, Token: t.Token, TokenFile: t.TokenFile, HTTP: t.HTTP, state: &t.state,
+	}
 }
 
 // name is the transit key for a tenant and purpose.

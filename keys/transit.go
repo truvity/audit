@@ -38,12 +38,21 @@ type TransitSigner struct {
 	Mount string
 	// Key is the transit key's name.
 	Key string
-	// Token authenticates; TokenFile, read on every call, is for a token an
-	// agent keeps renewed. One of the two.
+	// Namespace is the OpenBAO namespace the engine lives in — in the estate,
+	// the environment's. Empty is the root namespace.
+	Namespace string
+	// CAFile is a PEM bundle trusted beside the system roots, for a server
+	// whose certificate comes from a private chain.
+	CAFile string
+	// One way to authenticate: Login, which signs in with the pod's projected
+	// service-account token and needs no stored secret; or Token; or
+	// TokenFile, read on every call, for a token something else keeps renewed.
+	Login     *JWTLogin
 	Token     string
 	TokenFile string
 	HTTP      *http.Client
 
+	state   baoState
 	once    sync.Once
 	version int
 	public  []byte
@@ -60,6 +69,9 @@ func NewTransitSigner(ctx context.Context, s *TransitSigner) (*TransitSigner, er
 	if s.Address == "" || s.Key == "" {
 		return nil, errors.New("keys: a transit signer needs an address and a key")
 	}
+	if err := s.conn().check(); err != nil {
+		return nil, err
+	}
 	if err := s.load(ctx); err != nil {
 		return nil, err
 	}
@@ -68,7 +80,10 @@ func NewTransitSigner(ctx context.Context, s *TransitSigner) (*TransitSigner, er
 
 // conn is the signer's connection to the engine.
 func (s *TransitSigner) conn() openbao {
-	return openbao{Address: s.Address, Mount: s.Mount, Token: s.Token, TokenFile: s.TokenFile, HTTP: s.HTTP}
+	return openbao{
+		Address: s.Address, Mount: s.Mount, Namespace: s.Namespace, CAFile: s.CAFile,
+		Login: s.Login, Token: s.Token, TokenFile: s.TokenFile, HTTP: s.HTTP, state: &s.state,
+	}
 }
 
 // call makes one request to the transit engine and decodes its data.

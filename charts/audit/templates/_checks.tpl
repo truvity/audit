@@ -36,15 +36,7 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- fail "audit: `keys.local.persistence.enabled` is false. Data keys are random and wrapped into that directory, so losing it re-keys every tenant: the same person gets a new pseudonym and the trail stops linking across the restart. Set `keys.local.ephemeralIsAcceptable: true` if this install is disposable." -}}
   {{- end -}}
 {{- else if eq .Values.keys.provider "transit" -}}
-  {{- if not .Values.keys.transit.address -}}
-  {{- fail "audit: set `keys.transit.address` to the OpenBAO server the keys live in." -}}
-  {{- end -}}
-  {{- if eq (len (compact (list .Values.keys.transit.token.existingSecret .Values.keys.transit.tokenFile))) 0 -}}
-  {{- fail "audit: the transit key provider needs a token: `keys.transit.token.existingSecret`, or `keys.transit.tokenFile` where an agent writes one." -}}
-  {{- end -}}
-  {{- if and .Values.keys.transit.token.existingSecret .Values.keys.transit.tokenFile -}}
-  {{- fail "audit: give the transit token one way, `keys.transit.token.existingSecret` or `keys.transit.tokenFile`, not both." -}}
-  {{- end -}}
+  {{- include "audit.checkOpenBAO" (dict "root" . "creds" .Values.keys.transit "what" "the transit key provider" "at" "keys.transit") -}}
 {{- else -}}
 {{- fail (printf "audit: key provider %q is not one this chart knows: `local` or `transit`." .Values.keys.provider) -}}
 {{- end -}}
@@ -60,8 +52,11 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- if gt $signers 1 -}}
   {{- fail "audit: more than one of `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` and `jobs.digest.transit.key` is set. One chain has one signer; pick one." -}}
   {{- end -}}
-  {{- if and .Values.jobs.digest.transit.key (not (and .Values.jobs.digest.transit.address .Values.jobs.digest.transit.token.existingSecret)) -}}
-  {{- fail "audit: `jobs.digest.transit.key` needs `jobs.digest.transit.address` and `jobs.digest.transit.token.existingSecret`: the job signs through the transit engine and has to reach it and be allowed to." -}}
+  {{- if .Values.jobs.digest.transit.key -}}
+    {{- include "audit.checkOpenBAO" (dict "root" . "creds" .Values.jobs.digest.transit "what" "the digest job" "at" "jobs.digest.transit") -}}
+    {{- if and (eq .Values.keys.provider "transit") (or (and .Values.jobs.digest.transit.role (eq .Values.jobs.digest.transit.role .Values.keys.transit.role)) (and .Values.jobs.digest.transit.token.existingSecret (eq .Values.jobs.digest.transit.token.existingSecret .Values.keys.transit.token.existingSecret))) -}}
+    {{- fail "audit: the digest job signs in as the writer. Whoever writes the archive and can also sign its digests can choose what to sign; give the job its own role." -}}
+    {{- end -}}
   {{- end -}}
 {{- end -}}
 
@@ -104,11 +99,9 @@ understand, or — worse — to a trail that looks fine and is not.
       {{- fail "audit: `query.resolve` with the local key provider mounts the writer's key directory, which needs `keys.local.persistence` with ReadWriteMany: the query service runs beside the writer, not in its place. The transit provider needs no shared volume." -}}
       {{- end -}}
     {{- else if eq .Values.keys.provider "transit" -}}
-      {{- if eq (len (compact (list .Values.query.resolve.transit.token.existingSecret .Values.query.resolve.transit.tokenFile))) 0 -}}
-      {{- fail "audit: `query.resolve` with transit needs its own token, `query.resolve.transit.token.existingSecret` or `.tokenFile`, whose policy grants decrypt on the purposes it resolves. Not the writer's: the writer seals and must not be able to open." -}}
-      {{- end -}}
-      {{- if and .Values.query.resolve.transit.token.existingSecret (eq .Values.query.resolve.transit.token.existingSecret .Values.keys.transit.token.existingSecret) -}}
-      {{- fail "audit: `query.resolve.transit.token` is the writer's token. Resolving and writing are separate privileges: the writer's policy seals and must not open." -}}
+      {{- include "audit.checkOpenBAO" (dict "root" . "creds" .Values.query.resolve.transit "what" "resolve in the query service" "at" "query.resolve.transit") -}}
+      {{- if or (and .Values.query.resolve.transit.role (eq .Values.query.resolve.transit.role .Values.keys.transit.role)) (and .Values.query.resolve.transit.token.existingSecret (eq .Values.query.resolve.transit.token.existingSecret .Values.keys.transit.token.existingSecret)) -}}
+      {{- fail "audit: `query.resolve.transit` signs in as the writer. Resolving and writing are separate privileges: the writer's policy seals and must not open." -}}
       {{- end -}}
     {{- end -}}
   {{- end -}}

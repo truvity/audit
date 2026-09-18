@@ -33,8 +33,11 @@ binary's flags with dots.
 | `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database. Without it the writer indexes nothing and deduplicates in process |
 | `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
 | `keys.provider` | `local` (a root and a directory) or `transit` (OpenBAO; the one for several replicas — see [OpenBAO keys](../operations/openbao-keys.md)) |
-| `keys.transit.address`, `.mount`, `.prefix` | the engine, where transit is mounted (`transit`), and what every key name starts with (`audit`) |
-| `keys.transit.token.existingSecret` or `keys.transit.tokenFile` | the writer's token, from a Secret or from a file an agent keeps renewed; one of the two |
+| `openbao.address`, `.mount`, `.namespace` | the OpenBAO the transit key provider and the transit digest signer reach: the server, where transit is mounted (`transit`), and the namespace (empty is root) |
+| `openbao.auth.mount`, `.audience`, `.expirationSeconds` | the JWT auth mount each component signs in on with its projected service-account token (e.g. `jwt-devel`), the token's audience (`openbao`) and lifetime (600) |
+| `keys.transit.prefix` | what every key name starts with (`audit`) |
+| `keys.transit.role`, or `.token.existingSecret`, or `.tokenFile` | how the writer signs in, exactly one: a role on `openbao.auth.mount` (nothing stored), a token Secret, or a token file |
+| `trust.configMap`, `trust.key` | a CA bundle trusted beside the system roots, e.g. trust-manager's for a private chain; mounted by every pod that reaches OpenBAO or Postgres (`PGSSLROOTCERT`) |
 | `keys.local.existingSecret` | the 32-byte root the data keys are wrapped under |
 | `keys.local.persistence` | where the wrapped keys live. They are random, not derived, so this is the only copy: back it up, and use ReadWriteMany for more than one replica |
 | `catalogues` | catalogue documents registered at start-up, by name |
@@ -62,7 +65,7 @@ In the chart, under `query` (`query.enabled`):
 | `query.database.existingSecret` or `.url` | the query service's **own** role: `usage` on the schema, `select` on its tables, not the owner. Tenant row-level security binds only a non-owner, so the chart refuses the writer's credentials here |
 | `query.grants` | the grants file below, inline |
 | `query.exports.bucket`, `.expiry`, `.linkValid` | a separate unlocked bucket for exports; empty refuses export |
-| `query.resolve.enabled` | give this service the keys to open sealed identifiers. `local` mounts the writer's key directory read-only (ReadWriteMany required); `transit` takes its own token (`query.resolve.transit.token.existingSecret` or `.tokenFile`), never the writer's |
+| `query.resolve.enabled` | give this service the keys to open sealed identifiers. `local` mounts the writer's key directory read-only (ReadWriteMany required); `transit` signs in its own way (`query.resolve.transit.role`, `.token.existingSecret` or `.tokenFile`), never as the writer |
 | `query.serviceAccount.annotations` | its role: read on the archive, write on the exports bucket |
 | `networkPolicy.queryIngressFrom` | who may reach it, normally the gateway; empty leaves it open in the cluster |
 

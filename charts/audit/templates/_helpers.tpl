@@ -202,3 +202,94 @@ for it.
   subPath: workloads.yaml
   readOnly: true
 {{- end -}}
+
+{{/*
+How a component reaches OpenBAO: the shared connection, and the component's own
+way of signing in — a role on the JWT auth mount with its projected token, a
+token Secret, or a token file. Called with (dict "root" $ "creds" <values>).
+*/}}
+{{- define "audit.openbaoArgs" -}}
+- --transit-address={{ .root.Values.openbao.address }}
+- --transit-mount={{ .root.Values.openbao.mount }}
+{{- with .root.Values.openbao.namespace }}
+- --transit-namespace={{ . }}
+{{- end }}
+{{- if .root.Values.trust.configMap }}
+- --transit-ca-file=/etc/audit/trust/{{ .root.Values.trust.key }}
+{{- end }}
+{{- if .creds.role }}
+- --transit-auth-mount={{ .root.Values.openbao.auth.mount }}
+- --transit-auth-role={{ .creds.role }}
+- --transit-jwt-file=/var/run/openbao/token
+{{- else if .creds.tokenFile }}
+- --transit-token-file={{ .creds.tokenFile }}
+{{- else }}
+- --transit-token-file=/etc/audit/transit/{{ .creds.token.secretKey }}
+{{- end }}
+{{- end -}}
+
+{{- define "audit.openbaoMount" -}}
+{{- if .creds.role }}
+- name: openbao-token
+  mountPath: /var/run/openbao
+  readOnly: true
+{{- else if .creds.token.existingSecret }}
+- name: transit-token
+  mountPath: /etc/audit/transit
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{- define "audit.openbaoVolume" -}}
+{{- if .creds.role }}
+- name: openbao-token
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: token
+          audience: {{ .root.Values.openbao.auth.audience | quote }}
+          expirationSeconds: {{ .root.Values.openbao.auth.expirationSeconds }}
+{{- else if .creds.token.existingSecret }}
+- name: transit-token
+  secret:
+    secretName: {{ .creds.token.existingSecret }}
+{{- end }}
+{{- end -}}
+
+{{/* Refuses a component's OpenBAO credentials unless there is exactly one way. */}}
+{{- define "audit.checkOpenBAO" -}}
+{{- if not .root.Values.openbao.address -}}
+{{- fail (printf "audit: %s signs through OpenBAO: set `openbao.address`." .what) -}}
+{{- end -}}
+{{- $ways := len (compact (list .creds.role .creds.token.existingSecret .creds.tokenFile)) -}}
+{{- if ne $ways 1 -}}
+{{- fail (printf "audit: %s needs exactly one way to sign in to OpenBAO: `%s.role` (a JWT login with its projected token, the estate's way), `%s.token.existingSecret`, or `%s.tokenFile`." .what .at .at .at) -}}
+{{- end -}}
+{{- if and .creds.role (not .root.Values.openbao.auth.mount) -}}
+{{- fail (printf "audit: `%s.role` signs in on `openbao.auth.mount`, which is not set." .at) -}}
+{{- end -}}
+{{- end -}}
+
+{{/* The trust bundle, for OpenBAO and Postgres alike. */}}
+{{- define "audit.trustMount" -}}
+{{- if .Values.trust.configMap }}
+- name: trust
+  mountPath: /etc/audit/trust
+  readOnly: true
+{{- end }}
+{{- end -}}
+
+{{- define "audit.trustVolume" -}}
+{{- if .Values.trust.configMap }}
+- name: trust
+  configMap:
+    name: {{ .Values.trust.configMap }}
+{{- end }}
+{{- end -}}
+
+{{- define "audit.trustEnv" -}}
+{{- if .Values.trust.configMap }}
+- name: PGSSLROOTCERT
+  value: /etc/audit/trust/{{ .Values.trust.key }}
+{{- end }}
+{{- end -}}

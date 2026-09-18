@@ -638,18 +638,16 @@ func digestCmd(args []string) error {
 	return err
 }
 
-// transitOptions names an OpenBAO transit signing key.
+// transitOptions names an OpenBAO transit signing key and how to reach it.
 type transitOptions struct {
-	key, address, mount, tokenFile *string
+	key     *string
+	openbao *cli.OpenBAOFlags
 }
 
 func transitFlags(flags *flag.FlagSet) transitOptions {
 	return transitOptions{
 		key:     flags.String("transit-key", "", "an OpenBAO transit ed25519 key to sign with"),
-		address: flags.String("transit-address", os.Getenv("BAO_ADDR"), "the OpenBAO server; default BAO_ADDR"),
-		mount:   flags.String("transit-mount", "transit", "where the transit engine is mounted"),
-		tokenFile: flags.String("transit-token-file", "",
-			"a file holding the token, read on every call; default the BAO_TOKEN environment variable"),
+		openbao: cli.NewOpenBAOFlags(flags, nil),
 	}
 }
 
@@ -679,9 +677,11 @@ func signerFor(ctx context.Context, keyFile, keyID, kmsKey, region string, trans
 		}
 		return &keys.KMSSigner{Client: kms.NewFromConfig(cfg), Key: kmsKey}, nil
 	case transit.key != nil && *transit.key != "":
+		o := transit.openbao
+		login, token, tokenFile := o.Credentials()
 		return keys.NewTransitSigner(ctx, &keys.TransitSigner{
-			Address: *transit.address, Mount: *transit.mount, Key: *transit.key,
-			Token: os.Getenv("BAO_TOKEN"), TokenFile: *transit.tokenFile,
+			Address: *o.Address, Mount: *o.Mount, Namespace: *o.Namespace, CAFile: *o.CAFile, Key: *transit.key,
+			Login: login, Token: token, TokenFile: tokenFile,
 		})
 	default:
 		return keys.LoadLocalSignerFile(keyID, keyFile)

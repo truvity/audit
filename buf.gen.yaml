@@ -22,4 +22,9 @@ plugins:
   # @connectrpc/connect v2 consumes them via createClient.
   - remote: buf.build/bufbuild/es
     out: ts/src/gen
-    opt: target=ts
+    # Relative imports carry .js, which Node's ESM resolution requires of the
+    # compiled package: without it `./record_pb` resolves in a bundler and
+    # nowhere else.
+    opt:
+      - target=ts
+      - import_extension=js

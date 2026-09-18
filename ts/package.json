@@ -1,0 +1,55 @@
+{
+  "name": "@truvity/audit-ts",
+  "version": "0.0.0",
+  "description": "Sources for @truvity/audit. The published package is the repository root; this builds into dist/, which the release publishes to GitHub Packages.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.15.0",
+    "@connectrpc/connect": "^2.1.2",
+    "intl-messageformat": "^11.0.0"
+  },
+  "peerDependencies": {
+    "@mui/material": ">=7",
+    "react": ">=19"
+  },
+  "peerDependenciesMeta": {
+    "react": { "optional": true },
+    "@mui/material": { "optional": true }
+  },
+  "devDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^9.4.0",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.20.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "jsdom": "^27.0.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}

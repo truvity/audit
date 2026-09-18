@@ -47,10 +47,14 @@ patterns=(
 
 fail=0
 for p in "${patterns[@]}"; do
-  # Exclude this script: it necessarily contains the patterns it bans.
+  # Exclude this script: it necessarily contains the patterns it bans. Also
+  # what is installed or built rather than written here: third-party
+  # packages and compiled output are not this repository's words.
   if hits=$(grep -rInE "$p" . \
               --exclude-dir=.git \
               --exclude-dir=.devbox \
+              --exclude-dir=node_modules \
+              --exclude-dir=dist \
               --exclude="leak-canary.sh" 2>/dev/null \
               | grep -vF "schemas.truvity.com/audit/" \
               | grep -vE "arn:aws[a-z0-9:*-]*<[a-z]+>"); then

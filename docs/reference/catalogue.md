@@ -41,6 +41,13 @@ select submessage, and refuses a template that names anything a record of the
 action does not carry. The viewer renders in the browser; exports render a
 constrained subset server-side.
 
+An argument is named by a **path** into the record: `{targets.0.id}`,
+`{data.items}`. ICU itself forbids dots in argument names, so a template is not
+handed to an ICU parser as written. `@truvity/audit` finds the arguments with
+the same scanner as the validator and renames each to a placeholder first. Both
+scanners are held to one fixture, `testdata/messages.json`. Any other renderer
+must do the same.
+
 Arguments a template may name:
 
 | argument | value |

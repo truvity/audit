@@ -1,6 +1,7 @@
 # Viewer
 
-One npm package, two surfaces.
+One npm package, two surfaces. The embedded one is built (`ts/`,
+`@truvity/audit/react`). The standalone console is not built yet.
 
 - **Embedded**: headless hooks over the Connect-ES client plus a default
   MUI skin. The host passes a transport with its own bearer. No

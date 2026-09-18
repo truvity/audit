@@ -107,6 +107,19 @@ Foundation. No release.
   service, `audit key destroy` and `audit digest`; the chart's `openbao`,
   `keys.provider: transit`, a role per component, and `trust.configMap` for
   OpenBAO and Postgres alike.
+- `@truvity/audit` (built from `ts/`):
+  - the query client and the typed contract;
+  - the qualifier box compiled to the typed filter;
+  - records rendered as their catalogues' sentences, through FormatJS;
+  - `@truvity/audit/react`: `AuditProvider`, `useSearch`, `useTail`,
+    `useFacets`, `useRecord` and a default MUI `AuditView` for an
+    application's console.
+
+  Catalogue templates name arguments by path (`{targets.0.id}`), which ICU
+  refuses as written. The renderer finds them with a port of the validator's
+  scanner, and both are held to `testdata/messages.json`. `audit messages`
+  prints a catalogue's sentences as JSON for the viewer. The generated
+  TypeScript now imports with `.js`, which Node's ESM resolution needs.
 - `writer` and `query`: the writer and the query service as public libraries,
   so an application can embed its own trail — its emitter writing into the
   writer in process, its console reading through the query API behind its own

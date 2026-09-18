@@ -163,16 +163,17 @@ it to the end, and reads one record with its provenance.
 
 ## From TypeScript
 
-The generated contract is in [`ts/src/gen`](../../ts/src/gen) — protobuf-es v2
-types and service descriptors — for `@connectrpc/connect` v2. No npm package is
-published yet.
+`@truvity/audit` is the client, the typed contract, the qualifier box compiled
+to the typed filter, and records rendered as their catalogues' sentences.
+`@truvity/audit/react` adds hooks and a default MUI view. The package is built
+from `ts/`. It is not published yet: the first release publishes it to GitHub
+Packages.
 
 ```ts
-import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { QueryService } from "./gen/audit/v1/query_pb";
+import { compileQualifiers, createQueryClient, Sentencer } from "@truvity/audit";
 
-const audit = createClient(QueryService, createConnectTransport({
+const audit = createQueryClient(createConnectTransport({
   baseUrl: "https://audit-query.example.com",
   jsonOptions: { useProtoFieldName: true },
   interceptors: [(next) => async (req) => {
@@ -181,15 +182,43 @@ const audit = createClient(QueryService, createConnectTransport({
   }],
 }));
 
-const page = await audit.search({ profile: "security", limit: 100 });
-for (const r of page.items) console.log(r.occurredAt, r.action, r.actor?.id);
+const { filter, errors } = compileQualifiers("outcome:failure,denied since:24h");
+const page = await audit.search({ profile: "security", filter: [filter], limit: 100 });
+const words = new Sentencer([myCatalogue]); // from `audit messages catalogue.yaml`
+for (const r of page.items) console.log(words.sentence(r));
 ```
 
 ## A viewer
 
-There is **no UI yet**. The design is an embeddable React package and a
-standalone console on the same API ([viewer](../design/viewer.md)); until it
-exists, the API above and the examples are how to look.
+`@truvity/audit/react` has a view to put in an application's console. It takes
+a client over the host's transport, so the host's own sign-in is what
+authenticates it:
+
+```tsx
+import { AuditProvider, AuditView } from "@truvity/audit/react";
+
+<AuditProvider client={audit} sentences={[myCatalogue]}>
+  <AuditView profiles={["security", "history"]} permalink={(p, id) => `/audit/${p}/${id}`} />
+</AuditProvider>
+```
+
+It has:
+
+- a tab per profile the caller may read (the host says which);
+- the qualifier box and a time range, and counts to narrow by;
+- records as sentences, newest first;
+- a row that opens to the record, with a chip per value to narrow to it or
+  away from it, a link, and whether a verified digest covers it;
+- live updates, which need a searcher that orders by recorded time: the index
+  does, the archive scan does not.
+
+`useSearch`, `useTail`, `useFacets` and `useRecord` are the same logic without
+the MUI view, for a host that draws its own.
+
+**Sentences** come from catalogues. `audit messages catalogue.yaml` prints what
+the viewer needs as JSON; ship it with the console. The component's own
+actions (`audit.*`) are built in. A standalone console, for a deployment with
+no application console to embed it in, is not built yet.
 
 ## For an auditor
 

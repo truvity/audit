@@ -27,8 +27,8 @@ regulatory evidence.
 | Embedding: the writer and the query service as Go libraries (`writer`, `query`) | built |
 | Helm chart: writer, registry, query service, digest / verify / clock / purge jobs | built |
 | Helm chart: the console | not yet — it waits on the viewer |
-| TypeScript: generated types and service descriptors | built, not yet published as a package |
-| TypeScript emitter, the viewer (React package and console) | not yet |
+| TypeScript `@truvity/audit`: query client, qualifier box, catalogue sentences, React hooks and an MUI view to embed | built, not yet published |
+| TypeScript emitter; a standalone console | not yet |
 | Metering projection | not yet |
 | A published release | not yet — build the images with `just snapshot` |
 

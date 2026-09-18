@@ -129,3 +129,29 @@ func cutRune(s []rune, sep rune) (before, after []rune, found bool) {
 	}
 	return s, nil, false
 }
+
+// Sentences is what a viewer needs from a catalogue to render its records as
+// sentences: each action's summary and message template per locale, and
+// nothing about retention or schemas. It is published as JSON by
+// `audit messages`, and it is what @truvity/audit's viewer takes.
+type Sentences struct {
+	Source  string                    `json:"source"`
+	Version string                    `json:"version"`
+	Locales []string                  `json:"locales,omitempty"`
+	Actions map[string]ActionSentence `json:"actions"`
+}
+
+// ActionSentence is one action's summary and templates.
+type ActionSentence struct {
+	Summary string            `json:"summary,omitempty"`
+	Message map[string]string `json:"message,omitempty"`
+}
+
+// Sentences returns the catalogue's templates, for a viewer.
+func (c *Catalogue) Sentences() Sentences {
+	out := Sentences{Source: c.Source, Version: c.Version, Locales: c.Locales, Actions: map[string]ActionSentence{}}
+	for name, a := range c.Actions {
+		out.Actions[name] = ActionSentence{Summary: a.Summary, Message: a.Message}
+	}
+	return out
+}

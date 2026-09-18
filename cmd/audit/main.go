@@ -12,7 +12,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +45,11 @@ usage:
   audit check-emitters <dir> --catalogue <file>
         Check that the actions the code emits are the actions the catalogue
         declares.
+
+  audit messages <catalogue.yaml>...
+        Print what a viewer needs to render a catalogue's records as
+        sentences — each action's summary and templates — as JSON, for
+        @truvity/audit's viewer.
 
   audit verify --profile <name> --from <date> --to <date> [flags]
         Walk a profile's digest chain and report what it finds. Needs the
@@ -108,6 +115,8 @@ func main() {
 		err = profile(os.Args[2:])
 	case "check-emitters":
 		err = checkEmitters(os.Args[2:])
+	case "messages":
+		err = messages(os.Args[2:], os.Stdout)
 	case "verify":
 		err = verify(os.Args[2:])
 	case "replay":
@@ -914,4 +923,26 @@ func keyCmd(args []string) error {
 		Provider: provider, Store: archive, Sink: cli.WriterClient(*sinkURL),
 		Catalogue: common, Tenant: *tenant, Purpose: *purpose, By: *by, Reason: *reason,
 	}.Run(ctx)
+}
+
+// messages prints the sentences of one or more catalogues as JSON: one object
+// for one catalogue, an array for several.
+func messages(args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("name at least one catalogue: audit messages <catalogue.yaml>")
+	}
+	var all []catalogue.Sentences
+	for _, path := range args {
+		c, err := catalogue.LoadFS(os.DirFS(filepath.Dir(path)), filepath.Base(path))
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		all = append(all, c.Sentences())
+	}
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	if len(all) == 1 {
+		return enc.Encode(all[0])
+	}
+	return enc.Encode(all)
 }

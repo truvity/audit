@@ -1,0 +1,12 @@
+[
+  {"template": "{actor} placed order {targets.0.id}", "arguments": ["actor", "targets.0.id"]},
+  {"template": "{actor.id} was issued a {data.credential_format} credential", "arguments": ["actor.id", "data.credential_format"]},
+  {"template": "record {targets.0.id} dead-lettered: {outcome.reason}", "arguments": ["targets.0.id", "outcome.reason"]},
+  {"template": "'{not an argument}' but {this.one} is", "arguments": ["this.one"]},
+  {"template": "it''s {actor}'s", "arguments": ["actor"]},
+  {"template": "{data.items, plural, one {# item for {actor}} other {# items for {subject.id}}}", "arguments": ["data.items", "actor", "subject.id"]},
+  {"template": "{outcome.result, select, success {done} failure {failed: {outcome.reason}} other {?}}", "arguments": ["outcome.result", "outcome.reason"]},
+  {"template": "at {occurred_at, date, short}", "arguments": ["occurred_at"]},
+  {"template": "{ actor } with spaces", "arguments": ["actor"]},
+  {"template": "no arguments at all", "arguments": []}
+]

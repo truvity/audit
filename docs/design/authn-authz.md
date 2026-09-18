@@ -62,8 +62,19 @@ pseudonymisation, and a grant to read must not carry it.
 
 ## Authorizers
 
-- **declarative** (default): configuration mapping claim values to grants.
-  A named preset maps the access-roster groups vocabulary.
+- **declarative** (default, built): configuration mapping claim values to
+  grants, plus presets. An authorizer answers with every grant the caller
+  holds, and `auth.Effective` picks per request the ones covering the profile
+  and operation asked for: tenants union within that profile and never
+  across profiles, a time window never unions. The sketch had the first
+  matching rule win; that made a later rule a grant the file says exists and
+  the service ignores.
+- **access-roster preset** (built): reads `<scope>:audit:<role>` from the
+  groups claim — the estate's grant grammar, split by the roster's own
+  `policy.SplitGroup`, so there is one parser. Roles bind to the presets a
+  profile is composed from, not to profile names; `viewer` must be
+  tenant-scoped; `resolve` and time-boxed grants are explicit rules only.
+  The reference lists the role table.
 - **policy-engine adapter** (optional): for an engine whose query plan
   returns a filter and whose decision log names the rule.
 

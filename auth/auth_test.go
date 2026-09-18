@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/truvity/audit/auth"
 )
@@ -104,21 +105,42 @@ func TestARefusalSaysWhatWasMissing(t *testing.T) {
 	}
 }
 
-// The first matching rule wins, so a narrower rule goes above a broader one and
-// the order is the deployment's to choose.
-func TestTheFirstMatchingRuleWins(t *testing.T) {
+// Every rule that matches contributes a grant; which of them apply is decided
+// per request by Effective. There is no first match: a rule that lost to an
+// earlier one would be a grant the file says exists and the service ignores.
+func TestEveryMatchingRuleContributes(t *testing.T) {
 	d := rules()
 	ctx := context.Background()
 
-	g, err := d.Grant(ctx, person("ps_1", "support", "security"))
+	held, err := d.Grants(ctx, person("ps_1", "support", "security"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(held) != 2 {
+		t.Fatalf("a caller in both groups holds %d grants, want both: %+v", len(held), held)
+	}
+	// On history both apply, and together they cover every tenant.
+	g, err := auth.Effective(held, "history", auth.Search)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !g.AllTenants || g.Rule != "acme-support,security-team" {
+		t.Fatalf("history: %+v", g)
+	}
+	// On security only one does, and the other's tenant does not leak in.
+	g, err = auth.Effective(held, "security", auth.Search)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if g.Rule != "security-team" || !g.AllTenants {
-		t.Fatalf("the earlier rule did not win: %+v", g)
+		t.Fatalf("security: %+v", g)
 	}
 
-	g, err = d.Grant(ctx, person("ps_2", "support"))
+	held, err = d.Grants(ctx, person("ps_2", "support"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err = auth.Effective(held, "history", auth.Search)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,10 +152,59 @@ func TestTheFirstMatchingRuleWins(t *testing.T) {
 	}
 }
 
+// Effective fixes the profile before it unions anything, because a union
+// across profiles widens: a viewer of one tenant's history plus a security
+// role over every tenant's security profile is not every tenant's history.
+func TestEffectiveDoesNotUnionAcrossProfiles(t *testing.T) {
+	held := []auth.Grant{
+		{Rule: "acme:audit:viewer", Tenants: []string{"acme"}, Profiles: []string{"history"},
+			Operations: []auth.Operation{auth.Search}},
+		{Rule: "all:audit:security", AllTenants: true, Profiles: []string{"security"},
+			Operations: []auth.Operation{auth.Search}},
+	}
+	g, err := auth.Effective(held, "history", auth.Search)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.AllTenants || len(g.Tenants) != 1 || g.Tenants[0] != "acme" || g.Rule != "acme:audit:viewer" {
+		t.Fatalf("history over every tenant: %+v", g)
+	}
+	if _, err := auth.Effective(held, "history", auth.Export); !errors.Is(err, auth.ErrDenied) {
+		t.Fatalf("an operation no grant on that profile has was allowed: %v", err)
+	}
+	if _, err := auth.Effective(held, "billing", auth.Search); !errors.Is(err, auth.ErrDenied) {
+		t.Fatalf("a profile no grant names was allowed: %v", err)
+	}
+}
+
+// A window does not union: an unbounded grant makes the answer unbounded,
+// and two different windows are refused rather than hulled.
+func TestEffectiveWindows(t *testing.T) {
+	q3 := auth.Grant{Rule: "q3", AllTenants: true, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Search},
+		From:       time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), Until: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)}
+	q1 := q3
+	q1.Rule, q1.From, q1.Until = "q1", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)
+	always := auth.Grant{Rule: "always", AllTenants: true, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Search}}
+
+	g, err := auth.Effective([]auth.Grant{q3}, "security", auth.Search)
+	if err != nil || !g.From.Equal(q3.From) || !g.Until.Equal(q3.Until) {
+		t.Fatalf("one bounded grant: %+v %v", g, err)
+	}
+	g, err = auth.Effective([]auth.Grant{q3, always}, "security", auth.Search)
+	if err != nil || !g.From.IsZero() || !g.Until.IsZero() {
+		t.Fatalf("bounded plus unbounded should be unbounded: %+v %v", g, err)
+	}
+	if _, err := auth.Effective([]auth.Grant{q1, q3}, "security", auth.Search); !errors.Is(err, auth.ErrDenied) {
+		t.Fatalf("two different windows were combined: %v", err)
+	}
+}
+
 // Nothing grants a caller nothing, rather than an empty grant that would read
 // as a grant.
 func TestAnUnmatchedCallerIsDenied(t *testing.T) {
-	_, err := rules().Grant(context.Background(), person("ps_3", "marketing"))
+	_, err := rules().Grants(context.Background(), person("ps_3", "marketing"))
 	if !errors.Is(err, auth.ErrDenied) {
 		t.Fatalf("an unmatched caller got %v", err)
 	}
@@ -149,10 +220,10 @@ func TestACallerWithNoIdentityIsDenied(t *testing.T) {
 			Operations: []auth.Operation{auth.Search},
 		},
 	}}}
-	if _, err := d.Grant(context.Background(), auth.Principal{}); !errors.Is(err, auth.ErrDenied) {
+	if _, err := d.Grants(context.Background(), auth.Principal{}); !errors.Is(err, auth.ErrDenied) {
 		t.Fatalf("a principal with no subject got %v", err)
 	}
-	if _, err := d.Grant(context.Background(), person("ps_9")); err != nil {
+	if _, err := d.Grants(context.Background(), person("ps_9")); err != nil {
 		t.Fatalf("an authenticated caller was refused by a rule that matches anyone: %v", err)
 	}
 }
@@ -160,11 +231,11 @@ func TestACallerWithNoIdentityIsDenied(t *testing.T) {
 // The rule's name reaches the grant, because it is stamped into the record of
 // every read: a grant nobody can trace to a rule is one nobody can review.
 func TestTheRuleNamesItself(t *testing.T) {
-	g, err := rules().Grant(context.Background(), person("ps_4", "support"))
+	held, err := rules().Grants(context.Background(), person("ps_4", "support"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Rule == "" {
+	if g := held[0]; g.Rule == "" {
 		t.Fatal("the grant does not name what granted it")
 	}
 	if !strings.Contains(rules().Describe(), "acme-support") {
@@ -175,10 +246,11 @@ func TestTheRuleNamesItself(t *testing.T) {
 // Resolve is its own operation: it undoes the pseudonymisation, so a grant that
 // allows reading must not imply it.
 func TestResolveIsNotImpliedByGet(t *testing.T) {
-	g, err := rules().Grant(context.Background(), person("ps_5", "security"))
+	held, err := rules().Grants(context.Background(), person("ps_5", "security"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	g := held[0]
 	if !g.Allows("security", auth.Get) {
 		t.Fatal("the security team cannot read")
 	}

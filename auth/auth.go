@@ -78,8 +78,94 @@ type Grant struct {
 }
 
 // Authorizer decides what a principal may see.
+//
+// It answers with every grant the principal holds rather than one, because a
+// person holds several — a scoped viewer role over one tenant and a security
+// role over every tenant, say — and no single Grant can say both without
+// saying more than either. Which of them applies is decided per request, by
+// Effective, against the profile and operation actually asked for.
 type Authorizer interface {
-	Grant(ctx context.Context, p Principal) (Grant, error)
+	Grants(ctx context.Context, p Principal) ([]Grant, error)
+}
+
+// Effective is the one grant that covers a request, computed from everything
+// the caller holds.
+//
+// Only grants that allow this profile and operation count; the others say
+// nothing about it. Of those, the tenants are the union, because each grant
+// allows this profile over its own tenants and the union widens nothing
+// beyond what each already allowed on its own. A union across profiles would
+// — a viewer of one tenant's history plus a security role over every
+// tenant's security profile must not become every tenant's history — which
+// is why the profile is fixed first.
+//
+// A time window does not union. A grant with none covers every period, so if
+// any covering grant is unbounded the answer is. If every one is bounded they
+// have to agree: the hull of two different windows includes the gap between
+// them, and which period was meant is not this service's to guess, so it
+// refuses.
+//
+// The rule stamped on the read is every covering grant's, so that a record
+// of the read says which grants together allowed it.
+func Effective(grants []Grant, profile string, op Operation) (Grant, error) {
+	var covering []Grant
+	sawProfile := false
+	for _, g := range grants {
+		if !contains(g.Profiles, profile) {
+			continue
+		}
+		sawProfile = true
+		if !g.Allows(profile, op) || (!g.AllTenants && len(g.Tenants) == 0) {
+			continue
+		}
+		covering = append(covering, g)
+	}
+	switch {
+	case len(covering) > 0:
+	case !sawProfile:
+		return Grant{}, fmt.Errorf("%w: no grant includes profile %s", ErrDenied, profile)
+	default:
+		return Grant{}, fmt.Errorf("%w: no grant on profile %s includes %s over any tenant", ErrDenied, profile, op)
+	}
+
+	out := Grant{Profiles: []string{profile}, Operations: []Operation{op}}
+	tenants := map[string]bool{}
+	rules := make([]string, 0, len(covering))
+	bounded, unbounded := 0, false
+	for _, g := range covering {
+		if g.AllTenants {
+			out.AllTenants = true
+		}
+		for _, t := range g.Tenants {
+			tenants[t] = true
+		}
+		if g.Rule != "" {
+			rules = append(rules, g.Rule)
+		}
+		if g.From.IsZero() && g.Until.IsZero() {
+			unbounded = true
+			continue
+		}
+		if bounded > 0 && (!g.From.Equal(out.From) || !g.Until.Equal(out.Until)) {
+			return Grant{}, fmt.Errorf(
+				"%w: two grants on profile %s carry different time windows, and which period is "+
+					"meant is not this service's to guess", ErrDenied, profile)
+		}
+		out.From, out.Until = g.From, g.Until
+		bounded++
+	}
+	if unbounded {
+		out.From, out.Until = time.Time{}, time.Time{}
+	}
+	if !out.AllTenants {
+		for t := range tenants {
+			out.Tenants = append(out.Tenants, t)
+		}
+		sort.Strings(out.Tenants)
+	}
+	sort.Strings(rules)
+	out.Rule = strings.Join(rules, ",")
+	return out, nil
 }
 
 // ErrDenied is returned when nothing grants the caller anything.
@@ -160,9 +246,29 @@ func (n None) Principal(context.Context, *http.Request) (Principal, error) {
 // dependency a deployment should choose rather than inherit, and because a
 // mapping in a file is something an auditor can read.
 type Declarative struct {
-	// Rules are tried in order and the first match wins, so a narrower rule
-	// goes above a broader one. Order is the deployment's, not this code's.
+	// Rules are explicit grants. Every rule that matches contributes; there
+	// is no ordering and no first match, because Effective decides per
+	// request which of a caller's grants apply and a rule that lost to an
+	// earlier one would have been a grant the file says exists and the
+	// service ignores.
 	Rules []Rule
+	// Presets derive grants from a claim's vocabulary rather than from one
+	// value each: an installation whose groups already say who may read what
+	// does not restate every group as a rule.
+	Presets []Preset
+}
+
+// Preset derives grants from a principal's claims by a convention rather than
+// by listing values.
+type Preset interface {
+	// Grants returns what the principal holds under this convention, and
+	// nothing for a principal it does not recognise.
+	Grants(p Principal) []Grant
+	// Issuer is the one issuer this preset reads, or "" for any — which is
+	// allowed only while one issuer is trusted, like a rule.
+	Issuer() string
+	// Name is what the preset is called in configuration and in messages.
+	Name() string
 }
 
 // Rule maps a claim value to a grant.
@@ -185,11 +291,12 @@ type Rule struct {
 	Grant Grant
 }
 
-// Grant implements Authorizer.
-func (d Declarative) Grant(_ context.Context, p Principal) (Grant, error) {
+// Grants implements Authorizer.
+func (d Declarative) Grants(_ context.Context, p Principal) ([]Grant, error) {
 	if p.Subject == "" {
-		return Grant{}, fmt.Errorf("%w: the caller has no identity", ErrDenied)
+		return nil, fmt.Errorf("%w: the caller has no identity", ErrDenied)
 	}
+	var out []Grant
 	for _, r := range d.Rules {
 		if !r.matches(p) {
 			continue
@@ -198,9 +305,18 @@ func (d Declarative) Grant(_ context.Context, p Principal) (Grant, error) {
 		if g.Rule == "" {
 			g.Rule = r.Name
 		}
-		return g, nil
+		out = append(out, g)
 	}
-	return Grant{}, fmt.Errorf("%w: no rule grants %s/%s anything", ErrDenied, p.Issuer, p.Subject)
+	for _, preset := range d.Presets {
+		if is := preset.Issuer(); is != "" && is != p.Issuer {
+			continue
+		}
+		out = append(out, preset.Grants(p)...)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%w: nothing grants %s/%s anything", ErrDenied, p.Issuer, p.Subject)
+	}
+	return out, nil
 }
 
 func (r Rule) matches(p Principal) bool {
@@ -225,6 +341,15 @@ func (d Declarative) BoundTo(issuers []string) error {
 	known := map[string]bool{}
 	for _, is := range issuers {
 		known[is] = true
+	}
+	for _, preset := range d.Presets {
+		switch is := preset.Issuer(); {
+		case is == "" && len(issuers) > 1:
+			return fmt.Errorf("auth: preset %s names no issuer, and with %d trusted issuers it would "+
+				"read a claim any of them asserts; say which issuer it is for", preset.Name(), len(issuers))
+		case is != "" && !known[is]:
+			return fmt.Errorf("auth: preset %s is for issuer %s, which is not trusted", preset.Name(), is)
+		}
 	}
 	for _, r := range d.Rules {
 		switch {

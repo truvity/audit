@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/truvity/audit/auth"
+	"github.com/truvity/audit/preset"
 )
 
 func grantsFile(t *testing.T, body string) string {
@@ -32,7 +35,7 @@ rules:
       all_tenants: true
       profiles: [security]
       operations: [search, get]
-`))
+`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +86,7 @@ rules:
 		says: "not an operation",
 	}} {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := LoadAccess(grantsFile(t, c.body))
+			_, err := LoadAccess(grantsFile(t, c.body), nil)
 			if err == nil || !strings.Contains(err.Error(), c.says) {
 				t.Fatalf("want a refusal saying %q, got %v", c.says, err)
 			}
@@ -105,7 +108,7 @@ rules:
       operations: [search, get]
       from: 2026-07-01T00:00:00Z
       until: 2026-10-01T00:00:00Z
-`))
+`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,8 +122,41 @@ rules:
   - name: backwards
     grant: {all_tenants: true, profiles: [security], operations: [search],
             from: 2026-10-01T00:00:00Z, until: 2026-07-01T00:00:00Z}
-`))
+`), nil)
 	if err == nil || !strings.Contains(err.Error(), "ends before it starts") {
 		t.Fatalf("a backwards window was accepted: %v", err)
+	}
+}
+
+// A preset needs the deployment's profiles, and turns its roles into whatever
+// they are called here.
+func TestLoadAccessWiresThePreset(t *testing.T) {
+	body := `
+issuers: [{url: https://staff.example, audience: audit}]
+presets: [{name: access-roster}]
+`
+	if _, err := LoadAccess(grantsFile(t, body), nil); err == nil || !strings.Contains(err.Error(), "--deployment") {
+		t.Fatalf("a preset without profiles was accepted: %v", err)
+	}
+	profiles := map[string]*preset.Profile{
+		"sec":  {Name: "sec", Presets: []string{"security"}},
+		"hist": {Name: "hist", Presets: []string{"history"}},
+	}
+	access, err := LoadAccess(grantsFile(t, body), profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(access.Rules.Presets) != 1 {
+		t.Fatalf("presets: %+v", access.Rules.Presets)
+	}
+	held := access.Rules.Presets[0].Grants(auth.Principal{
+		Issuer: "https://staff.example", Subject: "u",
+		Claims: map[string][]string{"groups": {"acme:audit:viewer"}},
+	})
+	if len(held) != 1 || len(held[0].Profiles) != 1 || held[0].Profiles[0] != "hist" {
+		t.Fatalf("the viewer role did not land on the history-built profile: %+v", held)
+	}
+	if _, err := LoadAccess(grantsFile(t, `presets: [{name: cerbos}]`), profiles); err == nil {
+		t.Fatal("an unknown preset was accepted")
 	}
 }

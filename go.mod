@@ -17,6 +17,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.15.0
 	github.com/nats-io/nats.go v1.53.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
+	github.com/truvity/access-roster v1.16.0
 	github.com/truvity/gateway-auth v0.7.1
 	google.golang.org/protobuf v1.36.12
 	sigs.k8s.io/yaml v1.6.0
@@ -48,10 +49,11 @@ require (
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
-	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

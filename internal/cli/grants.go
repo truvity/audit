@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/truvity/audit/auth"
+	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/s3store"
 )
@@ -25,7 +26,17 @@ type GrantsFile struct {
 	// in this file, beside the rules, because a rule is only as safe as the
 	// issuers able to satisfy it; see auth.Rule.Issuer.
 	Issuers []IssuerEntry `json:"issuers,omitempty"`
-	Rules   []GrantRule   `json:"rules"`
+	// Presets read grants out of a claim's vocabulary rather than one value
+	// each. Only access-roster's exists.
+	Presets []PresetEntry `json:"presets,omitempty"`
+	Rules   []GrantRule   `json:"rules,omitempty"`
+}
+
+// PresetEntry names a grant preset and the issuer whose claims it reads.
+type PresetEntry struct {
+	Name   string `json:"name"`
+	Issuer string `json:"issuer,omitempty"`
+	Claim  string `json:"claim,omitempty"`
 }
 
 // IssuerEntry is one trusted issuer.
@@ -61,8 +72,11 @@ type Access struct {
 }
 
 // LoadAccess reads a grants file with its issuers, and refuses a rule set that
-// would let one issuer satisfy a rule meant for another.
-func LoadAccess(path string) (Access, error) {
+// would let one issuer satisfy a rule meant for another. profiles is the
+// deployment's, by name with the presets each is built from; a preset turns
+// roles into profiles through it, and a file naming a preset is refused
+// without it.
+func LoadAccess(path string, profiles map[string]*preset.Profile) (Access, error) {
 	file, err := readGrants(path)
 	if err != nil {
 		return Access{}, err
@@ -70,6 +84,23 @@ func LoadAccess(path string) (Access, error) {
 	rules, err := file.rules(path)
 	if err != nil {
 		return Access{}, err
+	}
+	for _, entry := range file.Presets {
+		if entry.Name != "access-roster" {
+			return Access{}, fmt.Errorf("%s: preset %q does not exist; access-roster is the one there is", path, entry.Name)
+		}
+		if len(profiles) == 0 {
+			return Access{}, fmt.Errorf(
+				"%s: preset %s needs the deployment's profiles to turn a role into profile names; "+
+					"give --deployment", path, entry.Name)
+		}
+		composed := make(map[string][]string, len(profiles))
+		for name, p := range profiles {
+			composed[name] = append([]string(nil), p.Presets...)
+		}
+		rules.Presets = append(rules.Presets, auth.AccessRoster{
+			From: entry.Issuer, Claim: entry.Claim, Profiles: composed,
+		})
 	}
 	out := Access{Rules: rules}
 	names := make([]string, 0, len(file.Issuers))

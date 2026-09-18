@@ -140,7 +140,7 @@ func TestARuleFromOneIssuerIsNotSatisfiedByAnother(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rules.Grant(context.Background(), fromStaff); err != nil {
+	if _, err := rules.Grants(context.Background(), fromStaff); err != nil {
 		t.Fatalf("the staff auditor was refused: %v", err)
 	}
 
@@ -149,7 +149,7 @@ func TestARuleFromOneIssuerIsNotSatisfiedByAnother(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g, err := rules.Grant(context.Background(), fromCustomer); !errors.Is(err, auth.ErrDenied) {
+	if g, err := rules.Grants(context.Background(), fromCustomer); !errors.Is(err, auth.ErrDenied) {
 		t.Fatalf("a customer's provider granted itself operator access: %+v", g)
 	}
 

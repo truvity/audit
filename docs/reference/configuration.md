@@ -99,6 +99,45 @@ rules:                                 # first match wins
       operations: [search, get]
 ```
 
+Instead of a rule per group, an installation whose groups already say who
+may read what names a **preset**:
+
+```yaml
+presets:
+  - name: access-roster
+    issuer: https://id.example.com       # required once more than one issuer is trusted
+    claim: groups                        # the default
+```
+
+The access-roster preset reads groups named `<scope>:audit:<role>`, the
+estate's grant grammar. The scope is `all` or an audit tenant id, byte for
+byte; an environment is never in the name, because each deployment's query
+service requires its own token audience and the issuer decides who may hold
+which. A role grants operations over the profiles built from certain presets,
+so the deployment's own profile names need no mention — which is why a preset
+needs `--deployment`:
+
+| role | profiles built from | operations | `all` allowed |
+|---|---|---|---|
+| `viewer` | `history` | search, facets, get | no: `all:audit:viewer` grants nothing |
+| `security` | `security`, `dora`, `pci-dss`, `nen-7513` | search, facets, get, tail, export | yes |
+| `auditor` | every profile built from no `billing-*` preset | search, facets, get, export | yes |
+| `billing` | `billing-*` | search, facets, get, export | yes |
+| `evidence` | `evidence-etsi` | search, get, export | yes |
+
+`resolve` comes from no group name; it is an explicit rule naming the person.
+There is no assessor role, because a name carries no dates; a time-boxed grant
+is an explicit rule with a window.
+
+**Every grant a caller holds counts** — each matching rule and each audit
+group — and which apply is decided per request: on the profile asked for, the
+tenants of the grants covering it are unioned, and the record of the read
+names all of them (`acme:audit:viewer,all:audit:security`). A union never
+crosses profiles, so a viewer of one tenant's history plus a security role over
+every tenant does not become every tenant's history. A time window does not
+union: an unbounded grant on the profile makes the answer unbounded, and two
+different windows on one profile are refused.
+
 It refuses to start when:
 
 - the file names no issuer, because then nobody could ever sign in;
@@ -108,7 +147,8 @@ It refuses to start when:
   any claim, so a rule matching a group from anyone gives operator access to
   whoever administers the least-trusted issuer;
 - a rule names an issuer that is not listed, or an operation that does not
-  exist.
+  exist;
+- a preset is named without `--deployment`, or a preset that does not exist.
 
 A bearer token in `Authorization` is accepted, and so is the access token the
 fleet gateway forwards. Verification is

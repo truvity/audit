@@ -235,11 +235,11 @@ func (s *Service) Get(
 func (s *Service) allow(
 	ctx context.Context, p auth.Principal, profile string, op auth.Operation,
 ) (auth.Grant, error) {
-	g, err := s.Authorizer.Grant(ctx, p)
+	held, err := s.Authorizer.Grants(ctx, p)
 	if err != nil {
-		return g, err
+		return auth.Grant{}, err
 	}
-	return g, g.Check(profile, op)
+	return auth.Effective(held, profile, op)
 }
 
 // narrow applies the grant to a compiled query.

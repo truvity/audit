@@ -26,6 +26,7 @@ import (
 	"github.com/truvity/audit/index/s3scan"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/query"
+	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/store"
 )
 
@@ -46,6 +47,8 @@ func run() error {
 		region   = flag.String("region", env("AUDIT_REGION", ""), "the region, when it is not in the environment")
 		grants   = flag.String("grants", env("AUDIT_GRANTS", ""),
 			"the file naming the trusted issuers and mapping their claims to grants")
+		deployment = flag.String("deployment", env("AUDIT_DEPLOYMENT", ""),
+			"the profile configuration, which a grant preset turns roles into profiles with")
 		sinkURL = flag.String("sink", env("AUDIT_SINK", ""),
 			"the writer reads are recorded through")
 		exports = flag.String("exports", env("AUDIT_EXPORTS", ""),
@@ -68,7 +71,21 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	access, err := cli.LoadAccess(*grants)
+	var profiles map[string]*preset.Profile
+	if *deployment != "" {
+		presets, err := preset.Builtin()
+		if err != nil {
+			return err
+		}
+		d, err := cli.LoadDeployment(*deployment)
+		if err != nil {
+			return err
+		}
+		if profiles, err = d.Compose(presets); err != nil {
+			return err
+		}
+	}
+	access, err := cli.LoadAccess(*grants, profiles)
 	if err != nil {
 		return err
 	}

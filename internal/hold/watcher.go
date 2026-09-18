@@ -29,9 +29,9 @@ type Watcher struct {
 
 // Held reports whether a profile and tenant are under a hold.
 //
-// Until the first refresh has succeeded it answers false, and it says so
-// through Ready: a writer that has not managed to read the holds should be
-// visible as such rather than quietly writing unheld objects.
+// Until the first refresh has succeeded it answers false, which is why the
+// writer refreshes once before it writes anything and refuses to start if that
+// fails. Ready is for anything else that wants to know.
 func (w *Watcher) Held(profile, tenant string) bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()

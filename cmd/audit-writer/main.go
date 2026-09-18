@@ -173,12 +173,16 @@ func run() error {
 		},
 		Every: time.Minute,
 	}
+	// Read once before anything is written, and refuse to start otherwise. A
+	// writer that began with holds it had not read would write objects under a
+	// held prefix without the hold, and the whole point of reading them is that
+	// this never happens. After that first read, a failed refresh keeps the last
+	// answer: forgetting a hold is worse than acting on a list a minute old.
+	if err := holds.Refresh(ctx); err != nil {
+		return fmt.Errorf("writer: reading the legal holds: %w", err)
+	}
 	go holds.Run(ctx, func(err error) {
-		// The previous answer stands, because forgetting a hold is worse than
-		// acting on a list a minute old. A deployment alerts on this: a writer
-		// that has never read the holds is writing objects that a hold on their
-		// prefix does not cover.
-		slog.Error("could not read the legal holds", "error", err, "ready", holds.Ready())
+		slog.Error("could not refresh the legal holds; keeping the last answer", "error", err)
 	})
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,

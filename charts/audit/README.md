@@ -22,6 +22,7 @@ The chart takes references; it creates none of these.
 | thing | value |
 |---|---|
 | a bucket with Object Lock in compliance mode | `bucket` |
+| a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`) and read `holds/` | the writer's ServiceAccount annotation |
 | a Secret with the 32-byte key root | `keys.local.existingSecret` |
 | a Secret with the digest signing key (PEM, ed25519) | `jobs.digest.signingKey.existingSecret` |
 | a Secret with its public half | `jobs.verify.publicKey.existingSecret` |

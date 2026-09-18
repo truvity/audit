@@ -43,9 +43,9 @@ resource may carry a wildcard: `arn:aws:s3:::<bucket>/*/tenant=<id>/*`.
 ## Legal hold
 
 ```
-audit hold place --profile <p> [--tenant <t>] --reason <why> --bucket <b>
+audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b>
 audit hold list [--profile <p>] --bucket <b>
-audit hold release --id <id> --bucket <b>
+audit hold release --id <id> --by <who> --bucket <b>
 ```
 
 A hold keeps objects undeletable for as long as it is on, whatever their
@@ -59,9 +59,11 @@ A hold is placed on a prefix and the archive holds objects, so it has two
 halves. `place` sweeps what is already there. The writer sets the hold on
 objects it writes afterwards, re-reading the active holds every minute: an
 object held only by a later sweep was deletable in between, and that window is
-the whole thing a hold is for. A writer that cannot read the holds says so and
-keeps the last answer it had, because forgetting a hold is worse than acting on
-a list a minute old.
+the whole thing a hold is for. The writer reads the holds once before it writes
+anything and refuses to start if it cannot; after that, a refresh that fails
+keeps the last answer, because forgetting a hold is worse than acting on a list
+a minute old. The writer's role therefore needs `s3:PutObjectLegalHold` — to
+set a hold on, never off — and read access to `holds/`.
 
 The record of a hold lives in the archive under the same lock as everything
 else, and is append-only like everything else: `holds/<id>/placed.json`, and

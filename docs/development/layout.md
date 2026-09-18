@@ -82,11 +82,16 @@ surface and keep the rest private.
    memory, Postgres and an object-storage scan. What is left is the one
    corpus asked of all three, which is the conformance suite's.
 10. `internal/query` + `auth` + `cmd/audit-query`.
-11. `internal/metering`. It reads only what the write path already produces,
+11. The conformance suite, as its own recipe and CI job. It signs off the
+    first adoption, so it precedes it.
+    It moved ahead of metering (2026-09-18): every exit the write and read
+    paths could not meet without a container harness now lives here, and the
+    metering projection should be tested against this corpus rather than
+    against fixtures of its own — a fixture kinder than reality is how every
+    bug of the last day hid.
+12. `internal/metering`. It reads only what the write path already produces,
     and it is what validates the design's central claim, so it comes before
     the adopters rather than after them.
-12. The conformance suite, as its own recipe and CI job. It signs off the
-    first adoption, so it precedes it.
 13. `ts/` types and Node emitter; viewer hooks; MUI skin; console; the read
     side of the chart.
 14. `adapters/`, `internal/export`.

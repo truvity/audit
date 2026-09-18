@@ -50,7 +50,7 @@ actions:
     categories: [log_access]
     profiles: [security]
     target_types: [record]
-    message: { en: "{actor} read record {targets.0.id}" }
+    message: { en: "{actor} read record {targets_0_id}" }
   audit.pseudonym.resolved:
     summary: A pseudonym was resolved back to the identity behind it.
     operation: access
@@ -60,7 +60,7 @@ actions:
     # Recorded, and confirmed, before the identity is returned: undoing a
     # pseudonym is the one read that must never happen off the record.
     delivery: block
-    message: { en: "{actor} resolved pseudonym {targets.0.id}" }
+    message: { en: "{actor} resolved pseudonym {targets_0_id}" }
   audit.export.requested:
     summary: An export job was started.
     operation: access
@@ -76,7 +76,7 @@ actions:
     profiles: [security]
     target_types: [export]
     data_schema: https://schemas.truvity.com/audit/v1/common/export-completed.json
-    message: { en: "export {targets.0.id} completed with {data.records} records" }
+    message: { en: "export {targets_0_id} completed with {data_records} records" }
   audit.catalogue.registered:
     summary: A source registered a catalogue version.
     operation: create
@@ -84,7 +84,7 @@ actions:
     profiles: [security, evidence]
     target_types: [catalogue]
     delivery: block
-    message: { en: "{actor} registered catalogue {targets.0.id}" }
+    message: { en: "{actor} registered catalogue {targets_0_id}" }
   audit.profile.changed:
     summary: A profile's composition or retention changed.
     operation: modify
@@ -93,7 +93,7 @@ actions:
     target_types: [profile]
     delivery: block
     data_schema: https://schemas.truvity.com/audit/v1/common/profile-changed.json
-    message: { en: "{actor} changed profile {targets.0.id}" }
+    message: { en: "{actor} changed profile {targets_0_id}" }
   audit.preset.changed:
     summary: A preset version in use changed.
     operation: modify
@@ -102,7 +102,7 @@ actions:
     target_types: [preset]
     delivery: block
     data_schema: https://schemas.truvity.com/audit/v1/common/preset-changed.json
-    message: { en: "{actor} changed preset {targets.0.id}" }
+    message: { en: "{actor} changed preset {targets_0_id}" }
   audit.key.destroyed:
     summary: A pseudonymisation key was destroyed, unlinking its pseudonyms.
     operation: remove
@@ -110,7 +110,7 @@ actions:
     profiles: [security, evidence]
     target_types: [key, tenant]
     delivery: block
-    message: { en: "{actor} destroyed key {targets.0.id}" }
+    message: { en: "{actor} destroyed key {targets_0_id}" }
   audit.hold.placed:
     summary: A legal hold was placed.
     operation: modify
@@ -118,7 +118,7 @@ actions:
     profiles: [security, evidence]
     target_types: [hold]
     delivery: block
-    message: { en: "{actor} placed hold {targets.0.id}" }
+    message: { en: "{actor} placed hold {targets_0_id}" }
   audit.hold.released:
     summary: A legal hold was released.
     operation: modify
@@ -126,7 +126,7 @@ actions:
     profiles: [security, evidence]
     target_types: [hold]
     delivery: block
-    message: { en: "{actor} released hold {targets.0.id}" }
+    message: { en: "{actor} released hold {targets_0_id}" }
   audit.digest.written:
     summary: An hourly digest was signed and written.
     operation: create
@@ -134,14 +134,14 @@ actions:
     profiles: [security, evidence]
     target_types: [digest]
     data_schema: https://schemas.truvity.com/audit/v1/common/digest-written.json
-    message: { en: "digest {targets.0.id} written covering {data.objects} objects" }
+    message: { en: "digest {targets_0_id} written covering {data_objects} objects" }
   audit.digest.verified:
     summary: A digest chain window was verified.
     operation: access
     categories: [logging_control]
     profiles: [security, evidence]
     target_types: [digest]
-    message: { en: "digest window {targets.0.id} verified" }
+    message: { en: "digest window {targets_0_id} verified" }
   audit.digest.failed:
     summary: Digest verification failed.
     operation: access
@@ -149,7 +149,7 @@ actions:
     profiles: [security, evidence]
     target_types: [digest]
     delivery: block
-    message: { en: "digest window {targets.0.id} FAILED verification: {outcome.reason}" }
+    message: { en: "digest window {targets_0_id} FAILED verification: {outcome_reason}" }
   audit.retention.extended:
     summary: The lock on an object holding an earlier record was lengthened because a later record relies on it.
     operation: modify
@@ -160,19 +160,19 @@ actions:
     # date, and this is where a reader finds out.
     target_types: [record]
     data_schema: https://schemas.truvity.com/audit/v1/common/retention-extended.json
-    message: { en: "the lock on record {targets.0.id} was lengthened for record {targets.1.id}" }
+    message: { en: "the lock on record {targets_0_id} was lengthened for record {targets_1_id}" }
   audit.writer.started:
     summary: A split writer instance started.
     operation: create
     categories: [logging_control]
     profiles: [security]
-    message: { en: "writer {observer.instance} started" }
+    message: { en: "writer {observer_instance} started" }
   audit.writer.stopped:
     summary: A split writer instance stopped.
     operation: remove
     categories: [logging_control]
     profiles: [security]
-    message: { en: "writer {observer.instance} stopped" }
+    message: { en: "writer {observer_instance} stopped" }
   audit.writer.dead_lettered:
     summary: A record could not be processed and was written to the dead-letter prefix.
     operation: create
@@ -180,7 +180,7 @@ actions:
     profiles: [security]
     target_types: [record]
     delivery: block
-    message: { en: "record {targets.0.id} dead-lettered: {outcome.reason}" }
+    message: { en: "record {targets_0_id} dead-lettered: {outcome_reason}" }
   audit.clock.synchronised:
     summary: The daily clock-synchronisation check ran.
     operation: access
@@ -188,4 +188,4 @@ actions:
     profiles: [security, evidence]
     delivery: block
     data_schema: https://schemas.truvity.com/audit/v1/common/clock-synchronised.json
-    message: { en: "clock on {observer.instance} synchronised with UTC, offset {data.offset_ms} ms" }
+    message: { en: "clock on {observer_instance} synchronised with UTC, offset {data_offset_ms} ms" }

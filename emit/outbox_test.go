@@ -32,7 +32,7 @@ actions:
     target_types: [order]
     delivery: outbox
     message:
-      en: "{actor} shipped order {targets.0.id}"
+      en: "{actor} shipped order {targets_0_id}"
 `
 
 func shipped() *record.Record {

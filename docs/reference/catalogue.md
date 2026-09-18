@@ -41,12 +41,13 @@ select submessage, and refuses a template that names anything a record of the
 action does not carry. The viewer renders in the browser; exports render a
 constrained subset server-side.
 
-An argument is named by a **path** into the record: `{targets.0.id}`,
-`{data.items}`. ICU itself forbids dots in argument names, so a template is not
-handed to an ICU parser as written. `@truvity/audit` finds the arguments with
-the same scanner as the validator and renames each to a placeholder first. Both
-scanners are held to one fixture, `testdata/messages.json`. Any other renderer
-must do the same.
+An argument names a field of the record, with an underscore for each step:
+`{targets_0_id}`, `{data_items}`, `{data_address_city}`. ICU forbids dots in
+argument names, so these templates render as written in any ICU
+implementation — the viewer uses FormatJS. The validator refuses a dotted name
+and says what the underscore spelling is, and refuses a data schema where two
+properties would answer to the same name (`/a_b` and `/a/b` are both
+`data_a_b`). An argument a record does not carry renders as a gap.
 
 Arguments a template may name:
 
@@ -54,13 +55,13 @@ Arguments a template may name:
 |---|---|
 | `id`, `source`, `action`, `operation`, `tenant`, `profile` | the core fields |
 | `occurred_at`, `recorded_at` | timestamps |
-| `actor`, `actor.id`, `actor.kind` | the actor; `actor` alone renders as the viewer resolves it |
-| `subject`, `subject.id`, `subject.kind` | the subject |
-| `outcome`, `outcome.result`, `outcome.reason`, `outcome.code` | how it ended |
-| `observer.id`, `observer.instance` | who reported it |
-| `targets.N.id`, `targets.N.name`, `targets.N.type` for N in 0..3 | the first four targets |
-| `data.<property>` | any property the action's data schema declares, nested with dots |
-| `meter.name`, `meter.quantity`, `meter.unit` | when the action is metered |
+| `actor`, `actor_id`, `actor_kind` | the actor; `actor` alone is its id |
+| `subject`, `subject_id`, `subject_kind` | the subject |
+| `outcome`, `outcome_result`, `outcome_reason`, `outcome_code` | how it ended; `outcome` is the result word (`success`, `failure`, `denied`) |
+| `observer_id`, `observer_instance` | who reported it |
+| `targets_N_id`, `targets_N_name`, `targets_N_type` for N in 0..3 | the first four targets |
+| `data_<property>` | any property the action's data schema declares; nested properties join with underscores (`/address/city` is `data_address_city`) |
+| `meter_name`, `meter_quantity`, `meter_unit` | when the action is metered |
 
 ## Validation in CI
 

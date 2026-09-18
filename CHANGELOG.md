@@ -107,6 +107,11 @@ Foundation. No release.
   service, `audit key destroy` and `audit digest`; the chart's `openbao`,
   `keys.provider: transit`, a role per component, and `trust.configMap` for
   OpenBAO and Postgres alike.
+- Template arguments use underscores: `{targets_0_id}`, `{data_items}`,
+  `{actor_id}`. Dotted names (`{targets.0.id}`) are not valid ICU, so no
+  standard renderer could fill them; the validator now refuses them with the
+  underscore spelling, and refuses data properties that would collide as
+  arguments. The viewer renders templates as written.
 - `audit conformance --query <url> --profile <p>`: holds a running query
   service to the search contract from outside — paging, order, get against
   search, filters, refusals, and optionally digest coverage — over the records

@@ -44,7 +44,7 @@ actions:
     target_types: [order]
     delivery: block
     data_schema: https://schemas.example.com/shop/order-placed.json
-    message: { en: "{actor} placed order {targets.0.id}" }
+    message: { en: "{actor} placed order {targets_0_id}" }
 ```
 
 - **`category`** of an actor kind decides how profiles treat its identifiers:

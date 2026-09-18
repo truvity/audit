@@ -11,37 +11,37 @@ export const common: Sentences = {
     "audit.catalogue.registered": {
       "summary": "A source registered a catalogue version.",
       "message": {
-        "en": "{actor} registered catalogue {targets.0.id}"
+        "en": "{actor} registered catalogue {targets_0_id}"
       }
     },
     "audit.clock.synchronised": {
       "summary": "The daily clock-synchronisation check ran.",
       "message": {
-        "en": "clock on {observer.instance} synchronised with UTC, offset {data.offset_ms} ms"
+        "en": "clock on {observer_instance} synchronised with UTC, offset {data_offset_ms} ms"
       }
     },
     "audit.digest.failed": {
       "summary": "Digest verification failed.",
       "message": {
-        "en": "digest window {targets.0.id} FAILED verification: {outcome.reason}"
+        "en": "digest window {targets_0_id} FAILED verification: {outcome_reason}"
       }
     },
     "audit.digest.verified": {
       "summary": "A digest chain window was verified.",
       "message": {
-        "en": "digest window {targets.0.id} verified"
+        "en": "digest window {targets_0_id} verified"
       }
     },
     "audit.digest.written": {
       "summary": "An hourly digest was signed and written.",
       "message": {
-        "en": "digest {targets.0.id} written covering {data.objects} objects"
+        "en": "digest {targets_0_id} written covering {data_objects} objects"
       }
     },
     "audit.export.completed": {
       "summary": "An export job finished and its signed URL was issued.",
       "message": {
-        "en": "export {targets.0.id} completed with {data.records} records"
+        "en": "export {targets_0_id} completed with {data_records} records"
       }
     },
     "audit.export.requested": {
@@ -59,49 +59,49 @@ export const common: Sentences = {
     "audit.get": {
       "summary": "One record was read by id.",
       "message": {
-        "en": "{actor} read record {targets.0.id}"
+        "en": "{actor} read record {targets_0_id}"
       }
     },
     "audit.hold.placed": {
       "summary": "A legal hold was placed.",
       "message": {
-        "en": "{actor} placed hold {targets.0.id}"
+        "en": "{actor} placed hold {targets_0_id}"
       }
     },
     "audit.hold.released": {
       "summary": "A legal hold was released.",
       "message": {
-        "en": "{actor} released hold {targets.0.id}"
+        "en": "{actor} released hold {targets_0_id}"
       }
     },
     "audit.key.destroyed": {
       "summary": "A pseudonymisation key was destroyed, unlinking its pseudonyms.",
       "message": {
-        "en": "{actor} destroyed key {targets.0.id}"
+        "en": "{actor} destroyed key {targets_0_id}"
       }
     },
     "audit.preset.changed": {
       "summary": "A preset version in use changed.",
       "message": {
-        "en": "{actor} changed preset {targets.0.id}"
+        "en": "{actor} changed preset {targets_0_id}"
       }
     },
     "audit.profile.changed": {
       "summary": "A profile's composition or retention changed.",
       "message": {
-        "en": "{actor} changed profile {targets.0.id}"
+        "en": "{actor} changed profile {targets_0_id}"
       }
     },
     "audit.pseudonym.resolved": {
       "summary": "A pseudonym was resolved back to the identity behind it.",
       "message": {
-        "en": "{actor} resolved pseudonym {targets.0.id}"
+        "en": "{actor} resolved pseudonym {targets_0_id}"
       }
     },
     "audit.retention.extended": {
       "summary": "The lock on an object holding an earlier record was lengthened because a later record relies on it.",
       "message": {
-        "en": "the lock on record {targets.0.id} was lengthened for record {targets.1.id}"
+        "en": "the lock on record {targets_0_id} was lengthened for record {targets_1_id}"
       }
     },
     "audit.search": {
@@ -113,19 +113,19 @@ export const common: Sentences = {
     "audit.writer.dead_lettered": {
       "summary": "A record could not be processed and was written to the dead-letter prefix.",
       "message": {
-        "en": "record {targets.0.id} dead-lettered: {outcome.reason}"
+        "en": "record {targets_0_id} dead-lettered: {outcome_reason}"
       }
     },
     "audit.writer.started": {
       "summary": "A split writer instance started.",
       "message": {
-        "en": "writer {observer.instance} started"
+        "en": "writer {observer_instance} started"
       }
     },
     "audit.writer.stopped": {
       "summary": "A split writer instance stopped.",
       "message": {
-        "en": "writer {observer.instance} stopped"
+        "en": "writer {observer_instance} stopped"
       }
     }
   }

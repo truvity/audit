@@ -59,7 +59,7 @@ actions:
     profiles: [evidence]
     target_types: [credential]
     data_schema: https://schemas.example/issuer/credential.json
-    message: { en: "credential {targets.0.id} issued" }
+    message: { en: "credential {targets_0_id} issued" }
   issuer.credential.renewed:
     summary: A credential's validity was extended.
     operation: modify
@@ -68,7 +68,7 @@ actions:
     target_types: [credential]
     data_schema: https://schemas.example/issuer/credential.json
     extends: /renews
-    message: { en: "credential {targets.0.id} renewed" }
+    message: { en: "credential {targets_0_id} renewed" }
 `
 
 type extending struct {

@@ -78,7 +78,7 @@ actions:
     target_types: [credential, holder]
     data_schema: https://schemas.example/wallet/credential-issued.json
     message:
-      en: "{actor} was issued a {data.credential_format} credential"
+      en: "{actor} was issued a {data_credential_format} credential"
     meter:
       name: issued
 `

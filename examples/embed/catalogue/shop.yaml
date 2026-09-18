@@ -25,4 +25,4 @@ actions:
     # The request does not complete unless the record is durable.
     delivery: block
     data_schema: https://schemas.example.com/shop/order-placed.json
-    message: { en: "{actor} placed order {targets.0.id}" }
+    message: { en: "{actor} placed order {targets_0_id}" }

@@ -98,9 +98,14 @@ lint:
     # splits the message and GitHub renders nothing. Keep them out of docs.
     ! grep -rn --include=*.md -E '^[[:space:]]*[A-Za-z][A-Za-z0-9_]*[[:space:]]*-?->>?.*;' docs/
 
-# Hold this repository's own presets and catalogue to the contracts it publishes
+# Hold this repository's own presets and catalogue to the contracts it publishes,
+# and hold this repository's own code to its catalogue the way an adopter's is
+# held. The second line lists every action the common catalogue declares that
+# nothing here emits yet; each is a job for a later milestone, and the digest
+# jobs' events sat on that list unnoticed until the tool was pointed at home.
 schemas:
     go run ./cmd/audit validate --presets presets catalogue/common.yaml
+    go run ./cmd/audit check-emitters . --catalogue catalogue/common.yaml
 
 # Run Go vulnerability check
 vuln:

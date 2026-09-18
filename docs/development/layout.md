@@ -70,16 +70,20 @@ surface and keep the rest private.
    `audit reindex` — **done**. This closes the write path: it is what lets
    the writer run with more than one replica.
 7. `charts/audit`, write side: writer, digest and verify jobs, clock-sync.
-8. `index`, read side: the `Searcher`, cursors, facets, tail.
-9. `internal/query` + `auth` + `cmd/audit-query`.
-10. `internal/metering`. It reads only what the write path already produces,
+8. Legal holds (INF-802): hold records in the archive, `audit hold
+   place|release|list`, the writer holding new objects under a held prefix,
+   key destroy refusing under a hold. It emits the two `audit.hold.*` actions
+   `check-emitters` lists.
+9. `index`, read side: the `Searcher`, cursors, facets, tail.
+10. `internal/query` + `auth` + `cmd/audit-query`.
+11. `internal/metering`. It reads only what the write path already produces,
     and it is what validates the design's central claim, so it comes before
     the adopters rather than after them.
-11. The conformance suite, as its own recipe and CI job. It signs off the
+12. The conformance suite, as its own recipe and CI job. It signs off the
     first adoption, so it precedes it.
-12. `ts/` types and Node emitter; viewer hooks; MUI skin; console; the read
+13. `ts/` types and Node emitter; viewer hooks; MUI skin; console; the read
     side of the chart.
-13. `adapters/`, `internal/export`.
+14. `adapters/`, `internal/export`.
 
 ## Test infrastructure
 

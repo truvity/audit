@@ -40,6 +40,7 @@ cmd/audit/          validate, check-emitters, verify, replay, migrate, reindex, 
 cmd/protoc-gen-audit-jsonschema/  the buf plugin that writes the record's JSON Schema
 cmd/audit-writer/   split writer service
 cmd/audit-registry/ catalogue registry service
+cmd/audit-query/    the read service
 cmd/audit-query/    query service
 cmd/audit-console/  standalone console server
 adapters/           openbao, keycloak, github, kubernetes
@@ -81,9 +82,10 @@ surface and keep the rest private.
 9. `index`, read side: the `Searcher`, cursors, facets, tail — **done**, in
    memory, Postgres and an object-storage scan. What is left is the one
    corpus asked of all three, which is the conformance suite's.
-10. `internal/query` + `auth` + `cmd/audit-query` — the authorizer, the
-    service and the reads recording themselves are built; the Connect handler
-    with cursor encoding, `cmd/audit-query`, export and `resolve` are not.
+10. `internal/query` + `auth` + `cmd/audit-query` — **done** but for export
+    and `resolve`, and for the two real authenticators: only the declarative
+    authorizer and the tests-only `none` exist, so a deployment puts its own
+    authentication in front until `jwt` and `trusted-upstream` land.
 11. The conformance suite, as its own recipe and CI job. It signs off the
     first adoption, so it precedes it.
     It moved ahead of metering (2026-09-18): every exit the write and read

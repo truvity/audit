@@ -151,6 +151,25 @@ func ResultName(r Result) string {
 	return strings.ToLower(strings.TrimPrefix(r.String(), "RESULT_"))
 }
 
+// ParseOperation is the inverse of OperationName: it reads the short spelling a
+// catalogue, an index and a query use back into the wire enum. An unknown name
+// is the unspecified operation rather than an error, because a reader of an
+// older index should get a record it can display, not a failure.
+func ParseOperation(name string) Operation {
+	if v, ok := auditv1.Operation_value["OPERATION_"+strings.ToUpper(name)]; ok {
+		return Operation(v)
+	}
+	return auditv1.Operation_OPERATION_UNSPECIFIED
+}
+
+// ParseResult is the inverse of ResultName.
+func ParseResult(name string) auditv1.Outcome_Result {
+	if v, ok := auditv1.Outcome_Result_value["RESULT_"+strings.ToUpper(name)]; ok {
+		return auditv1.Outcome_Result(v)
+	}
+	return auditv1.Outcome_RESULT_UNSPECIFIED
+}
+
 // ParseSchemaVersion splits a "major.minor" version.
 func ParseSchemaVersion(v string) (major, minor int, err error) {
 	if _, err := fmt.Sscanf(v, "%d.%d", &major, &minor); err != nil {

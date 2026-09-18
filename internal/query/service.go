@@ -97,12 +97,54 @@ func (s *Service) Search(
 	}
 	q := s.narrow(compiled, g)
 
+	// The cursor is bound to this question, narrowing included, so one issued
+	// under a different grant or a different filter is refused rather than
+	// resumed from a position in an ordering that no longer exists.
+	mark, err := fingerprint(q)
+	if err != nil {
+		return index.Page{}, g, err
+	}
+	if q.After, q.Backwards, err = decodeCursor(req.GetCursor(), mark); err != nil {
+		return index.Page{}, g, err
+	}
+
 	page, err := s.Searcher.Search(ctx, q)
 	// The read is recorded whether or not it succeeded. An attempt to read the
 	// trail is as much a fact about who was looking as a successful one, and a
 	// refused attempt is the more interesting of the two.
 	s.recordSearch(ctx, p, g, req.GetProfile(), len(page.Rows), err)
 	return page, g, err
+}
+
+// Cursors renders a page's boundaries for the wire.
+//
+// `next` is present even on the last page, because a tail keeps polling it and
+// a record written afterwards has to come back through it. There is no `last`:
+// counting what is behind a query is the expense keyset paging exists to avoid.
+func (s *Service) Cursors(
+	req *auditv1.SearchRequest, g auth.Grant, page index.Page,
+) (*auditv1.Cursors, error) {
+	compiled, err := Compile(req)
+	if err != nil {
+		return nil, err
+	}
+	mark, err := fingerprint(s.narrow(compiled, g))
+	if err != nil {
+		return nil, err
+	}
+	out := &auditv1.Cursors{Self: req.GetCursor()}
+	if out.Next, err = encodeCursor(page.Next, false, mark); err != nil {
+		return nil, err
+	}
+	// `prev` reads the other way from the first row of this page. It is absent
+	// on a page that was not reached by a cursor, because there is nothing
+	// before the beginning.
+	if req.GetCursor() != "" {
+		if out.Prev, err = encodeCursor(page.Prev, true, mark); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // Facets answers counts, narrowed to the grant.

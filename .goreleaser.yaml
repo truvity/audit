@@ -15,6 +15,14 @@ builds:
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags: [-s -w]
+  - id: audit-query
+    main: ./cmd/audit-query
+    binary: audit-query
+    env: [CGO_ENABLED=0, GOEXPERIMENT=jsonv2]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: [-s -w]
   - id: audit-registry
     main: ./cmd/audit-registry
     binary: audit-registry
@@ -44,6 +52,15 @@ kos:
   - id: audit-writer
     build: audit-writer
     repositories: [ghcr.io/truvity/audit-writer]
+    bare: true
+    preserve_import_paths: false
+    base_image: cgr.dev/chainguard/static:latest
+    platforms: [linux/amd64, linux/arm64]
+    tags: ["{{ .Version }}", latest]
+    sbom: spdx
+  - id: audit-query
+    build: audit-query
+    repositories: [ghcr.io/truvity/audit-query]
     bare: true
     preserve_import_paths: false
     base_image: cgr.dev/chainguard/static:latest

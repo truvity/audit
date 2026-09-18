@@ -324,3 +324,116 @@ func TestTimeOperatorsBecomeRanges(t *testing.T) {
 		t.Fatalf("%d rows for >= the third minute, want 2", len(page.Rows))
 	}
 }
+
+// Paging over the wire: a cursor from a response resumes the next page, and
+// every row comes back once.
+func TestCursorsPageOverTheWire(t *testing.T) {
+	s, _ := service(t, fullGrant())
+	ctx := context.Background()
+	req := &auditv1.SearchRequest{
+		Profile: "security", Limit: 1,
+		Sort: []*auditv1.Sort{{Field: auditv1.Sort_FIELD_OCCURRED_AT, Order: auditv1.Sort_ORDER_ASC}},
+	}
+
+	var seen []string
+	for page := 0; page < 6; page++ {
+		got, g, err := s.Search(ctx, caller(), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range got.Rows {
+			seen = append(seen, r.ID)
+		}
+		cursors, err := s.Cursors(req, g, got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cursors.GetNext() == "" {
+			t.Fatal("a page carried no next cursor, so a tail could not resume")
+		}
+		if !got.More {
+			break
+		}
+		req.Cursor = cursors.GetNext()
+	}
+	if len(seen) != 4 {
+		t.Fatalf("paged %d rows of 4: %v", len(seen), seen)
+	}
+	unique := map[string]bool{}
+	for _, id := range seen {
+		if unique[id] {
+			t.Fatalf("a row came back on two pages: %v", seen)
+		}
+		unique[id] = true
+	}
+}
+
+// A cursor replayed against a different question is refused, rather than
+// resuming from a position in an ordering that no longer exists.
+func TestACursorIsBoundToItsQuery(t *testing.T) {
+	s, _ := service(t, fullGrant())
+	ctx := context.Background()
+	first := &auditv1.SearchRequest{Profile: "security", Limit: 1}
+
+	page, g, err := s.Search(ctx, caller(), first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := s.Cursors(first, g, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The same cursor, a different filter.
+	changed := &auditv1.SearchRequest{
+		Profile: "security", Limit: 1, Cursor: cursors.GetNext(),
+		Filter: []*auditv1.Filter{{
+			Action: &auditv1.StringPredicate{
+				Operator: &auditv1.StringPredicate_Equal{Equal: "wallet.credential.issued"}}}},
+	}
+	if _, _, err := s.Search(ctx, caller(), changed); !errors.Is(err, query.ErrCursorMismatch) {
+		t.Fatalf("a cursor from another query gave %v", err)
+	}
+
+	// And the same cursor under a narrower grant, which is a different
+	// question because the narrowing is part of it.
+	narrow, _ := service(t, auth.Grant{
+		Tenants: []string{"acme"}, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Search},
+	})
+	replay := &auditv1.SearchRequest{Profile: "security", Limit: 1, Cursor: cursors.GetNext()}
+	if _, _, err := narrow.Search(ctx, caller(), replay); !errors.Is(err, query.ErrCursorMismatch) {
+		t.Fatalf("a cursor issued under a wider grant was accepted: %v", err)
+	}
+}
+
+// Asking for a different page size is the same question: a caller should not
+// lose its place for changing the limit.
+func TestTheLimitIsNotPartOfTheQuestion(t *testing.T) {
+	s, _ := service(t, fullGrant())
+	ctx := context.Background()
+	req := &auditv1.SearchRequest{Profile: "security", Limit: 1}
+
+	page, g, err := s.Search(ctx, caller(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cursors, err := s.Cursors(req, g, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wider := &auditv1.SearchRequest{Profile: "security", Limit: 10, Cursor: cursors.GetNext()}
+	if _, _, err := s.Search(ctx, caller(), wider); err != nil {
+		t.Fatalf("changing the page size lost the place: %v", err)
+	}
+}
+
+// A cursor that is not ours at all is refused as such.
+func TestRubbishIsNotACursor(t *testing.T) {
+	s, _ := service(t, fullGrant())
+	_, _, err := s.Search(context.Background(), caller(),
+		&auditv1.SearchRequest{Profile: "security", Cursor: "not-a-cursor"})
+	if err == nil {
+		t.Fatal("a made-up cursor was accepted")
+	}
+}

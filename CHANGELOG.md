@@ -32,6 +32,12 @@ Foundation. No release.
   produces, and an in-memory implementation. Indexing is idempotent by
   `(profile, id)` and counting has no call of its own, because only the
   transaction that inserted a row can tell a re-delivery from a new record.
+- `audit-query`, the read service behind Connect, over the Postgres index or
+  the object-storage scan. Cursors are opaque and bound to the question they
+  came from — narrowing included — so one replayed against a different filter
+  or a wider grant is refused rather than resumed from an ordering that no
+  longer exists. A denial reaches the client as a denial and a bad cursor as a
+  bad argument, because a client told "server fault" retries forever.
 - `internal/query`: the read service. It compiles a closed request, narrows it
   to the caller's grant as one more filter term, asks a searcher, and records
   the read — `audit.search`, `audit.facets`, `audit.get`, naming the caller and

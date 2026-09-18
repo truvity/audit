@@ -1,18 +1,19 @@
 # Documentation
 
-To deploy it or use it, start with the guides. To understand it, start with
-[why.md](why.md), then [concepts.md](concepts.md). The design
+To see how it fits together, start with [architecture.md](architecture.md).
+To deploy it or use it, start with the guides. To understand why it is built
+this way, read [why.md](why.md), then [concepts.md](concepts.md). The design
 pages explain each part; the decisions explain why it is that way; the
 research pages hold the surveys with their sources; the reference pages are
 the contracts; operations is for whoever runs it.
 
 | section | pages |
 |---|---|
-| Guides | [deploying](guides/deploy.md), [emitting records](guides/emit.md), [reading the trail](guides/read.md), [embedding the trail in an application](guides/embed.md) |
-| Entry | [why](why.md), [concepts](concepts.md) |
+| Guides | [deploying](guides/deploy.md), [integrating an application](guides/integrate.md), [emitting records](guides/emit.md), [reading the trail](guides/read.md), [embedding the trail in an application](guides/embed.md) |
+| Entry | [architecture](architecture.md), [why](why.md), [concepts](concepts.md) |
 | Design | [pipeline](design/pipeline.md), [extension points](design/extension-points.md), [split writer](design/split-writer.md), [search](design/search.md), [authentication and authorization](design/authn-authz.md), [integrity](design/integrity.md), [metering](design/metering.md), [viewer](design/viewer.md) |
 | Decisions | [index](decisions/README.md) |
 | Research | [index](research/README.md) |
 | Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [presets](reference/presets.md), [API](reference/api.md), [configuration](reference/configuration.md) |
 | Operations | [S3 guide](operations/s3-guide.md), [keys: what, how many, where](operations/key-custody.md), [OpenBAO keys](operations/openbao-keys.md), [verification](operations/verify.md), [runbook](operations/runbook.md) |
-| Development | [layout and build order](development/layout.md) |
+| Development | [layout, and how to add to it](development/layout.md) |

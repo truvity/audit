@@ -54,6 +54,15 @@ their own jobs, and they matter as much.
   Point it at an Object-Locked sandbox bucket: each run leaves one small object
   locked for two days.
 
+## Documentation
+
+Documentation is held to the code it describes. Every command shown is one the
+binary takes, every chart value named exists in `charts/audit/values.yaml`,
+and every example worth compiling lives in `examples/` and is built by the
+gate. `internal/docscheck` fails the gate on a relative link to a file that
+does not exist, or to a heading a page does not have. When you rename a flag,
+a value or a heading, search the docs for it in the same change.
+
 ## Commits and pull requests
 
 Small, reviewable pull requests. A pull request that changes a contract

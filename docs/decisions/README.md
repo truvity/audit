@@ -15,5 +15,6 @@ choices are recorded by the deployer.
 | [0007](0007-authentication-and-authorization-plug-points.md) | Pluggable authentication and authorization with declarative defaults | accepted |
 | [0008](0008-digest-chain-and-verification.md) | Hourly signed digest chain and an auditor-run verify command | accepted |
 | [0009](0009-versioning-policy.md) | Versioning: package per major, major.minor on the record, decoders forever | accepted |
+| [0010](0010-key-providers.md) | Key providers: local, OpenBAO transit and AWS KMS envelope, behind one interface | accepted |
 
 Template: [0000-template.md](0000-template.md).

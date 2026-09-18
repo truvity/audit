@@ -1,135 +1,124 @@
-# Layout and build order
+# Layout, and how to add to it
 
-For whoever implements this. Design is in `docs/`; do not re-decide what
-`docs/decisions/` settles.
+For whoever changes this repository. [CONTRIBUTING](../../CONTRIBUTING.md) has
+the gate and the rules; this page says where things are and how the usual
+additions are made.
 
-## Repository layout (target)
+## Where things are
 
 ```
-proto/audit/v1/     contracts (the schema of record)
-gen/                generated Go and TypeScript, committed
-schemas/            catalogue, preset and extension meta-schemas
-presets/            framework presets
-catalogue/          the common catalogue
+proto/audit/v1/       the contracts: record, sink, registry, query
+gen/                  generated Go (and ts/src/gen: generated TypeScript), committed
+schemas/              meta-schemas: catalogue, preset, extension slot
+presets/              the framework presets
+catalogue/            catalogue loading, validation, composition, sentences;
+                      common.yaml, the component's own actions
 
-record/             canonical record: identifiers, bounds, negative list, canonical form
-catalogue/          catalogue loading, validation, composition, templates
-preset/             preset loading and profile composition
-emit/               the emitter an application imports
-sink/               Sink interface and transports (inprocess, s3, nats)
-keys/               Provider and Signer interfaces: local and OpenBAO transit providers;
-                    local, AWS KMS and transit signers
-store/              the object store interface; s3store/ the bucket; storetest/ the memory
-                    store a test writes to, which can also be tampered with on purpose
-index/              Indexer and Searcher interfaces, and the memory implementation
-                    of both; postgres/ the default index, searcher and shared
-                    dedupe table; s3scan/ a searcher with no index at all
-auth/               Authenticator and Authorizer interfaces, with the defaults
-writer/             the writer as a library: Open(Config) assembles what audit-writer runs
-query/              the query service as a library: New(Config), mounted behind any sign-in
+record/               the canonical record: identifiers, bounds, negative list, canonical form
+preset/               presets, profile composition, the deployment document
+emit/                 the emitter an application imports; outbox; request middleware; Register
+sink/                 the write contract; Connect client and handler; sink/natssink (JetStream)
+keys/                 pseudonymisation providers (local, OpenBAO transit) and digest signers
+                      (key file, AWS KMS, OpenBAO transit)
+store/                the object store interface and archive layout; s3store/ the bucket;
+                      storetest/ a memory store a test writes to and can tamper with
+index/                Indexer and Searcher; memory; postgres/ the index, searcher, dedupe,
+                      migrations; s3scan/ a searcher over the archive; indextest/ the
+                      conformance suite every searcher runs
+auth/                 Authenticator, Authorizer, grants; JWT; workload tokens; the
+                      access-roster grants preset
+wire/                 the Connect JSON codec (snake_case)
+writer/               the writer as a library: Open(Config)
+query/                the query service as a library: New(Config)
 
-internal/writer/    split, treat, roll, put, index, dead-letter, dedupe, ack
-internal/query/     the query service behind auth
-internal/digest/    the digest chain: builder and verifier
-internal/hold/      legal holds: the records, and the writer's view of them
-internal/registry/  the catalogue registry: validation, storage, the service
-internal/s3test/    a real S3 for the archive walks; internal/pgtest/ a database
-internal/clock/     an SNTP client, for the daily check ETSI asks be recorded
-internal/metering/  rollups, statements, rating adapters
-internal/export/    OCSF, ECS, OpenTelemetry, Parquet
-internal/cli/       the commands of cmd/audit
+internal/writer/      split, identity treatment, roll, put, index, dead letters, dedupe,
+                      retention addenda, the writer's own account of itself
+internal/query/       search, facets, get, export, resolve, behind grants
+internal/digest/      the digest chain: builder, verifier, provenance
+internal/identity/    sealed identities, for resolve
+internal/hold/        legal holds, and the writer's view of them
+internal/registry/    the catalogue registry: validation, storage, the service
+internal/clock/       an SNTP client for the daily clock check
+internal/telemetry/   OTLP metrics
+internal/cli/         the commands of cmd/audit
+internal/corpus/      the record corpus (testdata/records) for transport tests
+internal/s3test/      a real S3 for the archive walks; internal/pgtest/ a database
+internal/authtest/    token issuers for tests
+internal/metaschema/, internal/schemagen/   meta-schema validation; the record's JSON Schema
 
-cmd/audit/          validate, check-emitters, verify, replay, migrate, reindex, digest,
-                    purge, clock-sync (conformance to come)
-cmd/protoc-gen-audit-jsonschema/  the buf plugin that writes the record's JSON Schema
-cmd/audit-writer/   split writer service
-cmd/audit-registry/ catalogue registry service
-cmd/audit-query/    the read service
-cmd/audit-query/    query service
-cmd/audit-console/  standalone console server
-adapters/           openbao, keycloak, github, kubernetes
-ts/                 @truvity/audit: types, Node emitter, viewer hooks, MUI skin
-frontend/           standalone console SPA
-charts/audit/       writer, query, console, digest cron, registry
+cmd/audit/            the operator's command: validate, check-emitters, messages, profile,
+                      verify, digest, conformance, replay, migrate, reindex, purge,
+                      clock-sync, hold, key
+cmd/audit-writer/     the writer service; cmd/audit-query/ the query service;
+cmd/audit-registry/   the registry service
+cmd/protoc-gen-audit-jsonschema/   the buf plugin for the record's JSON Schema
+
+charts/audit/         the installation: writer, registry, query service, jobs
+ts/                   @truvity/audit: client, qualifier box, sentences, React hooks and view
+examples/             emit, read, embed — compiled and tested by the gate
+testdata/             the record corpus; the template fixture both scanners share
+hack/                 the leak canary
 ```
 
 **Public and internal.** A package a third party implements against or an
-emitter imports is a top-level package and part of the compatibility promise.
-A package only this repository's own services use is under `internal/`. A
-helper that only a test should use lives in a `*test` package beside what it
-helps with, as `store/storetest` does, so that importing it from production
-code reads as wrong in the import path itself. This
-follows the other public repositories in the estate: they publish a small
-surface and keep the rest private.
+application imports is a top-level package and part of the compatibility
+promise: `record`, `catalogue`, `preset`, `emit`, `sink`, `keys`, `store`,
+`index`, `auth`, `writer`, `query`. Everything only this repository's own
+binaries use is under `internal/`. A helper only a test should use lives in a
+`*test` package beside what it helps (`store/storetest`, `index/indextest`).
+`examples/` imports only public packages, and `examples/embed` has a test that
+fails if it stops doing so.
 
-## Build order
+## Tests, by what they need
 
-1. `proto` → `buf generate`; generated JSON Schema of the core; a test
-   corpus of records that parse as proto and validate as JSON Schema.
-2. `record`, `preset`, `catalogue`, `cmd/audit validate` — **done**.
-3. `emit` + `sink` (inprocess, connect, nats) + outbox — **done**.
-4. `internal/writer` + `keys` (local) + `store` (s3) + `cmd/audit-writer` —
-   **done**. Payload detach was dropped; the split-writer page says why.
-5. `internal/digest` + `cmd/audit verify` + `audit digest` + `audit
-   clock-sync` — **done**, each job keeping an account of itself through
-   `--sink` (`internal/cli/selfreport.go`).
-6. `index`, write side: the `Indexer` interface, the Postgres schema, the
-   facet counts, the shared deduplication table, `audit migrate` and
-   `audit reindex` — **done**. This closes the write path: it is what lets
-   the writer run with more than one replica.
-7. `charts/audit`, write side: writer, migrate hook, digest, verify, purge and
-   clock-sync jobs — **done**. `just chart` holds it: golden renders, and the
-   refusals for every configuration the binaries would reject or get quietly
-   wrong.
-8. Legal holds and `audit key destroy` — **done**. What is left of
-   the key providers is `kms`; `transit` is built and tested against a real
-   OpenBAO dev server.
-9. `index`, read side: the `Searcher`, cursors, facets, tail — **done**, in
-   memory, Postgres and an object-storage scan. What is left is the one
-   corpus asked of all three, which is the conformance suite's.
-10. `internal/query` + `auth` + `cmd/audit-query` — **done** but for `resolve`,
-    which needs the identity map, and for the two real authenticators: only the declarative
-    authorizer and the tests-only `none` exist, so a deployment puts its own
-    authentication in front until `jwt` and `trusted-upstream` land.
-11. The conformance suite, as its own recipe and CI job. It signs off the
-    first adoption, so it precedes it.
-    It moved ahead of metering (2026-09-18): every exit the write and read
-    paths could not meet without a container harness now lives here, and the
-    metering projection should be tested against this corpus rather than
-    against fixtures of its own — a fixture kinder than reality is how every
-    bug of the last day hid.
-12. `internal/metering`. It reads only what the write path already produces,
-    and it is what validates the design's central claim, so it comes before
-    the adopters rather than after them.
-13. `ts/` types and Node emitter; viewer hooks; MUI skin; console; the read
-    side of the chart.
-14. `adapters/`, `internal/export`.
+| recipe | needs | runs |
+|---|---|---|
+| `just check` | the checkout | build, unit tests, lint, proto, drift, schemas, chart, vuln, leak canary |
+| `just race` | a C toolchain | the tests under the race detector |
+| `just test-postgres` | Postgres (started under `.devbox`) | the index, the dedupe table, the writer against a database |
+| `just test-s3` | Docker (LocalStack) | the archive walks, the Object Lock refusal, KMS signing |
+| `just conformance` | Docker, Postgres | everything, with Postgres, LocalStack and OpenBAO |
+| `just ts` | the npm registry | the TypeScript package: typecheck, tests, build, what a publish ships |
 
-## Test infrastructure
+A test skips when its service is absent and runs in CI, where every service
+has a job with a guard that fails if the tests skipped. A double must be no
+kinder than the thing it stands in for: two archive-walk bugs once passed every
+test because a memory store returned everything on one page.
 
-`internal/s3test` runs the archive walks against a real S3 (`AUDIT_S3_URL` —
-an endpoint, not a product, so LocalStack, MinIO or a real bucket all satisfy
-it). `just test-s3` starts one; the tests skip without it, so `check` stays
-hermetic.
+## How to add
 
-A test double must be no kinder than the thing it stands in for. Two bugs in
-the archive walks — a digest covering one tenant, a listing stopping at S3's
-first thousand keys — passed every test because the memory store returned
-everything a caller asked for, in any layout, on one page. The S3 double in
-`store/s3store` now sorts, pages and groups as S3 does, with a page size a test
-can lower, and the conformance harness should run the archive walks against
-MinIO for the same reason.
+**An action to the common catalogue.** Add it to `catalogue/common.yaml`
+(template arguments with underscores), emit it from the code with the name as
+a literal, and run `just schemas` (validate, and `check-emitters` over this
+repository) and `just sentences` (the TypeScript copy of the templates).
 
-Object Lock: MinIO with object locking enabled, or LocalStack. Stream:
-`nats-server` in-process with JetStream. Postgres: a container. Keys:
-`local` provider. A conformance corpus under `testdata/` exercised by every
-searcher and every transport.
+**A searcher.** Implement `index.Searcher`, declare what it cannot do in
+`Capabilities` (the suite requires a refusal, not a narrower answer), return
+`index.ErrNotFound` for a missing record, and run
+`indextest.Run(t, "name", searcher)` in its test. Every case in
+`index/indextest` is then asked of it.
+
+**A key provider.** Implement `keys.Provider` (and `keys.Sealer` to support
+resolve). It must be stable across replicas and restarts, separate tenants and
+purposes, never mint a key for an erased (tenant, purpose), and be tested
+against the real service it wraps. Add it to `cli.KeyFlags` and the chart's
+`keys.provider`, with refusals for configurations it cannot run in.
+
+**A signer.** Implement `keys.Signer`; `KeyID` names the key version, so a
+verifier can pick the public half after a change.
+
+**A chart value.** Add it to `values.yaml` with a comment, use it in the
+templates, add a refusal to `testdata/refusals.txt` for any combination the
+binary would reject, and run `just chart` to update the goldens (commit them).
+
+**A command.** A function in `cmd/audit/main.go` that parses flags and calls a
+type in `internal/cli` that does the work and is tested there. Add it to the
+usage text.
 
 ## Dogfooding
 
-This is used by its authors before it is offered to anyone else, and the
-first adopters replace an audit trail they already had rather than starting
-from nothing. Neither migrates its old records: the formats differ, a
-translation layer would have to be trusted, and the old objects age out
-under their own retention. A component whose authors have not lived with it
-is a component whose rough edges are still everybody else's to find.
+This is used by its authors before it is offered to anyone else, and the first
+adopters replace an audit trail they already had rather than starting from
+nothing. None migrates its old records: the formats differ, a translation
+layer would have to be trusted, and the old objects age out under their own
+retention.

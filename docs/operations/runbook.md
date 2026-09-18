@@ -42,9 +42,20 @@ where an emitter's mistakes are corrected.
 
 ## Digest verification failed
 
-Treat as an incident. `audit verify --verbose` names the object or digest.
-Check for re-uploads (a new version under the same key), lifecycle
-transitions that moved objects, or a KMS key change.
+Treat as an incident. The report names each object or digest that failed and
+why, one line each (`--json` for the same as data):
+
+| the report says | look for |
+|---|---|
+| an object has changed since it was signed | a new version under the same key — only possible if Object Lock was off or in governance mode when it was written; compare versions with `aws s3api list-object-versions` |
+| no digest accounts for this object | an object put by something other than the writer, or a digest job that has not run for that hour; the job's own `audit.digest.written` records say which |
+| the digest before it is missing, or has changed | the chain broken at that hour: a removed or replaced digest |
+| the signature does not verify | the wrong public key for that digest's `signed_by` (after a signing key change, keep every public half), or a forged digest |
+| the lock ends sooner than the profile requires | an object written with a shorter retention than its profile asks: check the writer's version and the profile at that time (`schema/profile/<name>/`) |
+
+Nothing in the archive can be repaired: that is its point. Record what was
+found and when, place a legal hold on the affected prefix if it may be needed
+as evidence, and fix what let it happen.
 
 ## The clock-sync job is failing
 
@@ -154,8 +165,13 @@ the actor and subject columns, so the number is a deployment's own policy.
 
 ```
 audit key destroy --tenant <id> --purpose <p> --by <who> --reason <why> \
-    --bucket <b> --key-root <file> --key-dir <dir> --sink <writer>
+    --bucket <b> --sink <writer> \
+    --key-provider transit                  # BAO_ADDR, BAO_NAMESPACE, BAO_TOKEN from your shell
+    # or: --key-root <file> --key-dir <dir> # the local provider
 ```
+
+Run it as the person allowed to erase: under `transit` that is a human role
+whose policy reaches `transit/keys/<prefix>.*`; the writer's cannot.
 
 It checks the holds itself and refuses while one covers the tenant's copies,
 naming the hold and why it was placed: crypto-shredding a tenant under legal
@@ -172,6 +188,42 @@ that the key is already gone and must be accounted for by hand. Destroy the tena
 purposes not under a legal duty; the security and history copies become
 unlinkable. Billing and evidence copies stay under Art. 17(3)(b). Record is
 automatic (`audit.key.destroyed`).
+
+## Keys are never rotated
+
+A pseudonymisation key is not rotated on a schedule, after staff leave, or
+after an incident with the writer: a rotation gives every person a second,
+unrelated pseudonym from that moment, and the security copy exists to link one
+person's actions across time. If a key may have leaked, what it exposes is the
+ability to compute pseudonyms of identifiers the attacker already knows; the
+answer is where the keys live and who may use them
+([key providers](../decisions/0010-key-providers.md)), not a new key. The
+digest signing key can be replaced — each digest names the key it was signed
+with — as long as every public half ever used is kept.
+
+## A legal hold is needed
+
+```
+audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b> --sink <writer>
+audit hold list --bucket <b>
+audit hold release --id <id> --by <who> --bucket <b> --sink <writer>   # break-glass only
+```
+
+Placing sets an Object Lock legal hold on every existing object under the
+prefix and writes the hold under `holds/`; the writer reads the holds every
+minute and puts new objects under a held prefix with the hold already on. A
+held tenant's key cannot be destroyed. Releasing needs the break-glass role:
+the bucket policy refuses `s3:PutObjectLegalHold` with `OFF` to everyone else,
+and the refused attempt is still recorded.
+
+## Reading from the replica
+
+When the primary bucket's region is unavailable, the replica — same Object
+Lock, retention replicated — is the archive. Point `audit verify` and the
+query service's `--bucket` at it (reads only; the writer keeps writing to the
+primary, and a writer that cannot reach it withholds acknowledgements until it
+can). Verification against the replica is as good as against the primary: the
+chain was replicated with the objects it covers.
 
 ## A new source arrives
 

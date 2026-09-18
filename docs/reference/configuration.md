@@ -1,19 +1,31 @@
 # Configuration reference
 
-Draft. Names are stable; defaults are the presets' where they exist.
+The Go emitter's options, and the chart's values for each component. Every
+name here exists in the code or in `charts/audit/values.yaml`; the chart's
+file has a comment on each.
 
 ## Emitter library
 
-| setting | meaning |
+`emit.New(emit.Options{…})`:
+
+| option | meaning |
 |---|---|
-| `source` | catalogue source name |
-| `catalogue` | path or embedded catalogue |
-| `transport` | `inprocess`, `s3`, `nats` |
-| `delivery_default` | when the catalogue does not say |
-| `outbox.path` | directory of the durable local store that outbox delivery needs |
-| `publish` | how often the outbox is drained. Default one second |
-| `capture.max_bytes`, `attributes.max_keys` | bounds |
-| `trusted_hops` | how many entries at the near end of the forwarded chain belong to your own edge. No safe default but zero: with no proxy in front, the peer is the client, and getting this wrong records a load balancer as the actor's address |
+| `Source`, `Catalogue` | the source this emitter speaks for, and its loaded catalogue; a record of an action the catalogue does not declare is refused |
+| `Sink` | where records go: `sink.NewClient(httpClient, writerURL)` for a writer over Connect (with `auth.TokenFile` for the workload token), a JetStream sink, or a writer in the same process |
+| `Outbox` | `emit.OpenFileOutbox(dir)`: the local store outbox delivery needs. An emitter without one refuses a catalogue that declares `outbox` |
+| `Publish` | how often the outbox is drained. Default one second |
+| `Timeout` | how long a `block` write may take. Default 10s |
+| `Queue`, `Batch`, `Flush` | best-effort buffering: how many records may wait (1024), how many are sent together (100), and how often (one second) |
+| `Bounds` | size limits; default `record.Default` |
+| `Version`, `Instance` | this process on every record; the writer replaces the observer's identity with the one it verified |
+| `Hooks` | `OnDropped`, `OnFailed`, `OnWritten`, `OnRefused`: where a deployment counts and alerts |
+
+`emit.Middleware(trustedHops)` records each request's client address, user
+agent, request and trace ids on every record made while serving it.
+`trustedHops` is how many proxies of your own sit in front: 0 records the
+connection's peer, and getting it wrong records a load balancer as the actor's
+address. `emit.Register(ctx, emit.Registration{…})` registers the catalogue
+with an installation's registry at start-up.
 
 ## Split writer
 
@@ -170,42 +182,49 @@ audience and expiry. That library allows no clock skew.
 
 ## Digest job
 
-| setting | meaning |
+| value | meaning |
 |---|---|
-| `signer` | `kms`, `transit`, `local` |
-| `schedule` | hourly |
-| `lookback` | how far before a window to look for objects keyed under an older day. Default 7 days; the verifier's must be at least this |
-| `max_windows` | how many windows one run may seal when catching up. Default 168 |
-| `verify.schedule` | nightly |
-| `anchor` | `none`, `rfc3161` with a TSA URL |
+| `jobs.digest.enabled`, `.schedule` | hourly by default (`7 * * * *`) |
+| `jobs.digest.signingKey.existingSecret`, `.secretKey`, `.keyID` | sign with an ed25519 PEM key from a Secret |
+| `jobs.digest.kmsKey` | or with an AWS KMS `ECC_NIST_P256` signing key |
+| `jobs.digest.transit.key`, `.role` / `.token` / `.tokenFile` | or with an OpenBAO transit ed25519 key, signing in with its own role on `openbao.auth.mount` |
+| `jobs.digest.lookback` | how far before a window to look for objects keyed under an older day. Default 7 days; the verify job's must be at least this |
+| `jobs.digest.maxWindows` | how many windows one run may seal when catching up. Default 168 |
+| `jobs.digest.serviceAccount` | its own identity: the signing key is its, never the writer's |
 
-Built: `audit digest --deployment --key --key-id --bucket --sink [--from --to
---lookback --max-windows --instance]` and `audit verify … --sink [--lookback
---instance]`, which takes the same lookback. `--sink` is the writer the job
-records itself through (`audit.digest.written`, `verified`, `failed`); a
-scheduled run should always have it, and an auditor's run by hand should not.
-The signing key and the job's identity are separate from the writer's.
+Exactly one signer. `audit digest --deployment … (--key | --kms-key |
+--transit-key) --bucket --sink [--lookback --max-windows --instance]` is what
+the job runs; `--sink` is the writer it records itself through
+(`audit.digest.written`).
+
+## Verify job
+
+| value | meaning |
+|---|---|
+| `jobs.verify.enabled`, `.schedule`, `.window` | nightly, over the last 24 hours, per profile |
+| `jobs.verify.publicKey.existingSecret`, `.secretKey` | the public half only |
+| `jobs.verify.record` | write what each verification found under `verified/`, which `Get` reports as a record's `verified_at`; needs `s3:PutObject` there |
 
 ## Clock job
 
-| setting | meaning |
+| value | meaning |
 |---|---|
-| `ntp[]` | time references; the quickest to answer is believed, and one being unreachable is survivable |
-| `max_offset` | the offset beyond which the run fails. Default 1s; 0 records any offset and never fails |
-| `sink` | the writer the reading is recorded through |
+| `jobs.clockSync.ntp` | time references; the quickest to answer is believed, and one being unreachable is survivable |
+| `jobs.clockSync.maxOffset` | the offset beyond which the run fails. Default 1s; 0 records any offset and never fails |
+| `jobs.clockSync.schedule` | daily |
 
-Built: `audit clock-sync --ntp … --sink … [--max-offset --timeout]`.
+`audit clock-sync --ntp … --sink … [--max-offset --timeout]`.
 
 ## Purge job
 
-| setting | meaning |
+| value | meaning |
 |---|---|
-| `schedule` | daily |
-| `identifying_after` | how long the index keeps who an event happened to. No default: no shipped preset states one, so it is the deployment's own policy |
-| `dedupe_window` | how long a written identifier is remembered. Default the widest window the profiles ask for |
+| `jobs.purge.enabled`, `.schedule` | daily |
+| `jobs.purge.identifyingAfter` | how long the index keeps who an event happened to. No default: no shipped preset states one, so it is the deployment's own policy |
+| `jobs.purge.dedupeWindow` | how long a written identifier is remembered. Default the widest window the profiles ask for |
 
-Built: `audit purge --deployment --database [--identifying-after
---dedupe-window --dry-run]`. It never touches the archive.
+`audit purge --deployment --database [--identifying-after --dedupe-window
+--dry-run]`. It never touches the archive.
 
 ## Workload identity
 

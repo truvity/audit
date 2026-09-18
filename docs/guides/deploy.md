@@ -1,9 +1,14 @@
 # Deploying
 
-How to run the audit trail in a Kubernetes cluster: what to prepare, how to
-install the chart, and how to check that it works. For what each piece is and
-why, read [concepts](../concepts.md) and [the pipeline](../design/pipeline.md);
-this page is the procedure.
+How to run an audit installation in a Kubernetes cluster: what to prepare,
+how to install the chart, and how to check that it works. For what each piece
+is and holds, read [the architecture](../architecture.md); this page is the
+procedure. Applications then connect to the installation as
+[integrating](integrate.md) describes.
+
+The installation can write into a bucket it shares with other data, under a
+prefix of its own (`prefix`); the [S3 guide](../operations/s3-guide.md#sharing-a-bucket)
+says what it needs from such a bucket and gives the IAM for each component.
 
 ## What runs where
 

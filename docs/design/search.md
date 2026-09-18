@@ -1,9 +1,9 @@
 # Search
 
-Two halves. The **index** is written on the write path and is built; the
-**searcher** that reads it is not yet. This document describes both and says
-which is which, because a design document that quietly describes intentions as
-if they were code is worse than no document.
+Two halves: the **index**, written on the write path, and the **searchers**
+that read it — Postgres over the index, a scan over the archive for a
+deployment with no database, and a memory one for tests. All three are built
+and held to one conformance suite (`index/indextest`).
 
 ## The index is a projection
 

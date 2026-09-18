@@ -74,7 +74,37 @@ A predicate on `id` takes whole identifiers: record ids are UUIDs, so a value
 that is not one, or a `prefix`, is `invalid_argument`. `Get` of an id that is
 not a UUID is `not_found`.
 
-`Facets`, `Get`, `Export`, `GetExport` as in the proto. Limits, enforced by the
+`Facets` counts values of fields under the same filter:
+
+```json
+{"profile": "security", "filter": [ … ], "fields": ["action", "outcome"], "limit_per_field": 10}
+→ {"facets": [{"field": "action", "values": [{"value": "shop.order.placed", "count": "42"}]}]}
+```
+
+`Get` returns one record and where its copy is, with the digest that covers it
+and when that was last verified clean:
+
+```json
+{"profile": "security", "id": "0199b100-…"}
+→ {"record": { … },
+   "provenance": {"object_key": "profile=security/tenant=acme/…ndjson.zst", "line": "3",
+                  "digest_id": "digest/profile=security/year=2026/…/hour=10.json",
+                  "verified_at": "2026-09-18T03:23:11Z"}}
+```
+
+`Export` starts a job over a filter; `GetExport` polls it and, when ready,
+returns a signed link that expires:
+
+```json
+{"profile": "security", "filter": [ … ], "format": "FORMAT_NDJSON"}
+→ {"job_id": "x-…", "state": "EXPORT_STATE_PENDING"}
+
+{"job_id": "x-…"}
+→ {"state": "EXPORT_STATE_READY", "url": "https://…", "expires_at": "…", "records": "1204"}
+```
+
+64-bit integers (`count`, `line`, `records`) are strings in JSON, as proto3
+JSON maps them. Limits, enforced by the
 service rather than by whichever searcher is configured: `filter` 4 terms,
 `sort` 4, `in` 100 values, `limit` ceiling 1000, and an export size cap. A
 grant's window narrows a wider request rather than refusing it.

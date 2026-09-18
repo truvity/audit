@@ -22,13 +22,49 @@ sets per-object retention; the bucket must allow and protect it.
 
 ## Prefixes and retention
 
-| prefix | retention |
-|---|---|
-| `profile=<p>/tenant=*/...` | the profile's, set per object at PUT |
-| `payload/` | the longest referencing profile |
-| `schema/` | the longest profile any action in the catalogue belongs to |
-| `digest/profile=<p>/...` | the profile's |
-| `dlq/` | the longest profile |
+Everything the installation writes, beneath the chart's `prefix` (empty puts it
+at the bucket's root):
+
+| prefix | written by | what | retention |
+|---|---|---|---|
+| `profile=<p>/tenant=<t>/year=/month=/day=/…ndjson.zst` | writer | the profile's copies | the profile's, per object at PUT (years after expiry for an `after_expiry` profile) |
+| `identity/tenant=<t>/purpose=<p>/<pseudonym>` | writer | the sealed identity behind a pseudonym, for resolve | the longest profile |
+| `schema/…` | writer | the catalogues, extension schemas and record schema the records were written under | the longest profile |
+| `dlq/year=/month=/day=/…` | writer | records the writer could not take | the longest profile |
+| `holds/<id>/…` | `audit hold` | legal holds placed and released | the longest profile |
+| `digest/profile=<p>/year=/month=/day=/hour=HH.json` | digest job | the signed chain | the profile's |
+| `verified/profile=<p>/…` | verify job | what each verification found | the digest's own |
+
+Exports go to a **separate bucket with no Object Lock** and a lifecycle rule
+that expires `export/`: an export is a copy meant to be collected and cleared,
+and the archive's policy denies every delete.
+
+### Sharing a bucket
+
+An installation can write into an existing Object-Locked bucket under a prefix
+of its own (`prefix: audit`), beside other data under other prefixes. What it
+needs from the bucket is Object Lock enabled (it sets each object's retention
+itself, so the bucket's default only applies to other writers), versioning, and
+the IAM below scoped to its prefix. Lifecycle rules then filter on
+`<prefix>/profile=<name>/`.
+
+### IAM per component
+
+Give each component its own role, bound to its service account (Pod Identity or
+IRSA); the chart has a `serviceAccount` per component for it.
+
+| component | on the archive, under its prefix | elsewhere |
+|---|---|---|
+| writer | `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetObjectRetention`, `s3:PutObjectLegalHold`; `s3:GetObject` and `s3:ListBucket` on `holds/`, `profile=`, `identity/` | `kms:GenerateDataKey`, `kms:Encrypt` on the bucket's key |
+| digest job | `s3:GetObject`, `s3:ListBucket`; `s3:PutObject` on `digest/` | `kms:Sign` if it signs with KMS |
+| verify job | `s3:GetObject`, `s3:ListBucket`; `s3:PutObject` on `verified/` | `kms:Decrypt` on the bucket's key |
+| query service | `s3:GetObject`, `s3:ListBucket` | `s3:PutObject`, `s3:GetObject` on the exports bucket; `kms:Decrypt` |
+| registry, purge | none | — |
+| operator running `audit hold` | `s3:PutObjectLegalHold` (placing), `s3:GetObjectLegalHold`, `s3:ListBucket`, `s3:PutObject` on `holds/` | — |
+| break-glass | `s3:PutObjectLegalHold` with `s3:object-lock-legal-hold` = `OFF` (releasing) | — |
+
+Nobody, including the writer, gets `s3:DeleteObject`, `s3:DeleteObjectVersion`
+or `s3:BypassGovernanceRetention`.
 
 Lifecycle: transition to an infrequent-access tier after the hot window;
 never to deep archive for objects under a few megabytes; expiration only

@@ -40,6 +40,13 @@ Foundation. No release.
 - `audit validate`, `audit profile explain`, `audit check-emitters`,
   `audit verify`, `audit replay`, `audit migrate`, `audit reindex`,
   `audit digest`, `audit purge`, `audit clock-sync`.
+- The digest and verify jobs keep an account of themselves, as the writer
+  does: `audit.digest.written` per sealed window, `audit.digest.verified` and
+  `audit.digest.failed` per window checked. A chain never sealed and one sealed
+  over a quiet hour are otherwise identical in the archive, and a verification
+  that never ran looks exactly like one that found nothing wrong.
+- An uncovered object now names the window that should have covered it, so a
+  failure points at an hour rather than at the whole profile.
 - `internal/clock`: an SNTP client with no dependencies, so that the daily
   check ETSI EN 319 401 §7.10 asks for is recorded as an audit event rather
   than assumed. It measures and records; it never sets the clock.

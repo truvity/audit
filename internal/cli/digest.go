@@ -11,9 +11,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/truvity/audit/catalogue"
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/digest"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/store"
 )
 
@@ -48,8 +52,16 @@ type Digest struct {
 	// Default 168, a week.
 	MaxWindows int
 	Now        func() time.Time
-	JSON       bool
-	Out        io.Writer
+	// Sink and Catalogue, when both are given, are where this job records what
+	// it sealed. Without them the chain is still written and the trail says
+	// nothing about it, which is fine for an operator at a terminal and not
+	// fine for a scheduled run.
+	Sink      sink.Sink
+	Catalogue *catalogue.Catalogue
+	Version   string
+	Instance  string
+	JSON      bool
+	Out       io.Writer
 }
 
 // DigestReport is what a run sealed.
@@ -100,6 +112,12 @@ func (d Digest) Run(ctx context.Context) (DigestReport, error) {
 	}
 	builder := &digest.Builder{Store: d.Store, Signer: d.Signer, Lookback: d.Lookback}
 
+	reporter, err := newReporter(d.Catalogue, d.Sink, d.Version, d.instance())
+	if err != nil {
+		return report, fmt.Errorf("digest: %w", err)
+	}
+	defer reporter.close()
+
 	names := make([]string, 0, len(d.Profiles))
 	for name := range d.Profiles {
 		names = append(names, name)
@@ -107,7 +125,7 @@ func (d Digest) Run(ctx context.Context) (DigestReport, error) {
 	sort.Strings(names)
 
 	for _, name := range names {
-		sealed, err := d.profile(ctx, builder, name, d.Profiles[name])
+		sealed, err := d.profile(ctx, builder, name, d.Profiles[name], reporter)
 		if err != nil {
 			return report, err
 		}
@@ -127,7 +145,7 @@ func (d Digest) Run(ctx context.Context) (DigestReport, error) {
 }
 
 func (d Digest) profile(
-	ctx context.Context, builder *digest.Builder, name string, p *preset.Profile,
+	ctx context.Context, builder *digest.Builder, name string, p *preset.Profile, reporter *reporter,
 ) (DigestProfile, error) {
 	result := DigestProfile{Profile: name}
 	now := d.now()
@@ -178,6 +196,7 @@ func (d Digest) profile(
 		}
 		result.Sealed++
 		result.Objects += len(built.Objects)
+		d.recordSealed(ctx, reporter, key, window, len(built.Objects))
 	}
 	return result, nil
 }
@@ -211,4 +230,37 @@ func (d Digest) now() time.Time {
 		return d.Now().UTC()
 	}
 	return time.Now().UTC()
+}
+
+// recordSealed puts one sealed window in the trail.
+//
+// A digest is written for a quiet hour too, so zero objects is a meaningful
+// number rather than nothing worth saying: it is what makes an hour in which
+// nothing happened provable rather than merely unrecorded.
+//
+// A window that could not be sealed gets no event of its own. The catalogue's
+// audit.digest.failed is about a verification that failed, and inventing a
+// second meaning for it would make the two indistinguishable to a reader. A
+// write that fails already fails the run, and the window it left behind is
+// exactly what the next verification reports as missing.
+func (d Digest) recordSealed(ctx context.Context, r *reporter, key string, window time.Time, objects int) {
+	if r == nil {
+		return
+	}
+	event, err := with(succeeded(r.event("audit.digest.written", "digest", key),
+		auditv1.Operation_OPERATION_CREATE), map[string]any{
+		"objects":      float64(objects),
+		"window_start": window.UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		return
+	}
+	r.record(ctx, event)
+}
+
+func (d Digest) instance() string {
+	if d.Instance != "" {
+		return d.Instance
+	}
+	return record.InstanceName()
 }

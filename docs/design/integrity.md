@@ -71,6 +71,15 @@ the tenants first and walk one bounded listing per tenant and day
 (`store.WalkDays`). Listing the whole profile would be right until the archive
 outgrew a page and wrong in silence after.
 
+Both jobs keep an account of themselves, given `--sink`: `audit.digest.written`
+per sealed window, carrying how many objects it covers, and
+`audit.digest.verified` or `audit.digest.failed` per window checked. Without
+them a chain that was never sealed and one sealed over a quiet hour are
+identical in the archive, and a verification that never ran looks exactly like
+one that found nothing wrong. A window that could not be *written* gets no event
+of its own: the catalogue's `failed` is about a verification, and the missing
+window is what the next verification reports.
+
 Sealing is a different privilege from writing. The signing key lives where the
 writer's credentials do not, and the job runs as its own identity.
 

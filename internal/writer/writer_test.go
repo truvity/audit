@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/truvity/audit/catalogue"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/cli"
@@ -70,7 +71,7 @@ func buildWith(t *testing.T, p parts) *built {
 	if s == nil {
 		s = storetest.NewMemory()
 	}
-	at := day(t, "2026-09-17T10:30:00Z")
+	at := fixedDay(t)
 	b := &built{
 		store:     s,
 		dedupe:    &writer.MemoryDedupe{},
@@ -116,10 +117,23 @@ func buildWith(t *testing.T, p parts) *built {
 	return b
 }
 
+// fixedDay is the moment every writer test runs at.
+//
+// It is also the moment the records happen at. An object is keyed by when its
+// records occurred, not by when the writer woke, so a fixture that froze one
+// clock and left the other on the wall would put objects under today's date and
+// look for them under a date written into the test — which passes until
+// midnight and then does not.
+func fixedDay(t *testing.T) time.Time {
+	t.Helper()
+	return day(t, "2026-09-17T10:30:00Z")
+}
+
 func fresh(t *testing.T) *record.Record {
 	t.Helper()
 	r := issued(t)
 	r.Id = record.NewID()
+	r.OccurredAt = timestamppb.New(fixedDay(t))
 	r.RecordedAt, r.OriginHash, r.Profile = nil, "", ""
 	r.Observer = &record.Observer{Version: "1.2.0", Instance: "wallet-7"}
 	return r
@@ -535,7 +549,7 @@ func TestAReindexReproducesWhatTheWriterIndexed(t *testing.T) {
 	}
 
 	rebuilt := index.NewMemory()
-	day := day(t, "2026-09-17T10:30:00Z")
+	day := fixedDay(t)
 	report, err := cli.Reindex{
 		Store: b.store, Index: rebuilt,
 		Fields:  func(context.Context, *record.Record) (index.Fields, error) { return walletFields(), nil },

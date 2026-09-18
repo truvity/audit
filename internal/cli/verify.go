@@ -8,7 +8,13 @@ import (
 	"os"
 	"time"
 
+	"strings"
+
+	"github.com/truvity/audit/catalogue"
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/digest"
+	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/store"
 )
 
@@ -30,8 +36,15 @@ type Verify struct {
 	// but keyed under an older day. It wants to be at least what the digest job
 	// used, or an object the job covered from further back is not looked at.
 	Lookback time.Duration
-	JSON     bool
-	Out      io.Writer
+	// Sink and Catalogue, when both are given, are where this job records what
+	// it checked. A verification that never ran and one that found nothing
+	// wrong look identical in the archive; these events are the difference.
+	Sink      sink.Sink
+	Catalogue *catalogue.Catalogue
+	Version   string
+	Instance  string
+	JSON      bool
+	Out       io.Writer
 }
 
 // Run reports the number of problems found.
@@ -48,6 +61,9 @@ func (v Verify) Run(ctx context.Context) (int, error) {
 	}
 	report, err := verifier.Verify(ctx, v.Profile, v.From, v.To)
 	if err != nil {
+		return 0, err
+	}
+	if err := v.record(ctx, report); err != nil {
 		return 0, err
 	}
 	if v.JSON {
@@ -70,4 +86,65 @@ func ParseDay(v string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("%q is not a date or a timestamp", v)
+}
+
+// record puts the outcome of each window checked into the trail.
+//
+// Per window rather than per run, because that is what the catalogue's message
+// says and because it is the useful grain: an operator asked which hour is in
+// doubt, not whether last night was clean. A window with nothing wrong is
+// recorded too — a verification that never ran and one that found nothing wrong
+// are indistinguishable otherwise, and the second is the whole point of running
+// it nightly.
+func (v Verify) record(ctx context.Context, report *digest.Report) error {
+	reporter, err := newReporter(v.Catalogue, v.Sink, v.Version, v.instance())
+	if err != nil {
+		return fmt.Errorf("verify: %w", err)
+	}
+	if reporter == nil {
+		return nil
+	}
+	defer reporter.close()
+
+	// A finding names the window it belongs to, including an uncovered object,
+	// which names the window that should have covered it.
+	reasons := map[string][]string{}
+	order := []string{}
+	for _, f := range report.Problems() {
+		where := f.Digest
+		if where == "" {
+			where = report.Profile
+		}
+		if _, seen := reasons[where]; !seen {
+			order = append(order, where)
+		}
+		reason := f.Reason
+		if f.Object != "" {
+			reason = f.Object + ": " + reason
+		}
+		reasons[where] = append(reasons[where], reason)
+	}
+
+	for _, window := range report.Windows {
+		if _, bad := reasons[window]; bad {
+			continue
+		}
+		reporter.record(ctx, succeeded(
+			reporter.event("audit.digest.verified", "digest", window),
+			auditv1.Operation_OPERATION_ACCESS))
+	}
+	for _, window := range order {
+		reporter.record(ctx, failed(
+			reporter.event("audit.digest.failed", "digest", window),
+			auditv1.Operation_OPERATION_ACCESS,
+			strings.Join(reasons[window], "; ")))
+	}
+	return nil
+}
+
+func (v Verify) instance() string {
+	if v.Instance != "" {
+		return v.Instance
+	}
+	return record.InstanceName()
 }

@@ -23,11 +23,15 @@ type Finding struct {
 
 // Report is what a verification found.
 type Report struct {
-	Profile  string    `json:"profile"`
-	From     time.Time `json:"from"`
-	To       time.Time `json:"to"`
-	Digests  int       `json:"digests"`
-	Objects  int       `json:"objects"`
+	Profile string    `json:"profile"`
+	From    time.Time `json:"from"`
+	To      time.Time `json:"to"`
+	Digests int       `json:"digests"`
+	Objects int       `json:"objects"`
+	// Windows are the digests checked, in the order they were checked. A caller
+	// that reports per window — the scheduled job does — needs to know which
+	// ones were looked at, not only which ones had something wrong.
+	Windows  []string  `json:"windows,omitempty"`
 	Findings []Finding `json:"findings"`
 }
 
@@ -117,6 +121,7 @@ func (v *Verifier) Verify(ctx context.Context, profile string, from, to time.Tim
 	covered := map[string]bool{}
 	for _, key := range keysInRange {
 		report.Digests++
+		report.Windows = append(report.Windows, key)
 		d, err := Read(ctx, v.Store, key)
 		if err != nil {
 			report.Findings = append(report.Findings, Finding{Digest: key, Reason: err.Error()})
@@ -222,6 +227,11 @@ func (v *Verifier) checkUncovered(
 		}
 		if !covered[e.Key] {
 			findings = append(findings, Finding{
+				// Name the window that should have covered it. An object is
+				// accounted for by the digest of the hour it was written in, so
+				// that is the link a reader follows — and if that digest does
+				// not exist, naming it says which hour is missing.
+				Digest: Key(profile, e.Modified.Truncate(time.Hour)),
 				Object: e.Key,
 				Reason: "no digest accounts for this object",
 			})

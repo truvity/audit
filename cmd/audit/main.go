@@ -215,7 +215,9 @@ func verify(args []string) error {
 		region    = flags.String("region", "", "the region, when it is not in the environment")
 		lookback  = flags.Duration("lookback", 0,
 			"how far before the range to look for objects keyed under an older day; at least what audit digest used")
-		asJSON = flags.Bool("json", false, "print the report as JSON")
+		sinkURL  = flags.String("sink", "", "the writer this job records what it checked through")
+		instance = flags.String("instance", "", "the name this job records itself under")
+		asJSON   = flags.Bool("json", false, "print the report as JSON")
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
@@ -254,10 +256,18 @@ func verify(args []string) error {
 		return err
 	}
 
-	problems, err := cli.Verify{
+	run := cli.Verify{
 		Store: archive, PublicKeyPEM: pem, Profile: *profile,
 		From: start, To: end, Lookback: *lookback, JSON: *asJSON,
-	}.Run(ctx)
+		Instance: *instance,
+	}
+	if *sinkURL != "" {
+		if run.Catalogue, err = catalogue.Common(); err != nil {
+			return err
+		}
+		run.Sink = sink.NewClient(nil, *sinkURL)
+	}
+	problems, err := run.Run(ctx)
 	if err != nil {
 		return err
 	}
@@ -530,6 +540,8 @@ func digestCmd(args []string) error {
 		region     = flags.String("region", "", "the region, when it is not in the environment")
 		lookback   = flags.Duration("lookback", 0, "how far back to look for objects keyed under an older day")
 		maxWindows = flags.Int("max-windows", 0, "how many windows one run may seal")
+		sinkURL    = flags.String("sink", "", "the writer this job records what it sealed through")
+		instance   = flags.String("instance", "", "the name this job records itself under")
 		asJSON     = flags.Bool("json", false, "print the report as JSON")
 	)
 	if _, err := parse(flags, args); err != nil {
@@ -563,6 +575,13 @@ func digestCmd(args []string) error {
 	run := cli.Digest{
 		Profiles: profiles, Signer: signer,
 		Lookback: *lookback, MaxWindows: *maxWindows, JSON: *asJSON,
+		Instance: *instance,
+	}
+	if *sinkURL != "" {
+		if run.Catalogue, err = catalogue.Common(); err != nil {
+			return err
+		}
+		run.Sink = sink.NewClient(nil, *sinkURL)
 	}
 	if *from != "" {
 		if run.From, err = cli.ParseDay(*from); err != nil {

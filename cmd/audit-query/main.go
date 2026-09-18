@@ -25,7 +25,9 @@ import (
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/internal/query"
+	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/store"
 )
@@ -57,6 +59,9 @@ func run() error {
 			"how long an export is kept before the bucket clears it")
 		linkValid = flag.Duration("export-link-valid", time.Hour,
 			"how long a download link works")
+		keyRoot = flag.String("key-root", env("AUDIT_KEY_ROOT", ""),
+			"file holding the pseudonymisation root; with --key-dir, offers resolve")
+		keyDir  = flag.String("key-dir", env("AUDIT_KEY_DIR", ""), "where the writer keeps the wrapped data keys")
 		listen  = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve on")
 		version = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
 	)
@@ -127,9 +132,31 @@ func run() error {
 		}
 	}
 
+	// Resolve is offered only when this service is given the keys and the
+	// archive. It is a separate privilege from reading: a deployment that
+	// does not mount the keys here has a query service that cannot undo a
+	// pseudonym at all, whatever a grant says.
+	var identities *identity.Map
+	if *keyRoot != "" {
+		if archive == nil || *keyDir == "" {
+			return errors.New("resolve needs --key-root, --key-dir and --bucket together")
+		}
+		root, err := os.ReadFile(*keyRoot)
+		if err != nil {
+			return err
+		}
+		provider, err := keys.NewLocal(root, *keyDir)
+		if err != nil {
+			return err
+		}
+		defer provider.Close() //nolint:errcheck // shutting down
+		identities = &identity.Map{Store: archive, Keys: provider}
+	}
+
 	service, err := query.New(&query.Service{
 		Searcher:   found,
 		Archive:    archive,
+		Identities: identities,
 		Exporter:   exporter,
 		Authorizer: access.Rules,
 		Sink:       cli.WriterClient(*sinkURL),

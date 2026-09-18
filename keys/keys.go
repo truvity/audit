@@ -53,6 +53,24 @@ type Provider interface {
 // trail.
 var ErrDestroyed = errors.New("keys: the key has been destroyed")
 
+// Sealer keeps something readable only under a tenant's key for a purpose.
+//
+// It is what makes a pseudonym reversible for the cases the law requires, and
+// only for them: the identifier behind a pseudonym is sealed under the same
+// key the pseudonym came from, so the one holder able to open it is whoever
+// holds that key, and destroying the key — erasure — makes every sealed
+// identifier unreadable along with it. Nothing about resolving survives an
+// erasure.
+//
+// It is a separate interface because a provider that cannot seal is still a
+// provider; a deployment with one simply cannot resolve.
+type Sealer interface {
+	// Seal returns the sealed form of plaintext.
+	Seal(ctx context.Context, tenant string, purpose Purpose, plaintext []byte) ([]byte, error)
+	// Open returns the plaintext, or ErrDestroyed when the key is gone.
+	Open(ctx context.Context, tenant string, purpose Purpose, sealed []byte) ([]byte, error)
+}
+
 var safeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.@-]{0,127}$`)
 
 // pseudonym is the one place the derivation lives, so that two implementations

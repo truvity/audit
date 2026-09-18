@@ -18,6 +18,22 @@ service QueryService {
   // returns a short-lived signed URL.
   rpc Export(ExportRequest) returns (ExportResponse);
   rpc GetExport(GetExportRequest) returns (GetExportResponse);
+  // Resolve maps a pseudonym back to the identity behind it. It needs the
+  // resolve operation, which no read grant implies, and is recorded before it
+  // answers.
+  rpc Resolve(ResolveRequest) returns (ResolveResponse);
+}
+
+message ResolveRequest {
+  // The profile whose copies carry the pseudonym: pseudonyms differ per
+  // profile, so the same person has a different one in each.
+  string profile = 1;
+  string tenant_id = 2;
+  string pseudonym = 3;
+}
+
+message ResolveResponse {
+  string identifier = 1;
 }
 
 message SearchRequest {

@@ -75,6 +75,27 @@ service rather than by whichever searcher is configured: `filter` 4 terms,
 `sort` 4, `in` 100 values, `limit` ceiling 1000, and an export size cap. A
 grant's window narrows a wider request rather than refusing it.
 
+## Resolve
+
+`audit.v1.QueryService/Resolve` maps a pseudonym back to the identity behind
+it: `{"profile": "security", "tenant_id": "acme", "pseudonym": "ps_…"}` →
+`{"identifier": "…"}`. Pseudonyms differ per profile, so name the profile whose
+copy carried it.
+
+It needs the `resolve` operation on that profile, which no read grant implies
+and no group name grants — only an explicit rule. The tenant must be one the
+grant covers. The resolution is recorded as `audit.pseudonym.resolved`, and
+the record confirmed, **before** the identity is returned; if the trail cannot
+take it, nothing is resolved. The record names the pseudonym and the rule,
+never the identity. The service offers resolve only when it is given the keys
+(`audit-query --key-root --key-dir --bucket`); otherwise `unimplemented`.
+
+Only actor and subject pseudonyms resolve. The writer keeps each one's
+identifier sealed under the same tenant's key (`identity/` in the archive), so
+destroying the key — erasure — makes resolving impossible: `failed_precondition`.
+Values hashed by `x-audit-sensitive: hmac` are findable and never readable, and
+have no way back.
+
 ## Errors
 
 Connect codes:
@@ -84,6 +105,7 @@ Connect codes:
 | `invalid_argument` | a malformed filter, or a cursor from a different query |
 | `permission_denied` | the grant excludes the profile, the operation or the tenant |
 | `resource_exhausted` | a published limit exceeded, or an export over its cap |
+| `failed_precondition` | resolve of a pseudonym whose tenant key was destroyed — erasure did what it is for; retrying never helps |
 | `not_found` | no such record — **also** what a record outside the grant returns, because "no such record" and "a record you may not read" are the same answer to somebody who should not know it exists |
 | `unimplemented` | something this deployment does not offer, such as export with no bucket configured |
 | `unavailable` | the searcher is down |

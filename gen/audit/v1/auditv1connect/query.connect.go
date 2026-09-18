@@ -49,6 +49,8 @@ const (
 	QueryServiceExportProcedure = "/audit.v1.QueryService/Export"
 	// QueryServiceGetExportProcedure is the fully-qualified name of the QueryService's GetExport RPC.
 	QueryServiceGetExportProcedure = "/audit.v1.QueryService/GetExport"
+	// QueryServiceResolveProcedure is the fully-qualified name of the QueryService's Resolve RPC.
+	QueryServiceResolveProcedure = "/audit.v1.QueryService/Resolve"
 )
 
 // QueryServiceClient is a client for the audit.v1.QueryService service.
@@ -60,6 +62,10 @@ type QueryServiceClient interface {
 	// returns a short-lived signed URL.
 	Export(context.Context, *connect.Request[v1.ExportRequest]) (*connect.Response[v1.ExportResponse], error)
 	GetExport(context.Context, *connect.Request[v1.GetExportRequest]) (*connect.Response[v1.GetExportResponse], error)
+	// Resolve maps a pseudonym back to the identity behind it. It needs the
+	// resolve operation, which no read grant implies, and is recorded before it
+	// answers.
+	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 }
 
 // NewQueryServiceClient constructs a client for the audit.v1.QueryService service. By default, it
@@ -103,6 +109,12 @@ func NewQueryServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(queryServiceMethods.ByName("GetExport")),
 			connect.WithClientOptions(opts...),
 		),
+		resolve: connect.NewClient[v1.ResolveRequest, v1.ResolveResponse](
+			httpClient,
+			baseURL+QueryServiceResolveProcedure,
+			connect.WithSchema(queryServiceMethods.ByName("Resolve")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -113,6 +125,7 @@ type queryServiceClient struct {
 	get       *connect.Client[v1.GetRequest, v1.GetResponse]
 	export    *connect.Client[v1.ExportRequest, v1.ExportResponse]
 	getExport *connect.Client[v1.GetExportRequest, v1.GetExportResponse]
+	resolve   *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
 }
 
 // Search calls audit.v1.QueryService.Search.
@@ -140,6 +153,11 @@ func (c *queryServiceClient) GetExport(ctx context.Context, req *connect.Request
 	return c.getExport.CallUnary(ctx, req)
 }
 
+// Resolve calls audit.v1.QueryService.Resolve.
+func (c *queryServiceClient) Resolve(ctx context.Context, req *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error) {
+	return c.resolve.CallUnary(ctx, req)
+}
+
 // QueryServiceHandler is an implementation of the audit.v1.QueryService service.
 type QueryServiceHandler interface {
 	Search(context.Context, *connect.Request[v1.SearchRequest]) (*connect.Response[v1.SearchResponse], error)
@@ -149,6 +167,10 @@ type QueryServiceHandler interface {
 	// returns a short-lived signed URL.
 	Export(context.Context, *connect.Request[v1.ExportRequest]) (*connect.Response[v1.ExportResponse], error)
 	GetExport(context.Context, *connect.Request[v1.GetExportRequest]) (*connect.Response[v1.GetExportResponse], error)
+	// Resolve maps a pseudonym back to the identity behind it. It needs the
+	// resolve operation, which no read grant implies, and is recorded before it
+	// answers.
+	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
 }
 
 // NewQueryServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -188,6 +210,12 @@ func NewQueryServiceHandler(svc QueryServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(queryServiceMethods.ByName("GetExport")),
 		connect.WithHandlerOptions(opts...),
 	)
+	queryServiceResolveHandler := connect.NewUnaryHandler(
+		QueryServiceResolveProcedure,
+		svc.Resolve,
+		connect.WithSchema(queryServiceMethods.ByName("Resolve")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/audit.v1.QueryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case QueryServiceSearchProcedure:
@@ -200,6 +228,8 @@ func NewQueryServiceHandler(svc QueryServiceHandler, opts ...connect.HandlerOpti
 			queryServiceExportHandler.ServeHTTP(w, r)
 		case QueryServiceGetExportProcedure:
 			queryServiceGetExportHandler.ServeHTTP(w, r)
+		case QueryServiceResolveProcedure:
+			queryServiceResolveHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -227,4 +257,8 @@ func (UnimplementedQueryServiceHandler) Export(context.Context, *connect.Request
 
 func (UnimplementedQueryServiceHandler) GetExport(context.Context, *connect.Request[v1.GetExportRequest]) (*connect.Response[v1.GetExportResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("audit.v1.QueryService.GetExport is not implemented"))
+}
+
+func (UnimplementedQueryServiceHandler) Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("audit.v1.QueryService.Resolve is not implemented"))
 }

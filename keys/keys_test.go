@@ -287,3 +287,38 @@ func TestADirectoryHasOneIdentity(t *testing.T) {
 		t.Fatal("two directories share an identity")
 	}
 }
+
+// A sealed identifier opens under its own tenant and purpose, not under
+// another purpose's key, and not at all once the key is destroyed: erasure
+// takes the way back with it.
+func TestASealedIdentifierOpensOnlyUnderItsKeyAndNotAfterErasure(t *testing.T) {
+	root := make([]byte, 32)
+	if _, err := rand.Read(root); err != nil {
+		t.Fatal(err)
+	}
+	l, err := keys.NewLocal(root, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	sealed, err := l.Seal(ctx, "acme", "security", []byte("person-1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(sealed), "person-1") {
+		t.Fatal("the sealed form carries the identifier in clear")
+	}
+	plain, err := l.Open(ctx, "acme", "security", sealed)
+	if err != nil || string(plain) != "person-1" {
+		t.Fatalf("open: %q %v", plain, err)
+	}
+	if _, err := l.Open(ctx, "acme", "billing", sealed); err == nil {
+		t.Fatal("another purpose's key opened it")
+	}
+	if err := l.Destroy(ctx, "acme", "security"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Open(ctx, "acme", "security", sealed); !errors.Is(err, keys.ErrDestroyed) {
+		t.Fatalf("after erasure: %v", err)
+	}
+}

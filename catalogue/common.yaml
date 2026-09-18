@@ -26,6 +26,7 @@ target_types:
   key: { description: "A pseudonymisation or signing key, by identifier." }
   hold: { description: "A legal hold on a prefix or object." }
   record: { description: "One audit record, by id." }
+  pseudonym: { description: "A pseudonym, never the identity behind it." }
 
 actions:
   audit.search:
@@ -50,6 +51,16 @@ actions:
     profiles: [security]
     target_types: [record]
     message: { en: "{actor} read record {targets.0.id}" }
+  audit.pseudonym.resolved:
+    summary: A pseudonym was resolved back to the identity behind it.
+    operation: access
+    categories: [log_access, privileged_access]
+    profiles: [security]
+    target_types: [pseudonym, tenant, profile]
+    # Recorded, and confirmed, before the identity is returned: undoing a
+    # pseudonym is the one read that must never happen off the record.
+    delivery: block
+    message: { en: "{actor} resolved pseudonym {targets.0.id}" }
   audit.export.requested:
     summary: An export job was started.
     operation: access

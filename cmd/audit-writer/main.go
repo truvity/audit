@@ -29,6 +29,7 @@ import (
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/hold"
+	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/internal/writer"
@@ -65,6 +66,8 @@ func run() error {
 		listen    = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
 		workloads = flag.String("workloads", env("AUDIT_WORKLOADS", ""),
 			"the file naming the issuers trusted to say which workload is publishing")
+		keepIdentities = flag.Bool("keep-identities", true,
+			"keep the identity behind each pseudonym, sealed under its key, so that resolve can find it")
 		anonymous = flag.Bool("anonymous-writes", false,
 			"accept writes over HTTP from callers nobody verified; for a trial install only")
 		streamURL = flag.String("stream-url", env("AUDIT_STREAM_URL", ""),
@@ -256,10 +259,20 @@ func run() error {
 		return err
 	}
 
+	// The way back from a pseudonym, sealed under the same key, for resolve.
+	// A provider that cannot seal keeps none, and resolve is then refused.
+	var identities writer.Remembering
+	if sealer, ok := provider.(keys.Sealer); ok && *keepIdentities {
+		identities = &identity.Map{
+			Store: archive, Keys: sealer,
+			RetainUntil: func(at time.Time) time.Time { return at.Add(longest) },
+		}
+	}
+
 	w, err := writer.New(&writer.Writer{
 		Identity:   auth.SubjectFrom,
 		Catalogues: resolver{local: local, shared: shared},
-		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider},
+		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider, Identities: identities},
 		Roller: &writer.Roller{
 			Store: archive, Instance: instance, Interval: *rollEvery,
 			Indexer: indexer, Held: holds.Held,

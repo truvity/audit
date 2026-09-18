@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -95,6 +97,62 @@ func (l *Local) Pseudonym(_ context.Context, tenant string, purpose Purpose, ide
 		return "", err
 	}
 	return pseudonym(key, identifier), nil
+}
+
+// Seal implements Sealer.
+//
+// The sealing key is derived from the data key rather than being the data key:
+// one key used both for pseudonyms (HMAC) and for encryption (AES-GCM) would
+// be one key serving two algorithms, which is the kind of reuse that turns an
+// attack on one into an attack on both.
+func (l *Local) Seal(_ context.Context, tenant string, purpose Purpose, plaintext []byte) ([]byte, error) {
+	aead, err := l.sealing(tenant, purpose)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("keys: %w", err)
+	}
+	return aead.Seal(nonce, nonce, plaintext, []byte(keyName(tenant, purpose))), nil
+}
+
+// Open implements Sealer.
+func (l *Local) Open(_ context.Context, tenant string, purpose Purpose, sealed []byte) ([]byte, error) {
+	aead, err := l.sealing(tenant, purpose)
+	if err != nil {
+		return nil, err
+	}
+	if len(sealed) < aead.NonceSize() {
+		return nil, errors.New("keys: a sealed value too short to be one")
+	}
+	nonce, body := sealed[:aead.NonceSize()], sealed[aead.NonceSize():]
+	plain, err := aead.Open(nil, nonce, body, []byte(keyName(tenant, purpose)))
+	if err != nil {
+		return nil, fmt.Errorf("keys: the sealed value does not open under %s: %w", keyName(tenant, purpose), err)
+	}
+	return plain, nil
+}
+
+// sealing is the AEAD derived from a tenant's data key for a purpose.
+func (l *Local) sealing(tenant string, purpose Purpose) (cipher.AEAD, error) {
+	if err := l.init(); err != nil {
+		return nil, err
+	}
+	if err := checkName(tenant, purpose); err != nil {
+		return nil, err
+	}
+	key, err := l.key(tenant, purpose)
+	if err != nil {
+		return nil, err
+	}
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("audit/seal/v1"))
+	block, err := aes.NewCipher(mac.Sum(nil))
+	if err != nil {
+		return nil, fmt.Errorf("keys: %w", err)
+	}
+	return cipher.NewGCM(block)
 }
 
 // Destroy implements Provider.

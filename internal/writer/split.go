@@ -65,6 +65,16 @@ type Splitter struct {
 	// for a profile that pseudonymises, and says so rather than writing the
 	// identifier in clear.
 	Keys keys.Provider
+	// Identities, when given, keeps the identity behind each actor and
+	// subject pseudonym, sealed under the same key, so that resolve can find
+	// the way back. A failure to keep one fails the split: an identity missed
+	// once can never be recreated, since the identifier exists nowhere else.
+	Identities Remembering
+}
+
+// Remembering keeps the identity behind a pseudonym.
+type Remembering interface {
+	Remember(ctx context.Context, tenant string, purpose keys.Purpose, pseudonym, identifier string) error
 }
 
 // Split returns one copy per profile the action belongs to and the deployment
@@ -200,7 +210,16 @@ func (s *Splitter) treat(
 		}
 		// The purpose is the profile, so that two copies of one event carry
 		// different pseudonyms for the same person and cannot be joined.
-		return s.Keys.Pseudonym(ctx, tenant, keys.Purpose(p.Name), id)
+		pseudonym, err := s.Keys.Pseudonym(ctx, tenant, keys.Purpose(p.Name), id)
+		if err != nil {
+			return "", err
+		}
+		if s.Identities != nil {
+			if err := s.Identities.Remember(ctx, tenant, keys.Purpose(p.Name), pseudonym, id); err != nil {
+				return "", err
+			}
+		}
+		return pseudonym, nil
 	default:
 		// Clear and scoped both keep the identifier. They differ in who may
 		// read the copy, which is the profile's access rule and not the

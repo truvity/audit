@@ -14,6 +14,7 @@ import (
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/digest"
+	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/store"
@@ -44,9 +45,12 @@ type Service struct {
 	// digest chain: which digest accounts for its object, and when that was
 	// last verified clean. Without it Get answers where the copy is and no
 	// more.
-	Archive  store.Store
-	Version  string
-	Instance string
+	Archive store.Store
+	// Identities, when given, is where Resolve finds the way back from a
+	// pseudonym. Without it Resolve is not offered.
+	Identities *identity.Map
+	Version    string
+	Instance   string
 	// OnUnrecorded is called when a read happened and the trail does not say
 	// so. A deployment alerts on it: the reading of an audit trail going
 	// unrecorded is not a degraded service, it is the service failing at one of

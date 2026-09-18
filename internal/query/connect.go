@@ -119,6 +119,21 @@ func (h *Handler) who(ctx context.Context, header http.Header) (auth.Principal, 
 	return p, nil
 }
 
+// Resolve implements the service.
+func (h *Handler) Resolve(
+	ctx context.Context, req *connect.Request[auditv1.ResolveRequest],
+) (*connect.Response[auditv1.ResolveResponse], error) {
+	who, err := h.who(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	id, err := h.Service.Resolve(ctx, who, req.Msg)
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&auditv1.ResolveResponse{Identifier: id}), nil
+}
+
 // wire maps an error to a code a client can act on.
 //
 // The direction matters in both senses. A denial or a bad cursor is the
@@ -144,6 +159,10 @@ func wire(err error) error {
 		return connect.NewError(connect.CodeUnimplemented, err)
 	case errors.Is(err, ErrNotFound):
 		return connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, ErrErased):
+		// Not a fault and not the caller's mistake: an erasure did what it is
+		// for. Retrying will never succeed, which is what this code says.
+		return connect.NewError(connect.CodeFailedPrecondition, err)
 	default:
 		return connect.NewError(connect.CodeUnavailable, err)
 	}

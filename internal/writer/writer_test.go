@@ -17,6 +17,7 @@ import (
 
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/record"
@@ -32,6 +33,7 @@ type built struct {
 	deadLetter []string
 	duplicates int
 	unhandled  map[string][]string
+	identities *identity.Map
 }
 
 // parts lets a test swap in the real index and deduplication store, or share a
@@ -42,6 +44,8 @@ type parts struct {
 	dedupe   writer.Dedupe
 	instance string
 	identity func(context.Context) string
+	// keepIdentities turns on the identity map, over the same store and keys.
+	keepIdentities bool
 }
 
 func build(t *testing.T) *built {
@@ -93,20 +97,25 @@ func buildWith(t *testing.T, p parts) *built {
 		instance = p.instance
 	}
 
-	identity := func(context.Context) string { return "workload:wallet" }
+	observer := func(context.Context) string { return "workload:wallet" }
 	if p.identity != nil {
-		identity = p.identity
+		observer = p.identity
+	}
+	splitter := &writer.Splitter{Profiles: profiles(t), Keys: provider}
+	if p.keepIdentities {
+		b.identities = &identity.Map{Store: s, Keys: provider}
+		splitter.Identities = b.identities
 	}
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,
-		Splitter:   &writer.Splitter{Profiles: profiles(t), Keys: provider},
+		Splitter:   splitter,
 		Roller: &writer.Roller{
 			Store: s, Instance: instance, Indexer: indexer,
 			Now: func() time.Time { return at },
 		},
 		Dedupe:     dedupe,
 		DeadLetter: &writer.StoreDeadLetter{Store: s, Instance: instance, Now: func() time.Time { return at }},
-		Identity:   identity,
+		Identity:   observer,
 		Now:        func() time.Time { return at },
 		Hooks: writer.Hooks{
 			OnDeadLettered: func(_ *record.Record, reason string) { b.deadLetter = append(b.deadLetter, reason) },
@@ -385,7 +394,7 @@ func decode(t *testing.T, s *storetest.Memory) []*record.Record {
 
 	var out []*record.Record
 	for _, key := range s.Keys() {
-		if strings.HasPrefix(key, "dlq/") {
+		if strings.HasPrefix(key, "dlq/") || strings.HasPrefix(key, identity.Prefix+"/") {
 			continue
 		}
 		body, err := s.Get(context.Background(), key)

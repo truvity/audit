@@ -75,7 +75,7 @@ func TestTheReferenceExamplesAgreeWithTheService(t *testing.T) {
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range keys(response) {
+	for _, key := range sortedKeys(response) {
 		if _, ok := got[key]; !ok {
 			t.Errorf("api.md shows %q in a response; the service did not send it:\n%s", key, body)
 		}
@@ -112,7 +112,7 @@ func examples(t *testing.T) (request []byte, response map[string]any) {
 	return request, response
 }
 
-func keys(m map[string]any) []string {
+func sortedKeys(m map[string]any) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

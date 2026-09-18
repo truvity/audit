@@ -1,0 +1,494 @@
+---
+# Source: audit/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Sealing is a different privilege from writing: whoever can write the archive
+# and also sign a digest for it can choose what to sign. This identity holds the
+# signing key; the writer's does not.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-digest
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Verification needs to read the archive and nothing else. An auditor running
+# the same command with the same public key must get the same answer, which is
+# what makes the answer worth having.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-verify
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-deployment
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  # What `audit-writer --deployment` reads: which presets each profile is
+  # composed from, and where its copies land. The jobs read the same document,
+  # because retention is a property of the profile and every one of them needs
+  # to agree about it.
+  deployment.yaml: |
+    profiles:
+      history:
+        presets:
+        - history
+      security:
+        presets:
+        - security
+
+---
+# Source: audit/templates/writer.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audit-keys
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Source: audit/templates/writer.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
+# Source: audit/templates/writer.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  # One writer at a time may hold a ReadWriteOnce volume, so the old pod goes
+  # before the new one arrives. A rolling update would deadlock on the claim.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+      annotations:
+        # A profile change must reach a running writer, which only happens if
+        # the pod is replaced.
+        checksum/deployment: 776c6ef2d6419216af14159fb357e78f086792084d8b054d0f0eaefb4031a37c
+    spec:
+      serviceAccountName: audit
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: writer
+          image: ghcr.io/truvity/audit:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["audit-writer"]
+          args:
+            - --deployment=/etc/audit/deployment.yaml
+            - --listen=:8080
+            - --roll-interval=60s
+            - --replicas=1
+            - --key-root=/etc/audit/keys/root
+            - --key-dir=/var/lib/audit/keys
+            - --version=0.1.0
+          env:
+            - name: AUDIT_BUCKET
+              value: "audit-archive"
+            
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            - name: key-root
+              mountPath: /etc/audit/keys
+              readOnly: true
+            - name: keys
+              mountPath: /var/lib/audit/keys
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: deployment
+          configMap:
+            name: audit-deployment
+        - name: key-root
+          secret:
+            secretName: audit-key-root
+        - name: keys
+          persistentVolumeClaim:
+            claimName: audit-keys
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Hourly. Seals the windows since the last digest into the signed chain. It
+# resumes past a missed run on its own, so a failed hour needs no operator: a
+# gap in the chain cannot be told from a digest somebody removed.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-digest
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "7 * * * *"
+  # A run that overlaps itself only re-reads windows it will skip.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-digest
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: digest
+              image: ghcr.io/truvity/audit:0.1.0
+              imagePullPolicy: IfNotPresent
+              command: ["audit", "digest"]
+              args:
+                - --deployment=/etc/audit/deployment.yaml
+                - --key=/etc/audit/signing/key.pem
+                - --sink=http://audit:8080
+                - --instance=$(POD_NAME)
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: AUDIT_BUCKET
+                  value: "audit-archive"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: deployment
+                  mountPath: /etc/audit/deployment.yaml
+                  subPath: deployment.yaml
+                  readOnly: true
+                - name: signing
+                  mountPath: /etc/audit/signing
+                  readOnly: true
+          volumes:
+            - name: deployment
+              configMap:
+                name: audit-deployment
+            - name: signing
+              secret:
+                secretName: audit-signing-key
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
+# exit is the alert. It takes the public half of the signing key only, which is
+# what lets an auditor run the same command and get the same answer.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-verify-history
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "23 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-verify
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: verify
+              image: ghcr.io/truvity/audit:0.1.0
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  exec audit verify \
+                    --profile=history \
+                    --from="$(date -u -d '-24h' +%Y-%m-%dT%H)" \
+                    --to="$(date -u +%Y-%m-%dT%H)" \
+                    --public-key=/etc/audit/public/public.pem \
+                    --sink=http://audit:8080 \
+                    --instance="$POD_NAME"
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: AUDIT_BUCKET
+                  value: "audit-archive"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: public
+                  mountPath: /etc/audit/public
+                  readOnly: true
+          volumes:
+            - name: public
+              secret:
+                secretName: audit-signing-public
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
+# exit is the alert. It takes the public half of the signing key only, which is
+# what lets an auditor run the same command and get the same answer.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-verify-security
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "23 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-verify
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: verify
+              image: ghcr.io/truvity/audit:0.1.0
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  exec audit verify \
+                    --profile=security \
+                    --from="$(date -u -d '-24h' +%Y-%m-%dT%H)" \
+                    --to="$(date -u +%Y-%m-%dT%H)" \
+                    --public-key=/etc/audit/public/public.pem \
+                    --sink=http://audit:8080 \
+                    --instance="$POD_NAME"
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: AUDIT_BUCKET
+                  value: "audit-archive"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: public
+                  mountPath: /etc/audit/public
+                  readOnly: true
+          volumes:
+            - name: public
+              secret:
+                secretName: audit-signing-public
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Daily. Compares this cluster's clock with UTC and records the answer, which is
+# what ETSI EN 319 401 7.10 asks for. It never sets the clock. A drift beyond
+# the tolerance fails the run, so the job going red is the alert.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-clock-sync
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "13 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: clock-sync
+              image: ghcr.io/truvity/audit:0.1.0
+              imagePullPolicy: IfNotPresent
+              command: ["audit", "clock-sync"]
+              args:
+                - --ntp=time.cloudflare.com
+                - --sink=http://audit:8080
+                - --max-offset=1s
+                - --instance=$(POD_NAME)
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true

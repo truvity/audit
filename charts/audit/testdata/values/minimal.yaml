@@ -1,0 +1,17 @@
+# The smallest install the chart will render: no stream, no database, one
+# writer, and the jobs that need neither.
+bucket: audit-archive
+keys:
+  local:
+    existingSecret: audit-key-root
+jobs:
+  digest:
+    signingKey:
+      existingSecret: audit-signing-key
+  verify:
+    publicKey:
+      existingSecret: audit-signing-public
+  purge:
+    enabled: false
+  clockSync:
+    ntp: [time.cloudflare.com]

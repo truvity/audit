@@ -1,0 +1,157 @@
+{{- $keysClaim := .Values.keys.local.persistence.existingClaim | default (printf "%s-keys" (include "audit.fullname" .)) -}}
+{{- if and (eq .Values.keys.provider "local") .Values.keys.local.persistence.enabled (not .Values.keys.local.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $keysClaim }}
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.keys.local.persistence.accessModes | nindent 4 }}
+  {{- with .Values.keys.local.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.keys.local.persistence.size }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "audit.fullname" . }}
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  {{- if and (eq .Values.keys.provider "local") .Values.keys.local.persistence.enabled (not (has "ReadWriteMany" .Values.keys.local.persistence.accessModes)) }}
+  # One writer at a time may hold a ReadWriteOnce volume, so the old pod goes
+  # before the new one arrives. A rolling update would deadlock on the claim.
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "audit.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "audit.selectorLabels" . | nindent 8 }}
+      annotations:
+        # A profile change must reach a running writer, which only happens if
+        # the pod is replaced.
+        checksum/deployment: {{ toYaml .Values.profiles | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "audit.serviceAccountName" . }}
+      {{- include "audit.podDefaults" . | nindent 6 }}
+      containers:
+        - name: writer
+          image: {{ include "audit.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["audit-writer"]
+          args:
+            - --deployment=/etc/audit/deployment.yaml
+            - --listen=:{{ .Values.service.port }}
+            - --roll-interval={{ .Values.roll.interval }}
+            - --replicas={{ .Values.replicas }}
+            {{- if .Values.kmsKey }}
+            - --kms-key={{ .Values.kmsKey }}
+            {{- end }}
+            {{- if .Values.governance }}
+            - --governance
+            {{- end }}
+            {{- if .Values.catalogues }}
+            - --catalogues=/etc/audit/catalogues
+            {{- end }}
+            {{- if eq .Values.keys.provider "local" }}
+            - --key-root=/etc/audit/keys/{{ .Values.keys.local.secretKey }}
+            - --key-dir=/var/lib/audit/keys
+            {{- end }}
+            {{- if .Values.stream.url }}
+            - --stream-url={{ .Values.stream.url }}
+            - --stream={{ .Values.stream.name }}
+            - --consumer={{ .Values.stream.consumer }}
+            - --stream-batch={{ .Values.stream.batch }}
+            - --stream-ack-wait={{ .Values.stream.ackWait }}
+            {{- end }}
+            - --version={{ .Chart.AppVersion }}
+          env:
+            {{- include "audit.archiveEnv" . | nindent 12 }}
+            {{- include "audit.databaseEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            {{- if .Values.catalogues }}
+            - name: catalogues
+              mountPath: /etc/audit/catalogues
+              readOnly: true
+            {{- end }}
+            {{- if eq .Values.keys.provider "local" }}
+            - name: key-root
+              mountPath: /etc/audit/keys
+              readOnly: true
+            - name: keys
+              mountPath: /var/lib/audit/keys
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: deployment
+          configMap:
+            name: {{ include "audit.fullname" . }}-deployment
+        {{- if .Values.catalogues }}
+        - name: catalogues
+          configMap:
+            name: {{ include "audit.fullname" . }}-catalogues
+        {{- end }}
+        {{- if eq .Values.keys.provider "local" }}
+        - name: key-root
+          secret:
+            secretName: {{ .Values.keys.local.existingSecret }}
+        - name: keys
+          {{- if .Values.keys.local.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $keysClaim }}
+          {{- else }}
+          # Acknowledged as disposable: pseudonyms change on every restart.
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "audit.fullname" . }}
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "audit.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http

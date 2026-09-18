@@ -1,0 +1,39 @@
+{{- if and (include "audit.hasDatabase" .) .Values.database.migrate }}
+# The index schema, applied before the writer rolls.
+#
+# A hook rather than something the writer does at start-up: several replicas
+# migrating at once is a race, and a schema change to the index should be a step
+# an operator can see happen. The writer refuses to start against a version it
+# does not know, so this Job failing stops the release rather than producing a
+# writer that will not run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "audit.fullname" . }}-migrate
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "audit.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "audit.serviceAccountName" . }}
+      {{- include "audit.podDefaults" . | nindent 6 }}
+      containers:
+        - name: migrate
+          image: {{ include "audit.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["audit", "migrate"]
+          args: ["--database=$(AUDIT_DATABASE)"]
+          env:
+            {{- include "audit.databaseEnv" . | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+{{- end }}

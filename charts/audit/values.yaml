@@ -1,0 +1,170 @@
+# The audit write path. Names follow docs/reference/configuration.md.
+
+image:
+  repository: ghcr.io/truvity/audit
+  # The writer and the toolchain are one image; the jobs run `audit`, the
+  # deployment runs `audit-writer`.
+  tag: ""          # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# How many writers share the stream. More than one needs a shared deduplication
+# table (`database`) and a key provider every replica sees the same keys
+# through; the chart refuses to render otherwise, because the binary refuses to
+# start and a manifest it will reject is worse than an error here.
+replicas: 1
+
+# The archive.
+bucket: ""
+prefix: ""
+region: ""
+kmsKey: ""
+# Governance mode lets a privileged role shorten a retention. It is off, and a
+# deployment that turns it on should be able to say why in writing.
+governance: false
+
+# The profiles this deployment keeps, as `audit-writer --deployment` reads them.
+# Each is composed from the presets the library ships.
+profiles:
+  security:
+    presets: [security]
+  history:
+    presets: [history]
+
+# Catalogues registered at start-up, as name -> document. The common catalogue
+# is built in and needs no entry here.
+catalogues: {}
+
+# The index and the shared deduplication table. Without it the writer indexes
+# nothing, deduplicates in process, and may only run one replica.
+database:
+  # A Secret holding the Postgres URL. Inline `url` is for a trial install.
+  url: ""
+  existingSecret: ""
+  secretKey: url
+  # The schema is applied by a hook Job before the writer rolls. The writer
+  # refuses to start against a schema version it does not know, and must never
+  # migrate itself: several replicas would race.
+  migrate: true
+
+# Pseudonymisation keys.
+keys:
+  # Only `local` is built. `kms` and `transit` come with the key-provider work.
+  provider: local
+  local:
+    # A Secret holding the 32-byte root the data keys are wrapped under.
+    existingSecret: ""
+    secretKey: root
+    persistence:
+      # Data keys are random, not derived from the root, so the directory they
+      # are wrapped into is the only copy. Losing it re-keys every tenant
+      # silently: the same person gets a new pseudonym and the trail before the
+      # restart stops linking to the trail after it.
+      enabled: true
+      size: 1Gi
+      storageClass: ""
+      # ReadWriteMany is what lets several replicas agree about a tenant's key.
+      # With ReadWriteOnce this chart renders one writer only.
+      accessModes: [ReadWriteOnce]
+      existingClaim: ""
+    # Set only for a throwaway install. It acknowledges that pseudonyms will
+    # change on every restart, which makes the trail unlinkable across one.
+    ephemeralIsAcceptable: false
+
+# The wide stream. Without a URL the writer only serves its own sink, which is
+# what an application that publishes straight to it wants.
+stream:
+  url: ""
+  name: AUDIT
+  consumer: audit-writer
+  batch: 100
+  # How long the stream waits for a batch before offering it again. It must
+  # exceed the longest a write can honestly take: a batch is acknowledged only
+  # once its records are in the archive.
+  ackWait: 30s
+
+# How often an object is rolled and put.
+roll:
+  interval: 60s
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# The scheduled jobs. Each records what it did through the writer's own sink,
+# so each needs to reach it.
+jobs:
+  digest:
+    enabled: true
+    schedule: "7 * * * *"
+    # Sealing is a different privilege from writing: the signing key must not
+    # live where the writer's credentials do, so this job has a service account
+    # of its own.
+    serviceAccount:
+      create: true
+      annotations: {}
+    signingKey:
+      existingSecret: ""
+      secretKey: key.pem
+      keyID: ""
+    lookback: ""
+    maxWindows: 0
+  verify:
+    enabled: true
+    schedule: "23 3 * * *"
+    # How far back last night's run checks.
+    window: 24h
+    # Read-only credentials and the public half of the signing key.
+    serviceAccount:
+      create: true
+      annotations: {}
+    publicKey:
+      existingSecret: ""
+      secretKey: public.pem
+  purge:
+    enabled: true
+    schedule: "41 4 * * *"
+    # How long the index keeps who an event happened to, as opposed to what
+    # happened. Empty means nothing is forgotten early: no preset this library
+    # ships states such a schedule, so the number is a deployment's own policy.
+    identifyingAfter: ""
+    dedupeWindow: ""
+  clockSync:
+    enabled: true
+    schedule: "13 2 * * *"
+    ntp: []
+    # Beyond this the run fails, so the job going red is the alert.
+    maxOffset: 1s
+
+serviceAccount:
+  create: true
+  # Pod Identity or IRSA goes here.
+  annotations: {}
+  name: ""
+
+# Only the writer may consume the stream and put to the bucket.
+networkPolicy:
+  enabled: false
+  # Selectors for what may reach the writer's sink.
+  ingressFrom: []
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

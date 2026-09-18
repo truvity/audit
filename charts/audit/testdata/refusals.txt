@@ -1,0 +1,15 @@
+# Configurations the chart must refuse, and the words the refusal must contain.
+# Each is something the binaries reject at start-up or, worse, accept and get
+# quietly wrong. One line per case: values overrides, then a tab, then the text.
+--set bucket=	nowhere to write
+--set bucket=b --set profiles=null	keeps nothing
+--set bucket=b --set replicas=3	written twice
+--set bucket=b --set replicas=3 --set database.url=postgres://x	different pseudonym
+--set bucket=b --set keys.local.existingSecret=	32-byte root
+--set bucket=b --set keys.local.persistence.enabled=false	re-keys every tenant
+--set bucket=b --set keys.provider=kms	not built yet
+--set bucket=b --set jobs.digest.signingKey.existingSecret=	unsigned chain
+--set bucket=b --set jobs.verify.publicKey.existingSecret=	public half
+--set bucket=b --set jobs.purge.enabled=true	nothing for it to do
+--set bucket=b --set jobs.clockSync.ntp=null	at least one time reference
+--set bucket=b --set governance=true	shorten a retention

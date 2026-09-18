@@ -69,7 +69,10 @@ surface and keep the rest private.
    facet counts, the shared deduplication table, `audit migrate` and
    `audit reindex` — **done**. This closes the write path: it is what lets
    the writer run with more than one replica.
-7. `charts/audit`, write side: writer, digest and verify jobs, clock-sync.
+7. `charts/audit`, write side: writer, migrate hook, digest, verify, purge and
+   clock-sync jobs — **done**. `just chart` holds it: golden renders, and the
+   refusals for every configuration the binaries would reject or get quietly
+   wrong.
 8. Legal holds (INF-802): hold records in the archive, `audit hold
    place|release|list`, the writer holding new objects under a held prefix,
    key destroy refusing under a hold. It emits the two `audit.hold.*` actions

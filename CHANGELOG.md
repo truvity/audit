@@ -68,5 +68,11 @@ Foundation. No release.
   because a record must not fall out of the stream for having been offered a
   few times, and nothing loops forever on a bad record — one the writer cannot
   process is accepted and dead-lettered.
+- `charts/audit`, write side: the writer, a pre-upgrade hook applying the index
+  schema, and the digest, verify, purge and clock-sync jobs. It refuses to
+  render twelve configurations the binaries reject at start-up or accept and
+  get quietly wrong — several replicas without a shared deduplication table,
+  several replicas sharing a key directory none of them can both write,
+  a disposable key directory, governance mode.
 - Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

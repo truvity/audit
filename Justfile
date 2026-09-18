@@ -107,9 +107,25 @@ schemas:
     go run ./cmd/audit validate --presets presets catalogue/common.yaml
     go run ./cmd/audit check-emitters . --catalogue catalogue/common.yaml
 
+# Hold the chart to what the binaries will accept.
+#
+# The golden renders are committed, so a template change that alters a manifest
+# shows up as a diff a reviewer reads rather than as a surprise in a cluster.
+# The refusals matter more: each is a configuration the binaries reject at
+# start-up, or accept and then get quietly wrong, and a chart that renders one
+# anyway moves the failure somewhere nobody is looking.
+chart:
+    helm lint charts/audit -f charts/audit/testdata/values/full.yaml
+    bash charts/audit/testdata/refuse.sh
+    helm template audit charts/audit -f charts/audit/testdata/values/minimal.yaml \
+        > charts/audit/testdata/golden/minimal.yaml
+    helm template audit charts/audit -f charts/audit/testdata/values/full.yaml \
+        > charts/audit/testdata/golden/full.yaml
+    git diff --exit-code -- charts/audit/testdata/golden
+
 # Run Go vulnerability check
 vuln:
     govulncheck ./...
 
 # Everything CI runs
-check: build test lint proto drift schemas vuln
+check: build test lint proto drift schemas chart vuln

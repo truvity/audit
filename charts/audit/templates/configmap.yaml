@@ -1,0 +1,41 @@
+{{- include "audit.checks" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "audit.fullname" . }}-deployment
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+data:
+  # What `audit-writer --deployment` reads: which presets each profile is
+  # composed from, and where its copies land. The jobs read the same document,
+  # because retention is a property of the profile and every one of them needs
+  # to agree about it.
+  deployment.yaml: |
+    profiles:
+      {{- toYaml .Values.profiles | nindent 6 }}
+{{- if .Values.catalogues }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "audit.fullname" . }}-catalogues
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+data:
+  {{- range $name, $doc := .Values.catalogues }}
+  {{ $name }}: |
+    {{- $doc | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- if and .Values.database.url (not .Values.database.existingSecret) }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "audit.databaseSecretName" . }}
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  {{ .Values.database.secretKey }}: {{ .Values.database.url | quote }}
+{{- end }}

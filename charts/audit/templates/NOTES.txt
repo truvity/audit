@@ -1,0 +1,35 @@
+{{ include "audit.fullname" . }} is installed.
+
+The writer keeps {{ len .Values.profiles }} profile(s): {{ keys .Values.profiles | sortAlpha | join ", " }}.
+Records reach it at {{ include "audit.sinkURL" . }}.
+
+{{ if not .Values.stream.url -}}
+No stream is configured, so the writer takes records only from callers holding
+its address. Set `stream.url` to put it behind a durable consumer, which is what
+makes a writer that is down a backlog rather than a hole.
+{{- else -}}
+It consumes {{ .Values.stream.name }} through the durable consumer
+{{ .Values.stream.consumer }}, shared by every replica.
+{{- end }}
+
+{{ if not (include "audit.hasDatabase" .) -}}
+No database is configured. The writer indexes nothing, deduplicates in process,
+and may run only one replica. Searching what it writes needs `database`.
+{{- end }}
+
+{{ if eq .Values.keys.provider "local" -}}
+{{ if not .Values.keys.local.persistence.enabled -}}
+The key directory is disposable. Pseudonyms will change on every restart and the
+trail will not link across one. This is not a production install.
+{{- else -}}
+Pseudonymisation keys are wrapped into {{ .Values.keys.local.persistence.existingClaim | default (printf "%s-keys" (include "audit.fullname" .)) }}.
+They are random, not derived: back that claim up, and never delete it to
+reclaim space. Losing it is losing every tenant's pseudonyms.
+{{- end }}
+{{- end }}
+
+Check what a profile keeps:
+  kubectl exec deploy/{{ include "audit.fullname" . }} -- audit profile explain <name> --deployment /etc/audit/deployment.yaml
+
+Verify the chain yourself, with nothing but the archive and the public key:
+  audit verify --profile <name> --from <date> --to <date> --bucket {{ .Values.bucket }} --public-key <file>

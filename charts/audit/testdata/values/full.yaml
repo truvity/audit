@@ -1,0 +1,41 @@
+# A deployment as the design intends it: behind a stream, with an index, three
+# writers sharing one durable consumer and one key directory.
+bucket: audit-archive
+prefix: prod
+region: eu-central-1
+kmsKey: alias/audit
+replicas: 3
+profiles:
+  security:
+    presets: [security]
+  billing-nl:
+    presets: [billing-nl]
+  history:
+    presets: [history]
+database:
+  existingSecret: audit-database
+stream:
+  url: nats://nats.audit.svc:4222
+  name: AUDIT
+  consumer: audit-writer
+keys:
+  local:
+    existingSecret: audit-key-root
+    persistence:
+      accessModes: [ReadWriteMany]
+      storageClass: efs
+jobs:
+  digest:
+    signingKey:
+      existingSecret: audit-signing-key
+      keyID: audit-digest-2026
+    lookback: 168h
+  verify:
+    publicKey:
+      existingSecret: audit-signing-public
+  purge:
+    dedupeWindow: 336h
+  clockSync:
+    ntp: [time.cloudflare.com, time.google.com]
+networkPolicy:
+  enabled: true

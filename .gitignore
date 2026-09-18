@@ -9,6 +9,9 @@ bin/
 /audit-writer
 /embed
 /emit
+# ...but not the package of the same name: a new file in emit/ would be
+# silently left out of every commit.
+!/emit/
 /read
 /protoc-gen-audit-jsonschema
 coverage.out

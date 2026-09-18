@@ -15,10 +15,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/truvity/audit/catalogue"
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
 )
@@ -225,6 +227,16 @@ func (e *Emitter) Record(ctx context.Context, r *record.Record) error {
 	}
 	if r.GetObserver().GetInstance() == "" {
 		r.Observer.Instance = e.instance
+	}
+	// The catalogue says what kind of operation an action is; a caller that
+	// says nothing takes it from there, and one that says otherwise is
+	// refused by the validation below.
+	if r.GetOperation() == auditv1.Operation_OPERATION_UNSPECIFIED {
+		if a, ok := e.catalogue.Action(r.GetAction()); ok {
+			if v, ok := auditv1.Operation_value["OPERATION_"+strings.ToUpper(a.Operation)]; ok {
+				r.Operation = auditv1.Operation(v)
+			}
+		}
 	}
 	record.Assign(r)
 	if r.GetSequence() == 0 {

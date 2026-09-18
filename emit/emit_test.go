@@ -130,6 +130,28 @@ func TestRecordFillsWhatTheEmitterKnows(t *testing.T) {
 	}
 }
 
+// The operation is the catalogue's: a caller need not repeat it, and cannot
+// contradict it.
+func TestRecordTakesTheOperationFromTheCatalogue(t *testing.T) {
+	store := &sink.Memory{}
+	e := emitter(t, store, emit.Hooks{})
+
+	r := placed()
+	r.Operation = auditv1.Operation_OPERATION_UNSPECIFIED
+	if err := e.Record(context.Background(), r); err != nil {
+		t.Fatal(err)
+	}
+	if r.GetOperation() != auditv1.Operation_OPERATION_CREATE {
+		t.Fatalf("operation = %v, want the catalogue's create", r.GetOperation())
+	}
+
+	r = placed()
+	r.Operation = auditv1.Operation_OPERATION_REMOVE
+	if err := e.Record(context.Background(), r); !errors.Is(err, emit.ErrRefused) {
+		t.Fatalf("an operation the catalogue does not declare must be refused, got %v", err)
+	}
+}
+
 // A producer's sequence is what lets a reader see a gap.
 func TestSequenceIsMonotonicPerEmitter(t *testing.T) {
 	store := &sink.Memory{}

@@ -33,9 +33,13 @@ spec:
               args:
                 - digest
                 - --deployment=/etc/audit/deployment.yaml
+                {{- if .Values.jobs.digest.kmsKey }}
+                - --kms-key={{ .Values.jobs.digest.kmsKey }}
+                {{- else }}
                 - --key=/etc/audit/signing/{{ .Values.jobs.digest.signingKey.secretKey }}
                 {{- with .Values.jobs.digest.signingKey.keyID }}
                 - --key-id={{ . }}
+                {{- end }}
                 {{- end }}
                 - --sink={{ $sink }}
                 - --instance=$(POD_NAME)
@@ -59,17 +63,21 @@ spec:
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
+                {{- if not .Values.jobs.digest.kmsKey }}
                 - name: signing
                   mountPath: /etc/audit/signing
                   readOnly: true
+                {{- end }}
                 {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 16 }}{{- end }}
           volumes:
             - name: deployment
               configMap:
                 name: {{ $full }}-deployment
+            {{- if not .Values.jobs.digest.kmsKey }}
             - name: signing
               secret:
                 secretName: {{ .Values.jobs.digest.signingKey.existingSecret }}
+            {{- end }}
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 12 }}{{- end }}
 {{- end }}
 {{- if .Values.jobs.verify.enabled }}

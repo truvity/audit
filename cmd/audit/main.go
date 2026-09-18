@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/truvity/audit/catalogue"
@@ -51,7 +52,7 @@ usage:
         Send dead letters back to a writer once the cause is fixed. Without
         --sink it reads and summarises them and sends nothing.
 
-  audit digest --deployment <file> --key <file> [flags]
+  audit digest --deployment <file> --key <file>|--kms-key <id> [flags]
         Seal the windows since the last digest into the signed chain. Run it
         hourly. It catches up on windows a missed run left behind, because a
         gap in the chain cannot be told from a digest somebody removed.
@@ -70,6 +71,10 @@ usage:
         Destroy a tenant's pseudonymisation key. The copies stay and their
         pseudonyms can never be recomputed again: this is what erasure means
         here, and it cannot be undone.
+
+  audit key public --key <file>|--kms-key <id>
+        Print the public half of a digest signing key: all an auditor needs,
+        with the archive, to verify the chain.
 
   audit hold place|release|list [flags]
         Place a legal hold on a profile's copies, or a tenant's within it, and
@@ -560,6 +565,7 @@ func digestCmd(args []string) error {
 		only       = flags.String("profile", "", "seal only this profile; default every one")
 		key        = flags.String("key", "", "PEM private key the digests are signed with")
 		keyID      = flags.String("key-id", "", "the name a digest records the signing key under")
+		kmsKey     = flags.String("kms-key", "", "an AWS KMS ECC_NIST_P256 key to sign with instead of --key")
 		from       = flags.String("from", "", "first window; default the hour after the last digest")
 		to         = flags.String("to", "", "last window; default the hour that has just closed")
 		bucket     = flags.String("bucket", "", "the bucket the archive is in")
@@ -579,8 +585,10 @@ func digestCmd(args []string) error {
 		return errors.New("give the profile configuration with --deployment")
 	case *bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
-	case *key == "":
-		return errors.New("give the signing key with --key: an unsigned chain proves nothing")
+	case *key == "" && *kmsKey == "":
+		return errors.New("give the signing key with --key or --kms-key: an unsigned chain proves nothing")
+	case *key != "" && *kmsKey != "":
+		return errors.New("give --key or --kms-key, not both: one chain has one signer")
 	}
 
 	profiles, err := profilesFor(*deployment)
@@ -594,7 +602,7 @@ func digestCmd(args []string) error {
 		}
 		profiles = map[string]*preset.Profile{*only: p}
 	}
-	signer, err := keys.LoadLocalSignerFile(*keyID, *key)
+	signer, err := signerFor(context.Background(), *key, *keyID, *kmsKey, *region)
 	if err != nil {
 		return err
 	}
@@ -626,6 +634,50 @@ func digestCmd(args []string) error {
 		return err
 	}
 	_, err = run.Run(ctx)
+	return err
+}
+
+// signerFor is the digest signer a command was given: a key file, or a KMS key
+// whose private half never leaves KMS.
+func signerFor(ctx context.Context, keyFile, keyID, kmsKey, region string) (keys.Signer, error) {
+	if kmsKey == "" {
+		return keys.LoadLocalSignerFile(keyID, keyFile)
+	}
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if region != "" {
+		cfg.Region = region
+	}
+	return &keys.KMSSigner{Client: kms.NewFromConfig(cfg), Key: kmsKey}, nil
+}
+
+// keyPublic prints the public half of a digest signing key, which is all an
+// auditor needs to verify the chain.
+func keyPublic(args []string) error {
+	flags := flag.NewFlagSet("key public", flag.ContinueOnError)
+	var (
+		key    = flags.String("key", "", "PEM private key file")
+		kmsKey = flags.String("kms-key", "", "an AWS KMS signing key")
+		region = flags.String("region", "", "the region, when it is not in the environment")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	if (*key == "") == (*kmsKey == "") {
+		return errors.New("give exactly one of --key and --kms-key")
+	}
+	ctx := context.Background()
+	signer, err := signerFor(ctx, *key, "", *kmsKey, *region)
+	if err != nil {
+		return err
+	}
+	public, err := signer.PublicKey(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = os.Stdout.Write(public)
 	return err
 }
 
@@ -777,8 +829,11 @@ func holdCmd(args []string) error {
 
 // keyCmd is the key lifecycle. Only destroy is built.
 func keyCmd(args []string) error {
+	if len(args) > 0 && args[0] == "public" {
+		return keyPublic(args[1:])
+	}
 	if len(args) == 0 || args[0] != "destroy" {
-		return errors.New("audit key needs destroy")
+		return errors.New("audit key needs destroy or public")
 	}
 	flags := flag.NewFlagSet("key destroy", flag.ContinueOnError)
 	var (

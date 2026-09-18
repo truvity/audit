@@ -3,8 +3,11 @@ package keys
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -40,14 +43,27 @@ func Verify(publicKeyPEM, message, signature []byte) error {
 	if err != nil {
 		return fmt.Errorf("keys: the public key does not parse: %w", err)
 	}
-	pub, ok := parsed.(ed25519.PublicKey)
-	if !ok {
+	switch pub := parsed.(type) {
+	case ed25519.PublicKey:
+		if !ed25519.Verify(pub, message, signature) {
+			return errors.New("keys: the signature does not check out")
+		}
+		return nil
+	case *ecdsa.PublicKey:
+		// ECDSA over P-256 signs a SHA-256 of the message, which is how a
+		// managed key signs a body larger than it will take whole. The
+		// signature is ASN.1, as KMS returns it.
+		if pub.Curve != elliptic.P256() {
+			return errors.New("keys: only P-256 ECDSA keys are verified")
+		}
+		sum := sha256.Sum256(message)
+		if !ecdsa.VerifyASN1(pub, sum[:], signature) {
+			return errors.New("keys: the signature does not check out")
+		}
+		return nil
+	default:
 		return fmt.Errorf("keys: %T is not a key this build verifies", parsed)
 	}
-	if !ed25519.Verify(pub, message, signature) {
-		return errors.New("keys: the signature does not check out")
-	}
-	return nil
 }
 
 // LocalSigner signs with a key on this machine.

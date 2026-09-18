@@ -40,8 +40,11 @@ understand, or — worse — to a trail that looks fine and is not.
 {{- end -}}
 
 {{- if .Values.jobs.digest.enabled -}}
-  {{- if not .Values.jobs.digest.signingKey.existingSecret -}}
-  {{- fail "audit: `jobs.digest.signingKey.existingSecret` is required while `jobs.digest.enabled`. An unsigned chain proves nothing, so the command refuses without a key and the job would only ever fail." -}}
+  {{- if not (or .Values.jobs.digest.signingKey.existingSecret .Values.jobs.digest.kmsKey) -}}
+  {{- fail "audit: `jobs.digest.signingKey.existingSecret` or `jobs.digest.kmsKey` is required while `jobs.digest.enabled`. An unsigned chain proves nothing, so the command refuses without a key and the job would only ever fail." -}}
+  {{- end -}}
+  {{- if and .Values.jobs.digest.signingKey.existingSecret .Values.jobs.digest.kmsKey -}}
+  {{- fail "audit: `jobs.digest.signingKey.existingSecret` and `jobs.digest.kmsKey` are both set. One chain has one signer; pick one." -}}
   {{- end -}}
 {{- end -}}
 

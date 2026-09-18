@@ -18,3 +18,4 @@
 --set bucket=b --set anonymousWrites=false	under nobody's name
 --set bucket=b --set workloadIdentity.issuers[0].url=https://a	pick one
 --set bucket=b --set anonymousWrites=false --set workloadIdentity.issuers[0].url=https://a --set workloadIdentity.issuers[1].url=https://b --set workloadIdentity.workloads[0].subject=system:serviceaccount:w:api --set workloadIdentity.workloads[0].source=wallet	say which one it is
+--set bucket=b --set jobs.digest.kmsKey=alias/audit-digest	One chain has one signer

@@ -168,6 +168,12 @@ jobs:
       existingSecret: ""
       secretKey: key.pem
       keyID: ""
+    # Sign with an AWS KMS ECC_NIST_P256 key instead of a key Secret. The
+    # private half never leaves KMS, so writing the archive and vouching for it
+    # stay different privileges: the digest job's role has kms:Sign, the
+    # writer's does not. Export the public half for verification with
+    # `audit key public --kms-key <id>`.
+    kmsKey: ""
     lookback: ""
     maxWindows: 0
   verify:

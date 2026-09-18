@@ -127,6 +127,8 @@ AUDIT_OPENBAO_URL=http://127.0.0.1:8200 AUDIT_OPENBAO_TOKEN=root go test ./keys/
 ```
 
 They cover two writers with separate stores agreeing on a pseudonym, purposes
-and tenants not joining, destroy leaving a tombstone that a fresh provider
-respects, and a single-purpose policy refusing another purpose and refusing to
-destroy.
+and tenants not joining, and destroy leaving a tombstone that a fresh provider
+respects. Every policy on this page is also run as its own token: a
+single-purpose role refuses another purpose and cannot destroy, the writer
+seals but cannot open, resolve opens and does nothing else, and the eraser
+destroys but cannot delete.

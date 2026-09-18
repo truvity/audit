@@ -208,3 +208,45 @@ path "transit/encrypt/`+prefix+`.*" { capabilities = ["create", "update"] }
 		t.Fatalf("the eraser's policy let it delete a tombstone: %s", res.Status)
 	}
 }
+
+// The writer's policy pseudonymises and seals but cannot open what it sealed;
+// the query service's resolve policy opens and does nothing else. Undoing a
+// pseudonym is a separate privilege from making one.
+func TestTransitWriterSealsAndOnlyResolveOpens(t *testing.T) {
+	url, root := openbao(t)
+	prefix := runPrefix()
+	ctx := context.Background()
+	transitProvider(t, url, root, prefix)
+
+	writerToken := policyToken(t, url, root, prefix+"-writer", `
+path "transit/hmac/`+prefix+`.security.*"    { capabilities = ["update"] }
+path "transit/encrypt/`+prefix+`.security.*" { capabilities = ["create", "update"] }
+`)
+	resolveToken := policyToken(t, url, root, prefix+"-resolve", `
+path "transit/decrypt/`+prefix+`.security.*" { capabilities = ["update"] }
+`)
+	writer, err := keys.NewTransit(ctx, &keys.Transit{Address: url, Token: writerToken, Prefix: prefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolver, err := keys.NewTransit(ctx, &keys.Transit{Address: url, Token: resolveToken, Prefix: prefix})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Pseudonym(ctx, "acme", "security", "alice"); err != nil {
+		t.Fatalf("the writer could not pseudonymise: %v", err)
+	}
+	sealed, err := writer.Seal(ctx, "acme", "security", []byte("alice"))
+	if err != nil {
+		t.Fatalf("the writer could not seal: %v", err)
+	}
+	if _, err := writer.Open(ctx, "acme", "security", sealed); err == nil {
+		t.Fatal("the writer opened a sealed identifier")
+	}
+	if plain, err := resolver.Open(ctx, "acme", "security", sealed); err != nil || string(plain) != "alice" {
+		t.Fatalf("resolve could not open it: %q %v", plain, err)
+	}
+	if _, err := resolver.Pseudonym(ctx, "acme", "security", "bob"); err == nil {
+		t.Fatal("the resolve role pseudonymised")
+	}
+}

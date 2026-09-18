@@ -27,8 +27,12 @@ app.kubernetes.io/name: {{ include "audit.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
-{{- define "audit.image" -}}
-{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}
+{{- define "audit.writerImage" -}}
+{{ .Values.image.writer.repository }}:{{ .Values.image.writer.tag | default .Chart.AppVersion }}
+{{- end -}}
+
+{{- define "audit.cliImage" -}}
+{{ .Values.image.cli.repository }}:{{ .Values.image.cli.tag | default .Chart.AppVersion }}
 {{- end -}}
 
 {{- define "audit.serviceAccountName" -}}

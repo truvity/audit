@@ -28,10 +28,9 @@ spec:
       {{- include "audit.podDefaults" . | nindent 6 }}
       containers:
         - name: migrate
-          image: {{ include "audit.image" . }}
+          image: {{ include "audit.cliImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["audit", "migrate"]
-          args: ["--database=$(AUDIT_DATABASE)"]
+          args: ["migrate", "--database=$(AUDIT_DATABASE)"]
           env:
             {{- include "audit.databaseEnv" . | nindent 12 }}
           securityContext:

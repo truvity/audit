@@ -28,10 +28,10 @@ spec:
           {{- include "audit.podDefaults" . | nindent 10 }}
           containers:
             - name: digest
-              image: {{ include "audit.image" . }}
+              image: {{ include "audit.cliImage" . }}
               imagePullPolicy: {{ .Values.image.pullPolicy }}
-              command: ["audit", "digest"]
               args:
+                - digest
                 - --deployment=/etc/audit/deployment.yaml
                 - --key=/etc/audit/signing/{{ .Values.jobs.digest.signingKey.secretKey }}
                 {{- with .Values.jobs.digest.signingKey.keyID }}
@@ -98,21 +98,18 @@ spec:
           {{- include "audit.podDefaults" $ | nindent 10 }}
           containers:
             - name: verify
-              image: {{ include "audit.image" $ }}
+              image: {{ include "audit.cliImage" $ }}
               imagePullPolicy: {{ $.Values.image.pullPolicy }}
-              command: ["/bin/sh", "-c"]
               args:
-                - |
-                  exec audit verify \
-                    --profile={{ $name }} \
-                    --from="$(date -u -d '-{{ $.Values.jobs.verify.window }}' +%Y-%m-%dT%H)" \
-                    --to="$(date -u +%Y-%m-%dT%H)" \
-                    --public-key=/etc/audit/public/{{ $.Values.jobs.verify.publicKey.secretKey }} \
-                    {{- with $.Values.jobs.digest.lookback }}
-                    --lookback={{ . }} \
-                    {{- end }}
-                    --sink={{ $sink }} \
-                    --instance="$POD_NAME"
+                - verify
+                - --profile={{ $name }}
+                - --last={{ $.Values.jobs.verify.window }}
+                - --public-key=/etc/audit/public/{{ $.Values.jobs.verify.publicKey.secretKey }}
+                {{- with $.Values.jobs.digest.lookback }}
+                - --lookback={{ . }}
+                {{- end }}
+                - --sink={{ $sink }}
+                - --instance=$(POD_NAME)
               env:
                 - name: POD_NAME
                   valueFrom:
@@ -159,10 +156,10 @@ spec:
           {{- include "audit.podDefaults" . | nindent 10 }}
           containers:
             - name: purge
-              image: {{ include "audit.image" . }}
+              image: {{ include "audit.cliImage" . }}
               imagePullPolicy: {{ .Values.image.pullPolicy }}
-              command: ["audit", "purge"]
               args:
+                - purge
                 - --deployment=/etc/audit/deployment.yaml
                 - --database=$(AUDIT_DATABASE)
                 {{- with .Values.jobs.purge.identifyingAfter }}
@@ -213,10 +210,10 @@ spec:
           {{- include "audit.podDefaults" . | nindent 10 }}
           containers:
             - name: clock-sync
-              image: {{ include "audit.image" . }}
+              image: {{ include "audit.cliImage" . }}
               imagePullPolicy: {{ .Values.image.pullPolicy }}
-              command: ["audit", "clock-sync"]
               args:
+                - clock-sync
                 {{- range .Values.jobs.clockSync.ntp }}
                 - --ntp={{ . }}
                 {{- end }}

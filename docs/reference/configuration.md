@@ -17,19 +17,25 @@ Draft. Names are stable; defaults are the presets' where they exist.
 
 ## Split writer
 
+These are the chart's values (`charts/audit/values.yaml`), which are the
+binary's flags with dots.
+
 | setting | meaning |
 |---|---|
+| `bucket`, `prefix`, `region`, `kmsKey` | the archive |
+| `governance` | lets a privileged role shorten a retention. Off, and the chart refuses it on: a deployment that wants it says so in a values file of its own |
+| `profiles` | composition of presets and prefixes, the document `audit-writer --deployment` reads |
+| `replicas` | writers sharing the stream. Above one needs `database` and a key directory every replica can write |
 | `stream.url`, `stream.name`, `stream.consumer` | JetStream. Without a URL the writer only serves its sink, which is what an application embedding it wants |
 | `stream.batch` | how many records are taken at once. Default 100 |
-| `stream.ack_wait` | how long the stream waits for a batch to be taken before offering it again. Default 30s, and it must exceed the longest a write can honestly take: a batch is acknowledged only once its records are in the archive |
-| `bucket`, `region`, `kms_key` | object storage |
-| `profiles` | composition of presets and prefixes |
-| `roll.interval`, `roll.max_bytes` | object rolling |
-| `payload.threshold_bytes` | detach above this |
-| `dedupe.window` | from the widest preset window the deployment's profiles ask for. The table is shared by every profile, so a record one profile remembers for a fortnight must not be re-written because another's window was shorter |
-| `keys.provider` | `kms`, `transit`, `local` |
-| `index.postgres` | the index and the shared deduplication table, one database. Without it the writer indexes nothing and deduplicates in process, which is why it then refuses to run more than one replica |
-| `dlq.prefix` | dead-letter prefix |
+| `stream.ackWait` | how long the stream waits for a batch to be taken before offering it again. Default 30s, and it must exceed the longest a write can honestly take: a batch is acknowledged only once its records are in the archive |
+| `roll.interval` | how often an object is rolled and put |
+| `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database. Without it the writer indexes nothing and deduplicates in process |
+| `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
+| `keys.provider` | `local` only, until `kms` and `transit` land |
+| `keys.local.existingSecret` | the 32-byte root the data keys are wrapped under |
+| `keys.local.persistence` | where the wrapped keys live. They are random, not derived, so this is the only copy: back it up, and use ReadWriteMany for more than one replica |
+| `catalogues` | catalogue documents registered at start-up, by name |
 
 The built `audit-writer` takes these as flags or environment variables:
 `--database`/`AUDIT_DATABASE` is the index, `--replicas`/`AUDIT_REPLICAS` is how

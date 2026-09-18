@@ -215,6 +215,8 @@ func verify(args []string) error {
 		region    = flags.String("region", "", "the region, when it is not in the environment")
 		lookback  = flags.Duration("lookback", 0,
 			"how far before the range to look for objects keyed under an older day; at least what audit digest used")
+		last = flags.Duration("last", 0,
+			"check the windows of the last this long, ending at the hour that has closed; instead of --from and --to")
 		sinkURL  = flags.String("sink", "", "the writer this job records what it checked through")
 		instance = flags.String("instance", "", "the name this job records itself under")
 		asJSON   = flags.Bool("json", false, "print the report as JSON")
@@ -230,13 +232,23 @@ func verify(args []string) error {
 	case *bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
 	}
-	start, err := cli.ParseDay(*from)
-	if err != nil {
-		return fmt.Errorf("--from: %w", err)
-	}
-	end, err := cli.ParseDay(*to)
-	if err != nil {
-		return fmt.Errorf("--to: %w", err)
+	// A scheduled run says "the last day"; an auditor names the range. The
+	// image the jobs run from has no shell, so the arithmetic lives here.
+	var start, end time.Time
+	var err error
+	switch {
+	case *last > 0 && (*from != "" || *to != ""):
+		return errors.New("give --last, or --from and --to, not both")
+	case *last > 0:
+		end = time.Now().UTC().Truncate(time.Hour)
+		start = end.Add(-*last)
+	default:
+		if start, err = cli.ParseDay(*from); err != nil {
+			return fmt.Errorf("--from: %w", err)
+		}
+		if end, err = cli.ParseDay(*to); err != nil {
+			return fmt.Errorf("--to: %w", err)
+		}
 	}
 	pem, err := os.ReadFile(*publicKey)
 	if err != nil {

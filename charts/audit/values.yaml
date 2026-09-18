@@ -1,10 +1,15 @@
 # The audit write path. Names follow docs/reference/configuration.md.
 
 image:
-  repository: ghcr.io/truvity/audit
-  # The writer and the toolchain are one image; the jobs run `audit`, the
-  # deployment runs `audit-writer`.
-  tag: ""          # defaults to the chart's appVersion
+  # One image per binary, as ko builds them: the writer runs in the
+  # Deployment, the toolchain in the jobs. Both are distroless and have no
+  # shell, which is why every job below is a command with arguments.
+  writer:
+    repository: ghcr.io/truvity/audit-writer
+    tag: ""        # defaults to the chart's appVersion
+  cli:
+    repository: ghcr.io/truvity/audit
+    tag: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 

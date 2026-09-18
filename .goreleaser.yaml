@@ -1,0 +1,69 @@
+# Releases: the `audit` toolchain as archives, so that an auditor can run
+# `verify` with their own copy and nothing that has to be trusted; and one
+# image per binary, built by ko without a container runtime. The images are
+# distroless and have no shell, which is why every job in the chart is a
+# command with arguments and never a script.
+version: 2
+project_name: audit
+
+builds:
+  - id: audit
+    main: ./cmd/audit
+    binary: audit
+    env: [CGO_ENABLED=0, GOEXPERIMENT=jsonv2]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+  - id: audit-writer
+    main: ./cmd/audit-writer
+    binary: audit-writer
+    env: [CGO_ENABLED=0, GOEXPERIMENT=jsonv2]
+    goos: [linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+
+# One archive shape for every platform. Mixed formats are what breaks the
+# download step of whatever installs these.
+archives:
+  - id: audit
+    ids: [audit]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+kos:
+  - id: audit-writer
+    build: audit-writer
+    repositories: [ghcr.io/truvity/audit-writer]
+    bare: true
+    preserve_import_paths: false
+    base_image: cgr.dev/chainguard/static:latest
+    platforms: [linux/amd64, linux/arm64]
+    tags: ["{{ .Version }}", latest]
+    sbom: spdx
+  - id: audit
+    build: audit
+    repositories: [ghcr.io/truvity/audit]
+    bare: true
+    preserve_import_paths: false
+    base_image: cgr.dev/chainguard/static:latest
+    platforms: [linux/amd64, linux/arm64]
+    tags: ["{{ .Version }}", latest]
+    sbom: spdx
+
+# Named rather than inferred from the remote, so the config validates in a
+# checkout that has none.
+release:
+  github:
+    owner: truvity
+    name: audit
+
+checksum:
+  name_template: checksums.txt
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+# CHANGELOG.md is written by hand and says what changed; a list of commit
+# subjects would say less and stand beside it.
+changelog:
+  disable: true

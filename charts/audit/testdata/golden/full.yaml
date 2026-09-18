@@ -186,9 +186,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: writer
-          image: ghcr.io/truvity/audit:0.1.0
+          image: ghcr.io/truvity/audit-writer:0.1.0
           imagePullPolicy: IfNotPresent
-          command: ["audit-writer"]
           args:
             - --deployment=/etc/audit/deployment.yaml
             - --listen=:8080
@@ -302,8 +301,8 @@ spec:
             - name: digest
               image: ghcr.io/truvity/audit:0.1.0
               imagePullPolicy: IfNotPresent
-              command: ["audit", "digest"]
               args:
+                - digest
                 - --deployment=/etc/audit/deployment.yaml
                 - --key=/etc/audit/signing/key.pem
                 - --key-id=audit-digest-2026
@@ -384,17 +383,14 @@ spec:
             - name: verify
               image: ghcr.io/truvity/audit:0.1.0
               imagePullPolicy: IfNotPresent
-              command: ["/bin/sh", "-c"]
               args:
-                - |
-                  exec audit verify \
-                    --profile=billing-nl \
-                    --from="$(date -u -d '-24h' +%Y-%m-%dT%H)" \
-                    --to="$(date -u +%Y-%m-%dT%H)" \
-                    --public-key=/etc/audit/public/public.pem \
-                    --lookback=168h \
-                    --sink=http://audit:8080 \
-                    --instance="$POD_NAME"
+                - verify
+                - --profile=billing-nl
+                - --last=24h
+                - --public-key=/etc/audit/public/public.pem
+                - --lookback=168h
+                - --sink=http://audit:8080
+                - --instance=$(POD_NAME)
               env:
                 - name: POD_NAME
                   valueFrom:
@@ -462,17 +458,14 @@ spec:
             - name: verify
               image: ghcr.io/truvity/audit:0.1.0
               imagePullPolicy: IfNotPresent
-              command: ["/bin/sh", "-c"]
               args:
-                - |
-                  exec audit verify \
-                    --profile=history \
-                    --from="$(date -u -d '-24h' +%Y-%m-%dT%H)" \
-                    --to="$(date -u +%Y-%m-%dT%H)" \
-                    --public-key=/etc/audit/public/public.pem \
-                    --lookback=168h \
-                    --sink=http://audit:8080 \
-                    --instance="$POD_NAME"
+                - verify
+                - --profile=history
+                - --last=24h
+                - --public-key=/etc/audit/public/public.pem
+                - --lookback=168h
+                - --sink=http://audit:8080
+                - --instance=$(POD_NAME)
               env:
                 - name: POD_NAME
                   valueFrom:
@@ -540,17 +533,14 @@ spec:
             - name: verify
               image: ghcr.io/truvity/audit:0.1.0
               imagePullPolicy: IfNotPresent
-              command: ["/bin/sh", "-c"]
               args:
-                - |
-                  exec audit verify \
-                    --profile=security \
-                    --from="$(date -u -d '-24h' +%Y-%m-%dT%H)" \
-                    --to="$(date -u +%Y-%m-%dT%H)" \
-                    --public-key=/etc/audit/public/public.pem \
-                    --lookback=168h \
-                    --sink=http://audit:8080 \
-                    --instance="$POD_NAME"
+                - verify
+                - --profile=security
+                - --last=24h
+                - --public-key=/etc/audit/public/public.pem
+                - --lookback=168h
+                - --sink=http://audit:8080
+                - --instance=$(POD_NAME)
               env:
                 - name: POD_NAME
                   valueFrom:
@@ -618,8 +608,8 @@ spec:
             - name: purge
               image: ghcr.io/truvity/audit:0.1.0
               imagePullPolicy: IfNotPresent
-              command: ["audit", "purge"]
               args:
+                - purge
                 - --deployment=/etc/audit/deployment.yaml
                 - --database=$(AUDIT_DATABASE)
                 - --dedupe-window=336h
@@ -687,8 +677,8 @@ spec:
             - name: clock-sync
               image: ghcr.io/truvity/audit:0.1.0
               imagePullPolicy: IfNotPresent
-              command: ["audit", "clock-sync"]
               args:
+                - clock-sync
                 - --ntp=time.cloudflare.com
                 - --ntp=time.google.com
                 - --sink=http://audit:8080
@@ -749,8 +739,7 @@ spec:
         - name: migrate
           image: ghcr.io/truvity/audit:0.1.0
           imagePullPolicy: IfNotPresent
-          command: ["audit", "migrate"]
-          args: ["--database=$(AUDIT_DATABASE)"]
+          args: ["migrate", "--database=$(AUDIT_DATABASE)"]
           env:
             
             - name: AUDIT_DATABASE

@@ -94,6 +94,7 @@ race:
 lint:
     golangci-lint config verify
     golangci-lint run ./...
+    goreleaser check
     # A `;` inside a mermaid sequenceDiagram is a statement separator: it
     # splits the message and GitHub renders nothing. Keep them out of docs.
     ! grep -rn --include=*.md -E '^[[:space:]]*[A-Za-z][A-Za-z0-9_]*[[:space:]]*-?->>?.*;' docs/
@@ -122,6 +123,12 @@ chart:
     helm template audit charts/audit -f charts/audit/testdata/values/full.yaml \
         > charts/audit/testdata/golden/full.yaml
     git diff --exit-code -- charts/audit/testdata/golden
+
+# Build everything a release would, locally and unpublished: the archives and,
+# through ko, the two images the chart deploys. Not part of `check`: it builds
+# for every platform and is minutes, not seconds.
+snapshot:
+    goreleaser release --snapshot --clean
 
 # Run Go vulnerability check
 vuln:

@@ -50,9 +50,8 @@ spec:
       {{- include "audit.podDefaults" . | nindent 6 }}
       containers:
         - name: writer
-          image: {{ include "audit.image" . }}
+          image: {{ include "audit.writerImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["audit-writer"]
           args:
             - --deployment=/etc/audit/deployment.yaml
             - --listen=:{{ .Values.service.port }}

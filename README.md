@@ -9,8 +9,8 @@ catalogue, carried over a stream or an outbox, split into one copy per
 profile, written to a locked bucket with per-profile retention, indexed for
 search, and later proved unaltered by an auditor who trusts nobody. The index
 is a projection: `audit reindex` rebuilds it from the archive, and a test holds
-the rebuild equal to what the writer wrote. The read path, the viewer, the
-chart and the metering projection do not exist yet. Read [docs/why.md](docs/why.md) first, then
+the rebuild equal to what the writer wrote. The write side of the chart deploys all of it. The read path, the viewer and
+the metering projection do not exist yet. Read [docs/why.md](docs/why.md) first, then
 [docs/concepts.md](docs/concepts.md), then the decisions in
 [docs/decisions/](docs/decisions/), then
 [docs/development/layout.md](docs/development/layout.md) for what is built
@@ -61,6 +61,7 @@ docs/research/      the surveys the design rests on, with sources
 docs/reference/     record, catalogue, presets, API, configuration
 docs/operations/    S3 guide, key custody, verification, runbook
 docs/development/   package layout and build order for implementers
+charts/audit/       the write path, deployable; refuses what the binaries would
 ```
 
 ## Licence

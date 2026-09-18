@@ -25,6 +25,8 @@ index/              Indexer and Searcher interfaces, and the memory implementati
                     of both; postgres/ the default index, searcher and shared
                     dedupe table; s3scan/ a searcher with no index at all
 auth/               Authenticator and Authorizer interfaces, with the defaults
+writer/             the writer as a library: Open(Config) assembles what audit-writer runs
+query/              the query service as a library: New(Config), mounted behind any sign-in
 
 internal/writer/    split, treat, roll, put, index, dead-letter, dedupe, ack
 internal/query/     the query service behind auth

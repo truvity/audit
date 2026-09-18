@@ -41,6 +41,19 @@ type Authenticator interface {
 	Principal(ctx context.Context, req *http.Request) (Principal, error)
 }
 
+// AuthenticatorFunc is an Authenticator written as a function: typically an
+// application that embeds the query service, turning its own signed-in
+// session into a Principal. Whatever it returns is what the grants are
+// matched against and what the record of each read names, so it should come
+// from the session the application verified, never from anything the caller
+// merely sent.
+type AuthenticatorFunc func(ctx context.Context, req *http.Request) (Principal, error)
+
+// Principal implements Authenticator.
+func (f AuthenticatorFunc) Principal(ctx context.Context, req *http.Request) (Principal, error) {
+	return f(ctx, req)
+}
+
 // Operation is something a caller may be allowed to do.
 type Operation string
 

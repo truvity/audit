@@ -26,8 +26,8 @@ func purger(t *testing.T, target index.Indexer, dedupe cli.Marker, now time.Time
 	if err != nil {
 		t.Fatal(err)
 	}
-	profiles, err := (&cli.Deployment{
-		Profiles: map[string]cli.ProfileConfig{"security": {Presets: []string{"security"}}},
+	profiles, err := (&preset.Deployment{
+		Profiles: map[string]preset.ProfileConfig{"security": {Presets: []string{"security"}}},
 	}).Compose(presets)
 	if err != nil {
 		t.Fatal(err)

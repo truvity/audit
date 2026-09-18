@@ -20,15 +20,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
 	"github.com/truvity/audit/internal/cli"
-	"github.com/truvity/audit/internal/identity"
-	"github.com/truvity/audit/internal/query"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/query"
 	"github.com/truvity/audit/store"
 )
 
@@ -105,17 +103,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	common, err := catalogue.Common()
-	if err != nil {
-		return err
-	}
-
 	if *exports != "" && *exports == *bucket {
 		return errors.New(
 			"--exports must not be the archive bucket: an export is an unlocked copy meant to be " +
 				"cleared, and the archive's policy denies every delete, so it would stay forever")
 	}
-	exporter, err := exporterFor(ctx, *exports, *region, *exportExpiry, *linkValid)
+	exportTo, err := exportsFor(ctx, *exports, *region, *exportExpiry, *linkValid)
 	if err != nil {
 		return err
 	}
@@ -134,7 +127,7 @@ func run() error {
 	// archive. It is a separate privilege from reading: a deployment that
 	// does not mount the keys here has a query service that cannot undo a
 	// pseudonym at all, whatever a grant says.
-	var identities *identity.Map
+	var sealer keys.Sealer
 	if keyFlags.Configured() {
 		if archive == nil || (keyFlags.Local() && *keyFlags.Dir == "") {
 			return errors.New("resolve needs the writer's keys (--key-root and --key-dir, " +
@@ -145,34 +138,28 @@ func run() error {
 			return err
 		}
 		defer provider.Close() //nolint:errcheck // shutting down
-		sealer, ok := provider.(keys.Sealer)
-		if !ok {
+		var ok bool
+		if sealer, ok = provider.(keys.Sealer); !ok {
 			return errors.New("this key provider cannot open what the writer sealed, so resolve is impossible")
 		}
-		identities = &identity.Map{Store: archive, Keys: sealer}
 	}
 
-	service, err := query.New(&query.Service{
-		Searcher:   found,
-		Archive:    archive,
-		Identities: identities,
-		Exporter:   exporter,
-		Authorizer: access.Rules,
-		Sink:       cli.WriterClient(*sinkURL),
-		Catalogue:  common,
-		Version:    *version,
-		OnUnrecorded: func(action string, err error) {
-			// Not a degraded service: this is the service failing at one of
-			// the two things it is for.
-			slog.Error("a read was not recorded", "action", action, "error", err)
-		},
+	service, err := query.New(query.Config{
+		Searcher:      found,
+		Authenticator: authenticator,
+		Authorizer:    access.Rules,
+		Sink:          cli.WriterClient(*sinkURL),
+		Archive:       archive,
+		Keys:          sealer,
+		Exports:       exportTo,
+		Version:       *version,
 	})
 	if err != nil {
 		return err
 	}
 	defer service.Close() //nolint:errcheck // shutting down
 
-	path, handler := query.NewHandler(service, authenticator)
+	path, handler := service.Handler()
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
@@ -192,16 +179,16 @@ func run() error {
 	return nil
 }
 
-// exporterFor prepares exports, when a deployment has somewhere to put them.
+// exportsFor prepares exports, when a deployment has somewhere to put them.
 //
 // The bucket is its own, not the archive's, and has no Object Lock. An export
 // is a copy of records made to be taken away and then cleared; the archive's
 // bucket policy denies every delete, so an export written there would stay
 // forever, and the bucket needs a lifecycle rule on the export prefix, which
 // is a rule nobody should ever write against the archive.
-func exporterFor(
+func exportsFor(
 	ctx context.Context, bucket, region string, expiry, linkValid time.Duration,
-) (*query.Exporter, error) {
+) (*query.Exports, error) {
 	if bucket == "" {
 		return nil, nil
 	}
@@ -213,7 +200,7 @@ func exporterFor(
 	if !ok {
 		return nil, errors.New("the export bucket cannot sign links")
 	}
-	return &query.Exporter{
+	return &query.Exports{
 		Store: files, Presigner: presigner,
 		Expiry: expiry, LinkValid: linkValid,
 	}, nil

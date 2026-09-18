@@ -107,6 +107,12 @@ Foundation. No release.
   service, `audit key destroy` and `audit digest`; the chart's `openbao`,
   `keys.provider: transit`, a role per component, and `trust.configMap` for
   OpenBAO and Postgres alike.
+- `writer` and `query`: the writer and the query service as public libraries,
+  so an application can embed its own trail — its emitter writing into the
+  writer in process, its console reading through the query API behind its own
+  sign-in (`auth.AuthenticatorFunc`). Both binaries are built on them. The
+  deployment document is `preset.ParseDeployment`. `examples/embed` does the
+  whole round trip with public imports only, and a test holds it to that.
 - Retention addenda: an action that `extends` the records a data property
   names lengthens the lock on the objects holding them — a renewal on the
   issuance, a credential on the identity proofing it relied on — to its own

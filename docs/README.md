@@ -8,7 +8,7 @@ the contracts; operations is for whoever runs it.
 
 | section | pages |
 |---|---|
-| Guides | [deploying](guides/deploy.md), [emitting records](guides/emit.md), [reading the trail](guides/read.md) |
+| Guides | [deploying](guides/deploy.md), [emitting records](guides/emit.md), [reading the trail](guides/read.md), [embedding the trail in an application](guides/embed.md) |
 | Entry | [why](why.md), [concepts](concepts.md) |
 | Design | [pipeline](design/pipeline.md), [extension points](design/extension-points.md), [split writer](design/split-writer.md), [search](design/search.md), [authentication and authorization](design/authn-authz.md), [integrity](design/integrity.md), [metering](design/metering.md), [viewer](design/viewer.md) |
 | Decisions | [index](decisions/README.md) |

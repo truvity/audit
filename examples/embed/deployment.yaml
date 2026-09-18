@@ -1,0 +1,7 @@
+# The profiles this application keeps: the same document a standalone writer
+# reads (charts/audit renders it from `profiles`).
+profiles:
+  security:
+    presets: [security]
+  history:
+    presets: [history]

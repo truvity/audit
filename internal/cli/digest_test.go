@@ -24,8 +24,8 @@ func sealer(t *testing.T, s *storetest.Memory, now time.Time) cli.Digest {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profiles, err := (&cli.Deployment{
-		Profiles: map[string]cli.ProfileConfig{"security": {Presets: []string{"security"}}},
+	profiles, err := (&preset.Deployment{
+		Profiles: map[string]preset.ProfileConfig{"security": {Presets: []string{"security"}}},
 	}).Compose(presets)
 	if err != nil {
 		t.Fatal(err)

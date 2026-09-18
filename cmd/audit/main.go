@@ -178,7 +178,7 @@ func profile(args []string) error {
 	if err != nil {
 		return err
 	}
-	d := cli.DefaultDeployment(presets)
+	d := preset.DefaultDeployment(presets)
 	if *deployment != "" {
 		if d, err = cli.LoadDeployment(*deployment); err != nil {
 			return err

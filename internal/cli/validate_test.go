@@ -56,7 +56,7 @@ func TestDefaultDeploymentComposesEveryPreset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	profiles, err := DefaultDeployment(presets).Compose(presets)
+	profiles, err := preset.DefaultDeployment(presets).Compose(presets)
 	if err != nil {
 		t.Fatalf("a preset does not compose on its own: %v", err)
 	}

@@ -10,6 +10,7 @@ regulatory evidence.
 |---|---|
 | run it in a cluster | [Deploying](docs/guides/deploy.md) — what to prepare, the chart, a diagram, how to check it works |
 | record what your application does | [Emitting records](docs/guides/emit.md) — the catalogue, registering it, the Go emitter; [`examples/emit`](examples/emit/main.go) |
+| carry the trail inside your application: its own writer, its own query API | [Embedding](docs/guides/embed.md) — `writer.Open`, `query.New`; [`examples/embed`](examples/embed/main.go) |
 | search and read the trail, or audit it | [Reading the trail](docs/guides/read.md) — access, the API, Go and TypeScript clients, `audit verify`; [`examples/read`](examples/read/main.go) |
 | understand why it is built this way | [why](docs/why.md), then [concepts](docs/concepts.md), then [the decisions](docs/decisions/) |
 
@@ -23,6 +24,7 @@ regulatory evidence.
 | Pseudonymisation keys: local (root + directory) or OpenBAO transit | built; AWS KMS not yet |
 | Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
 | Query service: search, facets, get with provenance, export, tail, resolve; JWT sign-in with grants | built |
+| Embedding: the writer and the query service as Go libraries (`writer`, `query`) | built |
 | Helm chart: writer, registry, query service, digest / verify / clock / purge jobs | built |
 | Helm chart: the console | not yet — it waits on the viewer |
 | TypeScript: generated types and service descriptors | built, not yet published as a package |

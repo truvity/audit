@@ -1,0 +1,28 @@
+# The catalogue of an example application: every action it records, what each
+# carries, which profiles keep it, and how it reads as a sentence.
+source: shop
+version: "1.0.0"
+locales: [en]
+
+actor_kinds:
+  customer:
+    category: external
+    description: A person buying from the shop.
+  clerk:
+    category: internal
+    description: A member of staff.
+
+target_types:
+  order: { description: "An order." }
+
+actions:
+  shop.order.placed:
+    summary: A customer placed an order.
+    operation: create
+    categories: [data_change]
+    profiles: [security, history]
+    target_types: [order]
+    # The request does not complete unless the record is durable.
+    delivery: block
+    data_schema: https://schemas.example.com/shop/order-placed.json
+    message: { en: "{actor} placed order {targets.0.id}" }

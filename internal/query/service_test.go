@@ -208,6 +208,40 @@ func TestEveryReadRecordsItself(t *testing.T) {
 		if got[0].GetOutcome().GetReason() != "a-rule" {
 			t.Fatalf("%s does not name the rule that allowed it: %+v", action, got[0].GetOutcome())
 		}
+		// And how the caller authenticated: the same subject from a gateway
+		// and from a bearer token are different assurances.
+		if got[0].GetActor().GetAuthMethod() != "jwt" {
+			t.Fatalf("%s does not say how the caller authenticated: %+v", action, got[0].GetActor())
+		}
+	}
+}
+
+// "Who read this tenant's records" is a target lookup, not a reconstruction
+// from grants — so a read narrowed to tenants names them.
+func TestANarrowedReadNamesItsTenants(t *testing.T) {
+	s, into := service(t, auth.Grant{
+		Tenants: []string{"acme"}, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Search},
+	})
+	if _, _, err := s.Search(context.Background(), caller(),
+		&auditv1.SearchRequest{Profile: "security", Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got := into.of("audit.search")
+	if len(got) != 1 {
+		t.Fatalf("%d search records", len(got))
+	}
+	var tenants []string
+	for _, tg := range got[0].GetTargets() {
+		if tg.GetType() == "tenant" {
+			tenants = append(tenants, tg.GetId())
+		}
+	}
+	if len(tenants) != 1 || tenants[0] != "acme" {
+		t.Fatalf("the read names tenants %v, want [acme]", tenants)
 	}
 }
 

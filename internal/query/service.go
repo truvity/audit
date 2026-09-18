@@ -145,7 +145,7 @@ func (s *Service) Get(
 		err = fmt.Errorf("query: no record %s in profile %s", req.GetId(), req.GetProfile())
 		row, where = index.Row{}, index.Provenance{}
 	}
-	s.record(ctx, "audit.get", p, g, err, []*record.Target{
+	s.record(ctx, "audit.get", p, auth.Grant{AllTenants: true, Rule: g.Rule}, err, []*record.Target{
 		{Type: "record", Id: req.GetId()},
 	})
 	return row, where, g, err
@@ -216,8 +216,12 @@ func (s *Service) record(
 		// kinds, and whoever reads an audit trail is acting in an internal
 		// role. A record whose actor kind the catalogue does not declare is
 		// refused, which is how this was found.
-		Actor:   &record.Actor{Kind: "operator", Id: p.Subject},
-		Targets: targets,
+		// The record carries how the caller authenticated as well as who: a
+		// subject from a gateway and the same subject from a bearer token are
+		// different assurances, and "who read the audit log" is a poor answer
+		// without the difference.
+		Actor:   &record.Actor{Kind: "operator", Id: p.Subject, AuthMethod: p.Via},
+		Targets: append(targets, tenantTargets(g)...),
 	}
 	if failure != nil {
 		r.Outcome = &record.Outcome{
@@ -239,6 +243,22 @@ func (s *Service) unrecorded(action string, err error) {
 	if s.OnUnrecorded != nil {
 		s.OnUnrecorded(action, err)
 	}
+}
+
+// tenantTargets names the tenants a read was narrowed to, so that "who read
+// this tenant's records" is a target lookup rather than a reconstruction from
+// grants. An operator's grant over every tenant names none: the profile target
+// and the rule already say so, and a list of every tenant would be a copy of
+// the directory on every read.
+func tenantTargets(g auth.Grant) []*record.Target {
+	if g.AllTenants {
+		return nil
+	}
+	out := make([]*record.Target, 0, len(g.Tenants))
+	for _, t := range g.Tenants {
+		out = append(out, &record.Target{Type: "tenant", Id: t})
+	}
+	return out
 }
 
 func (s *Service) instance() string {

@@ -81,7 +81,9 @@ surface and keep the rest private.
 9. `index`, read side: the `Searcher`, cursors, facets, tail — **done**, in
    memory, Postgres and an object-storage scan. What is left is the one
    corpus asked of all three, which is the conformance suite's.
-10. `internal/query` + `auth` + `cmd/audit-query`.
+10. `internal/query` + `auth` + `cmd/audit-query` — the authorizer, the
+    service and the reads recording themselves are built; the Connect handler
+    with cursor encoding, `cmd/audit-query`, export and `resolve` are not.
 11. The conformance suite, as its own recipe and CI job. It signs off the
     first adoption, so it precedes it.
     It moved ahead of metering (2026-09-18): every exit the write and read

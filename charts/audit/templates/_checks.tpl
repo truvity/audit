@@ -80,6 +80,40 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- end -}}
 {{- end -}}
 
+{{- if .Values.query.enabled -}}
+  {{- if not (has .Values.query.searcher (list "postgres" "s3scan")) -}}
+  {{- fail (printf "audit: `query.searcher` is postgres or s3scan, not %q." .Values.query.searcher) -}}
+  {{- end -}}
+  {{- if eq .Values.query.searcher "postgres" -}}
+    {{- if not (or .Values.query.database.url .Values.query.database.existingSecret) -}}
+    {{- fail "audit: the postgres searcher needs `query.database`: the query service's own role, with select on the index and nothing else. Tenant row-level security binds only a role that does not own the tables; the writer's URL is the owner's." -}}
+    {{- end -}}
+    {{- if or (and .Values.query.database.existingSecret (eq .Values.query.database.existingSecret .Values.database.existingSecret)) (and .Values.query.database.url (eq .Values.query.database.url .Values.database.url)) -}}
+    {{- fail "audit: `query.database` names the writer's database credentials. The writer owns the tables, and an owner bypasses the tenant policies, so every tenant's isolation would rest on the service alone. Give the query service a role that does not own them." -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if not .Values.query.grants.issuers -}}
+  {{- fail "audit: `query.grants.issuers` is empty, so nobody could ever sign in and the query service refuses to start. Name the issuers whose tokens it trusts; see docs/guides/read.md#access." -}}
+  {{- end -}}
+  {{- if not (or .Values.workloadIdentity.issuers .Values.anonymousWrites) -}}
+  {{- fail "audit: the query service records every read through the writer, which must be able to take it." -}}
+  {{- end -}}
+  {{- if .Values.query.resolve.enabled -}}
+    {{- if eq .Values.keys.provider "local" -}}
+      {{- if not (and .Values.keys.local.persistence.enabled (has "ReadWriteMany" .Values.keys.local.persistence.accessModes)) -}}
+      {{- fail "audit: `query.resolve` with the local key provider mounts the writer's key directory, which needs `keys.local.persistence` with ReadWriteMany: the query service runs beside the writer, not in its place. The transit provider needs no shared volume." -}}
+      {{- end -}}
+    {{- else if eq .Values.keys.provider "transit" -}}
+      {{- if eq (len (compact (list .Values.query.resolve.transit.token.existingSecret .Values.query.resolve.transit.tokenFile))) 0 -}}
+      {{- fail "audit: `query.resolve` with transit needs its own token, `query.resolve.transit.token.existingSecret` or `.tokenFile`, whose policy grants decrypt on the purposes it resolves. Not the writer's: the writer seals and must not be able to open." -}}
+      {{- end -}}
+      {{- if and .Values.query.resolve.transit.token.existingSecret (eq .Values.query.resolve.transit.token.existingSecret .Values.keys.transit.token.existingSecret) -}}
+      {{- fail "audit: `query.resolve.transit.token` is the writer's token. Resolving and writing are separate privileges: the writer's policy seals and must not open." -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+
 {{- if and .Values.workloadIdentity.issuers .Values.anonymousWrites -}}
 {{- fail "audit: `anonymousWrites` and `workloadIdentity.issuers` are both set. The writer verifies callers or it does not; pick one, and only a trial install should pick anonymous." -}}
 {{- end -}}

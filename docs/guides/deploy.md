@@ -20,7 +20,7 @@ flowchart LR
     J1["digest job<br/>hourly, signs"]
     J2["verify job<br/>nightly"]
     J3["clock-sync, purge<br/>jobs"]
-    Q["audit-query<br/>search, get, export, resolve<br/>(not in the chart yet)"]
+    Q["audit-query<br/>search, get, export, resolve"]
   end
 
   subgraph infra["What you provide"]
@@ -225,24 +225,55 @@ For a throwaway install — no database, no stream, callers not verified — see
 
 ## The query service
 
-`audit-query` is built but not yet in the chart (tracked as the read-side
-chart work). Until it is, run the `ghcr.io/truvity/audit-query` image as a
-Deployment of your own with these flags (or their `AUDIT_*` environment
-variables):
+Turn it on in the same release. It needs its own database role, the issuers
+your callers sign in with, and what each may read:
 
-| flag | what |
-|---|---|
-| `--searcher postgres --database <url>` | where answers come from; `s3scan --bucket` for a deployment with no database |
-| `--bucket <b>` | the archive, read-only: which digest covers a record and when it was verified |
-| `--grants <file>` | who may sign in and what each caller may see — see [reading](read.md#access) |
-| `--deployment <file>` | the profiles, when the grants file uses a preset |
-| `--sink http://audit.audit:8080` | the writer: every read is itself recorded |
-| `--exports <bucket>` | a separate, unlocked bucket for exports; without it export is refused |
-| `--key-root --key-dir`, or `--key-provider transit --transit-address` | only if this service may resolve pseudonyms |
+```sql
+-- once, as the owner: a role the tenant policies bind
+create role audit_query login password '…';
+grant usage on schema public to audit_query;
+grant select on all tables in schema public to audit_query;
+alter default privileges in schema public grant select on tables to audit_query;
+```
 
-Connect it to Postgres as a role that **does not own** the tables and has
-`SELECT` only: row-level security applies to that role and not to an owner, and
-it is what holds when a query forgets its tenant term.
+```yaml
+query:
+  enabled: true
+  database:
+    existingSecret: audit-query-database   # key `url`: postgres://audit_query@…
+  grants:
+    issuers:
+      - url: https://id.example.com
+        audience: audit
+    presets:
+      - name: access-roster
+        issuer: https://id.example.com
+  exports:
+    bucket: example-audit-exports          # no Object Lock; optional
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: "<the query role's ARN>"
+networkPolicy:
+  queryIngressFrom:                        # who may reach it: your gateway
+    - namespaceSelector:
+        matchLabels: { kubernetes.io/metadata.name: gateway }
+```
+
+Connect it as a role that **does not own** the tables. Row-level security
+applies to that role and not to an owner, and it is what still holds if a query
+forgets its tenant term. The chart refuses the writer's credentials here.
+
+Its role needs read on the archive bucket (for provenance: which digest covers
+a record, and when it was verified) and write on the exports bucket.
+`query.resolve.enabled` also gives it the keys to open sealed identifiers.
+With `local` keys it mounts the writer's key directory read-only (ReadWriteMany
+required). With `transit` it takes its own token, whose policy grants
+`decrypt` and nothing else ([OpenBAO keys](../operations/openbao-keys.md)).
+Resolving still needs an explicit `resolve` rule in the grants for each caller.
+
+Grants are described in [reading](read.md#access). The service is at
+`http://<release>-query:8080`; expose it through the gateway that terminates
+your callers' sign-in.
 
 ## Day two
 

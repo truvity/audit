@@ -23,3 +23,16 @@ jobs:
     enabled: false
   clockSync:
     ntp: [time.cloudflare.com]
+query:
+  enabled: true
+  database:
+    existingSecret: audit-query-database
+  grants:
+    issuers:
+      - url: https://id.example.com
+        audience: audit
+  resolve:
+    enabled: true
+    transit:
+      token:
+        existingSecret: audit-query-transit

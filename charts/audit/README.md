@@ -1,8 +1,8 @@
 # audit
 
-The write path of the audit trail, deployable: the split writer, and the jobs
-that seal, verify and prune what it writes. The read path is a separate chart
-to come.
+The audit trail, deployable: the split writer, the jobs that seal, verify and
+prune what it writes, the catalogue registry, and the query service that reads
+it back. The console (the viewer) is not in it yet.
 
 ## What it deploys
 
@@ -13,6 +13,10 @@ to come.
   it does not know and never migrates itself.
 - **`audit-registry`** (`registry.enabled`), where applications register their
   catalogues at deploy and are refused if the deployment will not have them.
+- **`audit-query`** (`query.enabled`), search, facets, get, export, tail and —
+  given the keys — resolve, behind the grants in `query.grants`. Every read is
+  recorded through the writer. It reads the index as **its own database
+  role**, which must not own the tables (`query.database`).
 - **CronJobs**: `audit digest` hourly, `audit verify` nightly per profile,
   `audit purge` daily, `audit clock-sync` daily. Each records what it did
   through the writer's own sink.
@@ -35,6 +39,10 @@ The chart takes references; it creates none of these.
 | the images | `image.writer`, `image.cli`, `image.registry` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
 | which service account speaks for which source, if the registry is on | `workloadIdentity.workloads` |
+| for the query service: a Postgres role with `usage` on the schema and `select` on its tables and nothing else, in a Secret | `query.database.existingSecret` |
+| the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
+| an exports bucket with no Object Lock, if exports are wanted | `query.exports.bucket` |
+| a role per component — writer, registry, query, digest, verify — bound through its ServiceAccount's annotations | `serviceAccount`, `registry.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
 
 ## Who may write
 
@@ -53,7 +61,7 @@ chart refuses to render with neither issuers nor that flag set.
 
 ## What it refuses to render
 
-Nineteen configurations, each one the binaries reject at start-up or accept and
+Thirty configurations, each one the binaries reject at start-up or accept and
 get quietly wrong. They are listed with their reasons in
 `testdata/refusals.txt`, and `testdata/refuse.sh` holds each refusal to its
 words. The two least obvious:

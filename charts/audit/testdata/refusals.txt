@@ -23,3 +23,11 @@
 --set bucket=b --set anonymousWrites=false --set workloadIdentity.issuers[0].url=https://a --set workloadIdentity.issuers[1].url=https://b --set workloadIdentity.workloads[0].subject=system:serviceaccount:w:api --set workloadIdentity.workloads[0].source=wallet	say which one it is
 --set bucket=b --set jobs.digest.kmsKey=alias/audit-digest	One chain has one signer
 --set bucket=b --set jobs.digest.signingKey.existingSecret= --set jobs.digest.transit.key=digest	has to reach it
+--set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a	own role, with select
+--set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set database.existingSecret=db --set query.database.existingSecret=db	an owner bypasses the tenant policies
+--set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set database.url=postgres://w --set query.database.url=postgres://w	an owner bypasses the tenant policies
+--set bucket=b --set query.enabled=true --set query.database.existingSecret=q	nobody could ever sign in
+--set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set query.searcher=elastic	postgres or s3scan
+--set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set query.database.existingSecret=q --set query.resolve.enabled=true	ReadWriteMany
+--set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set query.database.existingSecret=q --set query.resolve.enabled=true --set keys.provider=transit --set keys.transit.address=https://bao --set keys.transit.token.existingSecret=w	its own token
+--set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set query.database.existingSecret=q --set query.resolve.enabled=true --set keys.provider=transit --set keys.transit.address=https://bao --set keys.transit.token.existingSecret=w --set query.resolve.transit.token.existingSecret=w	the writer's token

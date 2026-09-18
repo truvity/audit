@@ -84,6 +84,15 @@ Foundation. No release.
   never be recomputed. It refuses while a legal hold covers the tenant, and
   refuses without a writer, because an erasure the trail does not record is one
   nobody can prove was lawful.
+- Chart: the query service (`query.enabled`), with its own database role —
+  refused when it names the writer's credentials, since an owner bypasses the
+  tenant policies — the grants file, exports, and resolve through the
+  writer's key directory or its own transit token. The registry and the query
+  service get their own service accounts. The writer's pods now carry
+  `app.kubernetes.io/component: writer`: its Service selected on the release's
+  labels alone and so also routed sink traffic to the registry's pods. That
+  selector is immutable, so an install from an earlier commit deletes the
+  writer Deployment before upgrading.
 - `keys.Transit`: pseudonymisation keys in an OpenBAO (or Vault) transit
   engine, one key per purpose and tenant named `<prefix>.<purpose>.<tenant>`
   so the engine's policy scopes each role to its purposes. A pseudonym is the

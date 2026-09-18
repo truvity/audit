@@ -54,14 +54,21 @@ first, from one place.
 
 ## Query service
 
-| setting | meaning |
+In the chart, under `query` (`query.enabled`):
+
+| value | meaning |
 |---|---|
-| `searcher` | `postgres`, `s3scan`, `memory` |
-| `auth.authenticator` | `jwt`, `trusted_upstream`, `none` |
-| `auth.issuers[]` | issuer URL, JWKS, audience, claim mapping |
-| `auth.authorizer` | `declarative`, adapter name |
-| `auth.grants[]` | claim value → tenants, profiles, operations, window |
-| `limits.max_range`, `limits.export_max_records` | caps |
+| `query.searcher` | `postgres` (the index) or `s3scan` (the archive, within a budget; no database) |
+| `query.database.existingSecret` or `.url` | the query service's **own** role: `usage` on the schema, `select` on its tables, not the owner. Tenant row-level security binds only a non-owner, so the chart refuses the writer's credentials here |
+| `query.grants` | the grants file below, inline |
+| `query.exports.bucket`, `.expiry`, `.linkValid` | a separate unlocked bucket for exports; empty refuses export |
+| `query.resolve.enabled` | give this service the keys to open sealed identifiers. `local` mounts the writer's key directory read-only (ReadWriteMany required); `transit` takes its own token (`query.resolve.transit.token.existingSecret` or `.tokenFile`), never the writer's |
+| `query.serviceAccount.annotations` | its role: read on the archive, write on the exports bucket |
+| `networkPolicy.queryIngressFrom` | who may reach it, normally the gateway; empty leaves it open in the cluster |
+
+The service's limits (`filter` 4 terms, `sort` 4, `in` 100 values, `limit`
+1000) are fixed in the service, not configured; see the
+[API reference](api.md).
 
 The built `audit-query` reads who may authenticate and what each caller may
 see from one file, `--grants`/`AUDIT_GRANTS`:

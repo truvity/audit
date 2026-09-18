@@ -13,6 +13,9 @@ image:
   registry:
     repository: ghcr.io/truvity/audit-registry
     tag: ""
+  query:
+    repository: ghcr.io/truvity/audit-query
+    tag: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -54,6 +57,67 @@ registry:
   replicas: 2
   service:
     port: 8080
+  # Its own identity: the registry needs the database and the writer, and none
+  # of the bucket rights the writer's role carries.
+  serviceAccount:
+    create: true
+    annotations: {}
+
+# The query service: search, facets, get, export, tail and resolve, behind the
+# grants below. Every read it serves is recorded through the writer.
+query:
+  enabled: false
+  replicas: 2
+  service:
+    port: 8080
+  # postgres answers from the index; s3scan reads the archive within a budget,
+  # for a deployment with no database.
+  searcher: postgres
+  # The query service's own database role, required with the postgres
+  # searcher. Tenant row-level security binds only a role that does not own
+  # the tables, so this must NOT be the writer's URL: create a role with usage
+  # on the schema and select on its tables, and nothing else. The chart
+  # refuses the writer's Secret or URL here, because an owner bypasses every
+  # policy and tenant isolation would rest on the service alone.
+  database:
+    url: ""
+    existingSecret: ""
+    secretKey: url
+  # The grants file: the issuers trusted to sign callers in, presets, and
+  # rules. See docs/guides/read.md#access. Without an issuer nobody can sign
+  # in, and the service refuses to start.
+  grants: {}
+  #  issuers:
+  #    - url: https://id.example.com
+  #      audience: audit
+  #  presets:
+  #    - name: access-roster
+  #      issuer: https://id.example.com
+  # Exports go to a separate bucket with no Object Lock, which clears them.
+  # Empty refuses the export operation.
+  exports:
+    bucket: ""
+    expiry: 168h
+    linkValid: 1h
+  # Resolving a pseudonym back to a person. Off unless this service is to do
+  # it: a query service without the keys cannot undo a pseudonym whatever a
+  # grant says. It uses the writer's key provider (`keys.provider`):
+  #  - local: mounts the writer's key root and directory read-only, so the
+  #    directory must be ReadWriteMany;
+  #  - transit: its own token, whose policy grants decrypt on the purposes it
+  #    resolves and nothing else (docs/operations/openbao-keys.md).
+  resolve:
+    enabled: false
+    transit:
+      token:
+        existingSecret: ""
+        secretKey: token
+      tokenFile: ""
+  # Its own identity: read on the archive, write on the exports bucket, and —
+  # with transit — decrypt. None of the writer's rights.
+  serviceAccount:
+    create: true
+    annotations: {}
 
 # Who is calling the writer and the registry.
 #
@@ -239,11 +303,18 @@ serviceAccount:
   annotations: {}
   name: ""
 
-# Only the writer may consume the stream and put to the bucket.
+# Who may reach each component. The writer's sink takes this release's own
+# pods (the jobs, the registry and the query service record through it) and
+# whatever `ingressFrom` adds — the namespaces of the workloads that emit.
+# The query service takes `queryIngressFrom`, normally the gateway in front of
+# it; empty leaves it open inside the cluster, because a read path nobody can
+# reach is not a safe default but a broken one.
 networkPolicy:
   enabled: false
   # Selectors for what may reach the writer's sink.
   ingressFrom: []
+  # Selectors for what may reach the query service.
+  queryIngressFrom: []
 
 podAnnotations: {}
 podSecurityContext:

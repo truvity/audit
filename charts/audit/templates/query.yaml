@@ -1,0 +1,180 @@
+{{- if .Values.query.enabled }}
+{{- $keysClaim := .Values.keys.local.persistence.existingClaim | default (printf "%s-keys" (include "audit.fullname" .)) -}}
+{{- $resolveLocal := and .Values.query.resolve.enabled (eq .Values.keys.provider "local") -}}
+{{- $resolveTransit := and .Values.query.resolve.enabled (eq .Values.keys.provider "transit") -}}
+# Who may sign in to the query service, and what each caller may read. A
+# changed file must reach a running service, so the pods carry its checksum.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "audit.fullname" . }}-grants
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: query
+data:
+  grants.yaml: |
+    {{- toYaml .Values.query.grants | nindent 4 }}
+{{- if and .Values.query.database.url (not .Values.query.database.existingSecret) }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "audit.queryDatabaseSecretName" . }}
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: query
+type: Opaque
+stringData:
+  {{ .Values.query.database.secretKey }}: {{ .Values.query.database.url | quote }}
+{{- end }}
+---
+# The read path. It reads the index as a role that does not own the tables, so
+# the tenant policies bind it; it reads the archive for provenance; it records
+# every read through the writer before answering; and it holds the keys only
+# if it may resolve.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "audit.fullname" . }}-query
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: query
+spec:
+  replicas: {{ .Values.query.replicas }}
+  selector:
+    matchLabels:
+      {{- include "audit.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: query
+  template:
+    metadata:
+      labels:
+        {{- include "audit.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: query
+      annotations:
+        checksum/grants: {{ toYaml .Values.query.grants | sha256sum }}
+        # A grant preset turns roles into profiles, so the profiles are part
+        # of what a grant means.
+        checksum/deployment: {{ toYaml .Values.profiles | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "audit.queryServiceAccountName" . }}
+      {{- include "audit.podDefaults" . | nindent 6 }}
+      containers:
+        - name: query
+          image: {{ include "audit.queryImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --searcher={{ .Values.query.searcher }}
+            - --grants=/etc/audit/grants.yaml
+            - --deployment=/etc/audit/deployment.yaml
+            - --sink={{ include "audit.sinkURL" . }}
+            - --listen=:{{ .Values.query.service.port }}
+            {{- with .Values.query.exports.bucket }}
+            - --exports={{ . }}
+            - --export-expiry={{ $.Values.query.exports.expiry }}
+            - --export-link-valid={{ $.Values.query.exports.linkValid }}
+            {{- end }}
+            {{- if $resolveLocal }}
+            - --key-provider=local
+            - --key-root=/etc/audit/keys/{{ .Values.keys.local.secretKey }}
+            - --key-dir=/var/lib/audit/keys
+            {{- else if $resolveTransit }}
+            - --key-provider=transit
+            - --transit-address={{ .Values.keys.transit.address }}
+            - --transit-mount={{ .Values.keys.transit.mount }}
+            - --transit-prefix={{ .Values.keys.transit.prefix }}
+            - --transit-token-file={{ .Values.query.resolve.transit.tokenFile | default (printf "/etc/audit/transit/%s" .Values.query.resolve.transit.token.secretKey) }}
+            {{- end }}
+            - --version={{ .Chart.AppVersion }}
+          env:
+            {{- include "audit.archiveEnv" . | nindent 12 }}
+            {{- if eq .Values.query.searcher "postgres" }}
+            - name: AUDIT_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "audit.queryDatabaseSecretName" . }}
+                  key: {{ .Values.query.database.secretKey }}
+            {{- end }}
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 12 }}{{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.query.service.port }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            - name: grants
+              mountPath: /etc/audit/grants.yaml
+              subPath: grants.yaml
+              readOnly: true
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 12 }}{{- end }}
+            {{- if $resolveLocal }}
+            - name: key-root
+              mountPath: /etc/audit/keys
+              readOnly: true
+            - name: keys
+              mountPath: /var/lib/audit/keys
+              readOnly: true
+            {{- else if and $resolveTransit .Values.query.resolve.transit.token.existingSecret }}
+            - name: transit-token
+              mountPath: /etc/audit/transit
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: deployment
+          configMap:
+            name: {{ include "audit.fullname" . }}-deployment
+        - name: grants
+          configMap:
+            name: {{ include "audit.fullname" . }}-grants
+        {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 8 }}{{- end }}
+        {{- if $resolveLocal }}
+        - name: key-root
+          secret:
+            secretName: {{ .Values.keys.local.existingSecret }}
+        - name: keys
+          persistentVolumeClaim:
+            claimName: {{ $keysClaim }}
+            readOnly: true
+        {{- else if and $resolveTransit .Values.query.resolve.transit.token.existingSecret }}
+        - name: transit-token
+          secret:
+            secretName: {{ .Values.query.resolve.transit.token.existingSecret }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "audit.fullname" . }}-query
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: query
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "audit.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: query
+  ports:
+    - name: http
+      port: {{ .Values.query.service.port }}
+      targetPort: http
+{{- end }}

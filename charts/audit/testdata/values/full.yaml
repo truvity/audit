@@ -1,5 +1,6 @@
 # A deployment as the design intends it: behind a stream, with an index, three
-# writers sharing one durable consumer and one key directory.
+# writers sharing one durable consumer and one key directory, and the query
+# service beside them, resolving through the same directory.
 bucket: audit-archive
 prefix: prod
 region: eu-central-1
@@ -49,3 +50,21 @@ networkPolicy:
   enabled: true
 telemetry:
   otlpEndpoint: http://otel-collector.observability.svc:4318
+query:
+  enabled: true
+  database:
+    existingSecret: audit-query-database
+  grants:
+    issuers:
+      - url: https://id.example.com
+        audience: audit
+    presets:
+      - name: access-roster
+        issuer: https://id.example.com
+  exports:
+    bucket: audit-exports
+  resolve:
+    enabled: true
+  serviceAccount:
+    annotations:
+      iam.example.com/role: audit-query

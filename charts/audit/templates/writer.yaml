@@ -33,11 +33,11 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "audit.selectorLabels" . | nindent 6 }}
+      {{- include "audit.writerSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "audit.selectorLabels" . | nindent 8 }}
+        {{- include "audit.writerSelectorLabels" . | nindent 8 }}
       annotations:
         # A profile change must reach a running writer, which only happens if
         # the pod is replaced.
@@ -175,7 +175,7 @@ metadata:
 spec:
   type: {{ .Values.service.type }}
   selector:
-    {{- include "audit.selectorLabels" . | nindent 4 }}
+    {{- include "audit.writerSelectorLabels" . | nindent 4 }}
   ports:
     - name: http
       port: {{ .Values.service.port }}

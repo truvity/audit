@@ -28,8 +28,16 @@ reclaim space. Losing it is losing every tenant's pseudonyms.
 {{- end }}
 {{- end }}
 
-Check what a profile keeps:
-  kubectl exec deploy/{{ include "audit.fullname" . }} -- audit profile explain <name> --deployment /etc/audit/deployment.yaml
+{{ if .Values.query.enabled -}}
+The query service answers at http://{{ include "audit.fullname" . }}-query:{{ .Values.query.service.port }}
+for callers signed in by {{ range $i, $e := .Values.query.grants.issuers }}{{ if $i }}, {{ end }}{{ $e.url }}{{ end }}.
+{{- if .Values.query.resolve.enabled }} It may resolve pseudonyms for callers an explicit rule allows.{{ end }}
+{{- end }}
+
+Check what a profile keeps, with the audit CLI (the images have no shell and
+the writer's has no CLI in it):
+  kubectl get configmap {{ include "audit.fullname" . }}-deployment -o jsonpath='{.data.deployment\.yaml}' > deployment.yaml
+  audit profile explain <name> --deployment deployment.yaml
 
 Verify the chain yourself, with nothing but the archive and the public key:
   audit verify --profile <name> --from <date> --to <date> --bucket {{ .Values.bucket }} --public-key <file>

@@ -12,20 +12,72 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      {{- include "audit.selectorLabels" . | nindent 6 }}
+      {{- include "audit.writerSelectorLabels" . | nindent 6 }}
   policyTypes: [Ingress]
   ingress:
     - from:
-        {{- if .Values.networkPolicy.ingressFrom }}
-        {{- toYaml .Values.networkPolicy.ingressFrom | nindent 8 }}
-        {{- else }}
-        # Nothing named: the jobs record themselves through the writer, so they
-        # reach it, and nothing else does.
+        # This release's own pods: the jobs, the registry and the query
+        # service record themselves through the writer.
         - podSelector:
             matchLabels:
               {{- include "audit.selectorLabels" . | nindent 14 }}
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
       ports:
         - protocol: TCP
           port: {{ .Values.service.port }}
+{{- if .Values.registry.enabled }}
+---
+# The registry is called by the same workloads that emit, at deploy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "audit.fullname" . }}-registry
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: registry
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "audit.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: registry
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "audit.selectorLabels" . | nindent 14 }}
+        {{- with .Values.networkPolicy.ingressFrom }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.registry.service.port }}
+{{- end }}
+{{- if and .Values.query.enabled .Values.networkPolicy.queryIngressFrom }}
+---
+# The query service takes callers from whatever fronts it, normally the
+# gateway that terminates their sign-in. Without selectors it is left open
+# inside the cluster: every caller still has to present a token it verifies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "audit.fullname" . }}-query
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: query
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "audit.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: query
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- toYaml .Values.networkPolicy.queryIngressFrom | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.query.service.port }}
+{{- end }}
 {{- end }}

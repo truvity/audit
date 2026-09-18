@@ -23,8 +23,8 @@ regulatory evidence.
 | Pseudonymisation keys: local (root + directory) or OpenBAO transit | built; AWS KMS not yet |
 | Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
 | Query service: search, facets, get with provenance, export, tail, resolve; JWT sign-in with grants | built |
-| Helm chart: writer, registry, digest / verify / clock / purge jobs | built |
-| Helm chart: the query service | not yet — run it yourself, see [Deploying](docs/guides/deploy.md#the-query-service) |
+| Helm chart: writer, registry, query service, digest / verify / clock / purge jobs | built |
+| Helm chart: the console | not yet — it waits on the viewer |
 | TypeScript: generated types and service descriptors | built, not yet published as a package |
 | TypeScript emitter, the viewer (React package and console) | not yet |
 | Metering projection | not yet |

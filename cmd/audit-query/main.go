@@ -82,6 +82,11 @@ func run() error {
 		return err
 	}
 
+	if *exports != "" && *exports == *bucket {
+		return errors.New(
+			"--exports must not be the archive bucket: an export is an unlocked copy meant to be " +
+				"cleared, and the archive's policy denies every delete, so it would stay forever")
+	}
 	exporter, err := exporterFor(ctx, *exports, *region, *exportExpiry, *linkValid)
 	if err != nil {
 		return err
@@ -131,25 +136,27 @@ func run() error {
 
 // exporterFor prepares exports, when a deployment has somewhere to put them.
 //
-// The bucket is its own, not the archive's: an export is an unlocked copy of
-// records made to be taken away, and putting it beside the archive invites a
-// lifecycle rule written for one to be applied to the other.
+// The bucket is its own, not the archive's, and has no Object Lock. An export
+// is a copy of records made to be taken away and then cleared; the archive's
+// bucket policy denies every delete, so an export written there would stay
+// forever, and the bucket needs a lifecycle rule on the export prefix, which
+// is a rule nobody should ever write against the archive.
 func exporterFor(
 	ctx context.Context, bucket, region string, expiry, linkValid time.Duration,
 ) (*query.Exporter, error) {
 	if bucket == "" {
 		return nil, nil
 	}
-	archive, err := cli.Archive(ctx, bucket, "", region)
+	files, err := cli.ExportStore(ctx, bucket, region)
 	if err != nil {
 		return nil, err
 	}
-	presigner, ok := archive.(store.Presigner)
+	presigner, ok := files.(store.Presigner)
 	if !ok {
 		return nil, errors.New("the export bucket cannot sign links")
 	}
 	return &query.Exporter{
-		Store: archive, Presigner: presigner,
+		Store: files, Presigner: presigner,
 		Expiry: expiry, LinkValid: linkValid,
 	}, nil
 }

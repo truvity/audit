@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -127,6 +128,10 @@ func wire(err error) error {
 		return connect.NewError(connect.CodePermissionDenied, err)
 	case errors.Is(err, ErrCursorMismatch):
 		return connect.NewError(connect.CodeInvalidArgument, err)
+	case strings.Contains(err.Error(), "no exporter"), strings.Contains(err.Error(), "no presigner"):
+		// Not configured here is not the caller's mistake and not a fault to
+		// retry: it is a thing this deployment does not do.
+		return connect.NewError(connect.CodeUnimplemented, err)
 	default:
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	}

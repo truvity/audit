@@ -45,6 +45,8 @@ type Store struct {
 	// bypassed by anyone holding the permission to bypass it, and the console
 	// sends that header by default.
 	lock types.ObjectLockMode
+	// unlocked is the export bucket's shape; see Options.Unlocked.
+	unlocked bool
 	// presign is set when the store was built from a config, which is what a
 	// presigner needs. A store built from a bare API — the tests — has none,
 	// and says so rather than returning a URL that would not work.
@@ -64,6 +66,12 @@ type Options struct {
 	// bucket where a mistake has to be undoable, and it is not what a real
 	// archive uses.
 	Governance bool
+	// Unlocked writes no lock at all, and is for the one bucket that must not
+	// have one: exports. An export is a copy of records made to be taken away
+	// and then cleared, and a lock would keep it instead. A bucket without
+	// Object Lock refuses a put that names a lock mode, so this is also the
+	// only way to write to such a bucket.
+	Unlocked bool
 }
 
 // New returns a store.
@@ -78,7 +86,10 @@ func New(api API, o Options) (*Store, error) {
 	if o.Governance {
 		lock = types.ObjectLockModeGovernance
 	}
-	return &Store{api: api, bucket: o.Bucket, prefix: o.Prefix, kmsKey: o.KMSKeyID, lock: lock}, nil
+	return &Store{
+		api: api, bucket: o.Bucket, prefix: o.Prefix, kmsKey: o.KMSKeyID,
+		lock: lock, unlocked: o.Unlocked,
+	}, nil
 }
 
 // FromConfig returns a store using the ambient AWS configuration, which in a
@@ -112,9 +123,9 @@ func (s *Store) Put(ctx context.Context, o store.Object) error {
 		Body:                      bytes.NewReader(o.Body),
 		ContentLength:             aws.Int64(int64(len(o.Body))),
 		ChecksumAlgorithm:         types.ChecksumAlgorithmSha256,
-		ObjectLockMode:            s.lock,
-		ObjectLockRetainUntilDate: aws.Time(o.RetainUntil.UTC()),
-		ObjectLockLegalHoldStatus: legalHold(o.LegalHold),
+		ObjectLockMode:            s.lockMode(),
+		ObjectLockRetainUntilDate: s.retainUntil(o),
+		ObjectLockLegalHoldStatus: s.legalHoldStatus(o),
 		IfNoneMatch:               aws.String("*"),
 		Metadata:                  o.Metadata,
 	}
@@ -228,6 +239,30 @@ func (s *Store) SetLegalHold(ctx context.Context, key string, on bool) error {
 		return fmt.Errorf("s3store: legal hold on %s: %w", key, err)
 	}
 	return nil
+}
+
+// The three lock headers, or none. An unlocked store sends none: naming a lock
+// mode to a bucket without Object Lock is refused outright, and a retention on
+// a file meant to be cleared would keep it.
+func (s *Store) lockMode() types.ObjectLockMode {
+	if s.unlocked {
+		return ""
+	}
+	return s.lock
+}
+
+func (s *Store) retainUntil(o store.Object) *time.Time {
+	if s.unlocked || o.RetainUntil.IsZero() {
+		return nil
+	}
+	return aws.Time(o.RetainUntil.UTC())
+}
+
+func (s *Store) legalHoldStatus(o store.Object) types.ObjectLockLegalHoldStatus {
+	if s.unlocked {
+		return ""
+	}
+	return legalHold(o.LegalHold)
 }
 
 func legalHold(on bool) types.ObjectLockLegalHoldStatus {

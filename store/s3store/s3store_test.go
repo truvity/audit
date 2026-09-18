@@ -423,3 +423,21 @@ func TestSetLegalHoldAddressesThePrefixedKey(t *testing.T) {
 		t.Fatalf("status %q", f.holds[0].LegalHold.Status)
 	}
 }
+
+// The export bucket has no Object Lock, and a put that names a lock mode to
+// such a bucket is refused outright. An unlocked store sends none of the three
+// headers — and no retention either, because a retention on a file meant to be
+// cleared would keep it.
+func TestAnUnlockedStoreSendsNoLockHeaders(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Unlocked: true})
+	o := object()
+	o.LegalHold = true
+	if err := s.Put(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	put := f.puts[0]
+	if put.ObjectLockMode != "" || put.ObjectLockRetainUntilDate != nil || put.ObjectLockLegalHoldStatus != "" {
+		t.Fatalf("an unlocked store sent lock headers: mode=%q retain=%v hold=%q",
+			put.ObjectLockMode, put.ObjectLockRetainUntilDate, put.ObjectLockLegalHoldStatus)
+	}
+}

@@ -46,6 +46,10 @@ type Service struct {
 	OnUnrecorded func(action string, err error)
 
 	emitter *emit.Emitter
+	// confirmed honours the delivery each action declares, for the one read
+	// that must be recorded before it happens. The self-reporting emitter above
+	// is best-effort by design; this one is not.
+	confirmed *emit.Emitter
 }
 
 // New checks a service's parts and prepares its own emitter.
@@ -78,16 +82,30 @@ func New(s *Service) (*Service, error) {
 			return nil, fmt.Errorf("query: %w", err)
 		}
 		s.emitter = emitter
+		confirmed, err := emit.New(emit.Options{
+			Source: s.Catalogue.Source, Catalogue: s.Catalogue, Sink: s.Sink,
+			Version: s.Version, Instance: s.instance(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("query: %w", err)
+		}
+		s.confirmed = confirmed
 	}
 	return s, nil
 }
 
 // Close drains what is pending.
 func (s *Service) Close() error {
-	if s.emitter != nil {
-		return s.emitter.Close()
+	var first error
+	for _, e := range []*emit.Emitter{s.emitter, s.confirmed} {
+		if e == nil {
+			continue
+		}
+		if err := e.Close(); err != nil && first == nil {
+			first = err
+		}
 	}
-	return nil
+	return first
 }
 
 // Search answers a page, narrowed to the grant.
@@ -297,6 +315,27 @@ func (s *Service) recordWithData(
 	if err := s.emitter.Record(ctx, r); err != nil {
 		s.unrecorded(action, err)
 	}
+}
+
+// readRecord is one read as a record, before it is handed to either emitter.
+func (s *Service) readRecord(
+	action string, p auth.Principal, g auth.Grant, failure error,
+	targets []*record.Target, data *structpb.Struct,
+) *record.Record {
+	r := &record.Record{
+		Action:    action,
+		Operation: auditv1.Operation_OPERATION_ACCESS,
+		TenantId:  record.TenantPlatform,
+		Actor:     &record.Actor{Kind: "operator", Id: p.Subject, AuthMethod: p.Via},
+		Targets:   targets,
+		Data:      data,
+	}
+	if failure != nil {
+		r.Outcome = &record.Outcome{Result: auditv1.Outcome_RESULT_FAILURE, Reason: failure.Error()}
+	} else {
+		r.Outcome = &record.Outcome{Result: auditv1.Outcome_RESULT_SUCCESS, Reason: g.Rule}
+	}
+	return r
 }
 
 // structData builds an action's extension data.

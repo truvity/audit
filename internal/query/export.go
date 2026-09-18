@@ -40,6 +40,10 @@ type Exporter struct {
 	// one that outlives the question it answered is a second archive that
 	// nobody is managing. Default 7 days.
 	Expiry time.Duration
+	// MaxRecords bounds one export. Beyond it the job fails and says to narrow
+	// the filter, rather than reading a whole profile into memory because a
+	// grant happened to allow it. Default 100000.
+	MaxRecords int
 	// LinkValid is how long a link works. Default one hour: a URL to audit
 	// records that outlives the conversation it was shared in is a copy of the
 	// trail nobody is tracking.
@@ -120,32 +124,25 @@ func (s *Service) Export(
 	}
 	job.ExpiresAt = job.AskedAt.Add(s.Exporter.expiry())
 
-	// The request is recorded before anything is read, and block delivery is
-	// what the catalogue declares for it: an export is the one read that leaves
-	// with the records, so if the trail cannot say it was asked for, it does
-	// not happen.
+	// The request is recorded before anything is read, through the emitter
+	// that honours the block delivery the catalogue declares for it. An export
+	// is the one read that leaves with the records, so if the trail cannot say
+	// it was asked for, it does not happen — and this is the one place in the
+	// service where recording is allowed to stop the read.
 	if err := s.recordExportRequest(ctx, p, g, job); err != nil {
-		return Job{}, err
+		return Job{}, fmt.Errorf("query: the export was not started because it could not be recorded: %w", err)
 	}
 	if err := s.Exporter.write(ctx, job, askedKey(job.ID)); err != nil {
 		return Job{}, err
 	}
 
-	rows, err := s.collect(ctx, req, g)
-	if err != nil {
+	// Whatever goes wrong from here is the job's failure, recorded in its done
+	// record and reported to whoever polls; it is not an error to the request,
+	// because the request did happen and is in the trail.
+	if n, err := s.produce(ctx, req, g, job); err != nil {
 		job.Failed = err.Error()
 	} else {
-		body, err := render(rows, format)
-		if err != nil {
-			job.Failed = err.Error()
-		} else if err := s.Exporter.Store.Put(ctx, store.Object{
-			Key: FileKey(job.ID, format), Body: body,
-			RetainUntil: job.ExpiresAt, ContentType: contentType(format),
-		}); err != nil {
-			job.Failed = err.Error()
-		} else {
-			job.Records = len(rows)
-		}
+		job.Records = n
 	}
 	done := s.Exporter.now()
 	job.DoneAt = &done
@@ -155,6 +152,39 @@ func (s *Service) Export(
 
 	s.recordExportCompleted(ctx, p, g, job)
 	return job, nil
+}
+
+// produce reads the rows and writes the file, returning how many.
+func (s *Service) produce(
+	ctx context.Context, req *auditv1.ExportRequest, g auth.Grant, job Job,
+) (int, error) {
+	rows, err := s.collect(ctx, req, g)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) > s.Exporter.maxRecords() {
+		return 0, fmt.Errorf(
+			"%d records match and this deployment exports at most %d at once; narrow the filter",
+			len(rows), s.Exporter.maxRecords())
+	}
+	body, err := render(rows, job.Format)
+	if err != nil {
+		return 0, err
+	}
+	err = s.Exporter.Store.Put(ctx, store.Object{
+		Key: FileKey(job.ID, job.Format), Body: body, ContentType: contentType(job.Format),
+		// The expiry rides as metadata, never as a retention: a retention
+		// would keep the file, and the point is that it goes. The bucket's
+		// lifecycle clears the export prefix; this is what a person reading
+		// the object sees.
+		Metadata: map[string]string{
+			"audit-export": job.ID, "audit-expires": job.ExpiresAt.Format(time.RFC3339),
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(rows), nil
 }
 
 // GetExport returns a job and, when it is ready, a link to it.
@@ -207,7 +237,9 @@ func (s *Service) collect(
 			return nil, err
 		}
 		out = append(out, page.Rows...)
-		if !page.More || page.Next == nil {
+		// One page past the cap is enough to know the cap is exceeded; the
+		// caller says so rather than reading on.
+		if !page.More || page.Next == nil || len(out) > s.Exporter.maxRecords() {
 			return out, nil
 		}
 		q.After = page.Next
@@ -217,11 +249,14 @@ func (s *Service) collect(
 func (s *Service) recordExportRequest(
 	ctx context.Context, p auth.Principal, g auth.Grant, job Job,
 ) error {
-	s.record(ctx, "audit.export.requested", p, g, nil, append([]*record.Target{
+	r := s.readRecord("audit.export.requested", p, g, nil, append([]*record.Target{
 		{Type: "export", Id: job.ID},
 		{Type: "profile", Id: job.Profile},
-	}, tenantTargets(g)...))
-	return nil
+	}, tenantTargets(g)...), nil)
+	if s.confirmed == nil {
+		return errors.New("no writer is configured to confirm it")
+	}
+	return s.confirmed.Record(ctx, r)
 }
 
 func (s *Service) recordExportCompleted(
@@ -253,8 +288,8 @@ func (e *Exporter) write(ctx context.Context, job Job, key string) error {
 		return fmt.Errorf("query: %w", err)
 	}
 	if err := e.Store.Put(ctx, store.Object{
-		Key: key, Body: body, RetainUntil: job.ExpiresAt,
-		ContentType: "application/json",
+		Key: key, Body: body, ContentType: "application/json",
+		Metadata: map[string]string{"audit-export": job.ID, "audit-expires": job.ExpiresAt.Format(time.RFC3339)},
 	}); err != nil {
 		return fmt.Errorf("query: recording export %s: %w", job.ID, err)
 	}
@@ -282,6 +317,13 @@ func (e *Exporter) expiry() time.Duration {
 		return e.Expiry
 	}
 	return 7 * 24 * time.Hour
+}
+
+func (e *Exporter) maxRecords() int {
+	if e.MaxRecords > 0 {
+		return e.MaxRecords
+	}
+	return 100000
 }
 
 func (e *Exporter) linkValid() time.Duration {

@@ -7,10 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"errors"
+
 	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
+
 	"github.com/truvity/audit/internal/query"
+	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/store/storetest"
 )
 
@@ -182,14 +186,67 @@ func TestAnExportAndItsLinkExpire(t *testing.T) {
 		t.Fatalf("the link is valid for %v, which is not short", presigner.valid)
 	}
 
-	// The file itself carries the expiry as its retention, so the bucket can
-	// clear it without anybody remembering to.
+	// The file carries its expiry as metadata and NOT as a retention: a
+	// retention would keep it, and the point is that it goes. The bucket's
+	// lifecycle clears the export prefix.
 	entry, err := files.Head(ctx, query.FileKey(job.ID, "ndjson"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !entry.RetainUntil.Equal(job.ExpiresAt) {
-		t.Fatalf("the file is kept until %s, the job says %s", entry.RetainUntil, job.ExpiresAt)
+	if !entry.RetainUntil.IsZero() {
+		t.Fatalf("an export was written with a retention until %s, which would keep it", entry.RetainUntil)
+	}
+	obj, _ := files.Object(query.FileKey(job.ID, "ndjson"))
+	if obj.Metadata["audit-expires"] != job.ExpiresAt.Format(time.RFC3339) {
+		t.Fatalf("the file does not say when it expires: %v", obj.Metadata)
+	}
+}
+
+// An export is bounded. A grant that happens to allow a whole profile must not
+// turn one request into reading the profile into memory.
+func TestAnExportOverTheCapFailsAndSaysSo(t *testing.T) {
+	s, _, _, _ := exporting(t, exportGrant())
+	s.Exporter.MaxRecords = 2
+	job, err := s.Export(context.Background(), caller(), &auditv1.ExportRequest{Profile: "security"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.State() != auditv1.ExportState_EXPORT_STATE_ERROR {
+		t.Fatalf("an export over the cap was %v", job.State())
+	}
+	if !strings.Contains(job.Failed, "narrow the filter") {
+		t.Fatalf("the failure should say what to do: %s", job.Failed)
+	}
+}
+
+// If the trail cannot say an export was asked for, it does not happen. This is
+// the one place in the service where recording is allowed to stop the read.
+func TestAnExportThatCannotBeRecordedDoesNotHappen(t *testing.T) {
+	common, err := catalogue.Common()
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := storetest.NewMemory()
+	refusing := sink.Func(func(context.Context, *sink.Request) (*sink.Result, error) {
+		return nil, errors.New("the writer is unreachable")
+	})
+	s, err := query.New(&query.Service{
+		Searcher: corpus(t), Catalogue: common, Sink: refusing,
+		Authorizer: auth.Declarative{Rules: []auth.Rule{{Name: "r", Grant: exportGrant()}}},
+		Exporter:   &query.Exporter{Store: files, Presigner: &links{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Export(context.Background(), caller(), &auditv1.ExportRequest{Profile: "security"})
+	if err == nil {
+		t.Fatal("an export ran with its request unrecorded")
+	}
+	if !strings.Contains(err.Error(), "could not be recorded") {
+		t.Fatalf("the error should say why: %v", err)
+	}
+	if files.Len() != 0 {
+		t.Fatalf("%d objects were written for an export that must not have started", files.Len())
 	}
 }
 

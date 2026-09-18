@@ -19,8 +19,9 @@ func searchable(t *testing.T) *index.Memory {
 	base := at(t, "2026-09-17T10:00:00Z")
 	var rows []index.Row
 	for n := 0; n < 6; n++ {
+		// Offset into the hex alphabet so no identifier ends in twelve digits.
 		r := index.RowOf(copied(t, "018f0000-0000-7000-8000-00000000000"+
-			string("0123456789abcdef"[n])), index.ObjectAt{Key: "k", Line: n + 1}, fields)
+			string("abcdef0123456789"[n])), index.ObjectAt{Key: "k", Line: n + 1}, fields)
 		r.OccurredAt = base.Add(time.Duration(n) * time.Minute)
 		r.RecordedAt = base.Add(time.Duration(n) * time.Minute)
 		switch n % 3 {
@@ -212,7 +213,10 @@ func TestMemoryFacetsAndGet(t *testing.T) {
 		t.Fatalf("action facet: %+v", facets)
 	}
 
-	id := "018f0000-0000-7000-8000-000000000002"
+	// The tail is hex and ends in a letter. A UUID whose last group is twelve
+	// digits reads to the leak canary exactly like an AWS account id, which is
+	// the point of the canary: it cannot tell them apart and should not try.
+	id := "018f0000-0000-7000-8000-00000000000c"
 	got, where, err := m.Get(ctx, "security", id)
 	if err != nil {
 		t.Fatal(err)

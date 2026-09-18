@@ -109,8 +109,12 @@ func scanned(t *testing.T) (*s3scan.Scanner, *storetest.Memory) {
 			if n%3 == 1 {
 				action = "wallet.credential.revoked"
 			}
+			// Tenants alternate by day, so that a key from a later day sorts
+			// BEFORE a key from an earlier day: the walk is by day, not by
+			// key, and a cursor that compared keys alone would skip the
+			// earlier day's other tenant.
 			tenant := "acme"
-			if n >= 3 {
+			if d == 1 {
 				tenant = "globex"
 			}
 			rows = append(rows, made(t, id(n), day.Add(time.Duration(i)*time.Minute), action, outcome, tenant))
@@ -316,5 +320,30 @@ func TestScanGetFindsAndSaysWhenItCannot(t *testing.T) {
 	}
 	if _, _, err := scanner.Get(ctx, "security", id(9)); err == nil {
 		t.Fatal("a record that is not there was found")
+	}
+}
+
+// The walk is newest day first and the tenant sits BEFORE the date in a key, so
+// a key from an earlier day under a later-sorting tenant is lexicographically
+// after the cursor's. A cursor that compared keys alone would skip that whole
+// tenant's day. Paged one row at a time, every row must still come back once.
+func TestScanCursorFollowsTheWalkNotTheKeyOrder(t *testing.T) {
+	scanner, _ := scanned(t)
+	ctx := context.Background()
+	q := index.Query{Profile: "security", Limit: 1}
+	var seen []string
+	for page := 0; page < 10; page++ {
+		got, err := scanner.Search(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen = append(seen, ids(got)...)
+		if !got.More {
+			break
+		}
+		q.After = got.Next
+	}
+	if len(seen) != 6 {
+		t.Fatalf("paged %d rows of 6 one at a time: %v", len(seen), seen)
 	}
 }

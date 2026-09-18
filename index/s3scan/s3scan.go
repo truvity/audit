@@ -122,14 +122,22 @@ func (s *Scanner) Search(ctx context.Context, q index.Query) (index.Page, error)
 	// Newest day first, because a question about an audit trail is nearly
 	// always a question about recently.
 	for day := to; !day.Before(from); day = day.AddDate(0, 0, -1) {
+		// A cursor is a place in the walk, and the walk is by day and then by
+		// key within the day. It is not a place in key order: the tenant sits
+		// before the date in a key, so a key from an earlier day under a
+		// later-sorting tenant compares after the cursor's, and a resume that
+		// compared keys alone would skip that tenant's whole day.
+		if resume != nil && day.After(resume.day) {
+			continue
+		}
 		keys, err := s.objectsOf(ctx, q.Profile, day)
 		if err != nil {
 			return index.Page{}, err
 		}
 		for _, key := range keys {
-			if resume != nil && key > resume.key {
-				// Already read on an earlier page: the walk is newest first, so
-				// a key sorting after the cursor's is one we have passed.
+			if resume != nil && day.Equal(resume.day) && key > resume.key {
+				// Within the cursor's own day the walk is by key, newest
+				// first, so a key after the cursor's is one already read.
 				continue
 			}
 			if spent >= s.budget().Objects || time.Now().After(deadline) {
@@ -286,6 +294,8 @@ func granted(r index.Row, tenants []string) bool {
 type cursor struct {
 	key  string
 	line int
+	// day is the walk position the key sits at, read from the key itself.
+	day time.Time
 }
 
 func cursorOf(r index.Row) *index.Boundary {
@@ -311,7 +321,42 @@ func parseCursor(at *index.Boundary) (*cursor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("s3scan: this cursor did not come from this searcher: %q", raw)
 	}
-	return &cursor{key: raw[:hash], line: line}, nil
+	day, ok := dayOf(raw[:hash])
+	if !ok {
+		return nil, fmt.Errorf("s3scan: this cursor did not come from this searcher: %q", raw)
+	}
+	return &cursor{key: raw[:hash], line: line, day: day}, nil
+}
+
+// dayOf reads the day an object is keyed under, by segment name rather than
+// position, so that a layout that gains a segment does not silently move it.
+func dayOf(key string) (time.Time, bool) {
+	var year, month, day int
+	found := 0
+	for _, segment := range strings.Split(key, "/") {
+		var into *int
+		var name string
+		switch {
+		case strings.HasPrefix(segment, "year="):
+			into, name = &year, "year="
+		case strings.HasPrefix(segment, "month="):
+			into, name = &month, "month="
+		case strings.HasPrefix(segment, "day="):
+			into, name = &day, "day="
+		default:
+			continue
+		}
+		n, err := strconv.Atoi(strings.TrimPrefix(segment, name))
+		if err != nil {
+			return time.Time{}, false
+		}
+		*into = n
+		found++
+	}
+	if found != 3 {
+		return time.Time{}, false
+	}
+	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), true
 }
 
 func (s *Scanner) budget() Budget {

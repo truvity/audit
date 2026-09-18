@@ -82,8 +82,8 @@ surface and keep the rest private.
 9. `index`, read side: the `Searcher`, cursors, facets, tail — **done**, in
    memory, Postgres and an object-storage scan. What is left is the one
    corpus asked of all three, which is the conformance suite's.
-10. `internal/query` + `auth` + `cmd/audit-query` — **done** but for export
-    and `resolve`, and for the two real authenticators: only the declarative
+10. `internal/query` + `auth` + `cmd/audit-query` — **done** but for `resolve`,
+    which needs the identity map, and for the two real authenticators: only the declarative
     authorizer and the tests-only `none` exist, so a deployment puts its own
     authentication in front until `jwt` and `trusted-upstream` land.
 11. The conformance suite, as its own recipe and CI job. It signs off the

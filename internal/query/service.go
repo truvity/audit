@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/emit"
@@ -30,8 +32,13 @@ type Service struct {
 	// should have to choose rather than fall into.
 	Sink      sink.Sink
 	Catalogue *catalogue.Catalogue
-	Version   string
-	Instance  string
+	// Exporter writes exports, when a deployment offers them. Without one the
+	// export operation is refused: a grant may name it, and nothing here will
+	// produce a copy of records that the deployment did not configure a place
+	// for.
+	Exporter *Exporter
+	Version  string
+	Instance string
 	// OnUnrecorded is called when a read happened and the trail does not say
 	// so. A deployment alerts on it: the reading of an audit trail going
 	// unrecorded is not a degraded service, it is the service failing at one of
@@ -164,9 +171,9 @@ func (s *Service) Facets(
 	q := s.narrow(compiled, g)
 
 	facets, err := s.Searcher.Facets(ctx, q, req.GetFields(), int(req.GetLimitPerField()))
-	s.record(ctx, "audit.facets", p, g, err, []*record.Target{
+	s.record(ctx, "audit.facets", p, g, err, append([]*record.Target{
 		{Type: "profile", Id: req.GetProfile()},
-	})
+	}, tenantTargets(g)...))
 	return facets, g, err
 }
 
@@ -187,7 +194,8 @@ func (s *Service) Get(
 		err = fmt.Errorf("query: no record %s in profile %s", req.GetId(), req.GetProfile())
 		row, where = index.Row{}, index.Provenance{}
 	}
-	s.record(ctx, "audit.get", p, auth.Grant{AllTenants: true, Rule: g.Rule}, err, []*record.Target{
+	// audit.get declares only the record it read.
+	s.record(ctx, "audit.get", p, g, err, []*record.Target{
 		{Type: "record", Id: req.GetId()},
 	})
 	return row, where, g, err
@@ -232,9 +240,9 @@ func granted(tenant string, g auth.Grant) bool {
 func (s *Service) recordSearch(
 	ctx context.Context, p auth.Principal, g auth.Grant, profile string, rows int, failure error,
 ) {
-	s.record(ctx, "audit.search", p, g, failure, []*record.Target{
+	s.record(ctx, "audit.search", p, g, failure, append([]*record.Target{
 		{Type: "profile", Id: profile},
-	})
+	}, tenantTargets(g)...))
 	_ = rows
 }
 
@@ -246,6 +254,15 @@ func (s *Service) recordSearch(
 func (s *Service) record(
 	ctx context.Context, action string, p auth.Principal, g auth.Grant,
 	failure error, targets []*record.Target,
+) {
+	s.recordWithData(ctx, action, p, g, failure, targets, nil)
+}
+
+// recordWithData is the same, for an action whose catalogue entry declares a
+// data slot.
+func (s *Service) recordWithData(
+	ctx context.Context, action string, p auth.Principal, g auth.Grant,
+	failure error, targets []*record.Target, data *structpb.Struct,
 ) {
 	if s.emitter == nil {
 		return
@@ -263,7 +280,7 @@ func (s *Service) record(
 		// different assurances, and "who read the audit log" is a poor answer
 		// without the difference.
 		Actor:   &record.Actor{Kind: "operator", Id: p.Subject, AuthMethod: p.Via},
-		Targets: append(targets, tenantTargets(g)...),
+		Targets: targets,
 	}
 	if failure != nil {
 		r.Outcome = &record.Outcome{
@@ -276,9 +293,15 @@ func (s *Service) record(
 			Reason: g.Rule,
 		}
 	}
+	r.Data = data
 	if err := s.emitter.Record(ctx, r); err != nil {
 		s.unrecorded(action, err)
 	}
+}
+
+// structData builds an action's extension data.
+func structData(from map[string]any) (*structpb.Struct, error) {
+	return structpb.NewStruct(from)
 }
 
 func (s *Service) unrecorded(action string, err error) {
@@ -292,6 +315,10 @@ func (s *Service) unrecorded(action string, err error) {
 // grants. An operator's grant over every tenant names none: the profile target
 // and the rule already say so, and a list of every tenant would be a copy of
 // the directory on every read.
+//
+// Each caller adds these itself rather than the recorder adding them to
+// everything, because the catalogue says per action which targets it acts on
+// and a record naming one it does not declare is refused.
 func tenantTargets(g auth.Grant) []*record.Target {
 	if g.AllTenants {
 		return nil

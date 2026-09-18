@@ -32,6 +32,12 @@ Foundation. No release.
   produces, and an in-memory implementation. Indexing is idempotent by
   `(profile, id)` and counting has no call of its own, because only the
   transaction that inserted a row can tell a re-delivery from a new record.
+- Export: `audit.export.requested` before anything is read, `audit.export.completed`
+  with the count and the form. An export is a copy of records made to be taken
+  away, so it lives outside every profile's prefix, expires, carries that expiry
+  as the file's own retention, and is collected only by whoever asked for it.
+  `store.Presigner` is an optional capability rather than part of `store.Store`:
+  most of what an archive holds must not be reachable by a URL anybody can hold.
 - `audit-query`, the read service behind Connect, over the Postgres index or
   the object-storage scan. Cursors are opaque and bound to the question they
   came from — narrowing included — so one replayed against a different filter

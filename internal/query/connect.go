@@ -168,3 +168,42 @@ func asRecord(r index.Row) *auditv1.Record {
 	}
 	return out
 }
+
+// Export implements the service.
+func (h *Handler) Export(
+	ctx context.Context, req *connect.Request[auditv1.ExportRequest],
+) (*connect.Response[auditv1.ExportResponse], error) {
+	who, err := h.who(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	job, err := h.Service.Export(ctx, who, req.Msg)
+	if err != nil {
+		return nil, wire(err)
+	}
+	return connect.NewResponse(&auditv1.ExportResponse{
+		JobId: job.ID, State: job.State(),
+	}), nil
+}
+
+// GetExport implements the service.
+func (h *Handler) GetExport(
+	ctx context.Context, req *connect.Request[auditv1.GetExportRequest],
+) (*connect.Response[auditv1.GetExportResponse], error) {
+	who, err := h.who(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	job, url, err := h.Service.GetExport(ctx, who, req.Msg.GetJobId())
+	if err != nil {
+		return nil, wire(err)
+	}
+	out := &auditv1.GetExportResponse{
+		State: job.State(), Url: url,
+		Records: int64(job.Records), Error: job.Failed,
+	}
+	if !job.ExpiresAt.IsZero() {
+		out.ExpiresAt = timestamppb.New(job.ExpiresAt)
+	}
+	return connect.NewResponse(out), nil
+}

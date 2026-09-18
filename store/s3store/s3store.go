@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
@@ -44,6 +45,10 @@ type Store struct {
 	// bypassed by anyone holding the permission to bypass it, and the console
 	// sends that header by default.
 	lock types.ObjectLockMode
+	// presign is set when the store was built from a config, which is what a
+	// presigner needs. A store built from a bare API — the tests — has none,
+	// and says so rather than returning a URL that would not work.
+	presign *s3.PresignClient
 }
 
 // Options configure a store.
@@ -79,7 +84,15 @@ func New(api API, o Options) (*Store, error) {
 // FromConfig returns a store using the ambient AWS configuration, which in a
 // cluster is the workload's own identity.
 func FromConfig(cfg aws.Config, o Options) (*Store, error) {
-	return New(s3.NewFromConfig(cfg), o)
+	client := s3.NewFromConfig(cfg)
+	built, err := New(client, o)
+	if err != nil {
+		return nil, err
+	}
+	// Only a store built this way can presign: it needs the signer the config
+	// carries, which a bare API value does not have.
+	built.presign = s3.NewPresignClient(client)
+	return built, nil
 }
 
 // Put implements store.Store.
@@ -253,6 +266,25 @@ func (s *Store) Prefixes(ctx context.Context, prefix, delimiter string) ([]strin
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// Presign implements store.Presigner.
+//
+// The lifetime is the caller's and is meant to be short: a link to audit
+// records that outlives the conversation it was shared in is a copy of the
+// trail that nobody is tracking.
+func (s *Store) Presign(ctx context.Context, key string, valid time.Duration) (string, error) {
+	if s.presign == nil {
+		return "", errors.New("s3store: this store was built without a presigner")
+	}
+	out, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key(key)),
+	}, s3.WithPresignExpires(valid))
+	if err != nil {
+		return "", fmt.Errorf("s3store: presign %s: %w", key, err)
+	}
+	return out.URL, nil
 }
 
 func (s *Store) key(k string) string {

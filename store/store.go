@@ -82,3 +82,15 @@ type Store interface {
 	// find out would cost the whole profile once an hour.
 	Prefixes(ctx context.Context, prefix, delimiter string) ([]string, error)
 }
+
+// Presigner is a store that can hand out a URL to one object for a while.
+//
+// It is separate from Store because most of what this repository does with an
+// archive must not be reachable by a URL anybody can hold: the records are read
+// through a service that checks a grant and records the read. Presigning exists
+// for exports, which are a deliberate copy of records to somewhere a person can
+// download them, and a store that cannot do it is not a lesser store.
+type Presigner interface {
+	// Presign returns a URL to an object, valid for the given time.
+	Presign(ctx context.Context, key string, valid time.Duration) (string, error)
+}

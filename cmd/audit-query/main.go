@@ -27,6 +27,7 @@ import (
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/query"
 	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/store"
 )
 
 func main() {
@@ -48,6 +49,12 @@ func run() error {
 			"the file mapping claims to grants; without it nobody is granted anything")
 		sinkURL = flag.String("sink", env("AUDIT_SINK", ""),
 			"the writer reads are recorded through")
+		exports = flag.String("exports", env("AUDIT_EXPORTS", ""),
+			"the bucket exports are written to; without it the export operation is refused")
+		exportExpiry = flag.Duration("export-expiry", 7*24*time.Hour,
+			"how long an export is kept before the bucket clears it")
+		linkValid = flag.Duration("export-link-valid", time.Hour,
+			"how long a download link works")
 		listen  = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve on")
 		version = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
 	)
@@ -75,8 +82,14 @@ func run() error {
 		return err
 	}
 
+	exporter, err := exporterFor(ctx, *exports, *region, *exportExpiry, *linkValid)
+	if err != nil {
+		return err
+	}
+
 	service, err := query.New(&query.Service{
 		Searcher:   found,
+		Exporter:   exporter,
 		Authorizer: rules,
 		Sink:       sink.NewClient(nil, *sinkURL),
 		Catalogue:  common,
@@ -114,6 +127,31 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// exporterFor prepares exports, when a deployment has somewhere to put them.
+//
+// The bucket is its own, not the archive's: an export is an unlocked copy of
+// records made to be taken away, and putting it beside the archive invites a
+// lifecycle rule written for one to be applied to the other.
+func exporterFor(
+	ctx context.Context, bucket, region string, expiry, linkValid time.Duration,
+) (*query.Exporter, error) {
+	if bucket == "" {
+		return nil, nil
+	}
+	archive, err := cli.Archive(ctx, bucket, "", region)
+	if err != nil {
+		return nil, err
+	}
+	presigner, ok := archive.(store.Presigner)
+	if !ok {
+		return nil, errors.New("the export bucket cannot sign links")
+	}
+	return &query.Exporter{
+		Store: archive, Presigner: presigner,
+		Expiry: expiry, LinkValid: linkValid,
+	}, nil
 }
 
 // searcherFor builds the searcher a deployment asked for.

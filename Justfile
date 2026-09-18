@@ -123,6 +123,10 @@ lint:
     golangci-lint config verify
     golangci-lint run ./...
     goreleaser check
+    # Nothing built is committed. A binary in a public repository's history
+    # is in every clone forever, and carries the build machine's paths. The
+    # largest source file here is under 100 KiB; 1 MiB is a build output.
+    ! git ls-files -s | awk '{print $2" "$4}' | git cat-file --batch-check='%(objectsize) %(rest)' | awk '$1 > 1048576 {print "too large to be source:", $2; found=1} END {exit !found}'
     # A `;` inside a mermaid sequenceDiagram is a statement separator: it
     # splits the message and GitHub renders nothing. Keep them out of docs.
     ! grep -rn --include=*.md -E '^[[:space:]]*[A-Za-z][A-Za-z0-9_]*[[:space:]]*-?->>?.*;' docs/

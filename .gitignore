@@ -1,6 +1,16 @@
-# Binaries and build output
+# Binaries and build output. `go build ./cmd/<name>` from the root drops the
+# binary here; these names keep it out of a commit, and `just lint` refuses
+# any large file that gets past them.
 bin/
 /dist/
+/audit
+/audit-query
+/audit-registry
+/audit-writer
+/embed
+/emit
+/read
+/protoc-gen-audit-jsonschema
 coverage.out
 
 # `gen/` is NOT ignored. Generated code is committed — the `drift` recipe

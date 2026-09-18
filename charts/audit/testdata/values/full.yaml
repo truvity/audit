@@ -47,3 +47,5 @@ workloadIdentity:
       source: wallet
 networkPolicy:
   enabled: true
+telemetry:
+  otlpEndpoint: http://otel-collector.observability.svc:4318

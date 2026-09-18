@@ -357,6 +357,8 @@ spec:
                 secretKeyRef:
                   name: audit-database
                   key: url
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability.svc:4318"
           ports:
             - name: http
               containerPort: 8080

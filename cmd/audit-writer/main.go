@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
 
 	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
@@ -29,6 +30,7 @@ import (
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/hold"
 	"github.com/truvity/audit/internal/registry"
+	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
@@ -221,6 +223,18 @@ func run() error {
 				"for a trial install that accepts anybody")
 	}
 
+	// Metrics, pushed over OTLP when a collector is named in the environment
+	// and a no-op otherwise. The one to alert on is index.deferred.
+	stopTelemetry, err := telemetry.Start(ctx, "audit-writer", *version, slog.Default())
+	if err != nil {
+		return err
+	}
+	defer stopTelemetry(context.Background()) //nolint:errcheck // shutting down
+	counts, err := telemetry.NewWriter(otel.GetMeterProvider())
+	if err != nil {
+		return err
+	}
+
 	w, err := writer.New(&writer.Writer{
 		Identity:   auth.SubjectFrom,
 		Catalogues: resolver{local: local, shared: shared},
@@ -230,6 +244,7 @@ func run() error {
 			Indexer: indexer, Held: holds.Held,
 			OnPut: func(key string, records int) {
 				slog.Info("object written", "key", key, "records", records)
+				counts.Written(key, records)
 			},
 			// The object is durable and the records are safe; what is behind is
 			// the projection, which a reindex of that day repairs. A deployment
@@ -239,6 +254,7 @@ func run() error {
 				slog.Error("object written but not indexed",
 					"key", key, "rows", rows, "error", err,
 					"repair", "audit reindex --profile <name> --from <day> --to <day>")
+				counts.IndexDeferred(key, rows)
 			},
 		},
 		Dedupe: dedupe,
@@ -259,12 +275,19 @@ func run() error {
 		Hooks: writer.Hooks{
 			OnDeadLettered: func(r *record.Record, reason string) {
 				slog.Error("dead letter", "id", r.GetId(), "action", r.GetAction(), "reason", reason)
+				counts.DeadLettered()
+			},
+			OnDuplicatesLikely: func(ids []string, err error) {
+				slog.Warn("records written but not marked; a redelivery will be written again",
+					"records", len(ids), "error", err)
+				counts.DuplicatesLikely(len(ids))
 			},
 			OnUnhandled: func(action string, p []string) {
 				slog.Warn("no configured profile keeps these", "action", action, "profiles", p)
 			},
 			OnMetaDropped: func(action, reason string) {
 				slog.Error("the writer could not record itself", "action", action, "reason", reason)
+				counts.MetaDropped()
 			},
 		},
 	})

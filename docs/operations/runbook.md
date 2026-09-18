@@ -90,6 +90,21 @@ The writer logs `object written but not indexed` with the object's key when it
 puts an object it could not index. The records are safe and the object is in
 the archive under its lock; what is behind is the projection.
 
+It also counts the rows in `audit.writer.index.deferred`, labelled by profile,
+when a collector is named (`OTEL_EXPORTER_OTLP_ENDPOINT`; the chart's
+`telemetry.otlpEndpoint`). Alert on any increase: nothing else notices an index
+that is quietly behind until it answers a search wrongly. With the usual
+OTLP-to-Prometheus naming:
+
+```
+increase(audit_writer_index_deferred_total[15m]) > 0
+```
+
+The writer's other counters: `audit.writer.objects.written`,
+`audit.writer.records.written`, `audit.writer.dead_lettered` (alert on this
+too: a fault upstream is otherwise silent), `audit.writer.meta.dropped` and
+`audit.writer.duplicates.likely`.
+
 ```
 audit reindex --profile <p> --from <day> --to <day> \
     --database <url> --bucket <b> --catalogue <file>...

@@ -88,6 +88,10 @@ spec:
           env:
             {{- include "audit.archiveEnv" . | nindent 12 }}
             {{- include "audit.databaseEnv" . | nindent 12 }}
+            {{- with .Values.telemetry.otlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

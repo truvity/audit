@@ -86,6 +86,11 @@ workloadIdentity:
 # can then write records, and nothing says who did.
 anonymousWrites: false
 
+# Metrics, pushed over OTLP. Empty sends nothing and costs nothing. The counter
+# to alert on is audit.writer.index.deferred: see docs/operations/runbook.md.
+telemetry:
+  otlpEndpoint: ""
+
 # Catalogues registered at start-up, as name -> document. The common catalogue
 # is built in and needs no entry here. A deployment running the registry
 # usually leaves this empty: an application registers its own.

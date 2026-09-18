@@ -55,8 +55,22 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- if not (include "audit.hasDatabase" .) -}}
   {{- fail "audit: `registry.enabled` needs `database`. Registered catalogues live in the same database as the index and share its migration chain; there is nowhere else to put them." -}}
   {{- end -}}
-  {{- if not .Values.registry.trustedUpstream -}}
-  {{- fail "audit: `registry.enabled` needs `registry.trustedUpstream: true` and a proxy in front that sets the caller's source. The registry refuses a caller it cannot identify, so without one it would refuse every registration; and a registry that took the document's own word for whose catalogue it is would let any workload describe another's records." -}}
+  {{- if not (and .Values.workloadIdentity.issuers .Values.workloadIdentity.workloads) -}}
+  {{- fail "audit: `registry.enabled` needs `workloadIdentity.issuers` and `workloadIdentity.workloads`. The registry decides whose catalogue a document is from the caller's verified service account, so with no mapping it would refuse every registration; and a registry that took the document's own word for whose catalogue it is would let any workload describe another's records." -}}
+  {{- end -}}
+{{- end -}}
+
+{{- if and .Values.workloadIdentity.issuers .Values.anonymousWrites -}}
+{{- fail "audit: `anonymousWrites` and `workloadIdentity.issuers` are both set. The writer verifies callers or it does not; pick one, and only a trial install should pick anonymous." -}}
+{{- end -}}
+
+{{- if not (or .Values.workloadIdentity.issuers .Values.anonymousWrites) -}}
+{{- fail "audit: set `workloadIdentity.issuers` so the writer can verify which workload publishes, or `anonymousWrites: true` for a trial install. Without either the writer refuses to start: records taken from anybody under nobody's name are not a trail." -}}
+{{- end -}}
+
+{{- range .Values.workloadIdentity.workloads -}}
+  {{- if and (not .issuer) (gt (len $.Values.workloadIdentity.issuers) 1) -}}
+  {{- fail (printf "audit: workload %s names no issuer, and more than one is trusted. Two clusters can both have that namespace and service account; say which one it is." .subject) -}}
   {{- end -}}
 {{- end -}}
 

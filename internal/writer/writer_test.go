@@ -41,6 +41,7 @@ type parts struct {
 	indexer  index.Indexer
 	dedupe   writer.Dedupe
 	instance string
+	identity func(context.Context) string
 }
 
 func build(t *testing.T) *built {
@@ -92,6 +93,10 @@ func buildWith(t *testing.T, p parts) *built {
 		instance = p.instance
 	}
 
+	identity := func(context.Context) string { return "workload:wallet" }
+	if p.identity != nil {
+		identity = p.identity
+	}
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,
 		Splitter:   &writer.Splitter{Profiles: profiles(t), Keys: provider},
@@ -101,7 +106,7 @@ func buildWith(t *testing.T, p parts) *built {
 		},
 		Dedupe:     dedupe,
 		DeadLetter: &writer.StoreDeadLetter{Store: s, Instance: instance, Now: func() time.Time { return at }},
-		Identity:   func(context.Context) string { return "workload:wallet" },
+		Identity:   identity,
 		Now:        func() time.Time { return at },
 		Hooks: writer.Hooks{
 			OnDeadLettered: func(_ *record.Record, reason string) { b.deadLetter = append(b.deadLetter, reason) },

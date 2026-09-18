@@ -37,6 +37,13 @@ binary's flags with dots.
 | `keys.local.persistence` | where the wrapped keys live. They are random, not derived, so this is the only copy: back it up, and use ReadWriteMany for more than one replica |
 | `catalogues` | catalogue documents registered at start-up, by name |
 
+The writer verifies who publishes with `--workloads`/`AUDIT_WORKLOADS`, a file
+naming the issuers trusted to name a workload (see "Workload identity" below),
+and stamps the caller's service account as each record's observer. Without it,
+the writer refuses to start unless given `--anonymous-writes`, which is for a
+trial install. Records that arrive over the stream carry no verified observer:
+the stream's own authentication is what admits a publisher there.
+
 The built `audit-writer` takes these as flags or environment variables:
 `--database`/`AUDIT_DATABASE` is the index, `--replicas`/`AUDIT_REPLICAS` is how
 many writers share the stream. A writer whose database is at a schema version
@@ -137,3 +144,27 @@ Built: `audit clock-sync --ntp … --sink … [--max-offset --timeout]`.
 
 Built: `audit purge --deployment --database [--identifying-after
 --dedupe-window --dry-run]`. It never touches the archive.
+
+## Workload identity
+
+The writer and the registry read one file, `--workloads`/`AUDIT_WORKLOADS`:
+
+```yaml
+issuers:
+  - url: https://oidc.example.com/id/CLUSTER   # the cluster's service-account issuer
+    audience: audit
+workloads:                                     # the registry's map; the writer ignores it
+  - subject: system:serviceaccount:wallet:wallet-api
+    source: wallet
+```
+
+A caller presents its projected service-account token as a bearer. The tools
+in this repository read it from the file named by `AUDIT_TOKEN_FILE` on every
+request, because the kubelet replaces it before it expires. With more than one
+issuer, every workload entry must name its issuer, since two clusters can both
+have that namespace and service account.
+
+The issuer's discovery document is fetched at start-up, so it must be reachable
+over HTTPS from the pods. A managed cluster's public OIDC provider is. The API
+server's own in-cluster issuer usually is not without its CA and a credential,
+which this does not yet take.

@@ -24,6 +24,8 @@ spec:
         # A profile change alters what the registry will accept, so a running
         # one has to be replaced for it to take effect.
         checksum/deployment: {{ toYaml .Values.profiles | sha256sum }}
+        # A new workload mapping changes whose catalogues it accepts.
+        checksum/workloads: {{ toYaml .Values.workloadIdentity | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -38,9 +40,11 @@ spec:
             - --deployment=/etc/audit/deployment.yaml
             - --listen=:{{ .Values.registry.service.port }}
             - --sink={{ include "audit.sinkURL" . }}
+            - --workloads=/etc/audit/workloads.yaml
             - --version={{ .Chart.AppVersion }}
           env:
             {{- include "audit.databaseEnv" . | nindent 12 }}
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 12 }}{{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.registry.service.port }}
@@ -61,10 +65,13 @@ spec:
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
               readOnly: true
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.workloadsMount" . | nindent 12 }}{{- end }}
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 12 }}{{- end }}
       volumes:
         - name: deployment
           configMap:
             name: {{ include "audit.fullname" . }}-deployment
+        {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 8 }}{{- end }}
 ---
 apiVersion: v1
 kind: Service

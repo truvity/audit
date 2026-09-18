@@ -42,6 +42,8 @@ spec:
         # A profile change must reach a running writer, which only happens if
         # the pod is replaced.
         checksum/deployment: {{ toYaml .Values.profiles | sha256sum }}
+        # Likewise who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: {{ toYaml .Values.workloadIdentity | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -57,6 +59,11 @@ spec:
             - --listen=:{{ .Values.service.port }}
             - --roll-interval={{ .Values.roll.interval }}
             - --replicas={{ .Values.replicas }}
+            {{- if include "audit.verifiesWorkloads" . }}
+            - --workloads=/etc/audit/workloads.yaml
+            {{- else if .Values.anonymousWrites }}
+            - --anonymous-writes
+            {{- end }}
             {{- if .Values.kmsKey }}
             - --kms-key={{ .Values.kmsKey }}
             {{- end }}
@@ -101,6 +108,7 @@ spec:
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
               readOnly: true
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.workloadsMount" . | nindent 12 }}{{- end }}
             {{- if .Values.catalogues }}
             - name: catalogues
               mountPath: /etc/audit/catalogues

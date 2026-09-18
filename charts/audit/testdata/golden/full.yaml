@@ -105,6 +105,15 @@ data:
       security:
         presets:
         - security
+  # What `audit-writer --workloads` and `audit-registry --workloads` read: the
+  # issuers trusted to name a calling workload, and the source each speaks for.
+  workloads.yaml: |
+    issuers:
+      - url: "https://oidc.example.com/id/CLUSTER"
+        audience: "audit"
+    workloads:
+      - source: wallet
+        subject: system:serviceaccount:wallet:wallet-api
 
 ---
 # Source: audit/templates/writer.yaml
@@ -205,6 +214,8 @@ spec:
         # A profile change alters what the registry will accept, so a running
         # one has to be replaced for it to take effect.
         checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        # A new workload mapping changes whose catalogues it accepts.
+        checksum/workloads: 39e3e218697a14745595e798499f2b11360f39592b20deadb03638c9b804af35
     spec:
       serviceAccountName: audit
       
@@ -222,6 +233,7 @@ spec:
             - --deployment=/etc/audit/deployment.yaml
             - --listen=:8080
             - --sink=http://audit:8080
+            - --workloads=/etc/audit/workloads.yaml
             - --version=0.1.0
           env:
             
@@ -230,6 +242,8 @@ spec:
                 secretKeyRef:
                   name: audit-database
                   key: url
+            - name: AUDIT_TOKEN_FILE
+              value: /var/run/audit/token
           ports:
             - name: http
               containerPort: 8080
@@ -254,10 +268,24 @@ spec:
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
               readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/workloads.yaml
+              subPath: workloads.yaml
+              readOnly: true
+            - name: audit-token
+              mountPath: /var/run/audit
+              readOnly: true
       volumes:
         - name: deployment
           configMap:
             name: audit-deployment
+        - name: audit-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "audit"
+                  expirationSeconds: 3600
 
 ---
 # Source: audit/templates/writer.yaml
@@ -286,6 +314,8 @@ spec:
         # A profile change must reach a running writer, which only happens if
         # the pod is replaced.
         checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        # Likewise who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: 39e3e218697a14745595e798499f2b11360f39592b20deadb03638c9b804af35
     spec:
       serviceAccountName: audit
       
@@ -304,6 +334,7 @@ spec:
             - --listen=:8080
             - --roll-interval=60s
             - --replicas=3
+            - --workloads=/etc/audit/workloads.yaml
             - --kms-key=alias/audit
             - --key-root=/etc/audit/keys/root
             - --key-dir=/var/lib/audit/keys
@@ -349,6 +380,10 @@ spec:
             - name: deployment
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/workloads.yaml
+              subPath: workloads.yaml
               readOnly: true
             - name: key-root
               mountPath: /etc/audit/keys
@@ -431,6 +466,8 @@ spec:
                   value: "prod"
                 - name: AWS_REGION
                   value: "eu-central-1"
+                - name: AUDIT_TOKEN_FILE
+                  value: /var/run/audit/token
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -445,6 +482,9 @@ spec:
                 - name: signing
                   mountPath: /etc/audit/signing
                   readOnly: true
+                - name: audit-token
+                  mountPath: /var/run/audit
+                  readOnly: true
           volumes:
             - name: deployment
               configMap:
@@ -452,6 +492,13 @@ spec:
             - name: signing
               secret:
                 secretName: audit-signing-key
+            - name: audit-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "audit"
+                      expirationSeconds: 3600
 
 ---
 # Source: audit/templates/cronjobs.yaml
@@ -513,6 +560,8 @@ spec:
                   value: "prod"
                 - name: AWS_REGION
                   value: "eu-central-1"
+                - name: AUDIT_TOKEN_FILE
+                  value: /var/run/audit/token
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -523,10 +572,20 @@ spec:
                 - name: public
                   mountPath: /etc/audit/public
                   readOnly: true
+                - name: audit-token
+                  mountPath: /var/run/audit
+                  readOnly: true
           volumes:
             - name: public
               secret:
                 secretName: audit-signing-public
+            - name: audit-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "audit"
+                      expirationSeconds: 3600
 
 ---
 # Source: audit/templates/cronjobs.yaml
@@ -588,6 +647,8 @@ spec:
                   value: "prod"
                 - name: AWS_REGION
                   value: "eu-central-1"
+                - name: AUDIT_TOKEN_FILE
+                  value: /var/run/audit/token
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -598,10 +659,20 @@ spec:
                 - name: public
                   mountPath: /etc/audit/public
                   readOnly: true
+                - name: audit-token
+                  mountPath: /var/run/audit
+                  readOnly: true
           volumes:
             - name: public
               secret:
                 secretName: audit-signing-public
+            - name: audit-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "audit"
+                      expirationSeconds: 3600
 
 ---
 # Source: audit/templates/cronjobs.yaml
@@ -663,6 +734,8 @@ spec:
                   value: "prod"
                 - name: AWS_REGION
                   value: "eu-central-1"
+                - name: AUDIT_TOKEN_FILE
+                  value: /var/run/audit/token
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -673,10 +746,20 @@ spec:
                 - name: public
                   mountPath: /etc/audit/public
                   readOnly: true
+                - name: audit-token
+                  mountPath: /var/run/audit
+                  readOnly: true
           volumes:
             - name: public
               secret:
                 secretName: audit-signing-public
+            - name: audit-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "audit"
+                      expirationSeconds: 3600
 
 ---
 # Source: audit/templates/cronjobs.yaml
@@ -800,12 +883,26 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.name
+                - name: AUDIT_TOKEN_FILE
+                  value: /var/run/audit/token
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop:
                   - ALL
                 readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: audit-token
+                  mountPath: /var/run/audit
+                  readOnly: true
+          volumes:
+            - name: audit-token
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "audit"
+                      expirationSeconds: 3600
 ---
 # Source: audit/templates/migrate.yaml
 # The index schema, applied before the writer rolls.

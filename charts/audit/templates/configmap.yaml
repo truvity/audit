@@ -13,6 +13,20 @@ data:
   deployment.yaml: |
     profiles:
       {{- toYaml .Values.profiles | nindent 6 }}
+  {{- if include "audit.verifiesWorkloads" . }}
+  # What `audit-writer --workloads` and `audit-registry --workloads` read: the
+  # issuers trusted to name a calling workload, and the source each speaks for.
+  workloads.yaml: |
+    issuers:
+      {{- range .Values.workloadIdentity.issuers }}
+      - url: {{ .url | quote }}
+        audience: {{ .audience | default $.Values.workloadIdentity.audience | quote }}
+      {{- end }}
+    {{- with .Values.workloadIdentity.workloads }}
+    workloads:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
 {{- if .Values.catalogues }}
 ---
 apiVersion: v1

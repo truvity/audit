@@ -54,10 +54,37 @@ registry:
   replicas: 2
   service:
     port: 8080
-  # Who is calling, as a trusted upstream states it. The registry refuses a
-  # caller it cannot identify rather than believing the document's own claim
-  # about whose catalogue it is.
-  trustedUpstream: false
+
+# Who is calling the writer and the registry.
+#
+# A workload presents its projected service-account token, and the services
+# verify it against the cluster's own OIDC issuer. The subject is the service
+# account, which the kubelet vouches for and the workload cannot choose. The
+# writer stamps it on every record as the observer; the registry maps it to the
+# source whose catalogue that workload may register. The jobs below present
+# their own tokens the same way.
+workloadIdentity:
+  # The issuers trusted to name a workload, exactly as their tokens' iss claim
+  # reads — on EKS, the cluster's OIDC provider URL. Discovery is fetched from
+  # each at start-up, so it must be reachable from the pods over HTTPS.
+  issuers: []
+  #  - url: https://oidc.example.com/id/CLUSTER
+  # The audience the jobs request on their tokens and the services require.
+  # An issuer entry may name its own.
+  audience: audit
+  # How long a projected token lives. The kubelet replaces it before then, and
+  # the jobs read it afresh on every request.
+  expirationSeconds: 3600
+  # Which service account speaks for which source, for the registry. A workload
+  # not listed here cannot register a catalogue.
+  workloads: []
+  #  - subject: system:serviceaccount:wallet:wallet-api
+  #    source: wallet
+
+# Accept writes over HTTP from callers nobody verified, stamped with no
+# observer. For a trial install only: anyone who can reach the writer's port
+# can then write records, and nothing says who did.
+anonymousWrites: false
 
 # Catalogues registered at start-up, as name -> document. The common catalogue
 # is built in and needs no entry here. A deployment running the registry

@@ -22,6 +22,7 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
@@ -60,6 +61,10 @@ func run() error {
 		database   = flag.String("database", env("AUDIT_DATABASE", ""),
 			"the Postgres URL of the index; without it the writer indexes nothing and deduplicates in process")
 		listen    = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
+		workloads = flag.String("workloads", env("AUDIT_WORKLOADS", ""),
+			"the file naming the issuers trusted to say which workload is publishing")
+		anonymous = flag.Bool("anonymous-writes", false,
+			"accept writes over HTTP from callers nobody verified; for a trial install only")
 		streamURL = flag.String("stream-url", env("AUDIT_STREAM_URL", ""),
 			"the NATS server holding the wide stream; without it the writer only serves the sink")
 		streamName   = flag.String("stream", env("AUDIT_STREAM", "AUDIT"), "the stream to consume")
@@ -192,7 +197,32 @@ func run() error {
 	go holds.Run(ctx, func(err error) {
 		slog.Error("could not refresh the legal holds; keeping the last answer", "error", err)
 	})
+	// Who is publishing is verified, not declared: the writer stamps the
+	// caller's service account as the record's observer, so a record written by
+	// the wrong workload names the workload that wrote it. Without a way to
+	// verify, a writer reachable over HTTP would take anybody's records under
+	// nobody's name — which it does only when told to, for a trial.
+	var authenticated auth.Authenticator
+	switch {
+	case *workloads != "":
+		callers, err := cli.LoadWorkloads(*workloads)
+		if err != nil {
+			return err
+		}
+		if authenticated, err = auth.NewJWT(ctx, callers.Issuers, slog.Default()); err != nil {
+			return err
+		}
+	case *anonymous:
+		slog.Warn("accepting writes from callers nobody verified: records written over HTTP " +
+			"carry no observer identity, and anyone who can reach this port can write them")
+	default:
+		return errors.New(
+			"give --workloads so the writer can verify who publishes, or --anonymous-writes " +
+				"for a trial install that accepts anybody")
+	}
+
 	w, err := writer.New(&writer.Writer{
+		Identity:   auth.SubjectFrom,
 		Catalogues: resolver{local: local, shared: shared},
 		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider},
 		Roller: &writer.Roller{
@@ -259,6 +289,9 @@ func run() error {
 	}
 
 	path, handler := sink.NewHandler(w)
+	if authenticated != nil {
+		handler = auth.Middleware(authenticated, handler)
+	}
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) })

@@ -26,7 +26,6 @@ import (
 	"github.com/truvity/audit/index/s3scan"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/query"
-	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/store"
 )
 
@@ -105,7 +104,7 @@ func run() error {
 		Searcher:   found,
 		Exporter:   exporter,
 		Authorizer: access.Rules,
-		Sink:       sink.NewClient(nil, *sinkURL),
+		Sink:       cli.WriterClient(*sinkURL),
 		Catalogue:  common,
 		Version:    *version,
 		OnUnrecorded: func(action string, err error) {

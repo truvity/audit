@@ -45,11 +45,19 @@ pseudonymisation, and a grant to read must not carry it.
   trusts that claim from, and with several issuers every rule must name one.
   Claim mapping is therefore per rule, not per issuer: a rule names the claim
   it reads, from the issuer it trusts.
-- **trusted-upstream**: reads the principal a gateway forwarded. Bound to
-  mTLS from the gateway or an internal JWT the gateway signs. Never a bare
-  header — which is exactly what the registry reads today (`Audit-Source`),
-  and why the chart refuses to deploy it without a proxy in front. That
-  placeholder goes when this lands.
+- **workload tokens** (built, replacing trusted-upstream): a service in the
+  cluster presents its projected service-account token. The writer and the
+  registry verify it as a JWT from the cluster's own OIDC issuer. The subject
+  is the service account, which the kubelet vouches for and the workload cannot
+  choose. The writer stamps it on each record as the observer. The registry
+  maps it to the one source whose catalogue that workload may register.
+
+  The earlier sketch had a gateway forward the principal, bound to mTLS or a
+  gateway-signed token, and the registry read an `Audit-Source` header meanwhile.
+  The header is gone. mTLS needs a certificate for every caller and a mesh or
+  cert-manager to issue them; a projected token needs neither, and is verified
+  by the same code as a person's token. mTLS remains possible behind the same
+  interface for a deployment that already runs a mesh.
 - **none**: tests only.
 
 ## Authorizers

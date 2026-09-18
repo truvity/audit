@@ -33,11 +33,27 @@ The chart takes references; it creates none of these.
 | a `ReadWriteMany` storage class, for more than one replica | `keys.local.persistence` |
 | egress to the NTP references | `jobs.clockSync.ntp` |
 | the images | `image.writer`, `image.cli`, `image.registry` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
-| a proxy that states the caller's source, if the registry is on | `registry.trustedUpstream` |
+| the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
+| which service account speaks for which source, if the registry is on | `workloadIdentity.workloads` |
+
+## Who may write
+
+The writer and the registry verify every caller's projected service-account
+token against the cluster's own OIDC issuer. The token's subject is the service
+account, which the kubelet vouches for and the workload cannot choose. The
+writer stamps it on each record as the observer. The registry maps it to the
+source whose catalogue that workload may register, and refuses a workload it
+does not list. The chart's own jobs are given projected tokens
+(`workloadIdentity.audience`, default `audit`) and present them the same way.
+
+A workload of your own that writes to the writer mounts a projected token with
+the same audience and points `AUDIT_TOKEN_FILE` at it, or sets the bearer itself.
+`anonymousWrites: true` turns verification off, for a trial install only. The
+chart refuses to render with neither issuers nor that flag set.
 
 ## What it refuses to render
 
-Twelve configurations, each one the binaries reject at start-up or accept and
+Seventeen configurations, each one the binaries reject at start-up or accept and
 get quietly wrong. They are listed with their reasons in
 `testdata/refusals.txt`, and `testdata/refuse.sh` holds each refusal to its
 words. The two least obvious:

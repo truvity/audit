@@ -141,6 +141,8 @@ spec:
         # A profile change must reach a running writer, which only happens if
         # the pod is replaced.
         checksum/deployment: 776c6ef2d6419216af14159fb357e78f086792084d8b054d0f0eaefb4031a37c
+        # Likewise who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: b84b4ff82948eb0bf63ac4428d4927f43364293575e1ef8b0626ac8f68afa11f
     spec:
       serviceAccountName: audit
       
@@ -159,6 +161,7 @@ spec:
             - --listen=:8080
             - --roll-interval=60s
             - --replicas=1
+            - --anonymous-writes
             - --key-root=/etc/audit/keys/root
             - --key-dir=/var/lib/audit/keys
             - --version=0.1.0

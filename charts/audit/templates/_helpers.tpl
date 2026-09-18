@@ -125,3 +125,43 @@ affinity:
   {{- toYaml . | nindent 2 }}
 {{- end }}
 {{- end -}}
+
+{{/* Whether workloads are verified at all. */}}
+{{- define "audit.verifiesWorkloads" -}}
+{{- if .Values.workloadIdentity.issuers }}true{{ end -}}
+{{- end -}}
+
+{{/*
+The projected service-account token a pod presents to the writer, read afresh
+on every request because the kubelet replaces it before it expires. Rendered
+only when the services verify workloads; an anonymous trial install has no use
+for it.
+*/}}
+{{- define "audit.tokenEnv" -}}
+- name: AUDIT_TOKEN_FILE
+  value: /var/run/audit/token
+{{- end -}}
+
+{{- define "audit.tokenMount" -}}
+- name: audit-token
+  mountPath: /var/run/audit
+  readOnly: true
+{{- end -}}
+
+{{- define "audit.tokenVolume" -}}
+- name: audit-token
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: token
+          audience: {{ .Values.workloadIdentity.audience | quote }}
+          expirationSeconds: {{ .Values.workloadIdentity.expirationSeconds }}
+{{- end -}}
+
+{{/* The workloads file mount, for the writer and the registry. */}}
+{{- define "audit.workloadsMount" -}}
+- name: deployment
+  mountPath: /etc/audit/workloads.yaml
+  subPath: workloads.yaml
+  readOnly: true
+{{- end -}}

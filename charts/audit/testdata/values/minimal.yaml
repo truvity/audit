@@ -1,6 +1,8 @@
 # The smallest install the chart will render: no stream, no database, one
-# writer, and the jobs that need neither.
+# writer, and the jobs that need neither. A trial, so the writer takes writes
+# from callers it cannot verify.
 bucket: audit-archive
+anonymousWrites: true
 keys:
   local:
     existingSecret: audit-key-root

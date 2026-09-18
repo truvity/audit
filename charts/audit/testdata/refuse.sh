@@ -10,7 +10,8 @@ base=(--set bucket=b
       --set jobs.digest.signingKey.existingSecret=s
       --set jobs.verify.publicKey.existingSecret=p
       --set jobs.clockSync.ntp={time.example}
-      --set jobs.purge.enabled=false)
+      --set jobs.purge.enabled=false
+      --set anonymousWrites=true)
 fail=0
 while IFS=$'\t' read -r overrides want; do
     case "$overrides" in ''|'#'*) continue ;; esac

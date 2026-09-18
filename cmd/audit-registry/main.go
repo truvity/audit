@@ -24,6 +24,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index/postgres"
@@ -47,13 +48,19 @@ func run() error {
 		deployment = flag.String("deployment", env("AUDIT_DEPLOYMENT", ""), "the profile configuration")
 		listen     = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve on")
 		sinkURL    = flag.String("sink", env("AUDIT_SINK", ""), "the writer registrations are recorded through")
-		version    = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
+		workloads  = flag.String("workloads", env("AUDIT_WORKLOADS", ""),
+			"the file naming the trusted issuers and the source each workload speaks for")
+		version = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
 	)
 	flag.Parse()
 
 	switch {
 	case *database == "":
 		return errors.New("give the Postgres URL with --database")
+	case *workloads == "":
+		return errors.New(
+			"give --workloads: the registry decides whose catalogue a document is from the " +
+				"caller's verified identity, and without a way to verify one it would register nothing")
 	case *deployment == "":
 		return errors.New(
 			"give the profile configuration with --deployment: without it nothing checks that a " +
@@ -76,6 +83,15 @@ func run() error {
 		return err
 	}
 
+	callers, err := cli.LoadWorkloads(*workloads)
+	if err != nil {
+		return err
+	}
+	authenticator, err := auth.NewJWT(ctx, callers.Issuers, slog.Default())
+	if err != nil {
+		return err
+	}
+
 	pool, err := pgxpool.New(ctx, *database)
 	if err != nil {
 		return err
@@ -90,20 +106,19 @@ func run() error {
 	r := &registry.Registry{
 		Store:    registry.Postgres{DB: pool},
 		Profiles: profiles,
-		// The transport says who is calling. Until authentication lands this is
-		// the header a trusted upstream sets, and a caller that sets none is
-		// refused rather than believed.
-		Identity: sourceFrom,
+		// Whose catalogue a document is comes from the caller's verified
+		// service account, never from the document and never from a header.
+		Identity: callers.Map.SourceFrom,
 	}
 	if *sinkURL != "" {
-		r.OnRegistered = recorder(sink.NewClient(nil, *sinkURL), *version)
+		r.OnRegistered = recorder(cli.WriterClient(*sinkURL), *version)
 	} else {
 		slog.Warn("no writer configured: registrations will not be recorded")
 	}
 
 	path, handler := registry.NewHandler(r)
 	mux := http.NewServeMux()
-	mux.Handle(path, withSource(handler))
+	mux.Handle(path, auth.Middleware(authenticator, handler))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	server := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
@@ -119,24 +134,6 @@ func run() error {
 		return err
 	}
 	return nil
-}
-
-type sourceKey struct{}
-
-// SourceHeader is what a trusted upstream sets to say which workload is
-// calling. It is read here and nowhere else.
-const SourceHeader = "Audit-Source"
-
-func withSource(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		next.ServeHTTP(w, req.WithContext(
-			context.WithValue(req.Context(), sourceKey{}, req.Header.Get(SourceHeader))))
-	})
-}
-
-func sourceFrom(ctx context.Context) string {
-	who, _ := ctx.Value(sourceKey{}).(string)
-	return who
 }
 
 // recorder records a registration, because a catalogue arriving changes what

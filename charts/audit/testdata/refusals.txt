@@ -13,5 +13,8 @@
 --set bucket=b --set jobs.purge.enabled=true	nothing for it to do
 --set bucket=b --set jobs.clockSync.ntp=null	at least one time reference
 --set bucket=b --set governance=true	shorten a retention
---set bucket=b --set registry.enabled=true --set registry.trustedUpstream=true	nowhere else to put them
---set bucket=b --set registry.enabled=true --set database.url=postgres://x	refuses a caller it cannot identify
+--set bucket=b --set registry.enabled=true	nowhere else to put them
+--set bucket=b --set registry.enabled=true --set database.url=postgres://x	verified service account
+--set bucket=b --set anonymousWrites=false	under nobody's name
+--set bucket=b --set workloadIdentity.issuers[0].url=https://a	pick one
+--set bucket=b --set anonymousWrites=false --set workloadIdentity.issuers[0].url=https://a --set workloadIdentity.issuers[1].url=https://b --set workloadIdentity.workloads[0].subject=system:serviceaccount:w:api --set workloadIdentity.workloads[0].source=wallet	say which one it is

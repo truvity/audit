@@ -26,7 +26,6 @@ import (
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/store/s3store"
 )
 
@@ -291,7 +290,7 @@ func verify(args []string) error {
 		if run.Catalogue, err = catalogue.Common(); err != nil {
 			return err
 		}
-		run.Sink = sink.NewClient(nil, *sinkURL)
+		run.Sink = cli.WriterClient(*sinkURL)
 	}
 	problems, err := run.Run(ctx)
 	if err != nil {
@@ -382,7 +381,7 @@ func replay(args []string) error {
 		Reason: *reason, Action: *action, Batch: *batch,
 	}
 	if *sinkURL != "" {
-		r.Sink = sink.NewClient(nil, *sinkURL)
+		r.Sink = cli.WriterClient(*sinkURL)
 	}
 	report, err := r.Run(ctx)
 	if err != nil {
@@ -607,7 +606,7 @@ func digestCmd(args []string) error {
 		if run.Catalogue, err = catalogue.Common(); err != nil {
 			return err
 		}
-		run.Sink = sink.NewClient(nil, *sinkURL)
+		run.Sink = cli.WriterClient(*sinkURL)
 	}
 	if *from != "" {
 		if run.From, err = cli.ParseDay(*from); err != nil {
@@ -725,7 +724,7 @@ func clockSync(args []string) error {
 		Timeout: *timeout, Version: *version, Instance: name, JSON: *asJSON,
 	}
 	if *sinkURL != "" {
-		run.Sink = sink.NewClient(nil, *sinkURL)
+		run.Sink = cli.WriterClient(*sinkURL)
 	}
 	_, err = run.Run(context.Background())
 	return err
@@ -769,7 +768,7 @@ func holdCmd(args []string) error {
 		if run.Catalogue, err = catalogue.Common(); err != nil {
 			return err
 		}
-		run.Sink = sink.NewClient(nil, *sinkURL)
+		run.Sink = cli.WriterClient(*sinkURL)
 	}
 	return run.Run(ctx, args[0])
 }
@@ -820,7 +819,7 @@ func keyCmd(args []string) error {
 	}
 
 	return cli.KeyDestroy{
-		Provider: provider, Store: archive, Sink: sink.NewClient(nil, *sinkURL),
+		Provider: provider, Store: archive, Sink: cli.WriterClient(*sinkURL),
 		Catalogue: common, Tenant: *tenant, Purpose: *purpose, By: *by, Reason: *reason,
 	}.Run(ctx)
 }

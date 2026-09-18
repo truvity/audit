@@ -51,6 +51,7 @@ spec:
                     fieldRef:
                       fieldPath: metadata.name
                 {{- include "audit.archiveEnv" . | nindent 16 }}
+                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 16 }}{{- end }}
               securityContext:
                 {{- toYaml .Values.securityContext | nindent 16 }}
               volumeMounts:
@@ -61,6 +62,7 @@ spec:
                 - name: signing
                   mountPath: /etc/audit/signing
                   readOnly: true
+                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 16 }}{{- end }}
           volumes:
             - name: deployment
               configMap:
@@ -68,6 +70,7 @@ spec:
             - name: signing
               secret:
                 secretName: {{ .Values.jobs.digest.signingKey.existingSecret }}
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 12 }}{{- end }}
 {{- end }}
 {{- if .Values.jobs.verify.enabled }}
 {{- range $name, $_ := .Values.profiles }}
@@ -116,16 +119,19 @@ spec:
                     fieldRef:
                       fieldPath: metadata.name
                 {{- include "audit.archiveEnv" $ | nindent 16 }}
+                {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenEnv" $ | nindent 16 }}{{- end }}
               securityContext:
                 {{- toYaml $.Values.securityContext | nindent 16 }}
               volumeMounts:
                 - name: public
                   mountPath: /etc/audit/public
                   readOnly: true
+                {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenMount" $ | nindent 16 }}{{- end }}
           volumes:
             - name: public
               secret:
                 secretName: {{ $.Values.jobs.verify.publicKey.existingSecret }}
+            {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenVolume" $ | nindent 12 }}{{- end }}
 {{- end }}
 {{- end }}
 {{- if .Values.jobs.purge.enabled }}
@@ -225,6 +231,15 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.name
+                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 16 }}{{- end }}
               securityContext:
                 {{- toYaml .Values.securityContext | nindent 16 }}
+              {{- if include "audit.verifiesWorkloads" . }}
+              volumeMounts:
+                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 16 }}{{- end }}
+              {{- end }}
+          {{- if include "audit.verifiesWorkloads" . }}
+          volumes:
+            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 12 }}{{- end }}
+          {{- end }}
 {{- end }}

@@ -143,14 +143,16 @@ func TestRoundTripThroughTheStream(t *testing.T) {
 	}
 
 	store := &sink.Memory{}
-	run(t, s, store, nil, func() bool { return store.Len() == len(sent) })
+	run(t, s, store, nil, func() bool { return distinct(store.Records()) == len(sent) })
 
-	got := store.Records()
-	if len(got) != len(sent) {
-		t.Fatalf("the far side holds %d of %d records", len(got), len(sent))
-	}
+	// Every record arrived, and none was altered on the way. What is NOT
+	// asserted is that exactly three arrived: a stream is at-least-once by
+	// design, and under load the acknowledgement of a batch can lose the race
+	// with its own redelivery. Asserting exactly-once here would be asserting
+	// a property the design deliberately does not have — it is the writer's
+	// deduplication table that makes a repeat cost nothing, not the transport.
 	seen := map[string]bool{}
-	for _, r := range got {
+	for _, r := range store.Records() {
 		seen[r.GetId()] = true
 		if r.GetAction() != "shop.order.placed" {
 			t.Fatalf("a record did not survive the crossing: %+v", r)
@@ -161,6 +163,16 @@ func TestRoundTripThroughTheStream(t *testing.T) {
 			t.Fatalf("record %s never arrived", r.GetId())
 		}
 	}
+}
+
+// distinct counts records by identifier, which is the number a reader of the
+// archive would see once the writer has absorbed the repeats.
+func distinct(rows []*record.Record) int {
+	seen := map[string]bool{}
+	for _, r := range rows {
+		seen[r.GetId()] = true
+	}
+	return len(seen)
 }
 
 // Nothing is lost to a writer that was briefly unable to write: unacknowledged

@@ -26,6 +26,38 @@ objects written in the window:
 Empty windows produce a digest with no objects. The digest object is locked
 with the same retention as the objects it covers.
 
+## Why a job, and not a signature on each record
+
+What the chain has to prove is that nothing was **removed**, nothing was
+**changed**, and the operator did not **choose** what was signed. A
+signature per record, made by the emitter or by the writer, proves only the
+second:
+
+- **Removal leaves nothing behind.** A signed record that is deleted takes
+  its signature with it. Only a signed list of everything written in a
+  window — including an empty list for a quiet hour — makes a missing object
+  visible. That is what a digest is.
+- **An emitter's signature says "the application said so",** which the trail
+  already knows: the writer verifies each caller's workload token and stamps
+  it as the record's observer, and the `origin_hash` covers the record as
+  accepted. A compromised application would sign its own false records just
+  as readily. Keys per emitter would also have to be issued, rotated and
+  revoked in the least trusted place in the system, and every verifier would
+  need all their public halves.
+- **The writer must not hold the signing key.** It already has write rights on
+  the archive; with the key as well, one compromised process could both write
+  and vouch for what it wrote. The digest job runs as its own identity, may
+  use the key, and may write only under `digest/`.
+- **Quiet hours need a digest too,** and nothing wakes the writer when nothing
+  happens. A scheduled job seals every hour, and one that missed its runs
+  seals the hours it missed.
+
+The cost is that the current hour is not signed yet. Until it is sealed, its
+objects are protected by Object Lock in compliance mode — nobody, the
+account's root included, can overwrite or delete them before their retention
+ends — and not yet by the chain. A deployment that needs a shorter window runs
+the job more often.
+
 ## Who holds the key
 
 With a signing key the writer holds itself, the chain proves that objects have

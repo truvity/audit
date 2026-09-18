@@ -1,0 +1,327 @@
+{
+  "$comment": "One thing that happened, as seen by one source. This schema describes the form this project writes: proto field names, enums as names, 64-bit integers as strings, and unpopulated fields absent. It is generated from proto/audit/v1/record.proto together with that file's comments, and the proto itself is archived beside it.",
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "description": "Actor is who acted. `kind` selects a registered actor kind, which declares the schema of `attributes` and the identity treatment.",
+      "properties": {
+        "attributes": {
+          "description": "Kind-specific attributes, validated against the kind's schema.",
+          "type": "object"
+        },
+        "auth_method": {
+          "description": "How the actor authenticated (\"oidc\", \"api_key\", \"mtls\", \"recovery\").",
+          "type": "string"
+        },
+        "credential_hash": {
+          "description": "SHA-256 of the credential used, base64, so a token can be found without ever storing it.",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "session_id": {
+          "description": "Session identifier, if any. Audit only; hashed by the writer when the actor kind says so.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Capture": {
+      "additionalProperties": false,
+      "description": "Capture is the level-gated request and response snapshot.",
+      "properties": {
+        "level": {
+          "enum": [
+            "LEVEL_UNSPECIFIED",
+            "LEVEL_METADATA",
+            "LEVEL_REQUEST",
+            "LEVEL_REQUEST_RESPONSE"
+          ],
+          "type": "string"
+        },
+        "request": {
+          "description": "An extension slot. Its shape is the JSON Schema the catalogue registers for it; numbers in it must be integers a float64 holds exactly.",
+          "type": "object"
+        },
+        "response": {
+          "description": "An extension slot. Its shape is the JSON Schema the catalogue registers for it; numbers in it must be integers a float64 holds exactly.",
+          "type": "object"
+        },
+        "truncated": {
+          "description": "True when any capped field was truncated, in the documented order.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "Context": {
+      "additionalProperties": false,
+      "description": "Context is the request provenance.",
+      "properties": {
+        "areas": {
+          "additionalProperties": {
+            "description": "An extension slot. Its shape is the JSON Schema the catalogue registers for it; numbers in it must be integers a float64 holds exactly.",
+            "type": "object"
+          },
+          "description": "Extension slots keyed by area (\"http\", \"rpc\", \"k8s\", \"github\"), each validated against the area's registered schema.",
+          "type": "object"
+        },
+        "client_addresses": {
+          "description": "Client address chain, nearest last, as the trusted hop count leaves it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "request_id": {
+          "type": "string"
+        },
+        "span_id": {
+          "type": "string"
+        },
+        "trace_id": {
+          "type": "string"
+        },
+        "user_agent": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Meter": {
+      "additionalProperties": false,
+      "description": "Meter is the usage measurement of a billable action or a periodic gauge sample. Counts are events; gauges are absolute samples, never deltas.",
+      "properties": {
+        "dimensions": {
+          "description": "Flat primitives only, validated against the meter's dimensions schema.",
+          "type": "object"
+        },
+        "kind": {
+          "enum": [
+            "KIND_UNSPECIFIED",
+            "KIND_COUNT",
+            "KIND_GAUGE"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "description": "Meter name from the catalogue.",
+          "type": "string"
+        },
+        "quantity": {
+          "description": "Decimal string, exact (\"1\", \"1048576\", \"0.25\").",
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Observer": {
+      "additionalProperties": false,
+      "description": "Observer is the reporting component, stamped by the writer.",
+      "properties": {
+        "id": {
+          "description": "Verified workload identity of the publisher.",
+          "type": "string"
+        },
+        "instance": {
+          "description": "Instance name (pod name), the producer of `sequence`.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Component version.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Outcome": {
+      "additionalProperties": false,
+      "description": "Outcome is how the action ended, with a source-specific code.",
+      "properties": {
+        "code": {
+          "description": "Source-specific code (\"held\", \"rate_limited\", an HTTP status).",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Human-readable reason, bounded, never containing secrets.",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "RESULT_UNSPECIFIED",
+            "RESULT_SUCCESS",
+            "RESULT_FAILURE",
+            "RESULT_DENIED",
+            "RESULT_UNKNOWN"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Party": {
+      "additionalProperties": false,
+      "description": "Party is a subject: a kind from the registry and its identifier. The identifier is a stable id or a keyed pseudonym; never a name or e-mail.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Target": {
+      "additionalProperties": false,
+      "description": "Target is what the action was done to. `type` selects a registered target type, which declares the schema of `attributes` and whether `name` may be carried.",
+      "properties": {
+        "attributes": {
+          "description": "An extension slot. Its shape is the JSON Schema the catalogue registers for it; numbers in it must be integers a float64 holds exactly.",
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "description": "Display name, allowed only where the target type's registration says the target is not a person.",
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.truvity.com/audit/v1/record.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Record is one thing that happened, as seen by one source.  Which copies carry a given core field is decided by the profile a copy is written under, through the presets it is composed from (docs/concepts.md); the record itself does not say. An extension property, by contrast, carries its class as an annotation on its schema.",
+  "properties": {
+    "action": {
+      "description": "What happened, \"resource.verb\" under the source's namespace, from the catalogue.",
+      "type": "string"
+    },
+    "actor": {
+      "$ref": "#/$defs/Actor",
+      "description": "Who did it. Identity treatment is decided by the actor kind's registration."
+    },
+    "attributes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Bounded free-form attributes for what has no schema yet. Bounds are enforced by the emitter library (key count, key and value length).",
+      "type": "object"
+    },
+    "capture": {
+      "$ref": "#/$defs/Capture",
+      "description": "Request and response capture, level-gated and size-capped."
+    },
+    "catalogue_version": {
+      "description": "Version of the source's catalogue that describes this action and its extension slots. Resolved by the writer; unknown versions dead-letter, never drop.",
+      "type": "string"
+    },
+    "context": {
+      "$ref": "#/$defs/Context",
+      "description": "Where it came from."
+    },
+    "data": {
+      "description": "Extension slot keyed by `action`; validated against the schema the catalogue registers for it. Class per property by annotation.",
+      "type": "object"
+    },
+    "id": {
+      "description": "Identity of the record. UUIDv7 minted by the emitter; the idempotency key at every hop.",
+      "type": "string"
+    },
+    "meter": {
+      "$ref": "#/$defs/Meter",
+      "description": "Usage measurement for billing profiles."
+    },
+    "observer": {
+      "$ref": "#/$defs/Observer",
+      "description": "Who reported the record. Stamped by the writer from the publisher's verified workload identity; an emitter cannot set it."
+    },
+    "occurred_at": {
+      "description": "When the thing happened, from the emitter's synchronised clock.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "operation": {
+      "description": "Coarse classification of the action, orthogonal to `action`.",
+      "enum": [
+        "OPERATION_UNSPECIFIED",
+        "OPERATION_CREATE",
+        "OPERATION_ACCESS",
+        "OPERATION_MODIFY",
+        "OPERATION_REMOVE",
+        "OPERATION_AUTHENTICATION",
+        "OPERATION_TRANSFER",
+        "OPERATION_RESTORE"
+      ],
+      "type": "string"
+    },
+    "origin_hash": {
+      "description": "Set by the writer on every profile copy: SHA-256 of the canonical wide record before the split, so copies are provably the same original.",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome",
+      "description": "How it ended."
+    },
+    "previous_attributes": {
+      "description": "On update actions only: the prior values of changed attributes, whole arrays when any element changed.",
+      "type": "object"
+    },
+    "profile": {
+      "description": "Set by the writer on a profile copy: which profile this copy is. Absent on the wire from an emitter.",
+      "type": "string"
+    },
+    "recorded_at": {
+      "description": "When the split writer accepted the record. Set by the writer, never by the emitter. Drives the tail cursor and lateness alerts.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "Core schema version, \"major.minor\". Equal-on-major, greater-or-equal- on-minor is the compatibility contract.",
+      "type": "string"
+    },
+    "sequence": {
+      "description": "Sequence per producer instance, monotonic, for gap detection. The producer name is `observer.instance`.",
+      "pattern": "^-?[0-9]+$",
+      "type": "string"
+    },
+    "source": {
+      "description": "The system the event is about (\"keycloak\", \"wallet\", \"roster\"). Also the namespace prefix of `action`.",
+      "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/Party",
+      "description": "Whom it concerns, when that is not the actor. Identity treatment is decided by the subject kind's registration."
+    },
+    "targets": {
+      "description": "What it was done to.",
+      "items": {
+        "$ref": "#/$defs/Target"
+      },
+      "type": "array"
+    },
+    "tenant_id": {
+      "description": "The customer the record belongs to. A legal entity, never a person. Stays in clear in every profile. A reserved value names the platform itself for events with no tenant.",
+      "type": "string"
+    },
+    "unmapped": {
+      "description": "Fields a source could not map onto the record. Kept so nothing is silently lost; promoted to `data` or the core when they recur.",
+      "type": "object"
+    }
+  },
+  "title": "Audit record 1.0",
+  "type": "object"
+}

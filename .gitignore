@@ -1,8 +1,14 @@
 # Binaries and build output
 bin/
 /dist/
-/gen/
 coverage.out
+
+# `gen/` is NOT ignored. Generated code is committed — the `drift` recipe
+# regenerates it and fails on a diff, which is how the proto and the code stay
+# in step, and a consumer of this module gets the generated packages without
+# needing buf. Ignoring it made `git diff -- gen` compare nothing, so the gate
+# passed on every run while checking nothing, and a fresh clone could not build
+# at all.
 
 # TypeScript
 ts/node_modules/

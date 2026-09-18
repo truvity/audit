@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -120,20 +119,31 @@ func (h *Handler) who(ctx context.Context, header http.Header) (auth.Principal, 
 
 // wire maps an error to a code a client can act on.
 //
-// A denial and a mismatched cursor are the caller's to fix and must not read as
-// a server fault, or a client will retry them forever.
+// The direction matters in both senses. A denial or a bad cursor is the
+// caller's to fix and must not read as a server fault, or a client retries it
+// forever. And a searcher that is down is not the caller's fault: calling it
+// invalid_argument tells a well-behaved client never to try again, which turns
+// a database restart into an outage that outlives it.
+//
+// So the default is unavailable, not invalid_argument. A malformed request is
+// recognised by having come from Compile, and everything unrecognised is
+// treated as the service's problem rather than blamed on whoever asked.
 func wire(err error) error {
 	switch {
 	case errors.Is(err, auth.ErrDenied):
 		return connect.NewError(connect.CodePermissionDenied, err)
-	case errors.Is(err, ErrCursorMismatch):
+	case errors.Is(err, ErrCursorMismatch), errors.Is(err, ErrMalformed):
 		return connect.NewError(connect.CodeInvalidArgument, err)
-	case strings.Contains(err.Error(), "no exporter"), strings.Contains(err.Error(), "no presigner"):
+	case errors.Is(err, ErrTooMuch):
+		return connect.NewError(connect.CodeResourceExhausted, err)
+	case errors.Is(err, ErrNotOffered):
 		// Not configured here is not the caller's mistake and not a fault to
 		// retry: it is a thing this deployment does not do.
 		return connect.NewError(connect.CodeUnimplemented, err)
+	case errors.Is(err, ErrNotFound):
+		return connect.NewError(connect.CodeNotFound, err)
 	default:
-		return connect.NewError(connect.CodeInvalidArgument, err)
+		return connect.NewError(connect.CodeUnavailable, err)
 	}
 }
 

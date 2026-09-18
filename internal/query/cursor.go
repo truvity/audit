@@ -65,15 +65,20 @@ func decodeCursor(raw, fingerprint string) (*index.Boundary, bool, error) {
 	}
 	body, err := base64.RawURLEncoding.DecodeString(raw)
 	if err != nil {
-		return nil, false, fmt.Errorf("query: this cursor is not one of ours: %w", err)
+		return nil, false, fmt.Errorf("%w: this cursor is not one of ours: %v", ErrMalformed, err)
 	}
 	var c cursor
 	if err := json.Unmarshal(body, &c); err != nil {
-		return nil, false, fmt.Errorf("query: this cursor is not one of ours: %w", err)
+		return nil, false, fmt.Errorf("%w: this cursor is not one of ours: %v", ErrMalformed, err)
 	}
 	if c.Query != fingerprint {
 		return nil, false, fmt.Errorf(
 			"%w: ask the same question again, or start from the first page", ErrCursorMismatch)
+	}
+	if len(c.Values) == 0 && c.ID == "" {
+		// The `first` cursor: this question, from the beginning. It is a real
+		// cursor so a caller can hold one of a kind rather than two.
+		return nil, false, nil
 	}
 	return &index.Boundary{
 		Values: c.Values, ID: c.ID, RecordedAt: c.RecordedAt, Sequence: c.Sequence,

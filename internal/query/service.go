@@ -157,7 +157,14 @@ func (s *Service) Cursors(
 	if err != nil {
 		return nil, err
 	}
+	// `first` is a cursor with no boundary: it means this same question from
+	// the beginning. A caller then treats every cursor the same way instead of
+	// special-casing an empty one, and can go back to page one without
+	// rebuilding the request.
 	out := &auditv1.Cursors{Self: req.GetCursor()}
+	if out.First, err = encodeCursor(&index.Boundary{}, false, mark); err != nil {
+		return nil, err
+	}
 	if out.Next, err = encodeCursor(page.Next, false, mark); err != nil {
 		return nil, err
 	}
@@ -209,7 +216,7 @@ func (s *Service) Get(
 		// Found, and not this caller's to see. It is reported as absent rather
 		// than as forbidden: "no such record" and "a record you may not read"
 		// are the same answer to someone who should not know it exists.
-		err = fmt.Errorf("query: no record %s in profile %s", req.GetId(), req.GetProfile())
+		err = fmt.Errorf("%w: no record %s in profile %s", ErrNotFound, req.GetId(), req.GetProfile())
 		row, where = index.Row{}, index.Provenance{}
 	}
 	// audit.get declares only the record it read.

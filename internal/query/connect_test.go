@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"errors"
+
 	"connectrpc.com/connect"
 
 	"github.com/truvity/audit/auth"
@@ -147,5 +149,117 @@ func TestAMismatchedCursorIsInvalidArgument(t *testing.T) {
 	}
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("code %v", connect.CodeOf(err))
+	}
+}
+
+// A searcher that is down is not the caller's fault. Calling it
+// invalid_argument tells a well-behaved client never to try again, which turns
+// a database restart into an outage that outlives it.
+func TestASearcherFailureIsUnavailableNotTheCallersFault(t *testing.T) {
+	s, _ := service(t, fullGrant())
+	s.Searcher = broken{}
+	path, handler := query.NewHandler(s, auth.None{As: caller()})
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := auditv1connect.NewQueryServiceClient(srv.Client(), srv.URL)
+	_, err := client.Search(context.Background(), connect.NewRequest(&auditv1.SearchRequest{
+		Profile: "security", Limit: 10,
+	}))
+	if err == nil {
+		t.Fatal("a broken searcher answered")
+	}
+	if connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Fatalf("a searcher outage came back as %v, which tells a client not to retry",
+			connect.CodeOf(err))
+	}
+}
+
+// broken stands in for a searcher whose database is down.
+type broken struct{}
+
+func (broken) Search(context.Context, index.Query) (index.Page, error) {
+	return index.Page{}, errors.New("dial tcp: connection refused")
+}
+func (broken) Facets(context.Context, index.Query, []string, int) ([]index.Facet, error) {
+	return nil, errors.New("dial tcp: connection refused")
+}
+func (broken) Get(context.Context, string, string) (index.Row, index.Provenance, error) {
+	return index.Row{}, index.Provenance{}, errors.New("dial tcp: connection refused")
+}
+func (broken) Capabilities() index.Capabilities { return index.Capabilities{MaxConjunctions: 4} }
+
+// The bounds the reference publishes are the service's, so the answer to "is
+// this too much" does not depend on which searcher is configured.
+func TestPublishedLimitsAreEnforcedAndSaidSo(t *testing.T) {
+	client := served(t, fullGrant(), caller())
+	ctx := context.Background()
+
+	many := make([]string, 101)
+	for i := range many {
+		many[i] = "x"
+	}
+	for _, c := range []struct {
+		name string
+		req  *auditv1.SearchRequest
+	}{
+		{"too many values in an in", &auditv1.SearchRequest{
+			Profile: "security",
+			Filter: []*auditv1.Filter{{Action: &auditv1.StringPredicate{
+				Operator: &auditv1.StringPredicate_In{In: &auditv1.StringList{Values: many}}}}}}},
+		{"too many sort terms", &auditv1.SearchRequest{
+			Profile: "security",
+			Sort: []*auditv1.Sort{
+				{Field: auditv1.Sort_FIELD_ACTION}, {Field: auditv1.Sort_FIELD_SOURCE},
+				{Field: auditv1.Sort_FIELD_TENANT_ID}, {Field: auditv1.Sort_FIELD_ID},
+				{Field: auditv1.Sort_FIELD_OCCURRED_AT},
+			}}},
+		{"too many conjunctions", &auditv1.SearchRequest{
+			Profile: "security", Filter: make([]*auditv1.Filter, 5)}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := client.Search(ctx, connect.NewRequest(c.req))
+			if err == nil {
+				t.Fatal("want a refusal")
+			}
+			if connect.CodeOf(err) != connect.CodeResourceExhausted {
+				t.Fatalf("a limit came back as %v, want resource_exhausted", connect.CodeOf(err))
+			}
+		})
+	}
+}
+
+// `first` is a real cursor meaning this question from the beginning, so a
+// caller holds one kind of cursor rather than two.
+func TestFirstCursorReturnsToTheBeginning(t *testing.T) {
+	client := served(t, fullGrant(), caller())
+	ctx := context.Background()
+	req := &auditv1.SearchRequest{
+		Profile: "security", Limit: 1,
+		Sort: []*auditv1.Sort{{Field: auditv1.Sort_FIELD_OCCURRED_AT, Order: auditv1.Sort_ORDER_ASC}},
+	}
+	one, err := client.Search(ctx, connect.NewRequest(req))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one.Msg.GetCursors().GetFirst() == "" {
+		t.Fatal("no first cursor, so a caller cannot return to page one")
+	}
+
+	// Page on, then go back to the first.
+	req.Cursor = one.Msg.GetCursors().GetNext()
+	if _, err := client.Search(ctx, connect.NewRequest(req)); err != nil {
+		t.Fatal(err)
+	}
+	req.Cursor = one.Msg.GetCursors().GetFirst()
+	back, err := client.Search(ctx, connect.NewRequest(req))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.Msg.GetItems()[0].GetId() != one.Msg.GetItems()[0].GetId() {
+		t.Fatalf("first returned %s, the first page was %s",
+			back.Msg.GetItems()[0].GetId(), one.Msg.GetItems()[0].GetId())
 	}
 }

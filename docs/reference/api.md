@@ -48,22 +48,44 @@ Response:
 
 Operators per type:
 
-| type | operators |
-|---|---|
-| string | equal, not_equal, in, not_in, prefix, is_null, is_not_null |
-| time | between, greater_than, greater_than_or_equal, less_than, less_than_or_equal |
-| integer | equal, not_equal, in, not_in, between, and the four comparisons |
-| targets | in, not_in (empty id matches the type) |
-| attributes | equal, not_equal, key_is_null, key_is_not_null |
-| data path | string, integer or time predicate on a filterable property |
+`first` is a cursor like the others and means this same question from the
+beginning, so a client holds one kind of cursor rather than two. There is no
+`last`: counting what is behind a query is the expense keyset paging exists to
+avoid.
 
-`Facets`, `Get`, `Export`, `GetExport` as in the proto. Limits: `filter`
-4 terms, `sort` 4, `in` 100 values, `limit` ceiling 1000, one time-range
-predicate per conjunction, export size cap and maximum range per grant.
+Operators per type. **Built** is what the service compiles today; the rest are
+in the proto and are refused, because a reference that promises an operator the
+service ignores is worse than one that admits the gap.
+
+| type | operators | built |
+|---|---|---|
+| string | equal, not_equal, in, not_in, prefix | yes |
+| string | is_null, is_not_null | no |
+| time | between, greater_than, greater_than_or_equal, less_than, less_than_or_equal | yes, each as a half-open range |
+| integer | equal | yes |
+| integer | not_equal, in, not_in, between, comparisons | no |
+| targets | in, not_in (empty id matches the type) | yes |
+| attributes | equal, not_equal, key_is_null, key_is_not_null | no |
+| data path | string, integer or time predicate on a filterable property | yes |
+
+`Facets`, `Get`, `Export`, `GetExport` as in the proto. Limits, enforced by the
+service rather than by whichever searcher is configured: `filter` 4 terms,
+`sort` 4, `in` 100 values, `limit` ceiling 1000, and an export size cap. A
+grant's window narrows a wider request rather than refusing it.
 
 ## Errors
 
-Connect codes: `invalid_argument` for a malformed filter or a cursor from a
-different query, `permission_denied` when the grant excludes the profile or
-tenant, `resource_exhausted` for range or size caps, `unavailable` when the
-searcher is down.
+Connect codes:
+
+| code | when |
+|---|---|
+| `invalid_argument` | a malformed filter, or a cursor from a different query |
+| `permission_denied` | the grant excludes the profile, the operation or the tenant |
+| `resource_exhausted` | a published limit exceeded, or an export over its cap |
+| `not_found` | no such record — **also** what a record outside the grant returns, because "no such record" and "a record you may not read" are the same answer to somebody who should not know it exists |
+| `unimplemented` | something this deployment does not offer, such as export with no bucket configured |
+| `unavailable` | the searcher is down |
+
+`unavailable` is the default for anything unrecognised, deliberately. Calling a
+searcher outage `invalid_argument` would tell a well-behaved client never to try
+again, and turn a database restart into an outage that outlives it.

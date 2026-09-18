@@ -8,6 +8,7 @@
 package query
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,9 +16,31 @@ import (
 	"github.com/truvity/audit/index"
 )
 
+// The kinds of failure a caller can tell apart. They exist so that the wire
+// mapping is a fact about the error rather than a guess from its text.
+var (
+	// ErrMalformed is a request this service cannot read. The caller fixes it.
+	ErrMalformed = errors.New("query: malformed request")
+	// ErrTooMuch is a request that asks for more than a limit allows.
+	ErrTooMuch = errors.New("query: more than this deployment allows")
+	// ErrNotOffered is something this deployment does not do.
+	ErrNotOffered = errors.New("query: not offered by this deployment")
+	// ErrNotFound is a record or a job that is not there — or that the caller
+	// may not know is.
+	ErrNotFound = errors.New("query: not found")
+)
+
 // maxConjunctions bounds the OR before a searcher is even asked, so that the
 // refusal is the service's and does not depend on which searcher is configured.
 const maxConjunctions = 4
+
+// maxSort and maxIn are the other two bounds the reference publishes. They are
+// enforced here rather than left to a searcher, so that the answer to "is this
+// too much" does not depend on which one is configured.
+const (
+	maxSort = 4
+	maxIn   = 100
+)
 
 // Compile turns a request into a closed query.
 //
@@ -26,12 +49,16 @@ const maxConjunctions = 4
 // than as a rewrite of something arbitrary.
 func Compile(req *auditv1.SearchRequest) (index.Query, error) {
 	if req.GetProfile() == "" {
-		return index.Query{}, fmt.Errorf("query: name a profile")
+		return index.Query{}, fmt.Errorf("%w: name a profile", ErrMalformed)
 	}
 	if len(req.GetFilter()) > maxConjunctions {
 		return index.Query{}, fmt.Errorf(
-			"query: %d conjunctions, and %d is the most: an unbounded OR is unbounded work "+
-				"on a table that only grows", len(req.GetFilter()), maxConjunctions)
+			"%w: %d conjunctions, and %d is the most: an unbounded OR is unbounded work "+
+				"on a table that only grows", ErrTooMuch, len(req.GetFilter()), maxConjunctions)
+	}
+	if len(req.GetSort()) > maxSort {
+		return index.Query{}, fmt.Errorf(
+			"%w: %d sort terms, and %d is the most", ErrTooMuch, len(req.GetSort()), maxSort)
 	}
 
 	q := index.Query{Profile: req.GetProfile(), Limit: int(req.GetLimit())}
@@ -121,20 +148,34 @@ func predicate(p *auditv1.StringPredicate) (index.Predicate, error) {
 	case p.GetNotEqual() != "":
 		return index.Predicate{Op: index.NotEqual, Value: p.GetNotEqual()}, nil
 	case p.GetIn() != nil:
-		return index.Predicate{Op: index.In, Values: p.GetIn().GetValues()}, nil
+		return listPredicate(index.In, p.GetIn().GetValues())
 	case p.GetNotIn() != nil:
-		return index.Predicate{Op: index.NotIn, Values: p.GetNotIn().GetValues()}, nil
+		return listPredicate(index.NotIn, p.GetNotIn().GetValues())
 	case p.GetPrefix() != "":
 		return index.Predicate{Op: index.Prefix, Value: p.GetPrefix()}, nil
 	default:
-		return index.Predicate{}, fmt.Errorf("query: a predicate with no operator")
+		return index.Predicate{}, fmt.Errorf("%w: a predicate with no operator", ErrMalformed)
 	}
+}
+
+// listPredicate bounds an `in`. A list nobody bounded is a query nobody
+// bounded: the values all reach the index, and a thousand of them is a
+// thousand comparisons per row.
+func listPredicate(op index.Op, values []string) (index.Predicate, error) {
+	if len(values) > maxIn {
+		return index.Predicate{}, fmt.Errorf(
+			"%w: %d values in an `%s`, and %d is the most", ErrTooMuch, len(values), op, maxIn)
+	}
+	if len(values) == 0 {
+		return index.Predicate{}, fmt.Errorf("%w: an empty `%s` matches nothing; leave it out", ErrMalformed, op)
+	}
+	return index.Predicate{Op: op, Values: values}, nil
 }
 
 func path(p *auditv1.PathPredicate) (index.PathPredicate, error) {
 	out := index.PathPredicate{Path: p.GetPath(), Kind: index.Text, Op: index.Equal}
 	if out.Path == "" {
-		return out, fmt.Errorf("query: a data predicate with no path")
+		return out, fmt.Errorf("%w: a data predicate with no path", ErrMalformed)
 	}
 	switch {
 	case p.GetString_() != nil:
@@ -152,7 +193,7 @@ func path(p *auditv1.PathPredicate) (index.PathPredicate, error) {
 		w := window(p.GetTime())
 		out.At = w.From
 	default:
-		return out, fmt.Errorf("query: a data predicate on %s with no value", out.Path)
+		return out, fmt.Errorf("%w: a data predicate on %s with no value", ErrMalformed, out.Path)
 	}
 	return out, nil
 }
@@ -201,7 +242,7 @@ func sortField(f auditv1.Sort_Field) (string, error) {
 	case auditv1.Sort_FIELD_SOURCE:
 		return index.SortSource, nil
 	default:
-		return "", fmt.Errorf("query: %s is not a field this service sorts by", f)
+		return "", fmt.Errorf("%w: %s is not a field this service sorts by", ErrMalformed, f)
 	}
 }
 

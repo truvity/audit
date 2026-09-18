@@ -100,11 +100,12 @@ func (s *Service) Export(
 	ctx context.Context, p auth.Principal, req *auditv1.ExportRequest,
 ) (Job, error) {
 	if s.Exporter == nil || s.Exporter.Store == nil {
-		return Job{}, errors.New("query: no exporter is configured")
+		return Job{}, fmt.Errorf("%w: no exporter is configured", ErrNotOffered)
 	}
 	if s.Exporter.Presigner == nil {
-		return Job{}, errors.New(
-			"query: no presigner is configured, so an export could be produced and never collected")
+		return Job{}, fmt.Errorf(
+			"%w: no presigner is configured, so an export could be produced and never collected",
+			ErrNotOffered)
 	}
 	g, err := s.allow(ctx, p, req.GetProfile(), auth.Export)
 	if err != nil {
@@ -164,8 +165,8 @@ func (s *Service) produce(
 	}
 	if len(rows) > s.Exporter.maxRecords() {
 		return 0, fmt.Errorf(
-			"%d records match and this deployment exports at most %d at once; narrow the filter",
-			len(rows), s.Exporter.maxRecords())
+			"%w: %d records match and this deployment exports at most %d at once; narrow the filter",
+			ErrTooMuch, len(rows), s.Exporter.maxRecords())
 	}
 	body, err := render(rows, job.Format)
 	if err != nil {
@@ -190,7 +191,7 @@ func (s *Service) produce(
 // GetExport returns a job and, when it is ready, a link to it.
 func (s *Service) GetExport(ctx context.Context, p auth.Principal, id string) (Job, string, error) {
 	if s.Exporter == nil || s.Exporter.Store == nil {
-		return Job{}, "", errors.New("query: no exporter is configured")
+		return Job{}, "", fmt.Errorf("%w: no exporter is configured", ErrNotOffered)
 	}
 	job, err := s.Exporter.read(ctx, id)
 	if err != nil {
@@ -200,7 +201,7 @@ func (s *Service) GetExport(ctx context.Context, p auth.Principal, id string) (J
 	// records that has left the service's control, so the link is not something
 	// to hand to a second person on the strength of a job identifier.
 	if job.By != p.Subject {
-		return Job{}, "", fmt.Errorf("query: no export %s", id)
+		return Job{}, "", fmt.Errorf("%w: no export %s", ErrNotFound, id)
 	}
 	if job.State() != auditv1.ExportState_EXPORT_STATE_READY {
 		return job, "", nil
@@ -309,7 +310,7 @@ func (e *Exporter) read(ctx context.Context, id string) (Job, error) {
 		}
 		return job, nil
 	}
-	return Job{}, fmt.Errorf("query: no export %s", id)
+	return Job{}, fmt.Errorf("%w: no export %s", ErrNotFound, id)
 }
 
 func (e *Exporter) expiry() time.Duration {

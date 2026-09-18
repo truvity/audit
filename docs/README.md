@@ -14,5 +14,5 @@ the contracts; operations is for whoever runs it.
 | Decisions | [index](decisions/README.md) |
 | Research | [index](research/README.md) |
 | Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [presets](reference/presets.md), [API](reference/api.md), [configuration](reference/configuration.md) |
-| Operations | [S3 guide](operations/s3-guide.md), [key custody](operations/key-custody.md), [verification](operations/verify.md), [runbook](operations/runbook.md) |
+| Operations | [S3 guide](operations/s3-guide.md), [keys: what, how many, where](operations/key-custody.md), [OpenBAO keys](operations/openbao-keys.md), [verification](operations/verify.md), [runbook](operations/runbook.md) |
 | Development | [layout and build order](development/layout.md) |

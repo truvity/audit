@@ -71,6 +71,57 @@ func Open(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
+// Reader is the role a reading service connects as.
+//
+// It exists because row-level security does not apply to the role that owns the
+// tables, and the tests all connect as that role. A policy exercised only by
+// its owner is a policy nobody has read: it passes whatever it says. So a test
+// about isolation has to come in as somebody else, and this is the somebody.
+const Reader = "audit_reader"
+
+// AsReader returns a pool on the same schema connected as a role that row-level
+// security applies to, with select granted and nothing else.
+//
+// It is deliberately not given insert: a reader that could write the trail it
+// reads is not a reader, and the grant is the place that has to say so.
+func AsReader(t *testing.T, pool *pgxpool.Pool) *pgxpool.Pool {
+	t.Helper()
+	ctx := context.Background()
+	dsn := os.Getenv(URLEnv)
+	schema := schemaName(t.Name())
+
+	// The role is cluster-wide and shared by every test that asks for it, so
+	// creating it races. Losing the race is fine: what matters is that it is
+	// there afterwards.
+	if _, err := pool.Exec(ctx, `do $$ begin
+		create role `+Reader+` login password 'reader' nosuperuser nocreatedb nocreaterole;
+	exception when duplicate_object then null; end $$`); err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		"grant usage on schema " + schema + " to " + Reader,
+		"grant select on all tables in schema " + schema + " to " + Reader,
+	} {
+		if _, err := pool.Exec(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.ConnConfig.User = Reader
+	config.ConnConfig.Password = "reader"
+	config.ConnConfig.RuntimeParams["search_path"] = schema
+	reader, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(reader.Close)
+	return reader
+}
+
 // schemaName turns a test's name into an identifier Postgres will take.
 func schemaName(name string) string {
 	return "t_" + strings.Map(func(r rune) rune {

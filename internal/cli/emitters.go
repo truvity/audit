@@ -20,6 +20,13 @@ import (
 // the catalogue, an action retired from the catalogue and still emitted — and
 // says plainly that it cannot see a name assembled at run time. A catalogue
 // that is only as true as the code remembers to keep it is not a contract.
+//
+// Reading literals means it sometimes finds one that is not an action at all: a
+// source's namespace is a good prefix for other things too, and a Postgres
+// setting called audit.tenant_id looks exactly like an action called
+// audit.tenant_id. A line carrying NotAnAction is left alone, which keeps the
+// escape hatch narrow, visible at the declaration and greppable — rather than
+// letting the checker guess, which is how a real missing emitter gets excused.
 type CheckEmitters struct {
 	Root      string
 	Catalogue string
@@ -27,6 +34,10 @@ type CheckEmitters struct {
 }
 
 var sourceFile = regexp.MustCompile(`\.(go|ts|tsx|js|mjs)$`)
+
+// NotAnAction marks a line whose literal under the source's namespace is
+// something other than an action name.
+const NotAnAction = "audit:not-an-action"
 
 // Run reports the number of problems found.
 func (c CheckEmitters) Run() int {
@@ -65,9 +76,13 @@ func (c CheckEmitters) Run() int {
 		if err != nil {
 			return err
 		}
-		for _, m := range literal.FindAllSubmatch(body, -1) {
-			name := string(m[1])
-			found[name] = append(found[name], path)
+		for _, line := range strings.Split(string(body), "\n") {
+			if strings.Contains(line, NotAnAction) {
+				continue
+			}
+			for _, m := range literal.FindAllStringSubmatch(line, -1) {
+				found[m[1]] = append(found[m[1]], path)
+			}
 		}
 		return nil
 	})

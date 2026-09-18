@@ -90,6 +90,35 @@ const (
 	}
 }
 
+// A literal under the source's namespace is not always an action: a database
+// setting, a metric or a header can share the prefix, and the checker reads
+// literals rather than resolving calls, so it cannot tell. The marker is how
+// the code says so, and it has to sit on the line — visible at the declaration
+// it excuses, and unable to cover a missing emitter somewhere else in the file.
+func TestCheckEmittersLeavesAMarkedLineAlone(t *testing.T) {
+	root := repoRoot(t)
+	catalogue := filepath.Join(root, "catalogue", "common.yaml")
+	run := func(code string) (int, string) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte(code), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		return CheckEmitters{Root: dir, Catalogue: catalogue, Out: &out}.Run(), out.String()
+	}
+
+	marked := "package app\n\nconst setting = \"audit.tenant_id\" // " + NotAnAction + "\n"
+	if problems, out := run(marked); problems != 0 {
+		t.Fatalf("a marked line should be left alone, got %d problems:\n%s", problems, out)
+	}
+	// Without the marker the same line is a problem, so the case above is about
+	// the marker rather than about the literal being overlooked anyway.
+	plain := "package app\n\nconst setting = \"audit.tenant_id\"\n"
+	if problems, out := run(plain); problems != 1 {
+		t.Fatalf("without the marker the literal should be reported, got %d problems:\n%s", problems, out)
+	}
+}
+
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

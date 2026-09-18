@@ -218,6 +218,10 @@ func Run(t *testing.T, name string, searcher index.Searcher) {
 		})
 	}
 
+	t.Run(name+"/paging reaches every record exactly once", func(t *testing.T) {
+		paging(ctx, t, searcher)
+	})
+
 	// A searcher that refused everything would have reached here with a clean
 	// run and proved nothing at all.
 	t.Run(name+"/answered something", func(t *testing.T) {
@@ -225,6 +229,50 @@ func Run(t *testing.T, name string, searcher index.Searcher) {
 			t.Fatal("this searcher refused every case; the suite proved nothing about it")
 		}
 	})
+}
+
+// paging walks the whole corpus three at a time.
+//
+// Every case above asks for one page, which is the shape that hides the two
+// ways a cursor goes wrong: a boundary that excludes too much drops a record
+// silently, and one that excludes too little hands it out twice. Neither shows
+// in a single page, and both are what a reader would report as "the trail is
+// missing an event" long after anyone could tell why.
+//
+// It is asked of every searcher because a cursor is the one piece of a searcher
+// that a caller carries between requests and cannot inspect.
+func paging(ctx context.Context, t *testing.T, searcher index.Searcher) {
+	t.Helper()
+	const page = 3
+	q := index.Query{
+		Profile: Profile,
+		Sort:    []index.SortBy{{Field: index.SortOccurredAt, Descending: true}},
+		Limit:   page,
+	}
+	want := []int{8, 7, 6, 5, 4, 3, 2, 1, 0}
+
+	var got []index.Row
+	// One more round than the corpus needs, so that a searcher which never says
+	// it has finished fails here rather than looping.
+	for round := 0; round <= len(want)/page+1; round++ {
+		out, err := searcher.Search(ctx, q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(out.Rows) > page {
+			t.Fatalf("round %d: asked for %d rows and got %d", round, page, len(out.Rows))
+		}
+		got = append(got, out.Rows...)
+		if !out.More {
+			same(t, got, want)
+			return
+		}
+		if out.Next == nil {
+			t.Fatalf("round %d: there is more, and no cursor to reach it with", round)
+		}
+		q.After = out.Next
+	}
+	t.Fatalf("paging did not finish: %d rows and still more", len(got))
 }
 
 func runFacets(ctx context.Context, t *testing.T, searcher index.Searcher, c Case, can bool) {

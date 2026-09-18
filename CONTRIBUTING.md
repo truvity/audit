@@ -48,6 +48,11 @@ their own jobs, and they matter as much.
   transit keys and signer. About twenty seconds; it needs Docker.
 - `just ts` installs the TypeScript package's dependencies, then typechecks,
   tests, builds, and checks what a publish would ship.
+- Against real S3, on demand: `AUDIT_S3_REAL_BUCKET=<bucket> go test
+  ./internal/s3test -run RealBucket` checks that a lock can be lengthened and
+  that compliance mode refuses to shorten it, which no emulator implements.
+  Point it at an Object-Locked sandbox bucket: each run leaves one small object
+  locked for two days.
 
 ## Commits and pull requests
 

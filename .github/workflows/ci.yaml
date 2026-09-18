@@ -92,11 +92,50 @@ jobs:
           go test ./index/postgres/ -run TestMigrateIsIdempotent -v | tee out.txt
           grep -q -- "--- PASS: TestMigrateIsIdempotent" out.txt
 
+  # The archive walks against a real S3. Two bugs reached master because
+  # storetest.Memory returns everything, in any layout, on one page; this is
+  # the job that would have caught both.
+  #
+  # The image is pinned by digest and is the community 4.x line: LocalStack's
+  # `latest` and `stable` now resolve to a licensed build that exits without a
+  # token, which in a public repository would fail every fork's CI with a
+  # licensing message its author cannot fix.
+  s3:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      s3:
+        image: localstack/localstack@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
+        env:
+          SERVICES: s3,kms
+        ports: ["4566:4566"]
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      AUDIT_S3_URL: http://localhost:4566
+      CGO_ENABLED: "0"
+      GOEXPERIMENT: jsonv2
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
+        with:
+          go-version-file: go.mod
+      - name: the archive walks against real S3
+        run: go test ./internal/s3test/... ./store/...
+      - name: the S3 tests must have run, not skipped
+        # Same guard as the Postgres job: an endpoint that stopped reaching the
+        # tests would turn this green while proving nothing, which is the exact
+        # failure these tests exist to prevent.
+        run: |
+          go test ./internal/s3test/ -run TestPrefixesListsEveryTenant -v | tee out.txt
+          grep -q -- "--- PASS: TestPrefixesListsEveryTenant" out.txt
+
   # Stable name for branch protection: the matrix reports as
   # "recipes / lint" and so on, so a required context called "check"
   # would never arrive and every PR would hang waiting for it.
   check:
-    needs: [recipes, race, drift-ts, postgres]
+    needs: [recipes, race, drift-ts, postgres, s3]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -105,4 +144,5 @@ jobs:
           [ "${{ needs.recipes.result }}" = "success" ] &&
           [ "${{ needs.race.result }}" = "success" ] &&
           [ "${{ needs.drift-ts.result }}" = "success" ] &&
-          [ "${{ needs.postgres.result }}" = "success" ]
+          [ "${{ needs.postgres.result }}" = "success" ] &&
+          [ "${{ needs.s3.result }}" = "success" ]

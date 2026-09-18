@@ -109,6 +109,13 @@ Foundation. No release.
   archive now goes tenant by tenant and day by day through `store.WalkDays`,
   and the S3 test double pages, sorts and groups as S3 does so that the next
   listing that stops early is caught here.
+- `internal/s3test`: the archive walks run against a real S3 in CI, which is
+  what would have caught the two bugs a memory store hid — a digest covering one
+  tenant, and a listing stopping at the first thousand keys. It takes an
+  endpoint rather than a product, so which S3 answers it is a variable. The
+  image is pinned by digest to the community line: LocalStack's `latest` and
+  `stable` now resolve to a licensed build that exits without a token, which in
+  a public repository would fail every fork's CI.
 - CI, as the estate's other public repositories have it: each `just` recipe is
   its own job, with the race detector, the TypeScript drift check and a
   Postgres-backed run as jobs of their own, and a `leak-canary` recipe that

@@ -30,6 +30,7 @@ internal/query/     the query service behind auth
 internal/digest/    the digest chain: builder and verifier
 internal/hold/      legal holds: the records, and the writer's view of them
 internal/registry/  the catalogue registry: validation, storage, the service
+internal/s3test/    a real S3 for the archive walks; internal/pgtest/ a database
 internal/clock/     an SNTP client, for the daily check ETSI asks be recorded
 internal/metering/  rollups, statements, rating adapters
 internal/export/    OCSF, ECS, OpenTelemetry, Parquet
@@ -101,6 +102,11 @@ surface and keep the rest private.
 14. `adapters/`, `internal/export`.
 
 ## Test infrastructure
+
+`internal/s3test` runs the archive walks against a real S3 (`AUDIT_S3_URL` —
+an endpoint, not a product, so LocalStack, MinIO or a real bucket all satisfy
+it). `just test-s3` starts one; the tests skip without it, so `check` stays
+hermetic.
 
 A test double must be no kinder than the thing it stands in for. Two bugs in
 the archive walks — a digest covering one tenant, a listing stopping at S3's

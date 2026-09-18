@@ -49,9 +49,10 @@ profiles:
 # and do not start if this deployment refuses it.
 #
 # It needs the same database as the index — the catalogues live beside the rows
-# they describe and share one migration chain — and the profiles, because
-# without them nothing checks that a catalogue carries the categories a
-# profile's framework requires, which is half of what registering is for.
+# they describe and share one migration chain — and the profiles, against
+# which it reports, after each registration, any category a profile's
+# framework requires that no registered catalogue covers yet. It reports and
+# does not refuse: coverage is the deployment's, not one application's.
 registry:
   enabled: false
   replicas: 2

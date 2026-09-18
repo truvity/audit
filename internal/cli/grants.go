@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"sigs.k8s.io/yaml"
@@ -44,6 +45,11 @@ type GrantRule struct {
 		Tenants    []string `json:"tenants,omitempty"`
 		Profiles   []string `json:"profiles"`
 		Operations []string `json:"operations"`
+		// From and Until bound what the rule's holders may read, by when
+		// records happened: an external assessor is given the period under
+		// assessment, not the archive. RFC 3339; empty is unbounded.
+		From  string `json:"from,omitempty"`
+		Until string `json:"until,omitempty"`
 	} `json:"grant"`
 }
 
@@ -94,6 +100,19 @@ func LoadGrants(path string) (auth.Declarative, error) {
 	return file.rules(path)
 }
 
+// instant reads an RFC 3339 time; empty is the zero time, which a grant reads
+// as unbounded.
+func instant(value string) (time.Time, error) {
+	if value == "" {
+		return time.Time{}, nil
+	}
+	at, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return at.UTC(), nil
+}
+
 // readGrants parses a grants file; an empty path is an empty file.
 func readGrants(path string) (GrantsFile, error) {
 	var file GrantsFile
@@ -132,11 +151,24 @@ func (file GrantsFile) rules(path string) (auth.Declarative, error) {
 			}
 			ops = append(ops, auth.Operation(o))
 		}
+		from, err := instant(r.Grant.From)
+		if err != nil {
+			return auth.Declarative{}, fmt.Errorf("%s: rule %q: from: %w", path, r.Name, err)
+		}
+		until, err := instant(r.Grant.Until)
+		if err != nil {
+			return auth.Declarative{}, fmt.Errorf("%s: rule %q: until: %w", path, r.Name, err)
+		}
+		if !from.IsZero() && !until.IsZero() && !from.Before(until) {
+			return auth.Declarative{}, fmt.Errorf(
+				"%s: rule %q: its window ends before it starts, so it grants nothing", path, r.Name)
+		}
 		out.Rules = append(out.Rules, auth.Rule{
 			Name: r.Name, Issuer: r.Issuer, Claim: r.Claim, Value: r.Value,
 			Grant: auth.Grant{
 				AllTenants: r.Grant.AllTenants, Tenants: r.Grant.Tenants,
 				Profiles: r.Grant.Profiles, Operations: ops,
+				From: from, Until: until,
 			},
 		})
 	}

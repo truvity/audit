@@ -79,6 +79,16 @@ rules:                                 # first match wins
       all_tenants: true
       profiles: [security, operational]
       operations: [search, facets, get, export]
+  - name: assessor-2026-q3             # an external assessor sees one period, not the archive
+    issuer: https://id.example.com
+    claim: groups
+    value: all:audit:assessor
+    grant:
+      all_tenants: true
+      profiles: [security]
+      operations: [search, get]
+      from: 2026-07-01T00:00:00Z         # by when records happened; end exclusive
+      until: 2026-10-01T00:00:00Z
   - name: acme-viewers
     issuer: https://customers.example.com
     claim: groups

@@ -90,3 +90,37 @@ rules:
 		})
 	}
 }
+
+// An external assessor is given the period under assessment, not the archive.
+func TestAGrantCanBeBoundedInTime(t *testing.T) {
+	access, err := LoadAccess(grantsFile(t, `
+issuers: [{url: https://staff.example, audience: audit}]
+rules:
+  - name: assessor-2026-q3
+    claim: groups
+    value: all:audit:assessor
+    grant:
+      all_tenants: true
+      profiles: [security]
+      operations: [search, get]
+      from: 2026-07-01T00:00:00Z
+      until: 2026-10-01T00:00:00Z
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := access.Rules.Rules[0].Grant
+	if g.From.Format("2006-01-02") != "2026-07-01" || g.Until.Format("2006-01-02") != "2026-10-01" {
+		t.Fatalf("window %v .. %v", g.From, g.Until)
+	}
+
+	_, err = LoadAccess(grantsFile(t, `
+rules:
+  - name: backwards
+    grant: {all_tenants: true, profiles: [security], operations: [search],
+            from: 2026-10-01T00:00:00Z, until: 2026-07-01T00:00:00Z}
+`))
+	if err == nil || !strings.Contains(err.Error(), "ends before it starts") {
+		t.Fatalf("a backwards window was accepted: %v", err)
+	}
+}

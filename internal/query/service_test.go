@@ -284,6 +284,32 @@ func TestAGetOutsideTheGrantLooksLikeAbsence(t *testing.T) {
 	}
 }
 
+// Get has no query to add the window to, so it has to check the row it found.
+// An assessor granted one period must not read another by asking for a record
+// by its identifier.
+func TestAGetOutsideTheGrantsWindowLooksLikeAbsence(t *testing.T) {
+	g := fullGrant()
+	g.From = at(t, "2026-09-17T10:02:00Z") // records c and d only
+	s, _ := service(t, g)
+
+	if _, _, _, err := s.Get(context.Background(), caller(), &auditv1.GetRequest{
+		Profile: "security", Id: "018f0000-0000-7000-8000-00000000000c"}); err != nil {
+		t.Fatalf("a record inside the window was refused: %v", err)
+	}
+	_, _, _, err := s.Get(context.Background(), caller(), &auditv1.GetRequest{
+		Profile: "security", Id: "018f0000-0000-7000-8000-00000000000a"})
+	if !errors.Is(err, query.ErrNotFound) {
+		t.Fatalf("a record before the grant's window was returned, or refused as forbidden: %v", err)
+	}
+
+	g.From, g.Until = time.Time{}, at(t, "2026-09-17T10:02:00Z") // records a and b only
+	s, _ = service(t, g)
+	if _, _, _, err := s.Get(context.Background(), caller(), &auditv1.GetRequest{
+		Profile: "security", Id: "018f0000-0000-7000-8000-00000000000c"}); !errors.Is(err, query.ErrNotFound) {
+		t.Fatalf("a record at or after the window's end was returned: %v", err)
+	}
+}
+
 // A service without an authorizer would answer everything.
 func TestNewRefusesWithoutAnAuthorizer(t *testing.T) {
 	_, err := query.New(&query.Service{Searcher: corpus(t)})

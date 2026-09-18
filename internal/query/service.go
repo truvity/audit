@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -212,10 +213,11 @@ func (s *Service) Get(
 	}
 
 	row, where, err := s.Searcher.Get(ctx, req.GetProfile(), req.GetId())
-	if err == nil && !granted(row.TenantID, g) {
-		// Found, and not this caller's to see. It is reported as absent rather
-		// than as forbidden: "no such record" and "a record you may not read"
-		// are the same answer to someone who should not know it exists.
+	if err == nil && (!granted(row.TenantID, g) || !within(row.OccurredAt, g)) {
+		// Found, and not this caller's to see: another tenant's, or outside
+		// the period the grant covers. It is reported as absent rather than as
+		// forbidden: "no such record" and "a record you may not read" are the
+		// same answer to someone who should not know it exists.
 		err = fmt.Errorf("%w: no record %s in profile %s", ErrNotFound, req.GetId(), req.GetProfile())
 		row, where = index.Row{}, index.Provenance{}
 	}
@@ -248,6 +250,19 @@ func (s *Service) allow(
 func (s *Service) narrow(q index.Query, g auth.Grant) index.Query {
 	q.Tenants = g.TenantFilter()
 	return clamp(q, g.From, g.Until)
+}
+
+// within says whether a record happened inside the grant's window.
+//
+// Search, facets and export have the window added to their query as a term;
+// Get has no query, so it is checked here against the row it found. Without
+// this, an assessor granted one quarter could read any record of any quarter
+// by asking for it by identifier.
+func within(occurred time.Time, g auth.Grant) bool {
+	if !g.From.IsZero() && occurred.Before(g.From) {
+		return false
+	}
+	return g.Until.IsZero() || occurred.Before(g.Until)
 }
 
 func granted(tenant string, g auth.Grant) bool {

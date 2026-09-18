@@ -232,7 +232,9 @@ func verify(args []string) error {
 			"check the windows of the last this long, ending at the hour that has closed; instead of --from and --to")
 		sinkURL  = flags.String("sink", "", "the writer this job records what it checked through")
 		instance = flags.String("instance", "", "the name this job records itself under")
-		asJSON   = flags.Bool("json", false, "print the report as JSON")
+		record   = flags.Bool("record", false,
+			"write a verification per window into the archive, which a record's provenance reads; needs write access to verified/")
+		asJSON = flags.Bool("json", false, "print the report as JSON")
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
@@ -284,7 +286,7 @@ func verify(args []string) error {
 	run := cli.Verify{
 		Store: archive, PublicKeyPEM: pem, Profile: *profile,
 		From: start, To: end, Lookback: *lookback, JSON: *asJSON,
-		Instance: *instance,
+		Instance: *instance, Record: *record,
 	}
 	if *sinkURL != "" {
 		if run.Catalogue, err = catalogue.Common(); err != nil {

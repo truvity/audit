@@ -175,7 +175,12 @@ jobs:
     schedule: "23 3 * * *"
     # How far back last night's run checks.
     window: 24h
-    # Read-only credentials and the public half of the signing key.
+    # Write each window's result under verified/ in the archive, which is
+    # where a record's verified_at comes from. Its role then needs
+    # s3:PutObject on verified/* and nothing else it did not have; turned off,
+    # the job is read-only and records nothing a reader can see per record.
+    record: true
+    # Credentials that read the archive, and the public half of the signing key.
     serviceAccount:
       create: true
       annotations: {}

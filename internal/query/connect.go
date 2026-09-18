@@ -98,12 +98,13 @@ func (h *Handler) Get(
 	if err != nil {
 		return nil, wire(err)
 	}
-	return connect.NewResponse(&auditv1.GetResponse{
-		Record: asRecord(row),
-		Provenance: &auditv1.Provenance{
-			ObjectKey: where.ObjectKey, Line: int64(where.Line), DigestId: where.Digest,
-		},
-	}), nil
+	provenance := &auditv1.Provenance{
+		ObjectKey: where.ObjectKey, Line: int64(where.Line), DigestId: where.Digest,
+	}
+	if !where.VerifiedAt.IsZero() {
+		provenance.VerifiedAt = timestamppb.New(where.VerifiedAt)
+	}
+	return connect.NewResponse(&auditv1.GetResponse{Record: asRecord(row), Provenance: provenance}), nil
 }
 
 func (h *Handler) who(ctx context.Context, header http.Header) (auth.Principal, error) {

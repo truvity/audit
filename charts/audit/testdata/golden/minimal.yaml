@@ -338,6 +338,7 @@ spec:
                 - --public-key=/etc/audit/public/public.pem
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
+                - --record
               env:
                 - name: POD_NAME
                   valueFrom:
@@ -408,6 +409,7 @@ spec:
                 - --public-key=/etc/audit/public/public.pem
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
+                - --record
               env:
                 - name: POD_NAME
                   valueFrom:

@@ -102,5 +102,17 @@ not checked, and saying it was would be worse than a failed job.
 ## Anchoring
 
 Presets may require or recommend anchoring the chain head with an RFC 3161
-or ETSI time-stamp. The digest carries an optional `anchor` field for the
-token.
+or ETSI time-stamp. **Not built.** When it is, the token is kept beside the
+digest (`<digest key>.tsr`), not inside it: a time-stamp is over the signed
+digest, so it cannot be part of the body it signs. An earlier version of this
+page said the digest carried an `anchor` field; it never did.
+
+## Verification, per record
+
+The nightly verification (`audit verify --record`, the chart's default) writes
+one result per window under `verified/`, kept as long as the digest it checks.
+`Get` reads a record's standing from there: the digest that names its object,
+and when that digest was last verified **clean**. A later verification that
+found a problem withdraws the answer, so `verified_at` is never a claim the
+most recent check contradicts. A copy whose hour is not sealed yet has neither,
+which is the ordinary state of the current hour.

@@ -13,8 +13,10 @@ import (
 	"github.com/truvity/audit/emit"
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/digest"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/store"
 )
 
 // Service answers queries, within a grant, and records that it did.
@@ -38,6 +40,11 @@ type Service struct {
 	// produce a copy of records that the deployment did not configure a place
 	// for.
 	Exporter *Exporter
+	// Archive, when given, is where Get reads a record's standing in the
+	// digest chain: which digest accounts for its object, and when that was
+	// last verified clean. Without it Get answers where the copy is and no
+	// more.
+	Archive  store.Store
 	Version  string
 	Instance string
 	// OnUnrecorded is called when a read happened and the trail does not say
@@ -220,6 +227,15 @@ func (s *Service) Get(
 		// same answer to someone who should not know it exists.
 		err = fmt.Errorf("%w: no record %s in profile %s", ErrNotFound, req.GetId(), req.GetProfile())
 		row, where = index.Row{}, index.Provenance{}
+	}
+	// The chain's account of the copy. It is looked up after the grant has
+	// been checked and never fails the read: a copy whose standing could not be
+	// read is reported with none, which a reader takes as not verified — the
+	// conservative answer.
+	if err == nil && s.Archive != nil && where.ObjectKey != "" {
+		if chain, perr := digest.ProvenanceOf(ctx, s.Archive, req.GetProfile(), where.ObjectKey); perr == nil {
+			where.Digest, where.VerifiedAt = chain.Digest, chain.VerifiedAt
+		}
 	}
 	// audit.get declares only the record it read.
 	s.record(ctx, "audit.get", p, g, err, []*record.Target{

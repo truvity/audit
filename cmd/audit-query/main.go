@@ -117,8 +117,19 @@ func run() error {
 		return err
 	}
 
+	// The archive, when named, is where a record's standing in the digest
+	// chain is read for Get. Without it Get still answers, with where the copy
+	// is and nothing about whether it has been verified.
+	var archive store.Store
+	if *bucket != "" {
+		if archive, err = cli.Archive(ctx, *bucket, *prefix, *region); err != nil {
+			return err
+		}
+	}
+
 	service, err := query.New(&query.Service{
 		Searcher:   found,
+		Archive:    archive,
 		Exporter:   exporter,
 		Authorizer: access.Rules,
 		Sink:       cli.WriterClient(*sinkURL),

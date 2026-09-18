@@ -43,8 +43,14 @@ type Verify struct {
 	Catalogue *catalogue.Catalogue
 	Version   string
 	Instance  string
-	JSON      bool
-	Out       io.Writer
+	// Record writes one verification per window checked into the archive,
+	// where Get reads it back as a record's verified_at. It needs write access
+	// to verified/, which is why it is asked for: an auditor running this
+	// with read-only credentials checks the chain without recording anything.
+	Record bool
+	Now    func() time.Time
+	JSON   bool
+	Out    io.Writer
 }
 
 // Run reports the number of problems found.
@@ -65,6 +71,11 @@ func (v Verify) Run(ctx context.Context) (int, error) {
 	}
 	if err := v.record(ctx, report); err != nil {
 		return 0, err
+	}
+	if v.Record {
+		if err := v.keep(ctx, report); err != nil {
+			return 0, err
+		}
 	}
 	if v.JSON {
 		body, err := json.MarshalIndent(report, "", "  ")
@@ -138,6 +149,43 @@ func (v Verify) record(ctx context.Context, report *digest.Report) error {
 			reporter.event("audit.digest.failed", "digest", window),
 			auditv1.Operation_OPERATION_ACCESS,
 			strings.Join(reasons[window], "; ")))
+	}
+	return nil
+}
+
+// keep writes a verification for each window checked, clean or not.
+//
+// Each is kept as long as the digest it verifies — read off that digest's own
+// lock — so a verification never outlives, or dies before, what it is about.
+func (v Verify) keep(ctx context.Context, report *digest.Report) error {
+	problems := map[string]int{}
+	for _, f := range report.Problems() {
+		problems[f.Digest]++
+	}
+	now := time.Now().UTC()
+	if v.Now != nil {
+		now = v.Now().UTC()
+	}
+	for _, window := range report.Windows {
+		start, ok := digest.WindowOf(window)
+		if !ok {
+			continue
+		}
+		head, err := v.Store.Head(ctx, window)
+		if err != nil {
+			return fmt.Errorf("verify: recording %s: %w", window, err)
+		}
+		retain := head.RetainUntil
+		if retain.IsZero() {
+			retain = now.AddDate(10, 0, 0)
+		}
+		if err := digest.RecordVerification(ctx, v.Store, digest.Verification{
+			Profile: report.Profile, Digest: window, WindowStart: start,
+			VerifiedAt: now, OK: problems[window] == 0, Problems: problems[window],
+			By: v.instance(),
+		}, retain); err != nil {
+			return fmt.Errorf("verify: recording %s: %w", window, err)
+		}
 	}
 	return nil
 }

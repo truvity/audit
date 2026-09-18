@@ -551,6 +551,7 @@ spec:
                 - --lookback=168h
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
+                - --record
               env:
                 - name: POD_NAME
                   valueFrom:
@@ -638,6 +639,7 @@ spec:
                 - --lookback=168h
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
+                - --record
               env:
                 - name: POD_NAME
                   valueFrom:
@@ -725,6 +727,7 @@ spec:
                 - --lookback=168h
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
+                - --record
               env:
                 - name: POD_NAME
                   valueFrom:

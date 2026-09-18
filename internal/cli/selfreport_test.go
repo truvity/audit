@@ -253,3 +253,51 @@ func TestTheJobsRecordNothingWithoutAWriter(t *testing.T) {
 		t.Fatalf("a verification without a writer must still run: %v", err)
 	}
 }
+
+// With --record, each window checked leaves a verification in the archive, and
+// a record in that window can then say when it was last verified. Without it —
+// an auditor with read-only credentials — nothing is written.
+func TestVerifyRecordsItsResultWhereGetCanReadIt(t *testing.T) {
+	s := storetest.NewMemory()
+	start := at(t, "2026-09-17T10:00:00Z")
+	object := archived(t, s, "acme", start.Add(30*time.Minute), "a.ndjson.zst")
+
+	seal := sealer(t, s, start.Add(2*time.Hour))
+	seal.From = start
+	if _, err := seal.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	signer := seal.Signer.(*keys.LocalSigner)
+
+	readOnly, _ := verified(t, s, signer, start, start.Add(time.Hour))
+	if _, err := readOnly.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := digest.ProvenanceOf(context.Background(), s, "security", object); !p.VerifiedAt.IsZero() {
+		t.Fatal("a verification without --record wrote to the archive")
+	}
+
+	checked := at(t, "2026-09-18T03:23:00Z")
+	run, _ := verified(t, s, signer, start, start.Add(time.Hour))
+	run.Record, run.Now = true, func() time.Time { return checked }
+	if _, err := run.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	p, err := digest.ProvenanceOf(context.Background(), s, "security", object)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Digest == "" || !p.VerifiedAt.Equal(checked) {
+		t.Fatalf("provenance after a recorded clean verification: %+v", p)
+	}
+
+	// Tampered, and verified again: the record no longer claims to be verified.
+	s.Replace(object, []byte(`{"altered":true}`))
+	run.Now = func() time.Time { return checked.Add(24 * time.Hour) }
+	if problems, err := run.Run(context.Background()); err != nil || problems == 0 {
+		t.Fatalf("the tampered window: %d problems, %v", problems, err)
+	}
+	if p, _ := digest.ProvenanceOf(context.Background(), s, "security", object); !p.VerifiedAt.IsZero() {
+		t.Fatalf("a tampered copy still reads as verified: %+v", p)
+	}
+}

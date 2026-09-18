@@ -113,6 +113,9 @@ spec:
                 {{- end }}
                 - --sink={{ $sink }}
                 - --instance=$(POD_NAME)
+                {{- if $.Values.jobs.verify.record }}
+                - --record
+                {{- end }}
               env:
                 - name: POD_NAME
                   valueFrom:

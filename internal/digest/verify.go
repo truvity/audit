@@ -244,6 +244,9 @@ func (v *Verifier) checkUncovered(
 	return findings
 }
 
+// WindowOf is the start of the window a digest key names.
+func WindowOf(key string) (time.Time, bool) { return windowOf(key) }
+
 // windowOf reads the window a digest key names.
 func windowOf(key string) (time.Time, bool) {
 	var year, month, day, hour int

@@ -173,6 +173,9 @@ type Provenance struct {
 	// does. Empty means no digest covers it yet, which is the ordinary state of
 	// the current hour and a finding in any other.
 	Digest string
+	// VerifiedAt is when that digest was last verified clean. Zero means it
+	// has not been, or the last verification found a problem.
+	VerifiedAt time.Time
 }
 
 // Capabilities is what an implementation can do.

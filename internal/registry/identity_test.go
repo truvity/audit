@@ -2,6 +2,7 @@ package registry_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -68,6 +69,11 @@ func TestTheRegistryBelievesTheServiceAccountNotTheCaller(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "billing may not register a catalogue for wallet") {
 			t.Fatalf("billing registered wallet's catalogue: %v", err)
 		}
+		// A refusal is an answer, and an application must be able to tell it
+		// from a registry it could not reach.
+		if !errors.Is(err, emit.ErrCatalogueRefused) {
+			t.Fatalf("a refusal is not recognisable as one: %v", err)
+		}
 	})
 	t.Run("a verified service account nobody listed is refused", func(t *testing.T) {
 		err := as(tokenFor("wallet", "debug-shell"))
@@ -82,6 +88,9 @@ func TestTheRegistryBelievesTheServiceAccountNotTheCaller(t *testing.T) {
 		err := as(spoof)
 		if err == nil || !strings.Contains(err.Error(), "unauthenticated") {
 			t.Fatalf("a bare header registered a catalogue: %v", err)
+		}
+		if errors.Is(err, emit.ErrCatalogueRefused) {
+			t.Fatal("a transport failure was reported as the deployment refusing the catalogue")
 		}
 	})
 }

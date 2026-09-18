@@ -8,6 +8,7 @@ import (
 
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
+	"github.com/truvity/audit/wire"
 )
 
 // Client is a Sink that calls SinkService on another process: what an adapter
@@ -45,7 +46,7 @@ type Handler struct {
 
 // NewHandler returns the path and handler to mount.
 func NewHandler(s Sink, opts ...connect.HandlerOption) (string, http.Handler) {
-	return auditv1connect.NewSinkServiceHandler(&Handler{sink: s}, opts...)
+	return auditv1connect.NewSinkServiceHandler(&Handler{sink: s}, append(wire.HandlerOptions(), opts...)...)
 }
 
 // Write implements the service.

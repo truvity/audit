@@ -1,0 +1,15 @@
+{
+  "id": "0199b100-0000-7000-8000-00000000001d",
+  "occurred_at": "2026-09-17T12:15:00Z",
+  "schema_version": "1.0",
+  "catalogue_version": "1.0.0",
+  "source": "wallet",
+  "sequence": "95",
+  "action": "wallet.credential.presented",
+  "operation": "OPERATION_TRANSFER",
+  "outcome": { "result": "RESULT_SUCCESS" },
+  "tenant_id": "acme",
+  "subject": { "kind": "holder", "id": "h_19c0" },
+  "targets": [ { "type": "credential", "id": "cred-1" }, { "type": "verifier", "id": "v_bank" } ],
+  "meter": { "name": "presentations", "quantity": "1", "unit": "presentation", "kind": "KIND_COUNT" }
+}

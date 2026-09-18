@@ -1,0 +1,33 @@
+{
+  "id": "0199b100-0000-7000-8000-00000000001a",
+  "occurred_at": "2026-09-17T12:00:00Z",
+  "schema_version": "1.0",
+  "catalogue_version": "1.0.0",
+  "source": "wallet",
+  "sequence": "92",
+  "action": "wallet.credential.issued",
+  "operation": "OPERATION_CREATE",
+  "outcome": {
+    "result": "RESULT_FAILURE",
+    "reason": "the issuer's signing key was unavailable",
+    "code": "signer_unavailable"
+  },
+  "tenant_id": "acme",
+  "actor": {
+    "kind": "service",
+    "id": "svc-issuer",
+    "attributes": { "deployment": "issuer-api", "replica": 2 }
+  },
+  "targets": [
+    { "type": "credential", "id": "cred-1", "attributes": { "format": "sd-jwt", "revocable": true } }
+  ],
+  "context": {
+    "request_id": "req_01J9",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4737",
+    "span_id": "00f067aa0ba902b7",
+    "areas": {
+      "http": { "method": "POST", "route": "/v1/credentials", "status": 503 }
+    }
+  },
+  "capture": { "level": "LEVEL_METADATA" }
+}

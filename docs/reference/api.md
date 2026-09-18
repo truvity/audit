@@ -3,7 +3,9 @@
 Contracts: [sink.proto](../../proto/audit/v1/sink.proto),
 [registry.proto](../../proto/audit/v1/registry.proto),
 [query.proto](../../proto/audit/v1/query.proto). Served over ConnectRPC;
-JSON is snake_case, timestamps RFC 3339.
+JSON is snake_case, timestamps RFC 3339. As in all proto3 JSON, a field
+at its zero value is omitted, so a search that matches nothing returns no
+`items` key at all rather than an empty list; read absence as empty.
 
 ## Write
 

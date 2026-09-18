@@ -13,6 +13,7 @@ import (
 	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/record"
+	jsonwire "github.com/truvity/audit/wire"
 )
 
 // Handler serves the query service over Connect.
@@ -26,7 +27,7 @@ type Handler struct {
 
 // NewHandler returns the path and handler to mount.
 func NewHandler(s *Service, a auth.Authenticator, opts ...connect.HandlerOption) (string, http.Handler) {
-	return auditv1connect.NewQueryServiceHandler(&Handler{Service: s, Authenticator: a}, opts...)
+	return auditv1connect.NewQueryServiceHandler(&Handler{Service: s, Authenticator: a}, append(jsonwire.HandlerOptions(), opts...)...)
 }
 
 // Search implements the service.

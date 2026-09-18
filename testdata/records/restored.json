@@ -1,0 +1,14 @@
+{
+  "id": "0199b100-0000-7000-8000-00000000001c",
+  "occurred_at": "2026-09-17T12:10:00Z",
+  "schema_version": "1.0",
+  "catalogue_version": "1.0.0",
+  "source": "wallet",
+  "sequence": "94",
+  "action": "wallet.credential.restored",
+  "operation": "OPERATION_RESTORE",
+  "outcome": { "result": "RESULT_SUCCESS" },
+  "tenant_id": "acme",
+  "actor": { "kind": "operator", "id": "p_77aa1e" },
+  "targets": [ { "type": "credential", "id": "cred-2" } ]
+}

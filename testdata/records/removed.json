@@ -1,0 +1,22 @@
+{
+  "id": "0199b100-0000-7000-8000-00000000001b",
+  "occurred_at": "2026-09-17T12:05:00Z",
+  "schema_version": "1.0",
+  "catalogue_version": "1.0.0",
+  "source": "wallet",
+  "sequence": "93",
+  "action": "wallet.credential.deleted",
+  "operation": "OPERATION_REMOVE",
+  "outcome": {
+    "result": "RESULT_UNKNOWN",
+    "reason": "the storage call timed out; whether the delete happened is not known"
+  },
+  "tenant_id": "acme",
+  "actor": { "kind": "person", "id": "p_8c2f1a" },
+  "targets": [ { "type": "credential", "id": "cred-2" } ],
+  "capture": {
+    "level": "LEVEL_REQUEST_RESPONSE",
+    "request": { "credential": "cred-2" },
+    "response": { "error": "deadline exceeded" }
+  }
+}

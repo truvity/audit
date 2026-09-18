@@ -30,8 +30,8 @@ Tools come from `devbox.json` through direnv. Never hand-roll a PATH; add a
 missing tool with `devbox add <pkg>@<version>`.
 
 `just check` is the gate. It needs nothing but this checkout: no C toolchain,
-no network. Two checks are therefore separate recipes that CI runs as their own
-jobs, and both matter.
+no network. The checks that need more are separate recipes, which CI runs as
+their own jobs, and they matter as much.
 
 - `just race` needs a C toolchain, which nothing else here does. Run it before
   changing anything that hands a record to a background goroutine, because a
@@ -41,6 +41,13 @@ jobs, and both matter.
   thing for Go and the JSON Schema, which local plugins produce. A gate that
   fails because somebody else was generating code is a gate people learn to
   ignore.
+- `just conformance` starts Postgres, S3 with object locking (LocalStack) and
+  an OpenBAO dev server, and runs the whole suite against them. Every test that
+  skips without its service runs there: the searchers' conformance suite
+  against all three searchers, the transports' corpus, the archive walks, the
+  transit keys and signer. About twenty seconds; it needs Docker.
+- `just ts` installs the TypeScript package's dependencies, then typechecks,
+  tests, builds, and checks what a publish would ship.
 
 ## Commits and pull requests
 

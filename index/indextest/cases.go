@@ -2,6 +2,7 @@ package indextest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -236,6 +237,16 @@ func Run(t *testing.T, name string, searcher index.Searcher) {
 			same(t, page.Rows, c.Want)
 		})
 	}
+
+	// An absence is not an outage. A searcher that reports a missing record
+	// as a plain error has the service tell the client to retry, forever.
+	t.Run(name+"/get of an unknown id is ErrNotFound", func(t *testing.T) {
+		// A well-formed id that no record has: absence, not malformation.
+		_, _, err := searcher.Get(ctx, Profile, "00000000-0000-7000-8000-00000000beef")
+		if !errors.Is(err, index.ErrNotFound) {
+			t.Fatalf("got %v, want index.ErrNotFound", err)
+		}
+	})
 
 	t.Run(name+"/paging reaches every record exactly once", func(t *testing.T) {
 		paging(ctx, t, searcher)

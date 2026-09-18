@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/truvity/audit/index"
 )
 
@@ -417,6 +419,11 @@ func facetColumn(field string) (string, error) {
 // The provenance is the point: an answer a reader can check against the copy
 // the digest chain accounts for is worth more than one they have to believe.
 func (i *Index) Get(ctx context.Context, profile, id string) (index.Row, index.Provenance, error) {
+	// The column is a UUID. Anything else is no record's id, and asking the
+	// database would fail rather than answer.
+	if _, err := uuid.Parse(id); err != nil {
+		return index.Row{}, index.Provenance{}, fmt.Errorf("postgres: %w: %q is not a record id", index.ErrNotFound, id)
+	}
 	page, err := i.Search(ctx, index.Query{
 		Profile: profile,
 		Filter:  []index.Conjunction{{ID: []index.Predicate{{Op: index.Equal, Value: id}}}},
@@ -426,7 +433,7 @@ func (i *Index) Get(ctx context.Context, profile, id string) (index.Row, index.P
 		return index.Row{}, index.Provenance{}, err
 	}
 	if len(page.Rows) == 0 {
-		return index.Row{}, index.Provenance{}, fmt.Errorf("postgres: no record %s in profile %s", id, profile)
+		return index.Row{}, index.Provenance{}, fmt.Errorf("postgres: %w: %s in profile %s", index.ErrNotFound, id, profile)
 	}
 	r := page.Rows[0]
 	return r, index.Provenance{ObjectKey: r.ObjectKey, Line: r.Line}, nil

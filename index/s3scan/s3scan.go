@@ -272,11 +272,14 @@ func (s *Scanner) Get(ctx context.Context, profile, id string) (index.Row, index
 	}
 	if len(page.Rows) == 0 {
 		if page.More {
+			// Not found as far as a bounded scan can see. Still not found:
+			// retrying the same scan finds nothing more, and the message says
+			// why an index would answer differently.
 			return index.Row{}, index.Provenance{}, fmt.Errorf(
-				"s3scan: %s was not found within this scan's budget; it may be older than the "+
-					"horizon, and an index would answer this directly", id)
+				"s3scan: %w: %s was not found within this scan's budget; it may be older than the "+
+					"horizon, and an index would answer this directly", index.ErrNotFound, id)
 		}
-		return index.Row{}, index.Provenance{}, fmt.Errorf("s3scan: no record %s in profile %s", id, profile)
+		return index.Row{}, index.Provenance{}, fmt.Errorf("s3scan: %w: %s in profile %s", index.ErrNotFound, id, profile)
 	}
 	r := page.Rows[0]
 	return r, index.Provenance{ObjectKey: r.ObjectKey, Line: r.Line}, nil

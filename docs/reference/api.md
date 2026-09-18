@@ -70,6 +70,10 @@ service ignores is worse than one that admits the gap.
 | attributes | equal, not_equal, key_is_null, key_is_not_null | no |
 | data path | string, integer or time predicate on a filterable property | yes |
 
+A predicate on `id` takes whole identifiers: record ids are UUIDs, so a value
+that is not one, or a `prefix`, is `invalid_argument`. `Get` of an id that is
+not a UUID is `not_found`.
+
 `Facets`, `Get`, `Export`, `GetExport` as in the proto. Limits, enforced by the
 service rather than by whichever searcher is configured: `filter` 4 terms,
 `sort` 4, `in` 100 values, `limit` ceiling 1000, and an export size cap. A

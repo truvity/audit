@@ -128,7 +128,7 @@ func (m *Memory) Facets(_ context.Context, q Query, fields []string, limit int) 
 func (m *Memory) Get(_ context.Context, profile, id string) (Row, Provenance, error) {
 	r, ok := m.Row(profile, id)
 	if !ok {
-		return Row{}, Provenance{}, fmt.Errorf("index: no record %s in profile %s", id, profile)
+		return Row{}, Provenance{}, fmt.Errorf("index: %w: %s in profile %s", ErrNotFound, id, profile)
 	}
 	return r, Provenance{ObjectKey: r.ObjectKey, Line: r.Line}, nil
 }

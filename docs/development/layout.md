@@ -63,9 +63,8 @@ surface and keep the rest private.
 4. `internal/writer` + `keys` (local) + `store` (s3) + `cmd/audit-writer` —
    **done**. Payload detach was dropped; the split-writer page says why.
 5. `internal/digest` + `cmd/audit verify` + `audit digest` + `audit
-   clock-sync` — **done**, but the digest and verify jobs do not yet emit the
-   `audit.digest.written`, `verified` and `failed` events the catalogue
-   declares for them. Open on the digest issue; the clock job shows the shape.
+   clock-sync` — **done**, each job keeping an account of itself through
+   `--sink` (`internal/cli/selfreport.go`).
 6. `index`, write side: the `Indexer` interface, the Postgres schema, the
    facet counts, the shared deduplication table, `audit migrate` and
    `audit reindex` — **done**. This closes the write path: it is what lets

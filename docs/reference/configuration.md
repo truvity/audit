@@ -57,10 +57,12 @@ first, from one place.
 | `verify.schedule` | nightly |
 | `anchor` | `none`, `rfc3161` with a TSA URL |
 
-Built: `audit digest --deployment --key --key-id --bucket [--from --to
---lookback --max-windows]` and `audit verify … [--lookback]`, which takes the
-same value. The signing key and the job's identity are separate from the
-writer's.
+Built: `audit digest --deployment --key --key-id --bucket --sink [--from --to
+--lookback --max-windows --instance]` and `audit verify … --sink [--lookback
+--instance]`, which takes the same lookback. `--sink` is the writer the job
+records itself through (`audit.digest.written`, `verified`, `failed`); a
+scheduled run should always have it, and an auditor's run by hand should not.
+The signing key and the job's identity are separate from the writer's.
 
 ## Clock job
 

@@ -71,8 +71,11 @@ hour after the last one sealed, so a job that missed its runs catches up on its
 own; run it by hand to catch up now:
 
 ```
-audit digest --deployment <file> --key <file> --bucket <b>
+audit digest --deployment <file> --key <file> --bucket <b> --sink <writer>
 ```
+
+`--sink` is what puts `audit.digest.written` in the trail for each window
+sealed; leave it off only when running by hand, where you can see the output.
 
 It never seals the hour it wakes in — objects are still being written into it —
 and it seals at most a week of windows per run, reporting how many are left. To

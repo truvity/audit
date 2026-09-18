@@ -32,6 +32,9 @@ Foundation. No release.
   produces, and an in-memory implementation. Indexing is idempotent by
   `(profile, id)` and counting has no call of its own, because only the
   transaction that inserted a row can tell a re-delivery from a new record.
+- `index`: a memory `Searcher` beside the Postgres one, asked the same
+  questions — one implementation is a description of its own habits with an
+  interface drawn around it.
 - `index`: the `Searcher` contract — a closed query, keyset cursors, facets,
   provenance on a single record — and the Postgres implementation of it. The
   grant is one more term in the query rather than a layer above it, so there is

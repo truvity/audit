@@ -55,8 +55,15 @@ client address and the correlation identifiers and leaves the event and the
 actor's *kind*; `Everything` removes the rows.
 
 Three implementations were planned: memory, an object-storage scan, and
-Postgres. Memory and Postgres are built. The object-storage scan is a searcher
-with no index at all and belongs with the searcher work.
+Postgres. Memory and Postgres are built, on both halves of the interface. The
+object-storage scan — a searcher with no index at all, for a deployment too
+small to run a database — is not.
+
+Two implementations is the number that matters. One is a description of that
+implementation's habits with an interface drawn around it; the second is what
+finds the places where the interface said something the first only happened to
+do. The memory searcher is asked the same questions as the Postgres one, in
+`index/searcher_test.go` and `index/postgres/search_test.go`.
 
 ## What is indexed
 

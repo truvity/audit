@@ -10,6 +10,9 @@ image:
   cli:
     repository: ghcr.io/truvity/audit
     tag: ""
+  registry:
+    repository: ghcr.io/truvity/audit-registry
+    tag: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
 
@@ -39,8 +42,26 @@ profiles:
   history:
     presets: [history]
 
+# The catalogue registry. Applications register their catalogue here at deploy
+# and do not start if this deployment refuses it.
+#
+# It needs the same database as the index — the catalogues live beside the rows
+# they describe and share one migration chain — and the profiles, because
+# without them nothing checks that a catalogue carries the categories a
+# profile's framework requires, which is half of what registering is for.
+registry:
+  enabled: false
+  replicas: 2
+  service:
+    port: 8080
+  # Who is calling, as a trusted upstream states it. The registry refuses a
+  # caller it cannot identify rather than believing the document's own claim
+  # about whose catalogue it is.
+  trustedUpstream: false
+
 # Catalogues registered at start-up, as name -> document. The common catalogue
-# is built in and needs no entry here.
+# is built in and needs no entry here. A deployment running the registry
+# usually leaves this empty: an application registers its own.
 catalogues: {}
 
 # The index and the shared deduplication table. Without it the writer indexes

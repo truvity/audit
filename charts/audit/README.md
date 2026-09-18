@@ -11,6 +11,8 @@ to come.
 - **`audit migrate`**, a pre-install/pre-upgrade hook Job applying the index
   schema before the writer rolls. The writer refuses to start against a schema
   it does not know and never migrates itself.
+- **`audit-registry`** (`registry.enabled`), where applications register their
+  catalogues at deploy and are refused if the deployment will not have them.
 - **CronJobs**: `audit digest` hourly, `audit verify` nightly per profile,
   `audit purge` daily, `audit clock-sync` daily. Each records what it did
   through the writer's own sink.
@@ -30,7 +32,8 @@ The chart takes references; it creates none of these.
 | the JetStream stream, already created | `stream.url`, `stream.name` |
 | a `ReadWriteMany` storage class, for more than one replica | `keys.local.persistence` |
 | egress to the NTP references | `jobs.clockSync.ntp` |
-| the images | `image.writer`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
+| the images | `image.writer`, `image.cli`, `image.registry` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
+| a proxy that states the caller's source, if the registry is on | `registry.trustedUpstream` |
 
 ## What it refuses to render
 

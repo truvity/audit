@@ -51,6 +51,15 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- end -}}
 {{- end -}}
 
+{{- if .Values.registry.enabled -}}
+  {{- if not (include "audit.hasDatabase" .) -}}
+  {{- fail "audit: `registry.enabled` needs `database`. Registered catalogues live in the same database as the index and share its migration chain; there is nowhere else to put them." -}}
+  {{- end -}}
+  {{- if not .Values.registry.trustedUpstream -}}
+  {{- fail "audit: `registry.enabled` needs `registry.trustedUpstream: true` and a proxy in front that sets the caller's source. The registry refuses a caller it cannot identify, so without one it would refuse every registration; and a registry that took the document's own word for whose catalogue it is would let any workload describe another's records." -}}
+  {{- end -}}
+{{- end -}}
+
 {{- if and .Values.jobs.purge.enabled (not (include "audit.hasDatabase" .)) -}}
 {{- fail "audit: `jobs.purge.enabled` needs `database`. The purge prunes the index and the deduplication table; with neither there is nothing for it to do." -}}
 {{- end -}}

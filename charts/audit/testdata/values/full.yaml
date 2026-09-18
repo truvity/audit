@@ -37,5 +37,8 @@ jobs:
     dedupeWindow: 336h
   clockSync:
     ntp: [time.cloudflare.com, time.google.com]
+registry:
+  enabled: true
+  trustedUpstream: true
 networkPolicy:
   enabled: true

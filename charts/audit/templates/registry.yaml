@@ -1,0 +1,85 @@
+{{- if .Values.registry.enabled }}
+# The catalogue registry. An application registers its catalogue here at deploy
+# and does not start if this deployment refuses it, which is what keeps the
+# thing that describes the records true about them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "audit.fullname" . }}-registry
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: registry
+spec:
+  replicas: {{ .Values.registry.replicas }}
+  selector:
+    matchLabels:
+      {{- include "audit.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: registry
+  template:
+    metadata:
+      labels:
+        {{- include "audit.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: registry
+      annotations:
+        # A profile change alters what the registry will accept, so a running
+        # one has to be replaced for it to take effect.
+        checksum/deployment: {{ toYaml .Values.profiles | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "audit.serviceAccountName" . }}
+      {{- include "audit.podDefaults" . | nindent 6 }}
+      containers:
+        - name: registry
+          image: {{ include "audit.registryImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --deployment=/etc/audit/deployment.yaml
+            - --listen=:{{ .Values.registry.service.port }}
+            - --sink={{ include "audit.sinkURL" . }}
+            - --version={{ .Chart.AppVersion }}
+          env:
+            {{- include "audit.databaseEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.registry.service.port }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+      volumes:
+        - name: deployment
+          configMap:
+            name: {{ include "audit.fullname" . }}-deployment
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "audit.fullname" . }}-registry
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: registry
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "audit.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: registry
+  ports:
+    - name: http
+      port: {{ .Values.registry.service.port }}
+      targetPort: http
+{{- end }}

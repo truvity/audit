@@ -31,6 +31,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ .Values.image.writer.repository }}:{{ .Values.image.writer.tag | default .Chart.AppVersion }}
 {{- end -}}
 
+{{- define "audit.registryImage" -}}
+{{ .Values.image.registry.repository }}:{{ .Values.image.registry.tag | default .Chart.AppVersion }}
+{{- end -}}
+
 {{- define "audit.cliImage" -}}
 {{ .Values.image.cli.repository }}:{{ .Values.image.cli.tag | default .Chart.AppVersion }}
 {{- end -}}

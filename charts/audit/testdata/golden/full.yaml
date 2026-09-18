@@ -127,6 +127,30 @@ spec:
       storage: 1Gi
 
 ---
+# Source: audit/templates/registry.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-registry
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: registry
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/component: registry
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
 # Source: audit/templates/writer.yaml
 apiVersion: v1
 kind: Service
@@ -147,6 +171,93 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+
+---
+# Source: audit/templates/registry.yaml
+# The catalogue registry. An application registers its catalogue here at deploy
+# and does not start if this deployment refuses it, which is what keeps the
+# thing that describes the records true about them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-registry
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: registry
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: registry
+      annotations:
+        # A profile change alters what the registry will accept, so a running
+        # one has to be replaced for it to take effect.
+        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+    spec:
+      serviceAccountName: audit
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: registry
+          image: ghcr.io/truvity/audit-registry:0.1.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --deployment=/etc/audit/deployment.yaml
+            - --listen=:8080
+            - --sink=http://audit:8080
+            - --version=0.1.0
+          env:
+            
+            - name: AUDIT_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: audit-database
+                  key: url
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+      volumes:
+        - name: deployment
+          configMap:
+            name: audit-deployment
 
 ---
 # Source: audit/templates/writer.yaml

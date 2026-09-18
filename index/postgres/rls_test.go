@@ -166,3 +166,34 @@ func share(corpus []indextest.Placed, tenant string) int {
 	}
 	return n
 }
+
+// The grant the migration job makes reaches a table created after it (a new
+// month's partition), and is refused to the owner, whom row-level security
+// would not bind.
+func TestGrantReaderCoversLaterTablesAndRefusesTheOwner(t *testing.T) {
+	pool := pgtest.Open(t)
+	ctx := context.Background()
+	reader := pgtest.AsReader(t, pool)
+
+	if _, err := pool.Exec(ctx, `create table later_table (x int)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `insert into later_table values (1)`); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := reader.QueryRow(ctx, `select count(*) from later_table`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the reader cannot read a table created after the grant: %v", err)
+	}
+	if _, err := reader.Exec(ctx, `insert into later_table values (2)`); err == nil {
+		t.Fatal("the reader could write")
+	}
+
+	var owner string
+	if err := pool.QueryRow(ctx, `select current_user`).Scan(&owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := postgres.GrantReader(ctx, pool, owner); err == nil {
+		t.Fatal("the owner was granted as a reader")
+	}
+}

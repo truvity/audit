@@ -30,7 +30,12 @@ spec:
         - name: migrate
           image: {{ include "audit.cliImage" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["migrate", "--database=$(AUDIT_DATABASE)"]
+          args:
+            - migrate
+            - --database=$(AUDIT_DATABASE)
+            {{- with .Values.query.database.role }}
+            - --reader={{ . }}
+            {{- end }}
           env:
             {{- include "audit.databaseEnv" . | nindent 12 }}
             {{- include "audit.trustEnv" . | nindent 12 }}

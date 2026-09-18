@@ -98,13 +98,10 @@ func AsReader(t *testing.T, pool *pgxpool.Pool) *pgxpool.Pool {
 	exception when duplicate_object then null; end $$`); err != nil {
 		t.Fatal(err)
 	}
-	for _, statement := range []string{
-		"grant usage on schema " + schema + " to " + Reader,
-		"grant select on all tables in schema " + schema + " to " + Reader,
-	} {
-		if _, err := pool.Exec(ctx, statement); err != nil {
-			t.Fatal(err)
-		}
+	// The grant a deployment's migration job makes (audit migrate --reader),
+	// so every isolation test runs through it.
+	if err := postgres.GrantReader(ctx, pool, Reader); err != nil {
+		t.Fatal(err)
 	}
 
 	config, err := pgxpool.ParseConfig(dsn)

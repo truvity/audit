@@ -54,6 +54,7 @@ query:
   enabled: true
   database:
     existingSecret: audit-query-database
+    role: audit_query
   grants:
     issuers:
       - url: https://id.example.com

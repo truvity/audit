@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/truvity/audit/catalogue"
-	"github.com/truvity/audit/emit"
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/hold"
 	"github.com/truvity/audit/keys"
@@ -103,30 +102,17 @@ func (k KeyDestroy) checkHolds(ctx context.Context) error {
 	return nil
 }
 
-// report records the erasure, and waits to be told it was taken.
+// report records the erasure, and waits to be told it was taken. Not
+// self-reporting: this is the record of an irreversible act on somebody's data,
+// and the catalogue declares it block for that reason.
 func (k KeyDestroy) report(ctx context.Context) error {
-	emitter, err := emit.New(emit.Options{
-		Source:    k.Catalogue.Source,
-		Catalogue: k.Catalogue,
-		Sink:      k.Sink,
-		Instance:  record.InstanceName(),
-		// Not self-reporting: this is not a job's account of itself but the
-		// record of an irreversible act on somebody's data, and the catalogue
-		// declares it block for that reason. It is confirmed or it is an error.
-	})
-	if err != nil {
-		return err
-	}
-	defer emitter.Close() //nolint:errcheck // the record is confirmed or returned as an error
-
 	reason := k.Reason
 	if reason == "" {
 		reason = "erasure requested"
 	}
-	return emitter.Record(ctx, &record.Record{
+	return confirm(ctx, k.Catalogue, k.Sink, &record.Record{
 		Action:    "audit.key.destroyed",
 		Operation: auditv1.Operation_OPERATION_REMOVE,
-		TenantId:  record.TenantPlatform,
 		Actor:     &record.Actor{Kind: "operator", Id: k.By},
 		Outcome:   &record.Outcome{Result: auditv1.Outcome_RESULT_SUCCESS, Reason: reason},
 		Targets: []*record.Target{

@@ -43,9 +43,9 @@ resource may carry a wildcard: `arn:aws:s3:::<bucket>/*/tenant=<id>/*`.
 ## Legal hold
 
 ```
-audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b>
+audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b> --sink <writer>
 audit hold list [--profile <p>] --bucket <b>
-audit hold release --id <id> --by <who> --bucket <b>
+audit hold release --id <id> --by <who> --bucket <b> --sink <writer>
 ```
 
 A hold keeps objects undeletable for as long as it is on, whatever their
@@ -54,6 +54,13 @@ action recorded as `audit.hold.placed`; releasing one requires the break-glass
 role, which the archive's own policy enforces, and is recorded as
 `audit.hold.released` — including when the archive refuses it, so that nobody
 holding the role can try quietly. Presets say whether holds are recommended.
+
+Both events are declared `block`, so `place` and `release` refuse to run
+without `--sink`, and wait for the writer to confirm the record. The record is
+made after the hold changes, not before, so the trail never claims a hold that
+then failed; if the writer cannot take it, the command fails with an error
+saying the hold **is** placed (or released) and must be recorded by hand. The
+hold's own record under `holds/` in the archive is there either way.
 
 A hold is placed on a prefix and the archive holds objects, so it has two
 halves. `place` sweeps what is already there. The writer sets the hold on

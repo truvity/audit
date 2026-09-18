@@ -114,3 +114,34 @@ func with(rec *record.Record, data map[string]any) (*record.Record, error) {
 	rec.Data = value
 	return rec, nil
 }
+
+// confirm records an operator's act and waits until the writer has taken it.
+//
+// It is the opposite of a reporter. A reporter is a job's account of itself and
+// is best-effort on purpose, because a job that blocked on saying it had worked
+// could not say that it had not. An operator's act on the archive — destroying a
+// key, placing or releasing a legal hold — is not an account of anything: it is
+// the record the catalogue declares `block` for, and it is confirmed or it is an
+// error the caller must surface.
+//
+// There is no "nowhere to record to" here. A command that confirms refuses to
+// start without a writer, so a nil sink reaching this is a bug, not a choice.
+func confirm(ctx context.Context, c *catalogue.Catalogue, to sink.Sink, rec *record.Record) error {
+	if c == nil || to == nil {
+		return fmt.Errorf("a writer and a catalogue are required to record %s", rec.GetAction())
+	}
+	emitter, err := emit.New(emit.Options{
+		Source:    c.Source,
+		Catalogue: c,
+		Sink:      to,
+		Instance:  record.InstanceName(),
+	})
+	if err != nil {
+		return err
+	}
+	defer emitter.Close() //nolint:errcheck // the record is confirmed or returned as an error
+	if rec.TenantId == "" {
+		rec.TenantId = record.TenantPlatform
+	}
+	return emitter.Record(ctx, rec)
+}

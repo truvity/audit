@@ -45,6 +45,16 @@ func (h Hold) Run(ctx context.Context, action string) error {
 	}
 	holds := hold.Store{Store: h.Store, RetainUntil: h.RetainUntil, Now: h.Now}
 
+	// Placing and releasing change what may be deleted, and the catalogue
+	// declares both block: they are recorded, confirmed, or they do not
+	// happen. Refused here, before anything is touched, rather than after a
+	// hold has changed state with nothing able to say so. Listing reads only.
+	if (action == "place" || action == "release") && (h.Sink == nil || h.Catalogue == nil) {
+		return fmt.Errorf(
+			"audit hold %s: give --sink: the catalogue declares this action as block delivery, "+
+				"and a hold placed or released off the record is one nobody can account for", action)
+	}
+
 	switch action {
 	case "place":
 		return h.place(ctx, out, holds)
@@ -69,9 +79,15 @@ func (h Hold) place(ctx context.Context, out io.Writer, holds hold.Store) error 
 		Reason: h.Reason, PlacedBy: h.by(),
 	})
 	if err != nil {
-		return err
+		// An attempt that failed part-way may have held some objects already,
+		// so it is recorded as what it was: an attempt, with the reason.
+		return errors.Join(err, h.record(ctx, "audit.hold.placed", placed, err))
 	}
-	h.record(ctx, "audit.hold.placed", placed, nil)
+	if err := h.record(ctx, "audit.hold.placed", placed, nil); err != nil {
+		return fmt.Errorf(
+			"audit hold place: hold %s IS PLACED on %d object(s) and the trail does not say so: %w; "+
+				"record it by hand before anything else", placed.ID, placed.Objects, err)
+	}
 	return h.report(out, placed, fmt.Sprintf("held %d object(s)", placed.Objects))
 }
 
@@ -82,11 +98,19 @@ func (h Hold) release(ctx context.Context, out io.Writer, holds hold.Store) erro
 	released, err := holds.Release(ctx, h.ID, h.by())
 	if err != nil {
 		// A release that was refused is recorded as an attempt. Whoever holds
-		// the break-glass role should not be able to try quietly.
-		h.record(ctx, "audit.hold.released", hold.Record{ID: h.ID, Profile: h.Profile}, err)
-		return err
+		// the break-glass role should not be able to try quietly — and if even
+		// the attempt cannot be recorded, the caller hears about both.
+		if released.ID == "" {
+			released = hold.Record{ID: h.ID, Profile: h.Profile}
+		}
+		return errors.Join(err, h.record(ctx, "audit.hold.released", released, err))
 	}
-	h.record(ctx, "audit.hold.released", released, nil)
+	if err := h.record(ctx, "audit.hold.released", released, nil); err != nil {
+		return fmt.Errorf(
+			"audit hold release: hold %s IS RELEASED from %d object(s), which may now be deleted when "+
+				"their retention ends, and the trail does not say so: %w; record it by hand before anything else",
+			released.ID, released.Objects, err)
+	}
 	return h.report(out, released, fmt.Sprintf("released %d object(s)", released.Objects))
 }
 
@@ -144,22 +168,28 @@ func (h Hold) report(out io.Writer, r hold.Record, what string) error {
 	return nil
 }
 
-// record puts the action in the trail, through the same catalogue as anything
-// else. A hold changes what may be deleted, so it belongs there more than most.
-func (h Hold) record(ctx context.Context, action string, r hold.Record, failure error) {
-	reporter, err := newReporter(h.Catalogue, h.Sink, "", record.InstanceName())
-	if err != nil || reporter == nil {
-		return
+// record puts the action in the trail and waits for it to be taken.
+//
+// It runs after the act rather than before, as key destroy does: recording
+// first would let the trail claim a hold that then failed to be placed, and a
+// reader relying on it would believe evidence protected that is not. A missing
+// record is discoverable — the hold's own record sits in the archive under
+// holds/ — and the error says so loudly; a false one would not be.
+//
+// The actor is the operator, not the tool: a hold is a person's decision, and
+// the record has to name who made it.
+func (h Hold) record(ctx context.Context, action string, r hold.Record, failure error) error {
+	event := &record.Record{
+		Action:    action,
+		Operation: auditv1.Operation_OPERATION_MODIFY,
+		Actor:     &record.Actor{Kind: "operator", Id: h.by()},
+		Targets:   []*record.Target{{Type: "hold", Id: r.ID}},
+		Outcome:   &record.Outcome{Result: auditv1.Outcome_RESULT_SUCCESS, Reason: r.Reason},
 	}
-	defer reporter.close()
-
-	event := reporter.event(action, "hold", r.ID)
 	if failure != nil {
-		event = failed(event, auditv1.Operation_OPERATION_MODIFY, failure.Error())
-	} else {
-		event = succeeded(event, auditv1.Operation_OPERATION_MODIFY)
+		event.Outcome = &record.Outcome{Result: auditv1.Outcome_RESULT_FAILURE, Reason: failure.Error()}
 	}
-	reporter.record(ctx, event)
+	return confirm(ctx, h.Catalogue, h.Sink, event)
 }
 
 // by is who is acting. It is not defaulted: a hold is an operator's action and

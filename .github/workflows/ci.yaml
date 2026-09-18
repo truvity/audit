@@ -52,6 +52,13 @@ jobs:
   postgres:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The same settings devbox.json gives every other job. This job cannot go
+    # through devbox — it needs a service container the shared workflow does
+    # not offer — so the step below holds the two toolchains to one version.
+    env:
+      AUDIT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/audit_test?sslmode=disable
+      CGO_ENABLED: "0"
+      GOEXPERIMENT: jsonv2
     services:
       postgres:
         image: postgres:17
@@ -67,17 +74,17 @@ jobs:
       - uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
         with:
           go-version-file: go.mod
+      - name: one Go for every job
+        # devbox.json pins the Go every other job runs; go.mod pins this one.
+        # Two toolchains for one module is how "passes in one job, fails in
+        # another" starts, so the pins have to agree.
+        run: |
+          want=$(sed -n 's/^go \([0-9.]*\).*/\1/p' go.mod)
+          have=$(python3 -c 'import json;print(json.load(open("devbox.json"))["packages"]["go"])')
+          [ "$want" = "$have" ] || { echo "go.mod wants go $want, devbox.json pins $have"; exit 1; }
       - name: go test ./... with a database
-        env:
-          AUDIT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/audit_test?sslmode=disable
-          CGO_ENABLED: "0"
-          GOEXPERIMENT: jsonv2
         run: go test ./...
       - name: the Postgres tests must have run, not skipped
-        env:
-          AUDIT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/audit_test?sslmode=disable
-          CGO_ENABLED: "0"
-          GOEXPERIMENT: jsonv2
         # A URL that stopped reaching the tests would turn this job green
         # while proving nothing, which is the failure mode these tests were
         # written to avoid in the first place.

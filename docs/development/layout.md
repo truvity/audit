@@ -78,7 +78,9 @@ surface and keep the rest private.
    wrong.
 8. Legal holds and `audit key destroy` — **done**. What is left of
    the key providers is `kms` and `transit`, which want a fake of each.
-9. `index`, read side: the `Searcher`, cursors, facets, tail.
+9. `index`, read side: the `Searcher`, cursors, facets, tail — **done**, in
+   memory, Postgres and an object-storage scan. What is left is the one
+   corpus asked of all three, which is the conformance suite's.
 10. `internal/query` + `auth` + `cmd/audit-query`.
 11. `internal/metering`. It reads only what the write path already produces,
     and it is what validates the design's central claim, so it comes before

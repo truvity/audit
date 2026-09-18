@@ -31,3 +31,8 @@ jobs:
     uses: truvity/ci-workflows/.github/workflows/release-public.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
     with:
       charts: '["audit"]'
+      # The CLI as a Nix flake, one release asset, so that another
+      # repository's devbox can pin `audit verify` by hash the way it pins
+      # accessctl: an auditor's copy of the verifier should be the one they
+      # chose, not the one on the path.
+      nix-flakes: '["audit"]'

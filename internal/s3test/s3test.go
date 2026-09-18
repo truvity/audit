@@ -15,7 +15,8 @@
 // whole archive rests on and is asserted here. It does not implement
 // PutObjectRetention at all — it answers MethodNotAllowed where AWS answers
 // AccessDenied — so nothing here may claim that a retention cannot be
-// shortened; that one is still owed a check against a real bucket.
+// shortened. That claim is checked against real S3 instead, on demand, by the
+// test in realbucket_test.go.
 package s3test
 
 import (

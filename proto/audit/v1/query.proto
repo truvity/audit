@@ -22,6 +22,33 @@ service QueryService {
   // resolve operation, which no read grant implies, and is recorded before it
   // answers.
   rpc Resolve(ResolveRequest) returns (ResolveResponse);
+  // Access says what the caller may read: every profile a grant names, the
+  // operations allowed on it, and over which tenants and period. It is the
+  // same grants every other call is held to, so a page can show what the
+  // caller may open without its host knowing the deployment's profiles. It
+  // reads no record, and is not recorded.
+  rpc Access(AccessRequest) returns (AccessResponse);
+}
+
+message AccessRequest {}
+
+message AccessResponse {
+  // In the order the grants name them.
+  repeated ProfileAccess profiles = 1;
+}
+
+message ProfileAccess {
+  string profile = 1;
+  // search, facets, get, export, tail, resolve: those the caller holds on
+  // this profile over at least one tenant.
+  repeated string operations = 2;
+  // Every tenant, as an operator's grant says; otherwise the tenants listed.
+  bool all_tenants = 3;
+  repeated string tenants = 4;
+  // The period the caller may read, from the grant that allows search, or the
+  // first operation allowed. Unset is unbounded at that end.
+  google.protobuf.Timestamp from = 5;
+  google.protobuf.Timestamp until = 6;
 }
 
 message ResolveRequest {

@@ -177,14 +177,15 @@ const audit = createQueryClient(createConnectTransport({
 }));
 
 <AuditProvider client={audit} sentences={[shop]}>
-  <AuditView profiles={profilesThisPersonMayRead} permalink={(p, id) => `/audit/${p}/${id}`} />
+  <AuditView permalink={(p, id) => `/audit/${p}/${id}`} />
 </AuditProvider>
 ```
 
 - **Sentences**: `audit messages catalogue/shop.yaml > audit-sentences.json`
   at build time; the component's own actions (`audit.*`) are built in.
-- **Profiles**: the page shows the ones the host passes — normally derived
-  from the person's groups, the same ones the grants are.
+- **Profiles**: with none passed, the page asks the query service which
+  profiles the person may search (`Access`) and shows those; a host that
+  wants fewer passes `profiles`.
 
 ## 4. Checking the integration
 

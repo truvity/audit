@@ -63,6 +63,39 @@ func (h *Handler) Search(
 	}), nil
 }
 
+// Access implements the service.
+func (h *Handler) Access(
+	ctx context.Context, req *connect.Request[auditv1.AccessRequest],
+) (*connect.Response[auditv1.AccessResponse], error) {
+	who, err := h.who(ctx, req.Header())
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := h.Service.Access(ctx, who)
+	if err != nil {
+		return nil, wire(err)
+	}
+	out := &auditv1.AccessResponse{}
+	for _, p := range profiles {
+		access := &auditv1.ProfileAccess{
+			Profile:    p.Profile,
+			AllTenants: p.Grant.AllTenants,
+			Tenants:    p.Grant.Tenants,
+		}
+		for _, op := range p.Operations {
+			access.Operations = append(access.Operations, string(op))
+		}
+		if !p.Grant.From.IsZero() {
+			access.From = timestamppb.New(p.Grant.From)
+		}
+		if !p.Grant.Until.IsZero() {
+			access.Until = timestamppb.New(p.Grant.Until)
+		}
+		out.Profiles = append(out.Profiles, access)
+	}
+	return connect.NewResponse(out), nil
+}
+
 // Facets implements the service.
 func (h *Handler) Facets(
 	ctx context.Context, req *connect.Request[auditv1.FacetsRequest],

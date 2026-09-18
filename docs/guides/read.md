@@ -198,13 +198,14 @@ authenticates it:
 import { AuditProvider, AuditView } from "@truvity/audit/react";
 
 <AuditProvider client={audit} sentences={[myCatalogue]}>
-  <AuditView profiles={["security", "history"]} permalink={(p, id) => `/audit/${p}/${id}`} />
+  <AuditView permalink={(p, id) => `/audit/${p}/${id}`} />
 </AuditProvider>
 ```
 
 It has:
 
-- a tab per profile the caller may read (the host says which);
+- a tab per profile the caller may search: the service says which
+  (`Access`), unless the host passes `profiles`;
 - the qualifier box and a time range, and counts to narrow by;
 - records as sentences, newest first;
 - a row that opens to the record, with a chip per value to narrow to it or

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"errors"
 
@@ -261,5 +262,42 @@ func TestFirstCursorReturnsToTheBeginning(t *testing.T) {
 	if back.Msg.GetItems()[0].GetId() != one.Msg.GetItems()[0].GetId() {
 		t.Fatalf("first returned %s, the first page was %s",
 			back.Msg.GetItems()[0].GetId(), one.Msg.GetItems()[0].GetId())
+	}
+}
+
+// Access answers what a caller may open, from the grants every other call is
+// held to, and lists nothing a grant names without a tenant to read it over.
+func TestAccessIsTheCallersGrants(t *testing.T) {
+	from := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	client := served(t, auth.Grant{
+		Tenants: []string{"acme"}, Profiles: []string{"security", "history"},
+		Operations: []auth.Operation{auth.Get, auth.Search}, From: from, Rule: "test",
+	}, caller())
+	res, err := client.Access(context.Background(), connect.NewRequest(&auditv1.AccessRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profiles := res.Msg.GetProfiles()
+	if len(profiles) != 2 || profiles[0].GetProfile() != "security" || profiles[1].GetProfile() != "history" {
+		t.Fatalf("profiles %v", profiles)
+	}
+	first := profiles[0]
+	if got := first.GetOperations(); len(got) != 2 || got[0] != "search" || got[1] != "get" {
+		t.Fatalf("operations %v", got)
+	}
+	if first.GetAllTenants() || len(first.GetTenants()) != 1 || first.GetTenants()[0] != "acme" {
+		t.Fatalf("tenants %v all=%v", first.GetTenants(), first.GetAllTenants())
+	}
+	if !first.GetFrom().AsTime().Equal(from) || first.GetUntil() != nil {
+		t.Fatalf("window %v %v", first.GetFrom(), first.GetUntil())
+	}
+
+	empty := served(t, auth.Grant{Profiles: []string{"security"}, Operations: []auth.Operation{auth.Search}}, caller())
+	res, err = empty.Access(context.Background(), connect.NewRequest(&auditv1.AccessRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Msg.GetProfiles()) != 0 {
+		t.Fatalf("a grant over no tenant was offered: %v", res.Msg.GetProfiles())
 	}
 }

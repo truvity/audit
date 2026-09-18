@@ -141,7 +141,7 @@ func (x Sort_Field) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Sort_Field.Descriptor instead.
 func (Sort_Field) EnumDescriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{17, 0}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{20, 0}
 }
 
 type Sort_Order int32
@@ -190,7 +190,7 @@ func (x Sort_Order) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Sort_Order.Descriptor instead.
 func (Sort_Order) EnumDescriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{17, 1}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{20, 1}
 }
 
 type ExportRequest_Format int32
@@ -239,7 +239,177 @@ func (x ExportRequest_Format) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ExportRequest_Format.Descriptor instead.
 func (ExportRequest_Format) EnumDescriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{27, 0}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{30, 0}
+}
+
+type AccessRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccessRequest) Reset() {
+	*x = AccessRequest{}
+	mi := &file_audit_v1_query_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccessRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccessRequest) ProtoMessage() {}
+
+func (x *AccessRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_audit_v1_query_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccessRequest.ProtoReflect.Descriptor instead.
+func (*AccessRequest) Descriptor() ([]byte, []int) {
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{0}
+}
+
+type AccessResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// In the order the grants name them.
+	Profiles      []*ProfileAccess `protobuf:"bytes,1,rep,name=profiles,proto3" json:"profiles,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AccessResponse) Reset() {
+	*x = AccessResponse{}
+	mi := &file_audit_v1_query_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AccessResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AccessResponse) ProtoMessage() {}
+
+func (x *AccessResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_audit_v1_query_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AccessResponse.ProtoReflect.Descriptor instead.
+func (*AccessResponse) Descriptor() ([]byte, []int) {
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AccessResponse) GetProfiles() []*ProfileAccess {
+	if x != nil {
+		return x.Profiles
+	}
+	return nil
+}
+
+type ProfileAccess struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Profile string                 `protobuf:"bytes,1,opt,name=profile,proto3" json:"profile,omitempty"`
+	// search, facets, get, export, tail, resolve: those the caller holds on
+	// this profile over at least one tenant.
+	Operations []string `protobuf:"bytes,2,rep,name=operations,proto3" json:"operations,omitempty"`
+	// Every tenant, as an operator's grant says; otherwise the tenants listed.
+	AllTenants bool     `protobuf:"varint,3,opt,name=all_tenants,json=allTenants,proto3" json:"all_tenants,omitempty"`
+	Tenants    []string `protobuf:"bytes,4,rep,name=tenants,proto3" json:"tenants,omitempty"`
+	// The period the caller may read, from the grant that allows search, or the
+	// first operation allowed. Unset is unbounded at that end.
+	From          *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=from,proto3" json:"from,omitempty"`
+	Until         *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProfileAccess) Reset() {
+	*x = ProfileAccess{}
+	mi := &file_audit_v1_query_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProfileAccess) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProfileAccess) ProtoMessage() {}
+
+func (x *ProfileAccess) ProtoReflect() protoreflect.Message {
+	mi := &file_audit_v1_query_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProfileAccess.ProtoReflect.Descriptor instead.
+func (*ProfileAccess) Descriptor() ([]byte, []int) {
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ProfileAccess) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *ProfileAccess) GetOperations() []string {
+	if x != nil {
+		return x.Operations
+	}
+	return nil
+}
+
+func (x *ProfileAccess) GetAllTenants() bool {
+	if x != nil {
+		return x.AllTenants
+	}
+	return false
+}
+
+func (x *ProfileAccess) GetTenants() []string {
+	if x != nil {
+		return x.Tenants
+	}
+	return nil
+}
+
+func (x *ProfileAccess) GetFrom() *timestamppb.Timestamp {
+	if x != nil {
+		return x.From
+	}
+	return nil
+}
+
+func (x *ProfileAccess) GetUntil() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Until
+	}
+	return nil
 }
 
 type ResolveRequest struct {
@@ -255,7 +425,7 @@ type ResolveRequest struct {
 
 func (x *ResolveRequest) Reset() {
 	*x = ResolveRequest{}
-	mi := &file_audit_v1_query_proto_msgTypes[0]
+	mi := &file_audit_v1_query_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -267,7 +437,7 @@ func (x *ResolveRequest) String() string {
 func (*ResolveRequest) ProtoMessage() {}
 
 func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[0]
+	mi := &file_audit_v1_query_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -280,7 +450,7 @@ func (x *ResolveRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveRequest.ProtoReflect.Descriptor instead.
 func (*ResolveRequest) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{0}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ResolveRequest) GetProfile() string {
@@ -313,7 +483,7 @@ type ResolveResponse struct {
 
 func (x *ResolveResponse) Reset() {
 	*x = ResolveResponse{}
-	mi := &file_audit_v1_query_proto_msgTypes[1]
+	mi := &file_audit_v1_query_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -325,7 +495,7 @@ func (x *ResolveResponse) String() string {
 func (*ResolveResponse) ProtoMessage() {}
 
 func (x *ResolveResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[1]
+	mi := &file_audit_v1_query_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -338,7 +508,7 @@ func (x *ResolveResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveResponse.ProtoReflect.Descriptor instead.
 func (*ResolveResponse) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{1}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResolveResponse) GetIdentifier() string {
@@ -368,7 +538,7 @@ type SearchRequest struct {
 
 func (x *SearchRequest) Reset() {
 	*x = SearchRequest{}
-	mi := &file_audit_v1_query_proto_msgTypes[2]
+	mi := &file_audit_v1_query_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -380,7 +550,7 @@ func (x *SearchRequest) String() string {
 func (*SearchRequest) ProtoMessage() {}
 
 func (x *SearchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[2]
+	mi := &file_audit_v1_query_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -393,7 +563,7 @@ func (x *SearchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchRequest.ProtoReflect.Descriptor instead.
 func (*SearchRequest) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{2}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SearchRequest) GetProfile() string {
@@ -469,7 +639,7 @@ type Filter struct {
 
 func (x *Filter) Reset() {
 	*x = Filter{}
-	mi := &file_audit_v1_query_proto_msgTypes[3]
+	mi := &file_audit_v1_query_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +651,7 @@ func (x *Filter) String() string {
 func (*Filter) ProtoMessage() {}
 
 func (x *Filter) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[3]
+	mi := &file_audit_v1_query_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +664,7 @@ func (x *Filter) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Filter.ProtoReflect.Descriptor instead.
 func (*Filter) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{3}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Filter) GetId() *StringPredicate {
@@ -655,7 +825,7 @@ type StringPredicate struct {
 
 func (x *StringPredicate) Reset() {
 	*x = StringPredicate{}
-	mi := &file_audit_v1_query_proto_msgTypes[4]
+	mi := &file_audit_v1_query_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -667,7 +837,7 @@ func (x *StringPredicate) String() string {
 func (*StringPredicate) ProtoMessage() {}
 
 func (x *StringPredicate) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[4]
+	mi := &file_audit_v1_query_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -680,7 +850,7 @@ func (x *StringPredicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StringPredicate.ProtoReflect.Descriptor instead.
 func (*StringPredicate) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{4}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *StringPredicate) GetOperator() isStringPredicate_Operator {
@@ -809,7 +979,7 @@ type StringList struct {
 
 func (x *StringList) Reset() {
 	*x = StringList{}
-	mi := &file_audit_v1_query_proto_msgTypes[5]
+	mi := &file_audit_v1_query_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -821,7 +991,7 @@ func (x *StringList) String() string {
 func (*StringList) ProtoMessage() {}
 
 func (x *StringList) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[5]
+	mi := &file_audit_v1_query_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -834,7 +1004,7 @@ func (x *StringList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StringList.ProtoReflect.Descriptor instead.
 func (*StringList) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{5}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *StringList) GetValues() []string {
@@ -864,7 +1034,7 @@ type IntegerPredicate struct {
 
 func (x *IntegerPredicate) Reset() {
 	*x = IntegerPredicate{}
-	mi := &file_audit_v1_query_proto_msgTypes[6]
+	mi := &file_audit_v1_query_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -876,7 +1046,7 @@ func (x *IntegerPredicate) String() string {
 func (*IntegerPredicate) ProtoMessage() {}
 
 func (x *IntegerPredicate) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[6]
+	mi := &file_audit_v1_query_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -889,7 +1059,7 @@ func (x *IntegerPredicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegerPredicate.ProtoReflect.Descriptor instead.
 func (*IntegerPredicate) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{6}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *IntegerPredicate) GetOperator() isIntegerPredicate_Operator {
@@ -1047,7 +1217,7 @@ type IntegerList struct {
 
 func (x *IntegerList) Reset() {
 	*x = IntegerList{}
-	mi := &file_audit_v1_query_proto_msgTypes[7]
+	mi := &file_audit_v1_query_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1059,7 +1229,7 @@ func (x *IntegerList) String() string {
 func (*IntegerList) ProtoMessage() {}
 
 func (x *IntegerList) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[7]
+	mi := &file_audit_v1_query_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1072,7 +1242,7 @@ func (x *IntegerList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegerList.ProtoReflect.Descriptor instead.
 func (*IntegerList) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{7}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *IntegerList) GetValues() []int64 {
@@ -1092,7 +1262,7 @@ type IntegerRange struct {
 
 func (x *IntegerRange) Reset() {
 	*x = IntegerRange{}
-	mi := &file_audit_v1_query_proto_msgTypes[8]
+	mi := &file_audit_v1_query_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1104,7 +1274,7 @@ func (x *IntegerRange) String() string {
 func (*IntegerRange) ProtoMessage() {}
 
 func (x *IntegerRange) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[8]
+	mi := &file_audit_v1_query_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1117,7 +1287,7 @@ func (x *IntegerRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegerRange.ProtoReflect.Descriptor instead.
 func (*IntegerRange) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{8}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *IntegerRange) GetFrom() int64 {
@@ -1150,7 +1320,7 @@ type TimePredicate struct {
 
 func (x *TimePredicate) Reset() {
 	*x = TimePredicate{}
-	mi := &file_audit_v1_query_proto_msgTypes[9]
+	mi := &file_audit_v1_query_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1162,7 +1332,7 @@ func (x *TimePredicate) String() string {
 func (*TimePredicate) ProtoMessage() {}
 
 func (x *TimePredicate) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[9]
+	mi := &file_audit_v1_query_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1175,7 +1345,7 @@ func (x *TimePredicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimePredicate.ProtoReflect.Descriptor instead.
 func (*TimePredicate) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{9}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TimePredicate) GetOperator() isTimePredicate_Operator {
@@ -1274,7 +1444,7 @@ type TimeRange struct {
 
 func (x *TimeRange) Reset() {
 	*x = TimeRange{}
-	mi := &file_audit_v1_query_proto_msgTypes[10]
+	mi := &file_audit_v1_query_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1286,7 +1456,7 @@ func (x *TimeRange) String() string {
 func (*TimeRange) ProtoMessage() {}
 
 func (x *TimeRange) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[10]
+	mi := &file_audit_v1_query_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1299,7 +1469,7 @@ func (x *TimeRange) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TimeRange.ProtoReflect.Descriptor instead.
 func (*TimeRange) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{10}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TimeRange) GetFrom() *timestamppb.Timestamp {
@@ -1329,7 +1499,7 @@ type TargetPredicate struct {
 
 func (x *TargetPredicate) Reset() {
 	*x = TargetPredicate{}
-	mi := &file_audit_v1_query_proto_msgTypes[11]
+	mi := &file_audit_v1_query_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1341,7 +1511,7 @@ func (x *TargetPredicate) String() string {
 func (*TargetPredicate) ProtoMessage() {}
 
 func (x *TargetPredicate) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[11]
+	mi := &file_audit_v1_query_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1354,7 +1524,7 @@ func (x *TargetPredicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TargetPredicate.ProtoReflect.Descriptor instead.
 func (*TargetPredicate) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{11}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TargetPredicate) GetOperator() isTargetPredicate_Operator {
@@ -1407,7 +1577,7 @@ type TargetList struct {
 
 func (x *TargetList) Reset() {
 	*x = TargetList{}
-	mi := &file_audit_v1_query_proto_msgTypes[12]
+	mi := &file_audit_v1_query_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1419,7 +1589,7 @@ func (x *TargetList) String() string {
 func (*TargetList) ProtoMessage() {}
 
 func (x *TargetList) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[12]
+	mi := &file_audit_v1_query_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1432,7 +1602,7 @@ func (x *TargetList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TargetList.ProtoReflect.Descriptor instead.
 func (*TargetList) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{12}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *TargetList) GetValues() []*TargetRef {
@@ -1453,7 +1623,7 @@ type TargetRef struct {
 
 func (x *TargetRef) Reset() {
 	*x = TargetRef{}
-	mi := &file_audit_v1_query_proto_msgTypes[13]
+	mi := &file_audit_v1_query_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1465,7 +1635,7 @@ func (x *TargetRef) String() string {
 func (*TargetRef) ProtoMessage() {}
 
 func (x *TargetRef) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[13]
+	mi := &file_audit_v1_query_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1478,7 +1648,7 @@ func (x *TargetRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TargetRef.ProtoReflect.Descriptor instead.
 func (*TargetRef) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{13}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TargetRef) GetType() string {
@@ -1510,7 +1680,7 @@ type KeyValuePredicate struct {
 
 func (x *KeyValuePredicate) Reset() {
 	*x = KeyValuePredicate{}
-	mi := &file_audit_v1_query_proto_msgTypes[14]
+	mi := &file_audit_v1_query_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1522,7 +1692,7 @@ func (x *KeyValuePredicate) String() string {
 func (*KeyValuePredicate) ProtoMessage() {}
 
 func (x *KeyValuePredicate) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[14]
+	mi := &file_audit_v1_query_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1535,7 +1705,7 @@ func (x *KeyValuePredicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyValuePredicate.ProtoReflect.Descriptor instead.
 func (*KeyValuePredicate) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{14}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *KeyValuePredicate) GetOperator() isKeyValuePredicate_Operator {
@@ -1619,7 +1789,7 @@ type KeyValue struct {
 
 func (x *KeyValue) Reset() {
 	*x = KeyValue{}
-	mi := &file_audit_v1_query_proto_msgTypes[15]
+	mi := &file_audit_v1_query_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1631,7 +1801,7 @@ func (x *KeyValue) String() string {
 func (*KeyValue) ProtoMessage() {}
 
 func (x *KeyValue) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[15]
+	mi := &file_audit_v1_query_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1644,7 +1814,7 @@ func (x *KeyValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use KeyValue.ProtoReflect.Descriptor instead.
 func (*KeyValue) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{15}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *KeyValue) GetKey() string {
@@ -1676,7 +1846,7 @@ type PathPredicate struct {
 
 func (x *PathPredicate) Reset() {
 	*x = PathPredicate{}
-	mi := &file_audit_v1_query_proto_msgTypes[16]
+	mi := &file_audit_v1_query_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1688,7 +1858,7 @@ func (x *PathPredicate) String() string {
 func (*PathPredicate) ProtoMessage() {}
 
 func (x *PathPredicate) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[16]
+	mi := &file_audit_v1_query_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1701,7 +1871,7 @@ func (x *PathPredicate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PathPredicate.ProtoReflect.Descriptor instead.
 func (*PathPredicate) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{16}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PathPredicate) GetPath() string {
@@ -1777,7 +1947,7 @@ type Sort struct {
 
 func (x *Sort) Reset() {
 	*x = Sort{}
-	mi := &file_audit_v1_query_proto_msgTypes[17]
+	mi := &file_audit_v1_query_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1789,7 +1959,7 @@ func (x *Sort) String() string {
 func (*Sort) ProtoMessage() {}
 
 func (x *Sort) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[17]
+	mi := &file_audit_v1_query_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1802,7 +1972,7 @@ func (x *Sort) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Sort.ProtoReflect.Descriptor instead.
 func (*Sort) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{17}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Sort) GetField() Sort_Field {
@@ -1833,7 +2003,7 @@ type SearchResponse struct {
 
 func (x *SearchResponse) Reset() {
 	*x = SearchResponse{}
-	mi := &file_audit_v1_query_proto_msgTypes[18]
+	mi := &file_audit_v1_query_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1845,7 +2015,7 @@ func (x *SearchResponse) String() string {
 func (*SearchResponse) ProtoMessage() {}
 
 func (x *SearchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[18]
+	mi := &file_audit_v1_query_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1858,7 +2028,7 @@ func (x *SearchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchResponse.ProtoReflect.Descriptor instead.
 func (*SearchResponse) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{18}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *SearchResponse) GetItems() []*Record {
@@ -1894,7 +2064,7 @@ type Cursors struct {
 
 func (x *Cursors) Reset() {
 	*x = Cursors{}
-	mi := &file_audit_v1_query_proto_msgTypes[19]
+	mi := &file_audit_v1_query_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1906,7 +2076,7 @@ func (x *Cursors) String() string {
 func (*Cursors) ProtoMessage() {}
 
 func (x *Cursors) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[19]
+	mi := &file_audit_v1_query_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1919,7 +2089,7 @@ func (x *Cursors) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cursors.ProtoReflect.Descriptor instead.
 func (*Cursors) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{19}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *Cursors) GetSelf() string {
@@ -1964,7 +2134,7 @@ type FacetsRequest struct {
 
 func (x *FacetsRequest) Reset() {
 	*x = FacetsRequest{}
-	mi := &file_audit_v1_query_proto_msgTypes[20]
+	mi := &file_audit_v1_query_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1976,7 +2146,7 @@ func (x *FacetsRequest) String() string {
 func (*FacetsRequest) ProtoMessage() {}
 
 func (x *FacetsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[20]
+	mi := &file_audit_v1_query_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1989,7 +2159,7 @@ func (x *FacetsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FacetsRequest.ProtoReflect.Descriptor instead.
 func (*FacetsRequest) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{20}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *FacetsRequest) GetProfile() string {
@@ -2029,7 +2199,7 @@ type FacetsResponse struct {
 
 func (x *FacetsResponse) Reset() {
 	*x = FacetsResponse{}
-	mi := &file_audit_v1_query_proto_msgTypes[21]
+	mi := &file_audit_v1_query_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2041,7 +2211,7 @@ func (x *FacetsResponse) String() string {
 func (*FacetsResponse) ProtoMessage() {}
 
 func (x *FacetsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[21]
+	mi := &file_audit_v1_query_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2054,7 +2224,7 @@ func (x *FacetsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FacetsResponse.ProtoReflect.Descriptor instead.
 func (*FacetsResponse) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{21}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *FacetsResponse) GetFacets() []*Facet {
@@ -2074,7 +2244,7 @@ type Facet struct {
 
 func (x *Facet) Reset() {
 	*x = Facet{}
-	mi := &file_audit_v1_query_proto_msgTypes[22]
+	mi := &file_audit_v1_query_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2086,7 +2256,7 @@ func (x *Facet) String() string {
 func (*Facet) ProtoMessage() {}
 
 func (x *Facet) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[22]
+	mi := &file_audit_v1_query_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2099,7 +2269,7 @@ func (x *Facet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Facet.ProtoReflect.Descriptor instead.
 func (*Facet) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{22}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Facet) GetField() string {
@@ -2126,7 +2296,7 @@ type FacetValue struct {
 
 func (x *FacetValue) Reset() {
 	*x = FacetValue{}
-	mi := &file_audit_v1_query_proto_msgTypes[23]
+	mi := &file_audit_v1_query_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2138,7 +2308,7 @@ func (x *FacetValue) String() string {
 func (*FacetValue) ProtoMessage() {}
 
 func (x *FacetValue) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[23]
+	mi := &file_audit_v1_query_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2151,7 +2321,7 @@ func (x *FacetValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FacetValue.ProtoReflect.Descriptor instead.
 func (*FacetValue) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{23}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *FacetValue) GetValue() string {
@@ -2178,7 +2348,7 @@ type GetRequest struct {
 
 func (x *GetRequest) Reset() {
 	*x = GetRequest{}
-	mi := &file_audit_v1_query_proto_msgTypes[24]
+	mi := &file_audit_v1_query_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2190,7 +2360,7 @@ func (x *GetRequest) String() string {
 func (*GetRequest) ProtoMessage() {}
 
 func (x *GetRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[24]
+	mi := &file_audit_v1_query_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2203,7 +2373,7 @@ func (x *GetRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRequest.ProtoReflect.Descriptor instead.
 func (*GetRequest) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{24}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetRequest) GetProfile() string {
@@ -2230,7 +2400,7 @@ type GetResponse struct {
 
 func (x *GetResponse) Reset() {
 	*x = GetResponse{}
-	mi := &file_audit_v1_query_proto_msgTypes[25]
+	mi := &file_audit_v1_query_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2242,7 +2412,7 @@ func (x *GetResponse) String() string {
 func (*GetResponse) ProtoMessage() {}
 
 func (x *GetResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[25]
+	mi := &file_audit_v1_query_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2255,7 +2425,7 @@ func (x *GetResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetResponse.ProtoReflect.Descriptor instead.
 func (*GetResponse) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{25}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetResponse) GetRecord() *Record {
@@ -2286,7 +2456,7 @@ type Provenance struct {
 
 func (x *Provenance) Reset() {
 	*x = Provenance{}
-	mi := &file_audit_v1_query_proto_msgTypes[26]
+	mi := &file_audit_v1_query_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2298,7 +2468,7 @@ func (x *Provenance) String() string {
 func (*Provenance) ProtoMessage() {}
 
 func (x *Provenance) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[26]
+	mi := &file_audit_v1_query_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2311,7 +2481,7 @@ func (x *Provenance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Provenance.ProtoReflect.Descriptor instead.
 func (*Provenance) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{26}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Provenance) GetObjectKey() string {
@@ -2353,7 +2523,7 @@ type ExportRequest struct {
 
 func (x *ExportRequest) Reset() {
 	*x = ExportRequest{}
-	mi := &file_audit_v1_query_proto_msgTypes[27]
+	mi := &file_audit_v1_query_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2365,7 +2535,7 @@ func (x *ExportRequest) String() string {
 func (*ExportRequest) ProtoMessage() {}
 
 func (x *ExportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[27]
+	mi := &file_audit_v1_query_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2378,7 +2548,7 @@ func (x *ExportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportRequest.ProtoReflect.Descriptor instead.
 func (*ExportRequest) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{27}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ExportRequest) GetProfile() string {
@@ -2412,7 +2582,7 @@ type ExportResponse struct {
 
 func (x *ExportResponse) Reset() {
 	*x = ExportResponse{}
-	mi := &file_audit_v1_query_proto_msgTypes[28]
+	mi := &file_audit_v1_query_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2424,7 +2594,7 @@ func (x *ExportResponse) String() string {
 func (*ExportResponse) ProtoMessage() {}
 
 func (x *ExportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[28]
+	mi := &file_audit_v1_query_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2437,7 +2607,7 @@ func (x *ExportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportResponse.ProtoReflect.Descriptor instead.
 func (*ExportResponse) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{28}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ExportResponse) GetJobId() string {
@@ -2463,7 +2633,7 @@ type GetExportRequest struct {
 
 func (x *GetExportRequest) Reset() {
 	*x = GetExportRequest{}
-	mi := &file_audit_v1_query_proto_msgTypes[29]
+	mi := &file_audit_v1_query_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2475,7 +2645,7 @@ func (x *GetExportRequest) String() string {
 func (*GetExportRequest) ProtoMessage() {}
 
 func (x *GetExportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[29]
+	mi := &file_audit_v1_query_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2488,7 +2658,7 @@ func (x *GetExportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExportRequest.ProtoReflect.Descriptor instead.
 func (*GetExportRequest) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{29}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *GetExportRequest) GetJobId() string {
@@ -2511,7 +2681,7 @@ type GetExportResponse struct {
 
 func (x *GetExportResponse) Reset() {
 	*x = GetExportResponse{}
-	mi := &file_audit_v1_query_proto_msgTypes[30]
+	mi := &file_audit_v1_query_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2523,7 +2693,7 @@ func (x *GetExportResponse) String() string {
 func (*GetExportResponse) ProtoMessage() {}
 
 func (x *GetExportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_audit_v1_query_proto_msgTypes[30]
+	mi := &file_audit_v1_query_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2536,7 +2706,7 @@ func (x *GetExportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetExportResponse.ProtoReflect.Descriptor instead.
 func (*GetExportResponse) Descriptor() ([]byte, []int) {
-	return file_audit_v1_query_proto_rawDescGZIP(), []int{30}
+	return file_audit_v1_query_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetExportResponse) GetState() ExportState {
@@ -2578,7 +2748,20 @@ var File_audit_v1_query_proto protoreflect.FileDescriptor
 
 const file_audit_v1_query_proto_rawDesc = "" +
 	"\n" +
-	"\x14audit/v1/query.proto\x12\baudit.v1\x1a\x15audit/v1/record.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"e\n" +
+	"\x14audit/v1/query.proto\x12\baudit.v1\x1a\x15audit/v1/record.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x0f\n" +
+	"\rAccessRequest\"E\n" +
+	"\x0eAccessResponse\x123\n" +
+	"\bprofiles\x18\x01 \x03(\v2\x17.audit.v1.ProfileAccessR\bprofiles\"\xe6\x01\n" +
+	"\rProfileAccess\x12\x18\n" +
+	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x1e\n" +
+	"\n" +
+	"operations\x18\x02 \x03(\tR\n" +
+	"operations\x12\x1f\n" +
+	"\vall_tenants\x18\x03 \x01(\bR\n" +
+	"allTenants\x12\x18\n" +
+	"\atenants\x18\x04 \x03(\tR\atenants\x12.\n" +
+	"\x04from\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x04from\x120\n" +
+	"\x05until\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x05until\"e\n" +
 	"\x0eResolveRequest\x12\x18\n" +
 	"\aprofile\x18\x01 \x01(\tR\aprofile\x12\x1b\n" +
 	"\ttenant_id\x18\x02 \x01(\tR\btenantId\x12\x1c\n" +
@@ -2775,14 +2958,15 @@ const file_audit_v1_query_proto_rawDesc = "" +
 	"\x18EXPORT_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14EXPORT_STATE_PENDING\x10\x01\x12\x16\n" +
 	"\x12EXPORT_STATE_READY\x10\x02\x12\x16\n" +
-	"\x12EXPORT_STATE_ERROR\x10\x032\xff\x02\n" +
+	"\x12EXPORT_STATE_ERROR\x10\x032\xbc\x03\n" +
 	"\fQueryService\x12;\n" +
 	"\x06Search\x12\x17.audit.v1.SearchRequest\x1a\x18.audit.v1.SearchResponse\x12;\n" +
 	"\x06Facets\x12\x17.audit.v1.FacetsRequest\x1a\x18.audit.v1.FacetsResponse\x122\n" +
 	"\x03Get\x12\x14.audit.v1.GetRequest\x1a\x15.audit.v1.GetResponse\x12;\n" +
 	"\x06Export\x12\x17.audit.v1.ExportRequest\x1a\x18.audit.v1.ExportResponse\x12D\n" +
 	"\tGetExport\x12\x1a.audit.v1.GetExportRequest\x1a\x1b.audit.v1.GetExportResponse\x12>\n" +
-	"\aResolve\x12\x18.audit.v1.ResolveRequest\x1a\x19.audit.v1.ResolveResponseB\x8a\x01\n" +
+	"\aResolve\x12\x18.audit.v1.ResolveRequest\x1a\x19.audit.v1.ResolveResponse\x12;\n" +
+	"\x06Access\x12\x17.audit.v1.AccessRequest\x1a\x18.audit.v1.AccessResponseB\x8a\x01\n" +
 	"\fcom.audit.v1B\n" +
 	"QueryProtoP\x01Z-github.com/truvity/audit/gen/audit/v1;auditv1\xa2\x02\x03AXX\xaa\x02\bAudit.V1\xca\x02\bAudit\\V1\xe2\x02\x14Audit\\V1\\GPBMetadata\xea\x02\tAudit::V1b\x06proto3"
 
@@ -2799,122 +2983,130 @@ func file_audit_v1_query_proto_rawDescGZIP() []byte {
 }
 
 var file_audit_v1_query_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_audit_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_audit_v1_query_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_audit_v1_query_proto_goTypes = []any{
 	(ExportState)(0),              // 0: audit.v1.ExportState
 	(Sort_Field)(0),               // 1: audit.v1.Sort.Field
 	(Sort_Order)(0),               // 2: audit.v1.Sort.Order
 	(ExportRequest_Format)(0),     // 3: audit.v1.ExportRequest.Format
-	(*ResolveRequest)(nil),        // 4: audit.v1.ResolveRequest
-	(*ResolveResponse)(nil),       // 5: audit.v1.ResolveResponse
-	(*SearchRequest)(nil),         // 6: audit.v1.SearchRequest
-	(*Filter)(nil),                // 7: audit.v1.Filter
-	(*StringPredicate)(nil),       // 8: audit.v1.StringPredicate
-	(*StringList)(nil),            // 9: audit.v1.StringList
-	(*IntegerPredicate)(nil),      // 10: audit.v1.IntegerPredicate
-	(*IntegerList)(nil),           // 11: audit.v1.IntegerList
-	(*IntegerRange)(nil),          // 12: audit.v1.IntegerRange
-	(*TimePredicate)(nil),         // 13: audit.v1.TimePredicate
-	(*TimeRange)(nil),             // 14: audit.v1.TimeRange
-	(*TargetPredicate)(nil),       // 15: audit.v1.TargetPredicate
-	(*TargetList)(nil),            // 16: audit.v1.TargetList
-	(*TargetRef)(nil),             // 17: audit.v1.TargetRef
-	(*KeyValuePredicate)(nil),     // 18: audit.v1.KeyValuePredicate
-	(*KeyValue)(nil),              // 19: audit.v1.KeyValue
-	(*PathPredicate)(nil),         // 20: audit.v1.PathPredicate
-	(*Sort)(nil),                  // 21: audit.v1.Sort
-	(*SearchResponse)(nil),        // 22: audit.v1.SearchResponse
-	(*Cursors)(nil),               // 23: audit.v1.Cursors
-	(*FacetsRequest)(nil),         // 24: audit.v1.FacetsRequest
-	(*FacetsResponse)(nil),        // 25: audit.v1.FacetsResponse
-	(*Facet)(nil),                 // 26: audit.v1.Facet
-	(*FacetValue)(nil),            // 27: audit.v1.FacetValue
-	(*GetRequest)(nil),            // 28: audit.v1.GetRequest
-	(*GetResponse)(nil),           // 29: audit.v1.GetResponse
-	(*Provenance)(nil),            // 30: audit.v1.Provenance
-	(*ExportRequest)(nil),         // 31: audit.v1.ExportRequest
-	(*ExportResponse)(nil),        // 32: audit.v1.ExportResponse
-	(*GetExportRequest)(nil),      // 33: audit.v1.GetExportRequest
-	(*GetExportResponse)(nil),     // 34: audit.v1.GetExportResponse
-	(*timestamppb.Timestamp)(nil), // 35: google.protobuf.Timestamp
-	(*Record)(nil),                // 36: audit.v1.Record
+	(*AccessRequest)(nil),         // 4: audit.v1.AccessRequest
+	(*AccessResponse)(nil),        // 5: audit.v1.AccessResponse
+	(*ProfileAccess)(nil),         // 6: audit.v1.ProfileAccess
+	(*ResolveRequest)(nil),        // 7: audit.v1.ResolveRequest
+	(*ResolveResponse)(nil),       // 8: audit.v1.ResolveResponse
+	(*SearchRequest)(nil),         // 9: audit.v1.SearchRequest
+	(*Filter)(nil),                // 10: audit.v1.Filter
+	(*StringPredicate)(nil),       // 11: audit.v1.StringPredicate
+	(*StringList)(nil),            // 12: audit.v1.StringList
+	(*IntegerPredicate)(nil),      // 13: audit.v1.IntegerPredicate
+	(*IntegerList)(nil),           // 14: audit.v1.IntegerList
+	(*IntegerRange)(nil),          // 15: audit.v1.IntegerRange
+	(*TimePredicate)(nil),         // 16: audit.v1.TimePredicate
+	(*TimeRange)(nil),             // 17: audit.v1.TimeRange
+	(*TargetPredicate)(nil),       // 18: audit.v1.TargetPredicate
+	(*TargetList)(nil),            // 19: audit.v1.TargetList
+	(*TargetRef)(nil),             // 20: audit.v1.TargetRef
+	(*KeyValuePredicate)(nil),     // 21: audit.v1.KeyValuePredicate
+	(*KeyValue)(nil),              // 22: audit.v1.KeyValue
+	(*PathPredicate)(nil),         // 23: audit.v1.PathPredicate
+	(*Sort)(nil),                  // 24: audit.v1.Sort
+	(*SearchResponse)(nil),        // 25: audit.v1.SearchResponse
+	(*Cursors)(nil),               // 26: audit.v1.Cursors
+	(*FacetsRequest)(nil),         // 27: audit.v1.FacetsRequest
+	(*FacetsResponse)(nil),        // 28: audit.v1.FacetsResponse
+	(*Facet)(nil),                 // 29: audit.v1.Facet
+	(*FacetValue)(nil),            // 30: audit.v1.FacetValue
+	(*GetRequest)(nil),            // 31: audit.v1.GetRequest
+	(*GetResponse)(nil),           // 32: audit.v1.GetResponse
+	(*Provenance)(nil),            // 33: audit.v1.Provenance
+	(*ExportRequest)(nil),         // 34: audit.v1.ExportRequest
+	(*ExportResponse)(nil),        // 35: audit.v1.ExportResponse
+	(*GetExportRequest)(nil),      // 36: audit.v1.GetExportRequest
+	(*GetExportResponse)(nil),     // 37: audit.v1.GetExportResponse
+	(*timestamppb.Timestamp)(nil), // 38: google.protobuf.Timestamp
+	(*Record)(nil),                // 39: audit.v1.Record
 }
 var file_audit_v1_query_proto_depIdxs = []int32{
-	7,  // 0: audit.v1.SearchRequest.filter:type_name -> audit.v1.Filter
-	21, // 1: audit.v1.SearchRequest.sort:type_name -> audit.v1.Sort
-	8,  // 2: audit.v1.Filter.id:type_name -> audit.v1.StringPredicate
-	13, // 3: audit.v1.Filter.occurred_at:type_name -> audit.v1.TimePredicate
-	13, // 4: audit.v1.Filter.recorded_at:type_name -> audit.v1.TimePredicate
-	8,  // 5: audit.v1.Filter.source:type_name -> audit.v1.StringPredicate
-	8,  // 6: audit.v1.Filter.action:type_name -> audit.v1.StringPredicate
-	8,  // 7: audit.v1.Filter.operation:type_name -> audit.v1.StringPredicate
-	8,  // 8: audit.v1.Filter.outcome:type_name -> audit.v1.StringPredicate
-	8,  // 9: audit.v1.Filter.tenant_id:type_name -> audit.v1.StringPredicate
-	8,  // 10: audit.v1.Filter.subject_kind:type_name -> audit.v1.StringPredicate
-	8,  // 11: audit.v1.Filter.subject_id:type_name -> audit.v1.StringPredicate
-	8,  // 12: audit.v1.Filter.actor_kind:type_name -> audit.v1.StringPredicate
-	8,  // 13: audit.v1.Filter.actor_id:type_name -> audit.v1.StringPredicate
-	15, // 14: audit.v1.Filter.targets:type_name -> audit.v1.TargetPredicate
-	8,  // 15: audit.v1.Filter.request_id:type_name -> audit.v1.StringPredicate
-	8,  // 16: audit.v1.Filter.trace_id:type_name -> audit.v1.StringPredicate
-	8,  // 17: audit.v1.Filter.client_address:type_name -> audit.v1.StringPredicate
-	8,  // 18: audit.v1.Filter.observer_id:type_name -> audit.v1.StringPredicate
-	8,  // 19: audit.v1.Filter.meter_name:type_name -> audit.v1.StringPredicate
-	20, // 20: audit.v1.Filter.data:type_name -> audit.v1.PathPredicate
-	18, // 21: audit.v1.Filter.attributes:type_name -> audit.v1.KeyValuePredicate
-	9,  // 22: audit.v1.StringPredicate.in:type_name -> audit.v1.StringList
-	9,  // 23: audit.v1.StringPredicate.not_in:type_name -> audit.v1.StringList
-	11, // 24: audit.v1.IntegerPredicate.in:type_name -> audit.v1.IntegerList
-	11, // 25: audit.v1.IntegerPredicate.not_in:type_name -> audit.v1.IntegerList
-	12, // 26: audit.v1.IntegerPredicate.between:type_name -> audit.v1.IntegerRange
-	14, // 27: audit.v1.TimePredicate.between:type_name -> audit.v1.TimeRange
-	35, // 28: audit.v1.TimePredicate.greater_than:type_name -> google.protobuf.Timestamp
-	35, // 29: audit.v1.TimePredicate.greater_than_or_equal:type_name -> google.protobuf.Timestamp
-	35, // 30: audit.v1.TimePredicate.less_than:type_name -> google.protobuf.Timestamp
-	35, // 31: audit.v1.TimePredicate.less_than_or_equal:type_name -> google.protobuf.Timestamp
-	35, // 32: audit.v1.TimeRange.from:type_name -> google.protobuf.Timestamp
-	35, // 33: audit.v1.TimeRange.to:type_name -> google.protobuf.Timestamp
-	16, // 34: audit.v1.TargetPredicate.in:type_name -> audit.v1.TargetList
-	16, // 35: audit.v1.TargetPredicate.not_in:type_name -> audit.v1.TargetList
-	17, // 36: audit.v1.TargetList.values:type_name -> audit.v1.TargetRef
-	19, // 37: audit.v1.KeyValuePredicate.equal:type_name -> audit.v1.KeyValue
-	19, // 38: audit.v1.KeyValuePredicate.not_equal:type_name -> audit.v1.KeyValue
-	8,  // 39: audit.v1.PathPredicate.string:type_name -> audit.v1.StringPredicate
-	10, // 40: audit.v1.PathPredicate.integer:type_name -> audit.v1.IntegerPredicate
-	13, // 41: audit.v1.PathPredicate.time:type_name -> audit.v1.TimePredicate
-	1,  // 42: audit.v1.Sort.field:type_name -> audit.v1.Sort.Field
-	2,  // 43: audit.v1.Sort.order:type_name -> audit.v1.Sort.Order
-	36, // 44: audit.v1.SearchResponse.items:type_name -> audit.v1.Record
-	6,  // 45: audit.v1.SearchResponse.query:type_name -> audit.v1.SearchRequest
-	23, // 46: audit.v1.SearchResponse.cursors:type_name -> audit.v1.Cursors
-	7,  // 47: audit.v1.FacetsRequest.filter:type_name -> audit.v1.Filter
-	26, // 48: audit.v1.FacetsResponse.facets:type_name -> audit.v1.Facet
-	27, // 49: audit.v1.Facet.values:type_name -> audit.v1.FacetValue
-	36, // 50: audit.v1.GetResponse.record:type_name -> audit.v1.Record
-	30, // 51: audit.v1.GetResponse.provenance:type_name -> audit.v1.Provenance
-	35, // 52: audit.v1.Provenance.verified_at:type_name -> google.protobuf.Timestamp
-	7,  // 53: audit.v1.ExportRequest.filter:type_name -> audit.v1.Filter
-	3,  // 54: audit.v1.ExportRequest.format:type_name -> audit.v1.ExportRequest.Format
-	0,  // 55: audit.v1.ExportResponse.state:type_name -> audit.v1.ExportState
-	0,  // 56: audit.v1.GetExportResponse.state:type_name -> audit.v1.ExportState
-	35, // 57: audit.v1.GetExportResponse.expires_at:type_name -> google.protobuf.Timestamp
-	6,  // 58: audit.v1.QueryService.Search:input_type -> audit.v1.SearchRequest
-	24, // 59: audit.v1.QueryService.Facets:input_type -> audit.v1.FacetsRequest
-	28, // 60: audit.v1.QueryService.Get:input_type -> audit.v1.GetRequest
-	31, // 61: audit.v1.QueryService.Export:input_type -> audit.v1.ExportRequest
-	33, // 62: audit.v1.QueryService.GetExport:input_type -> audit.v1.GetExportRequest
-	4,  // 63: audit.v1.QueryService.Resolve:input_type -> audit.v1.ResolveRequest
-	22, // 64: audit.v1.QueryService.Search:output_type -> audit.v1.SearchResponse
-	25, // 65: audit.v1.QueryService.Facets:output_type -> audit.v1.FacetsResponse
-	29, // 66: audit.v1.QueryService.Get:output_type -> audit.v1.GetResponse
-	32, // 67: audit.v1.QueryService.Export:output_type -> audit.v1.ExportResponse
-	34, // 68: audit.v1.QueryService.GetExport:output_type -> audit.v1.GetExportResponse
-	5,  // 69: audit.v1.QueryService.Resolve:output_type -> audit.v1.ResolveResponse
-	64, // [64:70] is the sub-list for method output_type
-	58, // [58:64] is the sub-list for method input_type
-	58, // [58:58] is the sub-list for extension type_name
-	58, // [58:58] is the sub-list for extension extendee
-	0,  // [0:58] is the sub-list for field type_name
+	6,  // 0: audit.v1.AccessResponse.profiles:type_name -> audit.v1.ProfileAccess
+	38, // 1: audit.v1.ProfileAccess.from:type_name -> google.protobuf.Timestamp
+	38, // 2: audit.v1.ProfileAccess.until:type_name -> google.protobuf.Timestamp
+	10, // 3: audit.v1.SearchRequest.filter:type_name -> audit.v1.Filter
+	24, // 4: audit.v1.SearchRequest.sort:type_name -> audit.v1.Sort
+	11, // 5: audit.v1.Filter.id:type_name -> audit.v1.StringPredicate
+	16, // 6: audit.v1.Filter.occurred_at:type_name -> audit.v1.TimePredicate
+	16, // 7: audit.v1.Filter.recorded_at:type_name -> audit.v1.TimePredicate
+	11, // 8: audit.v1.Filter.source:type_name -> audit.v1.StringPredicate
+	11, // 9: audit.v1.Filter.action:type_name -> audit.v1.StringPredicate
+	11, // 10: audit.v1.Filter.operation:type_name -> audit.v1.StringPredicate
+	11, // 11: audit.v1.Filter.outcome:type_name -> audit.v1.StringPredicate
+	11, // 12: audit.v1.Filter.tenant_id:type_name -> audit.v1.StringPredicate
+	11, // 13: audit.v1.Filter.subject_kind:type_name -> audit.v1.StringPredicate
+	11, // 14: audit.v1.Filter.subject_id:type_name -> audit.v1.StringPredicate
+	11, // 15: audit.v1.Filter.actor_kind:type_name -> audit.v1.StringPredicate
+	11, // 16: audit.v1.Filter.actor_id:type_name -> audit.v1.StringPredicate
+	18, // 17: audit.v1.Filter.targets:type_name -> audit.v1.TargetPredicate
+	11, // 18: audit.v1.Filter.request_id:type_name -> audit.v1.StringPredicate
+	11, // 19: audit.v1.Filter.trace_id:type_name -> audit.v1.StringPredicate
+	11, // 20: audit.v1.Filter.client_address:type_name -> audit.v1.StringPredicate
+	11, // 21: audit.v1.Filter.observer_id:type_name -> audit.v1.StringPredicate
+	11, // 22: audit.v1.Filter.meter_name:type_name -> audit.v1.StringPredicate
+	23, // 23: audit.v1.Filter.data:type_name -> audit.v1.PathPredicate
+	21, // 24: audit.v1.Filter.attributes:type_name -> audit.v1.KeyValuePredicate
+	12, // 25: audit.v1.StringPredicate.in:type_name -> audit.v1.StringList
+	12, // 26: audit.v1.StringPredicate.not_in:type_name -> audit.v1.StringList
+	14, // 27: audit.v1.IntegerPredicate.in:type_name -> audit.v1.IntegerList
+	14, // 28: audit.v1.IntegerPredicate.not_in:type_name -> audit.v1.IntegerList
+	15, // 29: audit.v1.IntegerPredicate.between:type_name -> audit.v1.IntegerRange
+	17, // 30: audit.v1.TimePredicate.between:type_name -> audit.v1.TimeRange
+	38, // 31: audit.v1.TimePredicate.greater_than:type_name -> google.protobuf.Timestamp
+	38, // 32: audit.v1.TimePredicate.greater_than_or_equal:type_name -> google.protobuf.Timestamp
+	38, // 33: audit.v1.TimePredicate.less_than:type_name -> google.protobuf.Timestamp
+	38, // 34: audit.v1.TimePredicate.less_than_or_equal:type_name -> google.protobuf.Timestamp
+	38, // 35: audit.v1.TimeRange.from:type_name -> google.protobuf.Timestamp
+	38, // 36: audit.v1.TimeRange.to:type_name -> google.protobuf.Timestamp
+	19, // 37: audit.v1.TargetPredicate.in:type_name -> audit.v1.TargetList
+	19, // 38: audit.v1.TargetPredicate.not_in:type_name -> audit.v1.TargetList
+	20, // 39: audit.v1.TargetList.values:type_name -> audit.v1.TargetRef
+	22, // 40: audit.v1.KeyValuePredicate.equal:type_name -> audit.v1.KeyValue
+	22, // 41: audit.v1.KeyValuePredicate.not_equal:type_name -> audit.v1.KeyValue
+	11, // 42: audit.v1.PathPredicate.string:type_name -> audit.v1.StringPredicate
+	13, // 43: audit.v1.PathPredicate.integer:type_name -> audit.v1.IntegerPredicate
+	16, // 44: audit.v1.PathPredicate.time:type_name -> audit.v1.TimePredicate
+	1,  // 45: audit.v1.Sort.field:type_name -> audit.v1.Sort.Field
+	2,  // 46: audit.v1.Sort.order:type_name -> audit.v1.Sort.Order
+	39, // 47: audit.v1.SearchResponse.items:type_name -> audit.v1.Record
+	9,  // 48: audit.v1.SearchResponse.query:type_name -> audit.v1.SearchRequest
+	26, // 49: audit.v1.SearchResponse.cursors:type_name -> audit.v1.Cursors
+	10, // 50: audit.v1.FacetsRequest.filter:type_name -> audit.v1.Filter
+	29, // 51: audit.v1.FacetsResponse.facets:type_name -> audit.v1.Facet
+	30, // 52: audit.v1.Facet.values:type_name -> audit.v1.FacetValue
+	39, // 53: audit.v1.GetResponse.record:type_name -> audit.v1.Record
+	33, // 54: audit.v1.GetResponse.provenance:type_name -> audit.v1.Provenance
+	38, // 55: audit.v1.Provenance.verified_at:type_name -> google.protobuf.Timestamp
+	10, // 56: audit.v1.ExportRequest.filter:type_name -> audit.v1.Filter
+	3,  // 57: audit.v1.ExportRequest.format:type_name -> audit.v1.ExportRequest.Format
+	0,  // 58: audit.v1.ExportResponse.state:type_name -> audit.v1.ExportState
+	0,  // 59: audit.v1.GetExportResponse.state:type_name -> audit.v1.ExportState
+	38, // 60: audit.v1.GetExportResponse.expires_at:type_name -> google.protobuf.Timestamp
+	9,  // 61: audit.v1.QueryService.Search:input_type -> audit.v1.SearchRequest
+	27, // 62: audit.v1.QueryService.Facets:input_type -> audit.v1.FacetsRequest
+	31, // 63: audit.v1.QueryService.Get:input_type -> audit.v1.GetRequest
+	34, // 64: audit.v1.QueryService.Export:input_type -> audit.v1.ExportRequest
+	36, // 65: audit.v1.QueryService.GetExport:input_type -> audit.v1.GetExportRequest
+	7,  // 66: audit.v1.QueryService.Resolve:input_type -> audit.v1.ResolveRequest
+	4,  // 67: audit.v1.QueryService.Access:input_type -> audit.v1.AccessRequest
+	25, // 68: audit.v1.QueryService.Search:output_type -> audit.v1.SearchResponse
+	28, // 69: audit.v1.QueryService.Facets:output_type -> audit.v1.FacetsResponse
+	32, // 70: audit.v1.QueryService.Get:output_type -> audit.v1.GetResponse
+	35, // 71: audit.v1.QueryService.Export:output_type -> audit.v1.ExportResponse
+	37, // 72: audit.v1.QueryService.GetExport:output_type -> audit.v1.GetExportResponse
+	8,  // 73: audit.v1.QueryService.Resolve:output_type -> audit.v1.ResolveResponse
+	5,  // 74: audit.v1.QueryService.Access:output_type -> audit.v1.AccessResponse
+	68, // [68:75] is the sub-list for method output_type
+	61, // [61:68] is the sub-list for method input_type
+	61, // [61:61] is the sub-list for extension type_name
+	61, // [61:61] is the sub-list for extension extendee
+	0,  // [0:61] is the sub-list for field type_name
 }
 
 func init() { file_audit_v1_query_proto_init() }
@@ -2923,7 +3115,7 @@ func file_audit_v1_query_proto_init() {
 		return
 	}
 	file_audit_v1_record_proto_init()
-	file_audit_v1_query_proto_msgTypes[4].OneofWrappers = []any{
+	file_audit_v1_query_proto_msgTypes[7].OneofWrappers = []any{
 		(*StringPredicate_Equal)(nil),
 		(*StringPredicate_NotEqual)(nil),
 		(*StringPredicate_In)(nil),
@@ -2932,7 +3124,7 @@ func file_audit_v1_query_proto_init() {
 		(*StringPredicate_IsNull)(nil),
 		(*StringPredicate_IsNotNull)(nil),
 	}
-	file_audit_v1_query_proto_msgTypes[6].OneofWrappers = []any{
+	file_audit_v1_query_proto_msgTypes[9].OneofWrappers = []any{
 		(*IntegerPredicate_Equal)(nil),
 		(*IntegerPredicate_NotEqual)(nil),
 		(*IntegerPredicate_In)(nil),
@@ -2943,24 +3135,24 @@ func file_audit_v1_query_proto_init() {
 		(*IntegerPredicate_LessThan)(nil),
 		(*IntegerPredicate_LessThanOrEqual)(nil),
 	}
-	file_audit_v1_query_proto_msgTypes[9].OneofWrappers = []any{
+	file_audit_v1_query_proto_msgTypes[12].OneofWrappers = []any{
 		(*TimePredicate_Between)(nil),
 		(*TimePredicate_GreaterThan)(nil),
 		(*TimePredicate_GreaterThanOrEqual)(nil),
 		(*TimePredicate_LessThan)(nil),
 		(*TimePredicate_LessThanOrEqual)(nil),
 	}
-	file_audit_v1_query_proto_msgTypes[11].OneofWrappers = []any{
+	file_audit_v1_query_proto_msgTypes[14].OneofWrappers = []any{
 		(*TargetPredicate_In)(nil),
 		(*TargetPredicate_NotIn)(nil),
 	}
-	file_audit_v1_query_proto_msgTypes[14].OneofWrappers = []any{
+	file_audit_v1_query_proto_msgTypes[17].OneofWrappers = []any{
 		(*KeyValuePredicate_Equal)(nil),
 		(*KeyValuePredicate_NotEqual)(nil),
 		(*KeyValuePredicate_KeyIsNull)(nil),
 		(*KeyValuePredicate_KeyIsNotNull)(nil),
 	}
-	file_audit_v1_query_proto_msgTypes[16].OneofWrappers = []any{
+	file_audit_v1_query_proto_msgTypes[19].OneofWrappers = []any{
 		(*PathPredicate_String_)(nil),
 		(*PathPredicate_Integer)(nil),
 		(*PathPredicate_Time)(nil),
@@ -2971,7 +3163,7 @@ func file_audit_v1_query_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_audit_v1_query_proto_rawDesc), len(file_audit_v1_query_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   31,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

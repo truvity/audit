@@ -51,6 +51,8 @@ const (
 	QueryServiceGetExportProcedure = "/audit.v1.QueryService/GetExport"
 	// QueryServiceResolveProcedure is the fully-qualified name of the QueryService's Resolve RPC.
 	QueryServiceResolveProcedure = "/audit.v1.QueryService/Resolve"
+	// QueryServiceAccessProcedure is the fully-qualified name of the QueryService's Access RPC.
+	QueryServiceAccessProcedure = "/audit.v1.QueryService/Access"
 )
 
 // QueryServiceClient is a client for the audit.v1.QueryService service.
@@ -66,6 +68,12 @@ type QueryServiceClient interface {
 	// resolve operation, which no read grant implies, and is recorded before it
 	// answers.
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// Access says what the caller may read: every profile a grant names, the
+	// operations allowed on it, and over which tenants and period. It is the
+	// same grants every other call is held to, so a page can show what the
+	// caller may open without its host knowing the deployment's profiles. It
+	// reads no record, and is not recorded.
+	Access(context.Context, *connect.Request[v1.AccessRequest]) (*connect.Response[v1.AccessResponse], error)
 }
 
 // NewQueryServiceClient constructs a client for the audit.v1.QueryService service. By default, it
@@ -115,6 +123,12 @@ func NewQueryServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(queryServiceMethods.ByName("Resolve")),
 			connect.WithClientOptions(opts...),
 		),
+		access: connect.NewClient[v1.AccessRequest, v1.AccessResponse](
+			httpClient,
+			baseURL+QueryServiceAccessProcedure,
+			connect.WithSchema(queryServiceMethods.ByName("Access")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -126,6 +140,7 @@ type queryServiceClient struct {
 	export    *connect.Client[v1.ExportRequest, v1.ExportResponse]
 	getExport *connect.Client[v1.GetExportRequest, v1.GetExportResponse]
 	resolve   *connect.Client[v1.ResolveRequest, v1.ResolveResponse]
+	access    *connect.Client[v1.AccessRequest, v1.AccessResponse]
 }
 
 // Search calls audit.v1.QueryService.Search.
@@ -158,6 +173,11 @@ func (c *queryServiceClient) Resolve(ctx context.Context, req *connect.Request[v
 	return c.resolve.CallUnary(ctx, req)
 }
 
+// Access calls audit.v1.QueryService.Access.
+func (c *queryServiceClient) Access(ctx context.Context, req *connect.Request[v1.AccessRequest]) (*connect.Response[v1.AccessResponse], error) {
+	return c.access.CallUnary(ctx, req)
+}
+
 // QueryServiceHandler is an implementation of the audit.v1.QueryService service.
 type QueryServiceHandler interface {
 	Search(context.Context, *connect.Request[v1.SearchRequest]) (*connect.Response[v1.SearchResponse], error)
@@ -171,6 +191,12 @@ type QueryServiceHandler interface {
 	// resolve operation, which no read grant implies, and is recorded before it
 	// answers.
 	Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error)
+	// Access says what the caller may read: every profile a grant names, the
+	// operations allowed on it, and over which tenants and period. It is the
+	// same grants every other call is held to, so a page can show what the
+	// caller may open without its host knowing the deployment's profiles. It
+	// reads no record, and is not recorded.
+	Access(context.Context, *connect.Request[v1.AccessRequest]) (*connect.Response[v1.AccessResponse], error)
 }
 
 // NewQueryServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -216,6 +242,12 @@ func NewQueryServiceHandler(svc QueryServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(queryServiceMethods.ByName("Resolve")),
 		connect.WithHandlerOptions(opts...),
 	)
+	queryServiceAccessHandler := connect.NewUnaryHandler(
+		QueryServiceAccessProcedure,
+		svc.Access,
+		connect.WithSchema(queryServiceMethods.ByName("Access")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/audit.v1.QueryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case QueryServiceSearchProcedure:
@@ -230,6 +262,8 @@ func NewQueryServiceHandler(svc QueryServiceHandler, opts ...connect.HandlerOpti
 			queryServiceGetExportHandler.ServeHTTP(w, r)
 		case QueryServiceResolveProcedure:
 			queryServiceResolveHandler.ServeHTTP(w, r)
+		case QueryServiceAccessProcedure:
+			queryServiceAccessHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -261,4 +295,8 @@ func (UnimplementedQueryServiceHandler) GetExport(context.Context, *connect.Requ
 
 func (UnimplementedQueryServiceHandler) Resolve(context.Context, *connect.Request[v1.ResolveRequest]) (*connect.Response[v1.ResolveResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("audit.v1.QueryService.Resolve is not implemented"))
+}
+
+func (UnimplementedQueryServiceHandler) Access(context.Context, *connect.Request[v1.AccessRequest]) (*connect.Response[v1.AccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("audit.v1.QueryService.Access is not implemented"))
 }

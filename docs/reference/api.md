@@ -109,6 +109,28 @@ service rather than by whichever searcher is configured: `filter` 4 terms,
 `sort` 4, `in` 100 values, `limit` ceiling 1000, and an export size cap. A
 grant's window narrows a wider request rather than refusing it.
 
+## Access
+
+`audit.v1.QueryService/Access` says what the caller may read: every profile a
+grant names, with the operations the caller holds on it over at least one
+tenant, the tenants, and the period.
+
+```json
+{}
+→ {"profiles": [
+    {"profile": "security", "operations": ["search", "facets", "get", "tail", "export"],
+     "all_tenants": true},
+    {"profile": "history", "operations": ["search", "get"], "tenants": ["acme"],
+     "from": "2026-07-01T00:00:00Z"}
+  ]}
+```
+
+It is the same grants and the same rule every other call is held to, so a
+page can offer what the caller may open without its host knowing the
+deployment's profile names; `AuditView` asks it when the host passes no
+profiles. It reads no record and is not recorded. A profile a grant names
+with no tenant to read it over is not listed.
+
 ## Resolve
 
 `audit.v1.QueryService/Resolve` maps a pseudonym back to the identity behind

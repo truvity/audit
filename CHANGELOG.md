@@ -107,6 +107,17 @@ Foundation. No release.
   service, `audit key destroy` and `audit digest`; the chart's `openbao`,
   `keys.provider: transit`, a role per component, and `trust.configMap` for
   OpenBAO and Postgres alike.
+- `audit conformance --query <url> --profile <p>`: holds a running query
+  service to the search contract from outside — paging, order, get against
+  search, filters, refusals, and optionally digest coverage — over the records
+  it already holds, reading only. `just conformance` runs the whole suite with
+  Postgres, LocalStack and an OpenBAO dev server.
+- A record that is not there is `not_found` from every searcher
+  (`index.ErrNotFound`, now in the searchers' conformance suite). Before, the
+  searchers returned a plain error, which the service reports as `unavailable`
+  — telling a client to retry for a record that does not exist. Found by the
+  first conformance run. `id` predicates take whole UUIDs; the Postgres index
+  failed on anything else.
 - `@truvity/audit` (built from `ts/`):
   - the query client and the typed contract;
   - the qualifier box compiled to the typed filter;

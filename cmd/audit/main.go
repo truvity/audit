@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,7 +24,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
+	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/keys"
@@ -45,6 +48,11 @@ usage:
   audit check-emitters <dir> --catalogue <file>
         Check that the actions the code emits are the actions the catalogue
         declares.
+
+  audit conformance --query <url> --profile <name>... [flags]
+        Hold a running query service to what the search contract promises —
+        paging, order, get against search, filters, refusals — over the
+        records it already holds. It reads and never writes.
 
   audit messages <catalogue.yaml>...
         Print what a viewer needs to render a catalogue's records as
@@ -117,6 +125,8 @@ func main() {
 		err = checkEmitters(os.Args[2:])
 	case "messages":
 		err = messages(os.Args[2:], os.Stdout)
+	case "conformance":
+		err = conformance(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
 	case "replay":
@@ -945,4 +955,47 @@ func messages(args []string, out io.Writer) error {
 		return enc.Encode(all[0])
 	}
 	return enc.Encode(all)
+}
+
+// conformance runs the read-only conformance checks against a query service.
+func conformance(args []string) error {
+	flags := flag.NewFlagSet("conformance", flag.ContinueOnError)
+	var profiles stringList
+	flags.Var(&profiles, "profile", "a profile to check; repeat for several")
+	var (
+		url       = flags.String("query", "", "the query service's base URL")
+		tokenFile = flags.String("token-file", os.Getenv(cli.TokenFileEnv),
+			"a file holding the bearer token to call it with, read on every request; default AUDIT_TOKEN_FILE")
+		limit    = flags.Int("max", 1000, "how many records of each profile the walk reads at most")
+		verified = flags.Duration("verified-before", 0,
+			"require sampled records older than this to be covered by a verified digest; 0 checks nothing")
+		asJSON = flags.Bool("json", false, "print the report as JSON")
+	)
+	if _, err := parse(flags, args); err != nil {
+		return err
+	}
+	switch {
+	case *url == "":
+		return errors.New("name the query service with --query")
+	case len(profiles) == 0:
+		return errors.New("name at least one profile with --profile")
+	}
+	httpClient := http.DefaultClient
+	if *tokenFile != "" {
+		httpClient = auth.TokenFile(*tokenFile)
+	}
+	failed, err := cli.Conformance{
+		Client:         auditv1connect.NewQueryServiceClient(httpClient, *url),
+		Profiles:       profiles,
+		Max:            *limit,
+		VerifiedBefore: *verified,
+		JSON:           *asJSON,
+	}.Run(context.Background())
+	if err != nil {
+		return err
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d checks failed", failed)
+	}
+	return nil
 }

@@ -235,3 +235,25 @@ It walks the signed chain and reports any object changed, taken away or slipped
 in beside it, any gap in the chain, and any lock shorter than the profile
 requires. Exit status zero means nothing was found. See
 [verification](../operations/verify.md).
+
+The query service can be held to its contract the same way, from outside, with
+nothing but a sign-in that may read:
+
+```sh
+audit conformance --query https://audit-query.example.com --profile security \
+  --token-file token --verified-before 48h
+```
+
+It walks each profile's records and checks what the search contract promises:
+
+- every record comes back once, newest first;
+- the last page keeps its `next` cursor;
+- `Get` returns what `Search` returned, and says where the copy is;
+- a filter on id, action, tenant or time returns only what matches;
+- a cursor is refused with another query, and an unknown id is not found;
+- with `--verified-before`, a record older than that is covered by a verified
+  digest.
+
+It reads and never writes: a run that wrote test records would leave them in a
+locked archive for years. Its reads are recorded like anyone's. A non-zero exit
+names the checks that failed.

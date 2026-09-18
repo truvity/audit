@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/truvity/audit/auth"
@@ -223,7 +225,18 @@ func (s *Service) Get(
 		return index.Row{}, index.Provenance{}, g, err
 	}
 
-	row, where, err := s.Searcher.Get(ctx, req.GetProfile(), req.GetId())
+	// An id that is not a UUID is no record's: say so without asking a
+	// searcher that might fail on it rather than answer.
+	var row index.Row
+	var where index.Provenance
+	if _, perr := uuid.Parse(req.GetId()); perr != nil {
+		err = fmt.Errorf("%w: %w: %q is not a record id", ErrNotFound, index.ErrNotFound, req.GetId())
+	} else {
+		row, where, err = s.Searcher.Get(ctx, req.GetProfile(), req.GetId())
+	}
+	if errors.Is(err, index.ErrNotFound) && !errors.Is(err, ErrNotFound) {
+		err = fmt.Errorf("%w: %w", ErrNotFound, err)
+	}
 	if err == nil && (!granted(row.TenantID, g) || !within(row.OccurredAt, g)) {
 		// Found, and not this caller's to see: another tenant's, or outside
 		// the period the grant covers. It is reported as absent rather than as

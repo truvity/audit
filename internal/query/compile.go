@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
 )
@@ -111,6 +113,10 @@ func conjunction(f *auditv1.Filter) (index.Conjunction, error) {
 			return c, err
 		}
 		*p.into = append(*p.into, got)
+	}
+
+	if err := wholeIDs(c.ID); err != nil {
+		return c, err
 	}
 
 	if w := f.GetOccurredAt(); w != nil {
@@ -262,4 +268,28 @@ func clamp(q index.Query, from, until time.Time) index.Query {
 		q.Filter[i].OccurredAt = append(q.Filter[i].OccurredAt, index.TimePredicate{From: from, To: until})
 	}
 	return q
+}
+
+// wholeIDs holds id predicates to what an identifier is: a UUID, whole. A
+// record's id is always one (the record validator refuses anything else), so
+// a value that is not can match nothing — and a searcher that stores ids as
+// UUIDs would fail on it rather than answer, which a caller would read as an
+// outage and retry. A prefix is refused for the same reason: an identifier is
+// looked up, not ranged over.
+func wholeIDs(predicates []index.Predicate) error {
+	for _, p := range predicates {
+		values := p.Values
+		switch p.Op {
+		case index.Prefix:
+			return fmt.Errorf("%w: id takes whole identifiers, not a prefix", ErrMalformed)
+		case index.Equal, index.NotEqual:
+			values = []string{p.Value}
+		}
+		for _, v := range values {
+			if _, err := uuid.Parse(v); err != nil {
+				return fmt.Errorf("%w: id %q is not an identifier; record ids are UUIDs", ErrMalformed, v)
+			}
+		}
+	}
+	return nil
 }

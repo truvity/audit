@@ -119,6 +119,44 @@ test-s3:
     done
     AUDIT_S3_URL=http://localhost:4566 go test ./internal/s3test/... ./store/...
 
+# The OpenBAO the transit key provider and signer are tested against. Pinned
+# by digest for the reason the S3 image is: a moving tag changes the test.
+openbao_image := "openbao/openbao@sha256:597f62847dd382382056a1d6704d50465908c2040038c4611832a23269a67112"
+
+# The whole suite with every service it can use: Postgres, S3 with object
+# locking, and an OpenBAO dev server. Every test that skips without its service
+# runs here — the searchers' conformance suite against all three searchers, the
+# transports' corpus, the archive walks, the transit keys and signer, and the
+# read-only conformance run against an embedded query service. A few minutes;
+# not part of `check`, which needs nothing but the checkout. CI runs it as its
+# own job.
+conformance:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PGDATA="$PWD/.devbox/virtenv/postgresql/data"
+    export PGHOST="$PWD/.devbox/virtenv/postgresql"
+    mkdir -p "$PGHOST"
+    [ -d "$PGDATA/base" ] || initdb -U postgres --auth=trust >/dev/null
+    pg_ctl status -D "$PGDATA" >/dev/null 2>&1 || \
+        pg_ctl -D "$PGDATA" -o "-k $PGHOST -c listen_addresses=" -l "$PGHOST/log" start -w
+    createdb -h "$PGHOST" -U postgres audit_test 2>/dev/null || true
+
+    docker rm -f audit-s3 audit-bao >/dev/null 2>&1 || true
+    trap 'docker rm -f audit-s3 audit-bao >/dev/null 2>&1 || true' EXIT
+    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms {{s3_image}} >/dev/null
+    docker run -d --name audit-bao -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
+        {{openbao_image}} server -dev -dev-listen-address=0.0.0.0:8200 >/dev/null
+    for i in $(seq 1 40); do
+        curl -sf -m 3 http://localhost:4566/_localstack/health >/dev/null 2>&1 && \
+            curl -sf -m 3 http://localhost:8200/v1/sys/health >/dev/null 2>&1 && break
+        sleep 3
+    done
+
+    AUDIT_POSTGRES_URL="postgres://postgres@/audit_test?host=$PGHOST" \
+    AUDIT_S3_URL=http://localhost:4566 \
+    AUDIT_OPENBAO_URL=http://localhost:8200 AUDIT_OPENBAO_TOKEN=root \
+        go test -count=1 ./...
+
 # Run the tests under the race detector. The emitter hands records to a
 # background writer, so a data race there would be a lost or duplicated record
 # rather than a crash, and would not show up in an ordinary run.

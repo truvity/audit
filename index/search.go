@@ -2,8 +2,15 @@ package index
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrNotFound is a Get for a record the searcher does not hold. Every searcher
+// wraps it, so the service can answer "no such record" rather than mistaking
+// an absence for an outage: an outage tells a client to retry, and retrying
+// will never find a record that is not there.
+var ErrNotFound = errors.New("no such record")
 
 // Searcher answers questions about what was written.
 //

@@ -17,7 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
@@ -91,8 +91,18 @@ func (s *Scanner) Search(ctx context.Context, q index.Query) (index.Page, error)
 			"s3scan: %d conjunctions, and %d is the most this searcher will take",
 			len(q.Filter), most)
 	}
+	// Newest first unless the caller says otherwise. Both directions are
+	// answered rather than one being accepted and quietly given the other,
+	// which is what happened while the walk was the ordering.
+	descending := true
 	for _, by := range q.Sort {
-		if by.Field != "" && by.Field != index.SortOccurredAt {
+		switch by.Field {
+		case "", index.SortID:
+			// The identifier is the tie-break every searcher adds; it does not
+			// choose a direction of its own here.
+		case index.SortOccurredAt:
+			descending = by.Descending
+		default:
 			return index.Page{}, fmt.Errorf(
 				"s3scan: cannot order by %q: the archive is laid out by day, and any other "+
 					"order means reading everything before answering", by.Field)
@@ -120,51 +130,67 @@ func (s *Scanner) Search(ctx context.Context, q index.Query) (index.Page, error)
 	page := index.Page{}
 
 	// Newest day first, because a question about an audit trail is nearly
-	// always a question about recently.
-	for day := to; !day.Before(from); day = day.AddDate(0, 0, -1) {
-		// A cursor is a place in the walk, and the walk is by day and then by
-		// key within the day. It is not a place in key order: the tenant sits
-		// before the date in a key, so a key from an earlier day under a
-		// later-sorting tenant compares after the cursor's, and a resume that
-		// compared keys alone would skip that tenant's whole day.
-		if resume != nil && day.After(resume.day) {
+	// always a question about recently — unless the caller asked the other way.
+	for _, day := range s.days(from, to, descending) {
+		// A cursor is a place in the walk, and the walk is by day. It is not a
+		// place in key order: the tenant sits before the date in a key, so a
+		// key from an earlier day under a later-sorting tenant compares after
+		// the cursor's, and a resume that compared keys alone would skip that
+		// tenant's whole day.
+		if resume != nil && after(day, resume.day, descending) {
 			continue
 		}
 		keys, err := s.objectsOf(ctx, q.Profile, day)
 		if err != nil {
 			return index.Page{}, err
 		}
-		for _, key := range keys {
-			if resume != nil && day.Equal(resume.day) && key > resume.key {
-				// Within the cursor's own day the walk is by key, newest
-				// first, so a key after the cursor's is one already read.
-				continue
-			}
-			if spent >= s.budget().Objects || time.Now().After(deadline) {
-				// Out of budget. What has been found is returned with a cursor,
-				// rather than nothing after a timeout.
-				page.More = true
-				page.Next = &index.Boundary{Values: []string{key + "#0"}}
-				return page, nil
-			}
-			spent++
+		if len(keys) == 0 {
+			continue
+		}
+		// The budget is spent a whole day at a time, because a day is the
+		// smallest unit this searcher can order. Stopping in the middle of one
+		// would mean emitting rows before reading the records that sort ahead
+		// of them, and a page that is not in the order it claims is worse than
+		// a page that stops early: a caller pages through it and silently loses
+		// records. So a day is read in full or not begun.
+		if spent > 0 && (spent+len(keys) > s.budget().Objects || time.Now().After(deadline)) {
+			page.More = true
+			page.Next = &index.Boundary{Values: []string{dayCursor(day)}}
+			return page, nil
+		}
+		if spent == 0 && len(keys) > s.budget().Objects {
+			return index.Page{}, fmt.Errorf(
+				"s3scan: %s holds %d objects and this scan's budget is %d: a day is the smallest "+
+					"span this searcher can put in order, so it cannot answer without reading one "+
+					"whole. Raise the budget, narrow the query, or run the index",
+				day.Format("2006-01-02"), len(keys), s.budget().Objects)
+		}
+		spent += len(keys)
 
-			rows, err := s.rowsOf(ctx, decoder, key, q)
+		var rows []index.Row
+		for _, key := range keys {
+			found, err := s.rowsOf(ctx, decoder, key, q)
 			if err != nil {
 				return index.Page{}, err
 			}
-			for _, r := range rows {
-				if resume != nil && key == resume.key && r.Line <= resume.line {
-					continue
-				}
-				page.Rows = append(page.Rows, r)
-				if len(page.Rows) > limit {
-					page.Rows = page.Rows[:limit]
-					page.More = true
-					last := page.Rows[len(page.Rows)-1]
-					page.Next = cursorOf(last)
-					return page, nil
-				}
+			rows = append(rows, found...)
+		}
+		// Within the day, the order the caller asked for. The archive is laid
+		// out by day and by key, and a key says nothing about when inside the
+		// day its records happened, so this sort is the difference between
+		// answering the question and answering a neighbouring one.
+		sortRows(rows, descending)
+
+		for _, r := range rows {
+			if resume != nil && day.Equal(resume.day) && !beyond(r, resume, descending) {
+				continue
+			}
+			page.Rows = append(page.Rows, r)
+			if len(page.Rows) > limit {
+				page.Rows = page.Rows[:limit]
+				page.More = true
+				page.Next = cursorOf(page.Rows[len(page.Rows)-1])
+				return page, nil
 			}
 		}
 	}
@@ -174,6 +200,60 @@ func (s *Scanner) Search(ctx context.Context, q index.Query) (index.Page, error)
 		page.Next = q.After
 	}
 	return page, nil
+}
+
+// days is the walk, in the order the caller asked for.
+func (s *Scanner) days(from, to time.Time, descending bool) []time.Time {
+	var out []time.Time
+	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
+		out = append(out, day)
+	}
+	if descending {
+		for a, z := 0, len(out)-1; a < z; a, z = a+1, z-1 {
+			out[a], out[z] = out[z], out[a]
+		}
+	}
+	return out
+}
+
+// sortRows puts one day's rows in the order a query asks for: by when they
+// happened, and by identifier where two happened at the same instant, which is
+// the same total order the indexed searchers use.
+func sortRows(rows []index.Row, descending bool) {
+	sort.SliceStable(rows, func(a, b int) bool {
+		x, y := rows[a].OccurredAt, rows[b].OccurredAt
+		if !x.Equal(y) {
+			if descending {
+				return x.After(y)
+			}
+			return x.Before(y)
+		}
+		return rows[a].ID < rows[b].ID
+	})
+}
+
+// after says whether a day is one the walk has already passed.
+func after(day, mark time.Time, descending bool) bool {
+	if descending {
+		return day.After(mark)
+	}
+	return day.Before(mark)
+}
+
+// beyond says whether a row sits past the cursor in the order being walked.
+func beyond(r index.Row, at *cursor, descending bool) bool {
+	if at.occurred.IsZero() {
+		// A cursor left by an exhausted budget names a day and nothing within
+		// it, because nothing in it was read.
+		return true
+	}
+	if !r.OccurredAt.Equal(at.occurred) {
+		if descending {
+			return r.OccurredAt.Before(at.occurred)
+		}
+		return r.OccurredAt.After(at.occurred)
+	}
+	return r.ID > at.id
 }
 
 // Get implements index.Searcher.
@@ -286,77 +366,68 @@ func granted(r index.Row, tenants []string) bool {
 	return false
 }
 
-// cursor is where a scan stopped: an object and a line within it.
+// cursor is where a scan stopped.
 //
-// The indexed searchers carry sort values; this one carries a place in the
-// archive, because that is what it can resume from. A cursor belongs to the
-// searcher that issued it as well as to the query.
+// It is a day plus a position inside that day's ordering, not a place in the
+// archive. It used to be an object and a line, which is what the walk does, and
+// that stopped being a resumable position the moment a day was sorted before
+// being emitted: the next row in sort order is very often in an object the walk
+// has already passed. A cursor belongs to the searcher that issued it as well
+// as to the query.
 type cursor struct {
-	key  string
-	line int
-	// day is the walk position the key sits at, read from the key itself.
 	day time.Time
+	// occurred and id are the last row handed out. A zero occurred means the
+	// budget ran out before the day was read, so the day is owed in full.
+	occurred time.Time
+	id       string
 }
 
+// cursorOf marks the last row of a page. The day comes from the row's own
+// occurrence, which is the day its object is keyed under.
 func cursorOf(r index.Row) *index.Boundary {
 	return &index.Boundary{
-		Values:     []string{r.ObjectKey + "#" + strconv.Itoa(r.Line)},
+		Values: []string{strings.Join([]string{
+			r.OccurredAt.UTC().Truncate(24 * time.Hour).Format(dayLayout),
+			r.OccurredAt.UTC().Format(time.RFC3339Nano),
+			r.ID,
+		}, "|")},
 		ID:         r.ID,
 		RecordedAt: r.RecordedAt,
 		Sequence:   r.Sequence,
 	}
 }
 
+// dayCursor marks a day the budget did not reach.
+func dayCursor(day time.Time) string {
+	return day.UTC().Format(dayLayout) + "||"
+}
+
+// dayLayout is how a cursor writes a day.
+const dayLayout = "2006-01-02"
+
 func parseCursor(at *index.Boundary) (*cursor, error) {
 	if at == nil || len(at.Values) == 0 {
 		return nil, nil
 	}
 	raw := at.Values[0]
-	hash := strings.LastIndex(raw, "#")
-	if hash < 0 {
-		return nil, fmt.Errorf(
-			"s3scan: this cursor did not come from this searcher: %q", raw)
+	parts := strings.Split(raw, "|")
+	malformed := fmt.Errorf("s3scan: this cursor did not come from this searcher: %q", raw)
+	if len(parts) != 3 {
+		return nil, malformed
 	}
-	line, err := strconv.Atoi(raw[hash+1:])
+	day, err := time.Parse(dayLayout, parts[0])
 	if err != nil {
-		return nil, fmt.Errorf("s3scan: this cursor did not come from this searcher: %q", raw)
+		return nil, malformed
 	}
-	day, ok := dayOf(raw[:hash])
-	if !ok {
-		return nil, fmt.Errorf("s3scan: this cursor did not come from this searcher: %q", raw)
-	}
-	return &cursor{key: raw[:hash], line: line, day: day}, nil
-}
-
-// dayOf reads the day an object is keyed under, by segment name rather than
-// position, so that a layout that gains a segment does not silently move it.
-func dayOf(key string) (time.Time, bool) {
-	var year, month, day int
-	found := 0
-	for _, segment := range strings.Split(key, "/") {
-		var into *int
-		var name string
-		switch {
-		case strings.HasPrefix(segment, "year="):
-			into, name = &year, "year="
-		case strings.HasPrefix(segment, "month="):
-			into, name = &month, "month="
-		case strings.HasPrefix(segment, "day="):
-			into, name = &day, "day="
-		default:
-			continue
-		}
-		n, err := strconv.Atoi(strings.TrimPrefix(segment, name))
+	out := &cursor{day: day.UTC(), id: parts[2]}
+	if parts[1] != "" {
+		occurred, err := time.Parse(time.RFC3339Nano, parts[1])
 		if err != nil {
-			return time.Time{}, false
+			return nil, malformed
 		}
-		*into = n
-		found++
+		out.occurred = occurred.UTC()
 	}
-	if found != 3 {
-		return time.Time{}, false
-	}
-	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC), true
+	return out, nil
 }
 
 func (s *Scanner) budget() Budget {

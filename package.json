@@ -23,6 +23,9 @@
       "import": "./ts/dist/react/index.js"
     }
   },
+  "scripts": {
+    "prepare": "cd ts && npm ci --no-audit --no-fund && npm run build"
+  },
   "files": [
     "ts/dist/**"
   ],

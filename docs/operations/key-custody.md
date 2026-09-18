@@ -31,3 +31,19 @@ key, digest message type), `transit` (sign endpoint), `local`.
 Mapping a pseudonym back to a person happens through the identity map,
 which is a mutable store outside the locked prefixes. The `resolve`
 operation is granted to as few roles as possible and is itself recorded.
+
+## Destroying a key
+
+```
+audit key destroy --tenant <id> --purpose <p> --by <who> --reason <why> \
+    --bucket <b> --key-root <file> --key-dir <dir> --sink <writer>
+```
+
+It refuses while a legal hold covers the tenant's copies, and refuses to run
+without a writer: the catalogue declares `audit.key.destroyed` as block
+delivery, because an erasure the trail does not record is one nobody can prove
+was lawful. It names whoever ran it, and will not default that.
+
+Destroyed is remembered. The local provider leaves a marker beside the key it
+removed, so that a restart does not mint a fresh key for that tenant and purpose
+and hand the same person a second identity.

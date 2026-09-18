@@ -74,8 +74,8 @@ surface and keep the rest private.
    clock-sync jobs — **done**. `just chart` holds it: golden renders, and the
    refusals for every configuration the binaries would reject or get quietly
    wrong.
-8. Legal holds (INF-802) — **done** but for key destroy refusing under a
-   hold, which needs the key providers.
+8. Legal holds (INF-802) and `audit key destroy` — **done**. What is left of
+   the key providers is `kms` and `transit`, which want a fake of each.
 9. `index`, read side: the `Searcher`, cursors, facets, tail.
 10. `internal/query` + `auth` + `cmd/audit-query`.
 11. `internal/metering`. It reads only what the write path already produces,

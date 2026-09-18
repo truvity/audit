@@ -67,6 +67,11 @@ usage:
         daily. It does not set the clock: whatever runs the machine does that,
         and recording the times of things is a separate job from setting them.
 
+  audit key destroy --tenant <id> --purpose <p> --by <who> [flags]
+        Destroy a tenant's pseudonymisation key. The copies stay and their
+        pseudonyms can never be recomputed again: this is what erasure means
+        here, and it cannot be undone.
+
   audit hold place|release|list [flags]
         Place a legal hold on a profile's copies, or a tenant's within it, and
         record who did and why. A hold keeps objects undeletable whatever
@@ -103,6 +108,8 @@ func main() {
 		err = verify(os.Args[2:])
 	case "replay":
 		err = replay(os.Args[2:])
+	case "key":
+		err = keyCmd(os.Args[2:])
 	case "hold":
 		err = holdCmd(os.Args[2:])
 	case "clock-sync":
@@ -765,4 +772,64 @@ func holdCmd(args []string) error {
 		run.Sink = sink.NewClient(nil, *sinkURL)
 	}
 	return run.Run(ctx, args[0])
+}
+
+// keyCmd is the key lifecycle. Only destroy is built.
+func keyCmd(args []string) error {
+	if len(args) == 0 || args[0] != "destroy" {
+		return errors.New("audit key needs destroy")
+	}
+	flags := flag.NewFlagSet("key destroy", flag.ContinueOnError)
+	var (
+		tenant  = flags.String("tenant", "", "the tenant whose key is destroyed")
+		purpose = flags.String("purpose", "", "the purpose the key is for")
+		by      = flags.String("by", "", "who is destroying it, as this deployment names them")
+		reason  = flags.String("reason", "", "why, recorded with the erasure")
+		keyRoot = flags.String("key-root", "", "file holding the 32-byte root the data keys are wrapped under")
+		keyDir  = flags.String("key-dir", "", "where wrapped data keys are kept")
+		bucket  = flags.String("bucket", "", "the bucket the archive is in, read to check for legal holds")
+		prefix  = flags.String("prefix", "", "the prefix within the bucket")
+		region  = flags.String("region", "", "the region, when it is not in the environment")
+		sinkURL = flags.String("sink", "", "the writer the erasure is recorded through")
+	)
+	if _, err := parse(flags, args[1:]); err != nil {
+		return err
+	}
+	switch {
+	case *bucket == "":
+		return errors.New("name the archive's bucket with --bucket: the holds are read from it")
+	case *sinkURL == "":
+		return errors.New("give the writer with --sink: an erasure nobody recorded is one nobody can prove was lawful")
+	case *keyRoot == "":
+		return errors.New("give the pseudonymisation root with --key-root")
+	}
+
+	ctx := context.Background()
+	archive, err := archiveFor(ctx, *bucket, *prefix, *region)
+	if err != nil {
+		return err
+	}
+	provider, err := keyProvider(*keyRoot, *keyDir)
+	if err != nil {
+		return err
+	}
+	defer provider.Close() //nolint:errcheck // shutting down
+	common, err := catalogue.Common()
+	if err != nil {
+		return err
+	}
+
+	return cli.KeyDestroy{
+		Provider: provider, Store: archive, Sink: sink.NewClient(nil, *sinkURL),
+		Catalogue: common, Tenant: *tenant, Purpose: *purpose, By: *by, Reason: *reason,
+	}.Run(ctx)
+}
+
+// keyProvider builds the local provider from a root file.
+func keyProvider(rootPath, dir string) (keys.Provider, error) {
+	root, err := os.ReadFile(rootPath)
+	if err != nil {
+		return nil, err
+	}
+	return keys.NewLocal(root, dir)
 }

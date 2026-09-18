@@ -125,8 +125,23 @@ the actor and subject columns, so the number is a deployment's own policy.
 
 ## A tenant asks for erasure
 
-Confirm no legal hold: `audit hold list --profile <p> --bucket <b>` — an
-active hold over the tenant's copies means the keys must not be destroyed. Destroy the tenant's pseudonymisation keys for the
+```
+audit key destroy --tenant <id> --purpose <p> --by <who> --reason <why> \
+    --bucket <b> --key-root <file> --key-dir <dir> --sink <writer>
+```
+
+It checks the holds itself and refuses while one covers the tenant's copies,
+naming the hold and why it was placed: crypto-shredding a tenant under legal
+hold destroys evidence that may not be destroyed, and the operator should not
+be the check. `audit hold list` is still how you look before you start.
+
+The order inside the command is deliberate. The key is destroyed and then the
+erasure is recorded, because a record written first could claim an erasure that
+then failed — and a reader trusting the trail would believe a person's data
+unlinkable when it is not. A missing record is discoverable by comparing the
+keys that exist to the records of their destruction; a false one is not
+discoverable at all. If the record cannot be written the command says, loudly,
+that the key is already gone and must be accounted for by hand. Destroy the tenant's pseudonymisation keys for the
 purposes not under a legal duty; the security and history copies become
 unlinkable. Billing and evidence copies stay under Art. 17(3)(b). Record is
 automatic (`audit.key.destroyed`).

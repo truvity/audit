@@ -39,7 +39,12 @@ Foundation. No release.
   between the two costs a duplicate object rather than a lost record.
 - `audit validate`, `audit profile explain`, `audit check-emitters`,
   `audit verify`, `audit replay`, `audit migrate`, `audit reindex`,
-  `audit digest`, `audit purge`, `audit clock-sync`, `audit hold`.
+  `audit digest`, `audit purge`, `audit clock-sync`, `audit hold`,
+  `audit key destroy`.
+- `audit key destroy` is erasure: the copies stay and their pseudonyms can
+  never be recomputed. It refuses while a legal hold covers the tenant, and
+  refuses without a writer, because an erasure the trail does not record is one
+  nobody can prove was lawful.
 - Legal holds: `audit hold place|release|list`, hold records in the archive
   under the same lock and append-only like everything else, and the writer
   setting the hold on objects written under a held prefix — an object held only

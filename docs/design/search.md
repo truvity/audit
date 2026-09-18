@@ -159,6 +159,24 @@ writer sequence, so late events are never missed by a poller. The index orders
 rows that way for the same reason. An empty page keeps the boundary it was
 asked from, so a tail polling a quiet profile does not lose its place.
 
+## Reading is recorded
+
+Every answer produces a record: `audit.search`, `audit.facets`, `audit.get`,
+naming the caller, the target and the rule that allowed it. A trail that shows
+what everyone did except who looked at it is missing the half an investigation
+usually starts from.
+
+A refused read is recorded as well. An attempt to read the trail is a fact about
+who was looking, and the refused one is the more interesting of the two.
+
+A record the grant does not cover is reported as **absent**, not as forbidden:
+"no such record" and "a record you may not read" are the same answer to someone
+who should not know it exists.
+
+The service carries an `OnUnrecorded` hook and a deployment alerts on it.
+Reading going unrecorded is not a degraded service — it is the service failing
+at one of the two things it is for.
+
 ## Bounding a scan
 
 A query over a year is a year of reading, so a scan is bounded twice. A budget

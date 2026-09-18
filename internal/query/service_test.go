@@ -1,0 +1,292 @@
+package query_test
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/truvity/audit/auth"
+	"github.com/truvity/audit/catalogue"
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
+	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/query"
+	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sink"
+)
+
+func at(t *testing.T, value string) time.Time {
+	t.Helper()
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return parsed.UTC()
+}
+
+// reads collects what the service recorded about itself.
+type reads struct{ records []*record.Record }
+
+func (c *reads) Write(_ context.Context, req *sink.Request) (*sink.Result, error) {
+	c.records = append(c.records, req.Records...)
+	return &sink.Result{Accepted: len(req.Records)}, nil
+}
+
+func (c *reads) of(action string) []*record.Record {
+	var out []*record.Record
+	for _, r := range c.records {
+		if r.GetAction() == action {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// corpus is two tenants in one profile.
+func corpus(t *testing.T) *index.Memory {
+	t.Helper()
+	m := index.NewMemory()
+	base := at(t, "2026-09-17T10:00:00Z")
+	var rows []index.Row
+	for n, tenant := range []string{"acme", "acme", "globex", "globex"} {
+		rows = append(rows, index.Row{
+			ID:       "018f0000-0000-7000-8000-00000000000" + string("abcdef"[n]),
+			TenantID: tenant, OccurredAt: base.Add(time.Duration(n) * time.Minute),
+			RecordedAt: base.Add(time.Duration(n) * time.Minute),
+			Source:     "wallet", Action: "wallet.credential.issued",
+			Operation: "create", Outcome: "success",
+			ObjectKey: "k", Line: n + 1,
+		})
+	}
+	if err := m.Index(context.Background(), "security", rows); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func service(t *testing.T, g auth.Grant) (*query.Service, *reads) {
+	t.Helper()
+	common, err := catalogue.Common()
+	if err != nil {
+		t.Fatal(err)
+	}
+	into := &reads{}
+	s, err := query.New(&query.Service{
+		Searcher:   corpus(t),
+		Authorizer: auth.Declarative{Rules: []auth.Rule{{Name: "a-rule", Grant: g}}},
+		Sink:       into, Catalogue: common, Instance: "query-1",
+		OnUnrecorded: func(action string, err error) {
+			t.Errorf("the read of %s was not recorded: %v", action, err)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s, into
+}
+
+func caller() auth.Principal {
+	return auth.Principal{Issuer: "https://issuer.test", Subject: "olga", Via: "jwt"}
+}
+
+func fullGrant() auth.Grant {
+	return auth.Grant{
+		AllTenants: true, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Search, auth.Facets, auth.Get},
+	}
+}
+
+// The grant becomes a term in the query, so there is no path from a request to
+// a row outside it.
+func TestTheGrantNarrowsTheSearch(t *testing.T) {
+	s, _ := service(t, auth.Grant{
+		Tenants: []string{"acme"}, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Search},
+	})
+	page, _, err := s.Search(context.Background(), caller(),
+		&auditv1.SearchRequest{Profile: "security", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 2 {
+		t.Fatalf("%d rows, want the 2 of the granted tenant", len(page.Rows))
+	}
+	for _, r := range page.Rows {
+		if r.TenantID != "acme" {
+			t.Fatalf("a row of %s came back under a grant for acme", r.TenantID)
+		}
+	}
+}
+
+// A caller cannot widen past the grant by asking for another tenant.
+func TestAskingForAnotherTenantDoesNotWiden(t *testing.T) {
+	s, _ := service(t, auth.Grant{
+		Tenants: []string{"acme"}, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Search},
+	})
+	page, _, err := s.Search(context.Background(), caller(), &auditv1.SearchRequest{
+		Profile: "security", Limit: 100,
+		Filter: []*auditv1.Filter{{
+			TenantId: &auditv1.StringPredicate{
+				Operator: &auditv1.StringPredicate_Equal{Equal: "globex"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 0 {
+		t.Fatalf("asking for another tenant returned %d rows", len(page.Rows))
+	}
+}
+
+// A grant's window narrows a wider request rather than refusing it.
+func TestTheGrantsWindowClampsTheRequest(t *testing.T) {
+	g := fullGrant()
+	g.From = at(t, "2026-09-17T10:02:00Z")
+	s, _ := service(t, g)
+
+	page, _, err := s.Search(context.Background(), caller(),
+		&auditv1.SearchRequest{Profile: "security", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 2 {
+		t.Fatalf("%d rows, want the 2 inside the grant's window", len(page.Rows))
+	}
+}
+
+// A profile or operation outside the grant is refused, saying which.
+func TestOutsideTheGrantIsRefused(t *testing.T) {
+	s, into := service(t, auth.Grant{
+		Tenants: []string{"acme"}, Profiles: []string{"history"},
+		Operations: []auth.Operation{auth.Search},
+	})
+	_, _, err := s.Search(context.Background(), caller(),
+		&auditv1.SearchRequest{Profile: "security", Limit: 10})
+	if !errors.Is(err, auth.ErrDenied) {
+		t.Fatalf("a profile outside the grant gave %v", err)
+	}
+	if len(into.of("audit.search")) != 0 {
+		t.Fatal("a request refused before it ran was recorded as a search")
+	}
+}
+
+// Reads of an audit trail are themselves auditable: a trail that shows what
+// everyone did except who looked at it is missing where an investigation starts.
+func TestEveryReadRecordsItself(t *testing.T) {
+	s, into := service(t, fullGrant())
+	ctx := context.Background()
+
+	if _, _, err := s.Search(ctx, caller(),
+		&auditv1.SearchRequest{Profile: "security", Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.Facets(ctx, caller(), &auditv1.FacetsRequest{
+		Profile: "security", Fields: []string{index.FieldAction}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.Get(ctx, caller(), &auditv1.GetRequest{
+		Profile: "security", Id: "018f0000-0000-7000-8000-00000000000a"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, action := range []string{"audit.search", "audit.facets", "audit.get"} {
+		got := into.of(action)
+		if len(got) != 1 {
+			t.Fatalf("%d records of %s, want 1", len(got), action)
+		}
+		if got[0].GetActor().GetId() != "olga" {
+			t.Fatalf("%s does not name the caller: %+v", action, got[0].GetActor())
+		}
+		// The rule that allowed it, so that a read can be traced to a rule.
+		if got[0].GetOutcome().GetReason() != "a-rule" {
+			t.Fatalf("%s does not name the rule that allowed it: %+v", action, got[0].GetOutcome())
+		}
+	}
+}
+
+// A refused read is recorded too. An attempt to read the trail is a fact about
+// who was looking, and the refused one is the more interesting of the two.
+func TestARefusedReadIsRecorded(t *testing.T) {
+	s, into := service(t, fullGrant())
+	_, _, _, err := s.Get(context.Background(), caller(), &auditv1.GetRequest{
+		Profile: "security", Id: "018f0000-0000-7000-8000-0000000000ff"})
+	if err == nil {
+		t.Fatal("a record that is not there was found")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got := into.of("audit.get")
+	if len(got) != 1 {
+		t.Fatalf("%d records of a failed get", len(got))
+	}
+	if got[0].GetOutcome().GetResult() != auditv1.Outcome_RESULT_FAILURE {
+		t.Fatalf("a failed read was recorded as a success: %+v", got[0].GetOutcome())
+	}
+}
+
+// A record the grant does not cover is reported as absent, not as forbidden:
+// the two are the same answer to someone who should not know it exists.
+func TestAGetOutsideTheGrantLooksLikeAbsence(t *testing.T) {
+	s, _ := service(t, auth.Grant{
+		Tenants: []string{"acme"}, Profiles: []string{"security"},
+		Operations: []auth.Operation{auth.Get},
+	})
+	_, _, _, err := s.Get(context.Background(), caller(), &auditv1.GetRequest{
+		Profile: "security", Id: "018f0000-0000-7000-8000-00000000000c"})
+	if err == nil {
+		t.Fatal("a record of another tenant was returned")
+	}
+	if strings.Contains(strings.ToLower(err.Error()), "denied") ||
+		strings.Contains(strings.ToLower(err.Error()), "grant") {
+		t.Fatalf("the refusal confirms the record exists: %v", err)
+	}
+}
+
+// A service without an authorizer would answer everything.
+func TestNewRefusesWithoutAnAuthorizer(t *testing.T) {
+	_, err := query.New(&query.Service{Searcher: corpus(t)})
+	if err == nil {
+		t.Fatal("a service with no authorizer was accepted")
+	}
+	if !strings.Contains(err.Error(), "answer everything") {
+		t.Errorf("the refusal should say why: %v", err)
+	}
+}
+
+// An unbounded OR is unbounded work, and the refusal is the service's rather
+// than whichever searcher happens to be configured.
+func TestTooManyConjunctionsAreRefusedByTheService(t *testing.T) {
+	s, _ := service(t, fullGrant())
+	_, _, err := s.Search(context.Background(), caller(), &auditv1.SearchRequest{
+		Profile: "security", Filter: make([]*auditv1.Filter, 5)})
+	if err == nil {
+		t.Fatal("five conjunctions were accepted")
+	}
+}
+
+// Every time operator becomes a half-open range, so an index can answer it
+// without reading rows it will discard.
+func TestTimeOperatorsBecomeRanges(t *testing.T) {
+	s, _ := service(t, fullGrant())
+	page, _, err := s.Search(context.Background(), caller(), &auditv1.SearchRequest{
+		Profile: "security", Limit: 100,
+		Filter: []*auditv1.Filter{{
+			OccurredAt: &auditv1.TimePredicate{
+				Operator: &auditv1.TimePredicate_GreaterThanOrEqual{
+					GreaterThanOrEqual: timestamppb.New(at(t, "2026-09-17T10:02:00Z"))}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Rows) != 2 {
+		t.Fatalf("%d rows for >= the third minute, want 2", len(page.Rows))
+	}
+}

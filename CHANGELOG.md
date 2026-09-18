@@ -32,6 +32,12 @@ Foundation. No release.
   produces, and an in-memory implementation. Indexing is idempotent by
   `(profile, id)` and counting has no call of its own, because only the
   transaction that inserted a row can tell a re-delivery from a new record.
+- `internal/query`: the read service. It compiles a closed request, narrows it
+  to the caller's grant as one more filter term, asks a searcher, and records
+  the read — `audit.search`, `audit.facets`, `audit.get`, naming the caller and
+  the rule that allowed them. A refused read is recorded too, and a record the
+  grant does not cover is reported as absent rather than as forbidden, because
+  the two are the same answer to someone who should not know it exists.
 - `auth`: the `Authenticator` and `Authorizer` seams a deployment plugs into,
   with a declarative authorizer. A grant's zero value grants nothing, every
   tenant is said out loud rather than meant by a nil list, a refusal names

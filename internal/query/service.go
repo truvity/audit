@@ -1,0 +1,249 @@
+package query
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/truvity/audit/auth"
+	"github.com/truvity/audit/catalogue"
+	"github.com/truvity/audit/emit"
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
+	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sink"
+)
+
+// Service answers queries, within a grant, and records that it did.
+//
+// Reads of an audit trail are themselves auditable events: a trail that shows
+// what everyone did except who looked at it is missing the half an investigation
+// usually starts from. Every answer here produces a record naming the caller,
+// what they asked and the rule that let them.
+type Service struct {
+	Searcher index.Searcher
+	// Authorizer decides what the caller may see. There is no default: a
+	// service that answered without one would answer everything.
+	Authorizer auth.Authorizer
+	// Sink and Catalogue are where reads are recorded. Without them the service
+	// runs and the reading of the trail leaves no trace, which a deployment
+	// should have to choose rather than fall into.
+	Sink      sink.Sink
+	Catalogue *catalogue.Catalogue
+	Version   string
+	Instance  string
+	// OnUnrecorded is called when a read happened and the trail does not say
+	// so. A deployment alerts on it: the reading of an audit trail going
+	// unrecorded is not a degraded service, it is the service failing at one of
+	// the two things it is for.
+	OnUnrecorded func(action string, err error)
+
+	emitter *emit.Emitter
+}
+
+// New checks a service's parts and prepares its own emitter.
+func New(s *Service) (*Service, error) {
+	switch {
+	case s.Searcher == nil:
+		return nil, errors.New("query: a searcher is required")
+	case s.Authorizer == nil:
+		return nil, errors.New(
+			"query: an authorizer is required: a service that answered without one would answer everything")
+	}
+	if s.Sink != nil && s.Catalogue != nil {
+		emitter, err := emit.New(emit.Options{
+			Source: s.Catalogue.Source, Catalogue: s.Catalogue, Sink: s.Sink,
+			// The service's account of its own reads. Best-effort whatever the
+			// catalogue declares: a read that blocked on recording itself
+			// could not report that it had failed to.
+			SelfReporting: true,
+			Version:       s.Version, Instance: s.instance(),
+			Hooks: emit.Hooks{
+				OnDropped: func(r *record.Record, reason string) {
+					s.unrecorded(r.GetAction(), errors.New(reason))
+				},
+				OnRefused: func(r *record.Record, err error) {
+					s.unrecorded(r.GetAction(), err)
+				},
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("query: %w", err)
+		}
+		s.emitter = emitter
+	}
+	return s, nil
+}
+
+// Close drains what is pending.
+func (s *Service) Close() error {
+	if s.emitter != nil {
+		return s.emitter.Close()
+	}
+	return nil
+}
+
+// Search answers a page, narrowed to the grant.
+func (s *Service) Search(
+	ctx context.Context, p auth.Principal, req *auditv1.SearchRequest,
+) (index.Page, auth.Grant, error) {
+	g, err := s.allow(ctx, p, req.GetProfile(), auth.Search)
+	if err != nil {
+		return index.Page{}, g, err
+	}
+	compiled, err := Compile(req)
+	if err != nil {
+		return index.Page{}, g, err
+	}
+	q := s.narrow(compiled, g)
+
+	page, err := s.Searcher.Search(ctx, q)
+	// The read is recorded whether or not it succeeded. An attempt to read the
+	// trail is as much a fact about who was looking as a successful one, and a
+	// refused attempt is the more interesting of the two.
+	s.recordSearch(ctx, p, g, req.GetProfile(), len(page.Rows), err)
+	return page, g, err
+}
+
+// Facets answers counts, narrowed to the grant.
+func (s *Service) Facets(
+	ctx context.Context, p auth.Principal, req *auditv1.FacetsRequest,
+) ([]index.Facet, auth.Grant, error) {
+	g, err := s.allow(ctx, p, req.GetProfile(), auth.Facets)
+	if err != nil {
+		return nil, g, err
+	}
+	compiled, err := Compile(&auditv1.SearchRequest{
+		Profile: req.GetProfile(), Filter: req.GetFilter(),
+	})
+	if err != nil {
+		return nil, g, err
+	}
+	q := s.narrow(compiled, g)
+
+	facets, err := s.Searcher.Facets(ctx, q, req.GetFields(), int(req.GetLimitPerField()))
+	s.record(ctx, "audit.facets", p, g, err, []*record.Target{
+		{Type: "profile", Id: req.GetProfile()},
+	})
+	return facets, g, err
+}
+
+// Get answers one record, and refuses one the grant's tenants do not cover.
+func (s *Service) Get(
+	ctx context.Context, p auth.Principal, req *auditv1.GetRequest,
+) (index.Row, index.Provenance, auth.Grant, error) {
+	g, err := s.allow(ctx, p, req.GetProfile(), auth.Get)
+	if err != nil {
+		return index.Row{}, index.Provenance{}, g, err
+	}
+
+	row, where, err := s.Searcher.Get(ctx, req.GetProfile(), req.GetId())
+	if err == nil && !granted(row.TenantID, g) {
+		// Found, and not this caller's to see. It is reported as absent rather
+		// than as forbidden: "no such record" and "a record you may not read"
+		// are the same answer to someone who should not know it exists.
+		err = fmt.Errorf("query: no record %s in profile %s", req.GetId(), req.GetProfile())
+		row, where = index.Row{}, index.Provenance{}
+	}
+	s.record(ctx, "audit.get", p, g, err, []*record.Target{
+		{Type: "record", Id: req.GetId()},
+	})
+	return row, where, g, err
+}
+
+// allow authorizes the caller for one profile and operation.
+//
+// The grant comes back even on a refusal, because the refusal is recorded and
+// the record names the rule that did not stretch far enough.
+func (s *Service) allow(
+	ctx context.Context, p auth.Principal, profile string, op auth.Operation,
+) (auth.Grant, error) {
+	g, err := s.Authorizer.Grant(ctx, p)
+	if err != nil {
+		return g, err
+	}
+	return g, g.Check(profile, op)
+}
+
+// narrow applies the grant to a compiled query.
+//
+// The tenant list becomes a term and the window becomes a predicate, so there
+// is no path from a request to a row outside the grant: a query that lost the
+// narrowing would have to have lost the query.
+func (s *Service) narrow(q index.Query, g auth.Grant) index.Query {
+	q.Tenants = g.TenantFilter()
+	return clamp(q, g.From, g.Until)
+}
+
+func granted(tenant string, g auth.Grant) bool {
+	if g.AllTenants {
+		return true
+	}
+	for _, t := range g.Tenants {
+		if t == tenant {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) recordSearch(
+	ctx context.Context, p auth.Principal, g auth.Grant, profile string, rows int, failure error,
+) {
+	s.record(ctx, "audit.search", p, g, failure, []*record.Target{
+		{Type: "profile", Id: profile},
+	})
+	_ = rows
+}
+
+// record puts one read in the trail.
+//
+// The actor is the caller as authenticated, and the outcome's reason carries
+// the rule that granted it — a read nobody can trace to a rule is one nobody
+// can review.
+func (s *Service) record(
+	ctx context.Context, action string, p auth.Principal, g auth.Grant,
+	failure error, targets []*record.Target,
+) {
+	if s.emitter == nil {
+		return
+	}
+	r := &record.Record{
+		Action:    action,
+		Operation: auditv1.Operation_OPERATION_ACCESS,
+		TenantId:  record.TenantPlatform,
+		// "operator" rather than "person": the common catalogue declares the
+		// kinds, and whoever reads an audit trail is acting in an internal
+		// role. A record whose actor kind the catalogue does not declare is
+		// refused, which is how this was found.
+		Actor:   &record.Actor{Kind: "operator", Id: p.Subject},
+		Targets: targets,
+	}
+	if failure != nil {
+		r.Outcome = &record.Outcome{
+			Result: auditv1.Outcome_RESULT_FAILURE,
+			Reason: failure.Error(),
+		}
+	} else {
+		r.Outcome = &record.Outcome{
+			Result: auditv1.Outcome_RESULT_SUCCESS,
+			Reason: g.Rule,
+		}
+	}
+	if err := s.emitter.Record(ctx, r); err != nil {
+		s.unrecorded(action, err)
+	}
+}
+
+func (s *Service) unrecorded(action string, err error) {
+	if s.OnUnrecorded != nil {
+		s.OnUnrecorded(action, err)
+	}
+}
+
+func (s *Service) instance() string {
+	if s.Instance != "" {
+		return s.Instance
+	}
+	return record.InstanceName()
+}

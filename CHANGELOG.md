@@ -32,6 +32,12 @@ Foundation. No release.
   produces, and an in-memory implementation. Indexing is idempotent by
   `(profile, id)` and counting has no call of its own, because only the
   transaction that inserted a row can tell a re-delivery from a new record.
+- `index/s3scan`: a searcher with no index at all, for a deployment too small to
+  run a database — and the implementation that cannot cheat, since one backed by
+  a table can quietly grow a capability the interface never promised. It refuses
+  facets and every ordering but occurred time, with the reason, rather than
+  answering something narrower than was asked. A scan is bounded by a budget and
+  by a horizon.
 - `index`: a memory `Searcher` beside the Postgres one, asked the same
   questions — one implementation is a description of its own habits with an
   interface drawn around it.

@@ -45,7 +45,7 @@ func (m *Memory) Search(_ context.Context, q Query) (Page, error) {
 
 	var matched []Row
 	for _, r := range m.Rows(q.Profile) {
-		if !granted(r, q.Tenants) || !matches(r, q.Filter) {
+		if !granted(r, q.Tenants) || !Matches(r, q.Filter) {
 			continue
 		}
 		matched = append(matched, r)
@@ -93,7 +93,7 @@ func (m *Memory) Facets(_ context.Context, q Query, fields []string, limit int) 
 	for _, field := range fields {
 		counts := map[string]int64{}
 		for _, r := range m.Rows(q.Profile) {
-			if !granted(r, q.Tenants) || !matches(r, q.Filter) {
+			if !granted(r, q.Tenants) || !Matches(r, q.Filter) {
 				continue
 			}
 			// A record naming one value twice counts once, as the counts do:
@@ -145,8 +145,14 @@ func granted(r Row, tenants []string) bool {
 	return false
 }
 
-// matches is the OR of conjunctions. No filter matches everything.
-func matches(r Row, filter []Conjunction) bool {
+// Matches reports whether a row satisfies a filter: the OR of conjunctions,
+// each of which is an AND of predicates. No filter matches everything.
+//
+// It is exported because it is the definition of what a query means, and a
+// searcher that worked it out again would be a second opinion on the contract.
+// Anything implementing Searcher over data it holds itself should use this
+// rather than reimplement the operators.
+func Matches(r Row, filter []Conjunction) bool {
 	if len(filter) == 0 {
 		return true
 	}

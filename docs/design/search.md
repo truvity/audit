@@ -54,16 +54,29 @@ than it keeps who it happened to. `Identifying` clears the actor, the subject, t
 client address and the correlation identifiers and leaves the event and the
 actor's *kind*; `Everything` removes the rows.
 
-Three implementations were planned: memory, an object-storage scan, and
-Postgres. Memory and Postgres are built, on both halves of the interface. The
-object-storage scan — a searcher with no index at all, for a deployment too
-small to run a database — is not.
+Three implementations, all built: memory, Postgres, and an object-storage scan
+with no index at all, for a deployment too small to run a database.
 
-Two implementations is the number that matters. One is a description of that
-implementation's habits with an interface drawn around it; the second is what
-finds the places where the interface said something the first only happened to
-do. The memory searcher is asked the same questions as the Postgres one, in
-`index/searcher_test.go` and `index/postgres/search_test.go`.
+One implementation behind an interface is a description of that
+implementation's habits with an interface drawn around it. The second finds
+where the interface claimed something the first only happened to do. The third,
+here, is the one that cannot cheat: a searcher backed by a table can quietly
+grow a capability the interface never promised, and one that must open objects
+and read them cannot.
+
+What `Matches` means is defined once, in `index`, and exported for exactly that
+reason — a searcher that worked the operators out again would be a second
+opinion on the contract.
+
+The scan states what it gives up rather than hiding it. `Capabilities` says it
+counts no facets, because counting means reading everything that matches, which
+is the work it exists to bound; it orders only by occurred time, because the
+archive is laid out by day and any other order means reading everything before
+answering. Each is refused with the reason rather than answered narrowly.
+
+Its cursor is a place in the archive — an object and a line — where the indexed
+searchers carry sort values. A cursor therefore belongs to the searcher that
+issued it as well as to the query, and one from elsewhere is refused.
 
 ## What is indexed
 
@@ -145,6 +158,15 @@ on the tie would repeat one or skip the other.
 writer sequence, so late events are never missed by a poller. The index orders
 rows that way for the same reason. An empty page keeps the boundary it was
 asked from, so a tail polling a quiet profile does not lose its place.
+
+## Bounding a scan
+
+A query over a year is a year of reading, so a scan is bounded twice. A budget
+in objects and seconds stops it and hands back a cursor, rather than running
+until something times out and leaving the caller with nothing. And a query with
+no time range walks back to a horizon rather than to the beginning: under a
+seven-year retention, reading to the start is not an answer anybody is waiting
+for. Both are the deployment's to set.
 
 ## Reindex
 

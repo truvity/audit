@@ -20,9 +20,9 @@ sink/               Sink interface and transports (inprocess, s3, nats)
 keys/               Provider and Signer interfaces, with local (kms, transit to come)
 store/              the object store interface; s3store/ the bucket; storetest/ the memory
                     store a test writes to, which can also be tampered with on purpose
-index/              Indexer and Searcher interfaces; memory/ in this package,
-                    postgres/ the default index and the shared dedupe table,
-                    s3scan to come with the read side
+index/              Indexer and Searcher interfaces, and the memory implementation
+                    of both; postgres/ the default index, searcher and shared
+                    dedupe table; s3scan/ a searcher with no index at all
 auth/               Authenticator and Authorizer interfaces, with the defaults
 
 internal/writer/    split, treat, roll, put, index, dead-letter, dedupe, ack

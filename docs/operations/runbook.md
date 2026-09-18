@@ -165,3 +165,27 @@ automatic (`audit.key.destroyed`).
 
 Register its catalogue; the registry validates categories against the
 profiles it emits into. First records copy the schemas into the archive.
+
+## The key directory changed
+
+A writer refuses to start with `this writer's key directory is not the
+deployment's` when the directory it mounts is not the one the deployment's
+writers registered (`audit_key_directory`). Two causes:
+
+- **The directory is not shared.** With the `local` key provider every replica
+  must mount the same directory (`ReadWriteMany`). Fix the mount; nothing else.
+- **The directory was lost and recreated.** The data keys were random and
+  existed only there, so every tenant is re-keyed: the same person now gets a
+  new pseudonym, and the trail before stops linking to the trail after. Restore
+  the directory from backup if there is one — the identity is a file in it, so
+  a restored directory is accepted as it was.
+
+If there is no backup and the new pseudonyms are accepted, register the new
+directory by removing the old binding, and record why in the trail by hand:
+
+```
+delete from audit_key_directory;
+```
+
+The next writer to start registers its directory, and the rest must share it.
+

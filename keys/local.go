@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -190,12 +191,92 @@ func (l *Local) key(tenant string, purpose Purpose) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(l.path(name), wrapped, 0o600); err != nil {
-			return nil, fmt.Errorf("keys: %w", err)
+		// Two writers sharing this directory can reach here for the same
+		// tenant at the same moment, each with its own random key. Whichever
+		// file landed last would win on disk, but both writers would keep the
+		// key they minted in memory, and the same person would carry two
+		// pseudonyms until a restart. So a key is published only if none is
+		// there, and a writer that loses adopts the one that won.
+		won, err := createOnce(l.path(name), wrapped)
+		if err != nil {
+			return nil, err
+		}
+		if !won {
+			existing, err := os.ReadFile(l.path(name))
+			if err != nil {
+				return nil, fmt.Errorf("keys: %w", err)
+			}
+			if key, err = l.unwrap(existing); err != nil {
+				return nil, err
+			}
 		}
 	}
 	l.cache[name] = key
 	return key, nil
+}
+
+// createOnce writes a file only if it does not exist, and reports whether this
+// call is the one that created it.
+//
+// The body goes to a temporary file first and is then linked into place: a
+// link fails if the name is taken, which makes "create unless present" one
+// atomic step, and a reader never sees a half-written file under the real
+// name, as it could between an exclusive create and the write that follows.
+func createOnce(path string, body []byte) (bool, error) {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".pending-*")
+	if err != nil {
+		return false, fmt.Errorf("keys: %w", err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("keys: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return false, fmt.Errorf("keys: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return false, fmt.Errorf("keys: %w", err)
+	}
+	if err := os.Link(tmp.Name(), path); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return false, nil
+		}
+		return false, fmt.Errorf("keys: %w", err)
+	}
+	return true, nil
+}
+
+// DirectoryID is this key directory's identity, minted the first time any
+// writer asks and read back ever after.
+//
+// Data keys are random, so a directory is not interchangeable with another one
+// holding the same root: two writers that do not share one mint different keys
+// for the same tenant, and a directory lost and recreated re-keys every tenant.
+// Neither is visible from inside one writer. The identity is what lets a
+// shared store notice: every writer registers it there, and one that brings a
+// different directory is refused. See postgres.BindKeyDirectory.
+func (l *Local) DirectoryID() (string, error) {
+	if err := l.init(); err != nil {
+		return "", err
+	}
+	if l.Dir == "" {
+		return "", errors.New("keys: a memory-only provider has no directory to identify")
+	}
+	path := filepath.Join(l.Dir, ".directory-id")
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("keys: %w", err)
+	}
+	if _, err := createOnce(path, []byte(fmt.Sprintf("%x\n", raw))); err != nil {
+		return "", err
+	}
+	id, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("keys: %w", err)
+	}
+	return strings.TrimSpace(string(id)), nil
 }
 
 func (l *Local) wrap(key []byte) ([]byte, error) {

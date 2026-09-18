@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/truvity/audit/keys"
@@ -216,5 +218,72 @@ func TestAnEmptyIdentifierHasNoPseudonym(t *testing.T) {
 	}
 	if got != "" {
 		t.Fatalf("an absent identifier became %q", got)
+	}
+}
+
+// Two writers sharing one key directory must hand the same person the same
+// pseudonym, including when both create that tenant's key at the same moment.
+// Before keys were published create-once, each kept the key it minted in
+// memory and the file said whichever landed last.
+func TestTwoProvidersOnOneDirectoryAgreeUnderContention(t *testing.T) {
+	root := make([]byte, 32)
+	if _, err := rand.Read(root); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	a, err := keys.NewLocal(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := keys.NewLocal(root, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	const tenants = 200
+	got := make([][2]string, tenants)
+	var wg sync.WaitGroup
+	for n := 0; n < tenants; n++ {
+		for side, p := range []*keys.Local{a, b} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				pseudonym, err := p.Pseudonym(ctx, fmt.Sprintf("tenant-%d", n), "security", "person-1")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				got[n][side] = pseudonym
+			}()
+		}
+	}
+	wg.Wait()
+	for n, pair := range got {
+		if pair[0] != pair[1] {
+			t.Fatalf("tenant-%d: the two writers disagree about the same person: %s vs %s", n, pair[0], pair[1])
+		}
+	}
+}
+
+// A directory has one identity, the same from every provider that opens it,
+// and a different directory has a different one.
+func TestADirectoryHasOneIdentity(t *testing.T) {
+	root := make([]byte, 32)
+	dir := t.TempDir()
+	a, _ := keys.NewLocal(root, dir)
+	b, _ := keys.NewLocal(root, dir)
+	other, _ := keys.NewLocal(root, t.TempDir())
+	idA, err := a.DirectoryID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	idB, _ := b.DirectoryID()
+	idOther, _ := other.DirectoryID()
+	if idA == "" || idA != idB {
+		t.Fatalf("one directory, two identities: %q %q", idA, idB)
+	}
+	if idA == idOther {
+		t.Fatal("two directories share an identity")
 	}
 }

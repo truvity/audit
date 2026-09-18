@@ -170,9 +170,30 @@ func run() error {
 		if dedupe, err = postgres.NewDedupe(pool, longestDedupe(profiles)); err != nil {
 			return err
 		}
+		// Every writer of this deployment must hold the same key directory:
+		// one with its own mints its own keys, and the same person gets a
+		// second pseudonym on it. So does every tenant at once when the
+		// directory is lost and recreated. The database is the one place all
+		// replicas can compare, so each binds its directory there on start and
+		// one that brings another is refused.
+		if local, ok := provider.(*keys.Local); ok && local.Dir != "" {
+			id, err := local.DirectoryID()
+			if err != nil {
+				return err
+			}
+			if err := postgres.BindKeyDirectory(ctx, pool, id); err != nil {
+				return err
+			}
+		}
 	}
 	if err := writer.GuardReplicas(*replicas, dedupe); err != nil {
 		return err
+	}
+	if *replicas > 1 && *keyDir == "" {
+		return errors.New(
+			"writer: more than one replica with keys held only in memory: each replica would mint " +
+				"its own keys and the same person would get a different pseudonym on each. Give " +
+				"--key-dir on storage every replica shares")
 	}
 
 	longest := longestRetention(profiles)

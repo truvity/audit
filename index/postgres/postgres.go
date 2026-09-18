@@ -43,7 +43,7 @@ func migrations() ([]string, error) {
 // different version refuses to start rather than guess: migrating from several
 // replicas at once is a race, so the migration is its own step and this is the
 // check that it ran.
-const Version = 4
+const Version = 5
 
 // Schema returns the migrations in order, so that a deployment can apply them
 // with whatever it already uses rather than through this code.

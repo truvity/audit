@@ -219,9 +219,10 @@ ts:
     cd ts && npx vitest run
     cd ts && rm -rf dist && npx tsc -p tsconfig.build.json
     # What a publish from the root would ship: the compiled package, and no
-    # test or test helper.
-    npm pack --dry-run --json | grep -q '"path": "ts/dist/react/index.js"'
-    ! npm pack --dry-run --json | grep -E '"path": "ts/dist/.*(test|testing)'
+    # test or test helper. The root's prepare script is what builds the
+    # package when it is installed from a git commit; it has just run above.
+    npm pack --dry-run --ignore-scripts --json | grep -q '"path": "ts/dist/react/index.js"'
+    ! npm pack --dry-run --ignore-scripts --json | grep -E '"path": "ts/dist/.*(test|testing)'
 
 # Build everything a release would, locally and unpublished: the archives and,
 # through ko, the two images the chart deploys. Not part of `check`: it builds

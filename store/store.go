@@ -27,6 +27,14 @@ type Object struct {
 	// Metadata is small, and is there so an object can say what it is without
 	// being opened.
 	Metadata map[string]string
+	// LegalHold keeps an object undeletable for as long as it is set,
+	// independently of RetainUntil and without any expiry of its own.
+	//
+	// It is set at write time rather than afterwards because a hold is placed
+	// on a prefix and objects keep arriving under it: an object written into a
+	// held prefix and only held by a later sweep is an object that was
+	// deletable in between, which is the window a hold exists to close.
+	LegalHold bool
 }
 
 // Entry is one object as a listing sees it.
@@ -35,6 +43,10 @@ type Entry struct {
 	Size        int64
 	Modified    time.Time
 	RetainUntil time.Time
+	// LegalHold is whether a hold is on the object. A listing does not carry
+	// it — S3 does not report it per key — so it is set by Head and left false
+	// by List.
+	LegalHold bool
 }
 
 // ErrExists is returned when a key is already taken. Under Object Lock a second
@@ -55,6 +67,11 @@ type Store interface {
 	Head(ctx context.Context, key string) (Entry, error)
 	// List returns entries under a prefix, in key order, starting after a key.
 	List(ctx context.Context, prefix, after string, limit int) ([]Entry, error)
+	// SetLegalHold places or releases a hold on an object that already exists.
+	// Placing a hold covers what an archive already holds; releasing one is
+	// governed outside this interface, by whatever the deployment's break-glass
+	// role is, and this only makes the call.
+	SetLegalHold(ctx context.Context, key string, on bool) error
 	// Prefixes returns the distinct groups one level under a prefix, as S3's
 	// common prefixes: listing "profile=security/" with "/" gives the tenants
 	// without walking the objects beneath them.

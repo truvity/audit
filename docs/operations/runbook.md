@@ -125,7 +125,8 @@ the actor and subject columns, so the number is a deployment's own policy.
 
 ## A tenant asks for erasure
 
-Confirm no legal hold. Destroy the tenant's pseudonymisation keys for the
+Confirm no legal hold: `audit hold list --profile <p> --bucket <b>` — an
+active hold over the tenant's copies means the keys must not be destroyed. Destroy the tenant's pseudonymisation keys for the
 purposes not under a legal duty; the security and history copies become
 unlinkable. Billing and evidence copies stay under Art. 17(3)(b). Record is
 automatic (`audit.key.destroyed`).

@@ -26,6 +26,7 @@ import (
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/hold"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
@@ -161,12 +162,30 @@ func run() error {
 
 	longest := longestRetention(profiles)
 	instance := record.InstanceName()
+
+	// Legal holds. A hold is placed on a prefix and objects keep arriving under
+	// it, so the writer has to know: an object held only by a later sweep was
+	// deletable in between, which is the window the hold exists to close.
+	holds := &hold.Watcher{
+		Holds: hold.Store{
+			Store:       archive,
+			RetainUntil: func(at time.Time) time.Time { return at.Add(longest) },
+		},
+		Every: time.Minute,
+	}
+	go holds.Run(ctx, func(err error) {
+		// The previous answer stands, because forgetting a hold is worse than
+		// acting on a list a minute old. A deployment alerts on this: a writer
+		// that has never read the holds is writing objects that a hold on their
+		// prefix does not cover.
+		slog.Error("could not read the legal holds", "error", err, "ready", holds.Ready())
+	})
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,
 		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider},
 		Roller: &writer.Roller{
 			Store: archive, Instance: instance, Interval: *rollEvery,
-			Indexer: indexer,
+			Indexer: indexer, Held: holds.Held,
 			OnPut: func(key string, records int) {
 				slog.Info("object written", "key", key, "records", records)
 			},

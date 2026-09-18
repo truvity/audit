@@ -30,6 +30,7 @@ type API interface {
 	GetObject(ctx context.Context, in *s3.GetObjectInput, opts ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	HeadObject(ctx context.Context, in *s3.HeadObjectInput, opts ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 	ListObjectsV2(ctx context.Context, in *s3.ListObjectsV2Input, opts ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	PutObjectLegalHold(ctx context.Context, in *s3.PutObjectLegalHoldInput, opts ...func(*s3.Options)) (*s3.PutObjectLegalHoldOutput, error)
 }
 
 // Store is an object store backed by a bucket.
@@ -100,6 +101,7 @@ func (s *Store) Put(ctx context.Context, o store.Object) error {
 		ChecksumAlgorithm:         types.ChecksumAlgorithmSha256,
 		ObjectLockMode:            s.lock,
 		ObjectLockRetainUntilDate: aws.Time(o.RetainUntil.UTC()),
+		ObjectLockLegalHoldStatus: legalHold(o.LegalHold),
 		IfNoneMatch:               aws.String("*"),
 		Metadata:                  o.Metadata,
 	}
@@ -156,6 +158,7 @@ func (s *Store) Head(ctx context.Context, key string) (store.Entry, error) {
 	if out.LastModified != nil {
 		e.Modified = out.LastModified.UTC()
 	}
+	e.LegalHold = out.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn
 	if out.ObjectLockRetainUntilDate != nil {
 		e.RetainUntil = out.ObjectLockRetainUntilDate.UTC()
 	}
@@ -199,6 +202,26 @@ func (s *Store) List(ctx context.Context, prefix, after string, limit int) ([]st
 		}
 		token = out.NextContinuationToken
 	}
+}
+
+// SetLegalHold implements store.Store.
+func (s *Store) SetLegalHold(ctx context.Context, key string, on bool) error {
+	_, err := s.api.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
+		Bucket:    aws.String(s.bucket),
+		Key:       aws.String(s.key(key)),
+		LegalHold: &types.ObjectLockLegalHold{Status: legalHold(on)},
+	})
+	if err != nil {
+		return fmt.Errorf("s3store: legal hold on %s: %w", key, err)
+	}
+	return nil
+}
+
+func legalHold(on bool) types.ObjectLockLegalHoldStatus {
+	if on {
+		return types.ObjectLockLegalHoldStatusOn
+	}
+	return types.ObjectLockLegalHoldStatusOff
 }
 
 // Prefixes implements store.Store.

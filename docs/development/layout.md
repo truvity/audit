@@ -28,6 +28,7 @@ auth/               Authenticator and Authorizer interfaces, with the defaults
 internal/writer/    split, treat, roll, put, index, dead-letter, dedupe, ack
 internal/query/     the query service behind auth
 internal/digest/    the digest chain: builder and verifier
+internal/hold/      legal holds: the records, and the writer's view of them
 internal/clock/     an SNTP client, for the daily check ETSI asks be recorded
 internal/metering/  rollups, statements, rating adapters
 internal/export/    OCSF, ECS, OpenTelemetry, Parquet
@@ -73,10 +74,8 @@ surface and keep the rest private.
    clock-sync jobs — **done**. `just chart` holds it: golden renders, and the
    refusals for every configuration the binaries would reject or get quietly
    wrong.
-8. Legal holds (INF-802): hold records in the archive, `audit hold
-   place|release|list`, the writer holding new objects under a held prefix,
-   key destroy refusing under a hold. It emits the two `audit.hold.*` actions
-   `check-emitters` lists.
+8. Legal holds (INF-802) — **done** but for key destroy refusing under a
+   hold, which needs the key providers.
 9. `index`, read side: the `Searcher`, cursors, facets, tail.
 10. `internal/query` + `auth` + `cmd/audit-query`.
 11. `internal/metering`. It reads only what the write path already produces,

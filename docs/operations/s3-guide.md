@@ -42,9 +42,35 @@ resource may carry a wildcard: `arn:aws:s3:::<bucket>/*/tenant=<id>/*`.
 
 ## Legal hold
 
-Placing a hold is an operator action recorded as `audit.hold.placed`.
-Releasing one requires the break-glass role and is recorded as
-`audit.hold.released`. Presets say whether holds are recommended.
+```
+audit hold place --profile <p> [--tenant <t>] --reason <why> --bucket <b>
+audit hold list [--profile <p>] --bucket <b>
+audit hold release --id <id> --bucket <b>
+```
+
+A hold keeps objects undeletable for as long as it is on, whatever their
+retention says, and it has no expiry of its own. Placing one is an operator
+action recorded as `audit.hold.placed`; releasing one requires the break-glass
+role, which the archive's own policy enforces, and is recorded as
+`audit.hold.released` — including when the archive refuses it, so that nobody
+holding the role can try quietly. Presets say whether holds are recommended.
+
+A hold is placed on a prefix and the archive holds objects, so it has two
+halves. `place` sweeps what is already there. The writer sets the hold on
+objects it writes afterwards, re-reading the active holds every minute: an
+object held only by a later sweep was deletable in between, and that window is
+the whole thing a hold is for. A writer that cannot read the holds says so and
+keeps the last answer it had, because forgetting a hold is worse than acting on
+a list a minute old.
+
+The record of a hold lives in the archive under the same lock as everything
+else, and is append-only like everything else: `holds/<id>/placed.json`, and
+`holds/<id>/released.json` when it comes off. A reason is required — a hold
+nobody can account for cannot be safely released, because whoever finds it
+later has no way to know whether the matter is over.
+
+**Before erasing a tenant's keys, list the holds.** Crypto-shredding a tenant
+whose copies are under legal hold destroys evidence that may not be destroyed.
 
 ## What breaks verification
 

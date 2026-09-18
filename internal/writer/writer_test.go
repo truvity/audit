@@ -592,3 +592,38 @@ func walletFields() index.Fields {
 	}
 	return index.Fields{Filter: x.Data.Filterable(), Facet: x.Data.Facets()}
 }
+
+// The window a hold exists to close: a hold is placed on a prefix, objects keep
+// arriving under it, and one held only by a later sweep was deletable in
+// between. The writer sets the hold as it writes.
+func TestObjectsWrittenUnderAHeldPrefixCarryIt(t *testing.T) {
+	b := buildWith(t, parts{})
+	b.writer.Roller.Held = func(profile, tenant string) bool {
+		return profile == "security" && tenant == "acme"
+	}
+	write(t, b, fresh(t))
+
+	held := map[string]bool{}
+	for _, key := range b.store.HeldKeys() {
+		held[key] = true
+	}
+	if len(held) == 0 {
+		t.Fatal("nothing was written with the hold the prefix is under")
+	}
+	for _, key := range b.store.Keys() {
+		want := strings.HasPrefix(key, "profile=security/tenant=acme/")
+		if held[key] != want {
+			t.Fatalf("%s: held=%v, want %v", key, held[key], want)
+		}
+	}
+}
+
+// Without a hold nothing is held, which is the ordinary case and must not cost
+// anything.
+func TestObjectsAreNotHeldWithoutAHold(t *testing.T) {
+	b := build(t)
+	write(t, b, fresh(t))
+	if held := b.store.HeldKeys(); len(held) != 0 {
+		t.Fatalf("objects were held with no hold in place: %v", held)
+	}
+}

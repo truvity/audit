@@ -42,6 +42,11 @@ type Roller struct {
 	// prefixes, or be a different implementation entirely, and none of that
 	// changes what the trail says.
 	Indexer index.Indexer
+	// Held reports whether a profile and tenant are under a legal hold. An
+	// object written under a held prefix is put with the hold already on it: a
+	// hold is placed on a prefix, objects keep arriving under it, and one held
+	// only by a later sweep was deletable in between.
+	Held func(profile, tenant string) bool
 	// Now is the clock, for tests.
 	Now func() time.Time
 	// OnPut is called after each object is written.
@@ -211,6 +216,7 @@ func (r *Roller) put(ctx context.Context, key partition, b *batch) error {
 		Key:         objectKey,
 		Body:        body,
 		RetainUntil: b.retainAt,
+		LegalHold:   r.Held != nil && r.Held(b.profile.Name, key.tenant),
 		ContentType: "application/x-ndjson",
 		Encoding:    "zstd",
 		Metadata: map[string]string{

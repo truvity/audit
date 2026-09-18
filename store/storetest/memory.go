@@ -93,6 +93,7 @@ func (m *Memory) Head(_ context.Context, key string) (store.Entry, error) {
 	return store.Entry{
 		Key: key, Size: int64(len(o.Body)),
 		Modified: m.written[key], RetainUntil: o.RetainUntil,
+		LegalHold: o.LegalHold,
 	}, nil
 }
 
@@ -210,4 +211,31 @@ func (m *Memory) Prefixes(_ context.Context, prefix, delimiter string) ([]string
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// SetLegalHold implements store.Store.
+func (m *Memory) SetLegalHold(_ context.Context, key string, on bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.objects[key]
+	if !ok {
+		return fmt.Errorf("%w: %s", store.ErrNotFound, key)
+	}
+	o.LegalHold = on
+	m.objects[key] = o
+	return nil
+}
+
+// HeldKeys is every object under a hold, for tests.
+func (m *Memory) HeldKeys() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var out []string
+	for key, o := range m.objects {
+		if o.LegalHold {
+			out = append(out, key)
+		}
+	}
+	sort.Strings(out)
+	return out
 }

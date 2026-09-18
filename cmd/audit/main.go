@@ -67,6 +67,11 @@ usage:
         daily. It does not set the clock: whatever runs the machine does that,
         and recording the times of things is a separate job from setting them.
 
+  audit hold place|release|list [flags]
+        Place a legal hold on a profile's copies, or a tenant's within it, and
+        record who did and why. A hold keeps objects undeletable whatever
+        their retention says, until somebody takes it off.
+
   audit migrate --database <url>
         Apply the index schema. Run it before the writers that will use it,
         and run it from one place: several replicas migrating at once is a
@@ -98,6 +103,8 @@ func main() {
 		err = verify(os.Args[2:])
 	case "replay":
 		err = replay(os.Args[2:])
+	case "hold":
+		err = holdCmd(os.Args[2:])
 	case "clock-sync":
 		err = clockSync(os.Args[2:])
 	case "digest":
@@ -715,4 +722,47 @@ func clockSync(args []string) error {
 	}
 	_, err = run.Run(context.Background())
 	return err
+}
+
+// holdCmd places, releases and lists legal holds.
+func holdCmd(args []string) error {
+	if len(args) == 0 {
+		return errors.New("audit hold needs place, release or list")
+	}
+	flags := flag.NewFlagSet("hold "+args[0], flag.ContinueOnError)
+	var (
+		profile = flags.String("profile", "", "the profile to hold")
+		tenant  = flags.String("tenant", "", "narrow the hold to one tenant")
+		reason  = flags.String("reason", "", "why the hold is placed; it is recorded and cannot be blank")
+		id      = flags.String("id", "", "the hold's identifier")
+		by      = flags.String("by", "", "who is placing or releasing it, as this deployment names them")
+		bucket  = flags.String("bucket", "", "the bucket the archive is in")
+		prefix  = flags.String("prefix", "", "the prefix within the bucket")
+		region  = flags.String("region", "", "the region, when it is not in the environment")
+		sinkURL = flags.String("sink", "", "the writer this action is recorded through")
+		asJSON  = flags.Bool("json", false, "print as JSON")
+	)
+	if _, err := parse(flags, args[1:]); err != nil {
+		return err
+	}
+	if *bucket == "" {
+		return errors.New("name the archive's bucket with --bucket")
+	}
+
+	ctx := context.Background()
+	archive, err := archiveFor(ctx, *bucket, *prefix, *region)
+	if err != nil {
+		return err
+	}
+	run := cli.Hold{
+		Store: archive, Profile: *profile, Tenant: *tenant,
+		Reason: *reason, ID: *id, By: *by, JSON: *asJSON,
+	}
+	if *sinkURL != "" {
+		if run.Catalogue, err = catalogue.Common(); err != nil {
+			return err
+		}
+		run.Sink = sink.NewClient(nil, *sinkURL)
+	}
+	return run.Run(ctx, args[0])
 }

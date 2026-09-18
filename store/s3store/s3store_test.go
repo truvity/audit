@@ -26,6 +26,7 @@ type fake struct {
 	puts    []*s3.PutObjectInput
 	putErr  error
 	objects map[string][]byte
+	holds   []*s3.PutObjectLegalHoldInput
 	// pageSize is how many keys one listing answers, for tests about paging.
 	pageSize int
 }
@@ -63,6 +64,11 @@ func (f *fake) HeadObject(_ context.Context, in *s3.HeadObjectInput, _ ...func(*
 		LastModified:              &modified,
 		ObjectLockRetainUntilDate: &until,
 	}, nil
+}
+
+func (f *fake) PutObjectLegalHold(_ context.Context, in *s3.PutObjectLegalHoldInput, _ ...func(*s3.Options)) (*s3.PutObjectLegalHoldOutput, error) {
+	f.holds = append(f.holds, in)
+	return &s3.PutObjectLegalHoldOutput{}, nil
 }
 
 // ListObjectsV2 behaves as S3 does, not as a test would like: keys come sorted,
@@ -370,5 +376,47 @@ func TestPrefixesListsEveryGroupAcrossPages(t *testing.T) {
 		if groups[i] != want[i] {
 			t.Fatalf("got %v, want %v", groups, want)
 		}
+	}
+}
+
+// A hold placed on a prefix covers what is there; an object written afterwards
+// carries it from the start, because one held only by a later sweep was
+// deletable in between.
+func TestPutCarriesTheLegalHold(t *testing.T) {
+	s, f := newStore(t, s3store.Options{})
+	o := object()
+	o.LegalHold = true
+	if err := s.Put(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.puts[0].ObjectLockLegalHoldStatus; got != types.ObjectLockLegalHoldStatusOn {
+		t.Fatalf("legal hold status %q, want ON", got)
+	}
+
+	plain := object()
+	plain.Key += ".2"
+	if err := s.Put(context.Background(), plain); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.puts[1].ObjectLockLegalHoldStatus; got != types.ObjectLockLegalHoldStatusOff {
+		t.Fatalf("legal hold status %q, want OFF", got)
+	}
+}
+
+// The sweep sets holds on objects that already exist, under the store's prefix
+// like every other key it handles.
+func TestSetLegalHoldAddressesThePrefixedKey(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Prefix: "archive"})
+	if err := s.SetLegalHold(context.Background(), "profile=security/x", true); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.holds) != 1 {
+		t.Fatalf("%d calls", len(f.holds))
+	}
+	if got := aws.ToString(f.holds[0].Key); got != "archive/profile=security/x" {
+		t.Fatalf("key %q", got)
+	}
+	if f.holds[0].LegalHold.Status != types.ObjectLockLegalHoldStatusOn {
+		t.Fatalf("status %q", f.holds[0].LegalHold.Status)
 	}
 }

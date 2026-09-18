@@ -39,7 +39,11 @@ Foundation. No release.
   between the two costs a duplicate object rather than a lost record.
 - `audit validate`, `audit profile explain`, `audit check-emitters`,
   `audit verify`, `audit replay`, `audit migrate`, `audit reindex`,
-  `audit digest`, `audit purge`, `audit clock-sync`.
+  `audit digest`, `audit purge`, `audit clock-sync`, `audit hold`.
+- Legal holds: `audit hold place|release|list`, hold records in the archive
+  under the same lock and append-only like everything else, and the writer
+  setting the hold on objects written under a held prefix — an object held only
+  by a later sweep was deletable in between.
 - The digest and verify jobs keep an account of themselves, as the writer
   does: `audit.digest.written` per sealed window, `audit.digest.verified` and
   `audit.digest.failed` per window checked. A chain never sealed and one sealed

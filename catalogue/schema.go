@@ -32,8 +32,11 @@ type Property struct {
 	Facet     bool
 	Filter    bool
 	Sensitive string
-	OCSFPath  string
-	ECSPath   string
+	// Expiry marks the property that says when the credential or certificate
+	// the record is about expires. See Composed.Expiry.
+	Expiry   bool
+	OCSFPath string
+	ECSPath  string
 }
 
 // LoadSchema reads an extension-slot schema, holds it to the constraints every
@@ -89,6 +92,7 @@ func (s *Schema) index(pointer string, raw json.RawMessage, depth int) error {
 		Facet      bool                       `json:"x-audit-facet"`
 		Filter     bool                       `json:"x-audit-filter"`
 		Sensitive  string                     `json:"x-audit-sensitive"`
+		Expiry     bool                       `json:"x-audit-expiry"`
 		OCSFPath   string                     `json:"x-ocsf-path"`
 		ECSPath    string                     `json:"x-ecs-path"`
 		Properties map[string]json.RawMessage `json:"properties"`
@@ -99,7 +103,7 @@ func (s *Schema) index(pointer string, raw json.RawMessage, depth int) error {
 	}
 	s.Properties[pointer] = Property{
 		Type: p.Type, Class: p.Class, PII: p.PII, Facet: p.Facet,
-		Filter: p.Filter, Sensitive: p.Sensitive, OCSFPath: p.OCSFPath, ECSPath: p.ECSPath,
+		Filter: p.Filter, Sensitive: p.Sensitive, Expiry: p.Expiry, OCSFPath: p.OCSFPath, ECSPath: p.ECSPath,
 	}
 	for name, sub := range p.Properties {
 		if err := s.index(pointer+"/"+name, sub, depth+1); err != nil {

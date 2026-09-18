@@ -89,6 +89,18 @@ type batch struct {
 // The fields are the action's indexed extension properties, which only the
 // caller's catalogue knows.
 func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record, fields index.Fields) error {
+	return r.AddExpiring(ctx, p, c, fields, nil)
+}
+
+// AddExpiring is Add for a record that says when the credential it is about
+// expires. Under an after_expiry profile the object is then locked until that
+// moment plus the profile's years — or the fallback, if that is later — and an
+// object holding several such records is locked for the latest, because every
+// record in it must outlive what relies on it. Under any other profile the
+// expiry changes nothing.
+func (r *Roller) AddExpiring(
+	ctx context.Context, p *preset.Profile, c *record.Record, fields index.Fields, expiry *time.Time,
+) error {
 	line, err := record.Canonical(c)
 	if err != nil {
 		return fmt.Errorf("writer: %w", err)
@@ -118,6 +130,11 @@ func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record, f
 			retainAt: p.RetainUntil(r.now(), nil),
 		}
 		r.open[key] = b
+	}
+	if expiry != nil {
+		if until := p.RetainUntil(b.opened, expiry); until.After(b.retainAt) {
+			b.retainAt = until
+		}
 	}
 	b.lines = append(b.lines, line)
 	if r.Indexer != nil {

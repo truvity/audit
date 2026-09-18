@@ -12,6 +12,7 @@ import (
 
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/writer"
+	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
@@ -292,5 +293,65 @@ func TestAFailedPutKeepsTheCopies(t *testing.T) {
 	}
 	if s.Len() != 1 || r.Pending() != 0 {
 		t.Fatalf("after recovery: %d objects, %d pending", s.Len(), r.Pending())
+	}
+}
+
+// The legal-evidence profile keeps a record for years after the credential it
+// is about expires. An object is locked for the latest any of its records
+// needs, and never less than the fallback — a short-lived credential still
+// gets the profile's floor.
+func TestAnEvidenceObjectIsLockedUntilItsLatestExpiryPlusTheYears(t *testing.T) {
+	builtin, err := preset.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := preset.Compose(preset.Composition{Name: "evidence", Presets: []string{"evidence-etsi"}}, builtin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	security := profiles(t)["security"]
+	written := day(t, "2026-09-17T10:30:00Z")
+	fallback := written.AddDate(0, 0, evidence.Retention.FallbackDays)
+
+	expiring := func(v string) *time.Time { at := day(t, v); return &at }
+	for _, c := range []struct {
+		name     string
+		profile  *preset.Profile
+		expiries []*time.Time
+		want     time.Time
+	}{
+		{"no expiry known", evidence, []*time.Time{nil}, fallback},
+		{"a long-lived credential", evidence, []*time.Time{expiring("2031-09-17T00:00:00Z")},
+			day(t, "2038-09-17T00:00:00Z")},
+		// Expiry plus seven years is before the fallback; the floor holds.
+		{"a short-lived credential", evidence, []*time.Time{expiring("2027-01-01T00:00:00Z")}, fallback},
+		{"the latest of several", evidence,
+			[]*time.Time{expiring("2031-09-17T00:00:00Z"), nil, expiring("2033-03-01T00:00:00Z")},
+			day(t, "2040-03-01T00:00:00Z")},
+		// A profile with fixed retention does not care when anything expires.
+		{"a fixed profile", security, []*time.Time{expiring("2040-01-01T00:00:00Z")},
+			security.RetainUntil(written, nil)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s := storetest.NewMemory()
+			r := roller(t, s, func() time.Time { return written })
+			for _, expiry := range c.expiries {
+				if err := r.AddExpiring(context.Background(), c.profile,
+					copyFor(t, c.profile.Name, "acme", written), index.Fields{}, expiry); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := r.Flush(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			keys := s.Keys()
+			if len(keys) != 1 {
+				t.Fatalf("%d objects", len(keys))
+			}
+			o, _ := s.Object(keys[0])
+			if !o.RetainUntil.Equal(c.want) {
+				t.Fatalf("locked until %s, want %s", o.RetainUntil.Format(time.RFC3339), c.want.Format(time.RFC3339))
+			}
+		})
 	}
 }

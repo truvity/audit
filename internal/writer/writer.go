@@ -249,6 +249,16 @@ func (w *Writer) one(ctx context.Context, r *record.Record) error {
 		return w.deadLetter(ctx, r, err.Error())
 	}
 
+	// When the credential the record is about expires, if its catalogue says
+	// where to read it. Read from the record as written, before a profile's
+	// copy drops the data slot, because it decides how long every copy is kept.
+	// A value marked as the expiry that is not a time is a fault in the record,
+	// not in the writer, and is dead-lettered like any other.
+	expiry, err := x.Expiry(r)
+	if err != nil {
+		return w.deadLetter(ctx, r, err.Error())
+	}
+
 	if unhandled := w.Splitter.Unhandled(x); len(unhandled) > 0 {
 		w.reportUnhandled(r.GetAction(), unhandled)
 	}
@@ -267,7 +277,7 @@ func (w *Writer) one(ctx context.Context, r *record.Record) error {
 	fields := indexFields(x)
 	for _, copied := range copies {
 		profile := w.Splitter.Profiles[copied.GetProfile()]
-		if err := w.Roller.Add(ctx, profile, copied, fields); err != nil {
+		if err := w.Roller.AddExpiring(ctx, profile, copied, fields, expiry); err != nil {
 			return err
 		}
 	}

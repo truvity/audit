@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -39,6 +40,50 @@ func (c *Catalogue) Compose(action string) (*Composed, error) {
 		}
 	}
 	return x, nil
+}
+
+// Expiry is when the credential or certificate a record is about expires, read
+// from whichever data properties the catalogue marks with x-audit-expiry — the
+// latest of them when there are several, since the record is evidence for as
+// long as the longest-lived thing relying on it. Nil means the record does not
+// say, and an after_expiry profile falls back.
+//
+// It reads the record as written, before any profile's copy drops the data
+// slot: the expiry decides how long a copy is kept even when the copy itself
+// carries none of the data.
+func (x *Composed) Expiry(r *record.Record) (*time.Time, error) {
+	if x.Data == nil || r.GetData() == nil {
+		return nil, nil
+	}
+	var latest *time.Time
+	for pointer, p := range x.Data.Properties {
+		if !p.Expiry {
+			continue
+		}
+		v := r.GetData().AsMap()
+		var value any = v
+		for _, step := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+			m, ok := value.(map[string]any)
+			if !ok {
+				value = nil
+				break
+			}
+			value = m[step]
+		}
+		text, ok := value.(string)
+		if !ok || text == "" {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, text)
+		if err != nil {
+			return nil, fmt.Errorf("data%s is marked as the expiry and is not an RFC 3339 time: %q", pointer, text)
+		}
+		at = at.UTC()
+		if latest == nil || at.After(*latest) {
+			latest = &at
+		}
+	}
+	return latest, nil
 }
 
 // Validate holds a record to what its catalogue says it may be. An emitter runs

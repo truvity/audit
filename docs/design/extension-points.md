@@ -24,6 +24,15 @@ Enforced by `schemas/extension.schema.json`:
 - Bounded depth and string length. No binary.
 - Optional: `x-audit-filter`, `x-audit-sensitive` (hmac or redact),
   `x-ocsf-path`, `x-ecs-path`.
+- Optional `x-audit-expiry: true`, on a `string` with `format: date-time`
+  only: this property is when the credential or certificate the record is
+  about expires. A profile retained `after_expiry` (the evidence profile) locks
+  the record's object until that moment plus its years, or its fallback if that
+  is later; an object holding several such records is locked for the latest.
+  The writer reads it from the record as written, so it applies even to copies
+  whose profile drops the data slot. A record that does not carry it gets the
+  fallback. Extending the lock of records already written, when a later record
+  says the credential lives longer, is a separate step.
 
 ## Example
 

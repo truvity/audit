@@ -147,7 +147,7 @@ func (h Hold) report(out io.Writer, r hold.Record, what string) error {
 // record puts the action in the trail, through the same catalogue as anything
 // else. A hold changes what may be deleted, so it belongs there more than most.
 func (h Hold) record(ctx context.Context, action string, r hold.Record, failure error) {
-	reporter, err := newReporter(h.Catalogue, h.Sink, "", h.by())
+	reporter, err := newReporter(h.Catalogue, h.Sink, "", record.InstanceName())
 	if err != nil || reporter == nil {
 		return
 	}
@@ -162,12 +162,10 @@ func (h Hold) record(ctx context.Context, action string, r hold.Record, failure 
 	reporter.record(ctx, event)
 }
 
-func (h Hold) by() string {
-	if strings.TrimSpace(h.By) != "" {
-		return h.By
-	}
-	return record.InstanceName()
-}
+// by is who is acting. It is not defaulted: a hold is an operator's action and
+// the record has to name the operator, so the library refuses a blank and the
+// refusal says what to pass.
+func (h Hold) by() string { return strings.TrimSpace(h.By) }
 
 func (h Hold) now() time.Time {
 	if h.Now != nil {

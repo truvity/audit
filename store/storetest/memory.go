@@ -29,6 +29,8 @@ import (
 // not one. Importing it from anything but a test should read as wrong in the
 // import path itself.
 type Memory struct {
+	// Gets counts object fetches, for tests about how much an operation reads.
+	Gets int
 	// FailPut, when set, is returned instead of writing.
 	FailPut error
 	// Now is the clock that stamps write times, for tests that care when an
@@ -71,8 +73,12 @@ func (m *Memory) Put(_ context.Context, o store.Object) error {
 
 // Get implements Store.
 func (m *Memory) Get(_ context.Context, key string) ([]byte, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Counted, so a test can say how much reading an operation is allowed to
+	// do: a walk that fetches what a listing already answered is the kind of
+	// cost that is invisible here and paid every minute in production.
+	m.Gets++
 	o, ok := m.objects[key]
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", store.ErrNotFound, key)

@@ -241,3 +241,54 @@ func TestWatcherSaysWhenItHasNotRead(t *testing.T) {
 		t.Fatal("a released hold still covers its profile")
 	}
 }
+
+// A hold is an operator's action, and the record has to name the operator.
+func TestPlaceAndReleaseRefuseWithoutSayingWho(t *testing.T) {
+	s, holds := archive(t)
+	object(t, s, "security", "acme", "a.ndjson.zst")
+	ctx := context.Background()
+	_, err := holds.Place(ctx, hold.Record{ID: "h-1", Profile: "security", Reason: "matter"})
+	if err == nil || !strings.Contains(err.Error(), "who") {
+		t.Fatalf("a hold without an operator must be refused, saying so: %v", err)
+	}
+	if _, err := holds.Place(ctx, hold.Record{
+		ID: "h-1", Profile: "security", Reason: "matter", PlacedBy: "olga",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := holds.Release(ctx, "h-1", "  "); err == nil {
+		t.Fatal("a release without an operator must be refused")
+	}
+}
+
+// The writer asks for the active holds once a minute for as long as it runs.
+// A hold released long ago must cost it a listing entry, not a fetch.
+func TestActiveDoesNotOpenReleasedHolds(t *testing.T) {
+	s, holds := archive(t)
+	object(t, s, "security", "acme", "a.ndjson.zst")
+	ctx := context.Background()
+	for _, id := range []string{"h-1", "h-2", "h-3"} {
+		if _, err := holds.Place(ctx, hold.Record{
+			ID: id, Profile: "security", Reason: "matter", PlacedBy: "olga",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []string{"h-1", "h-2"} {
+		if _, err := holds.Release(ctx, id, "break-glass"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	s.Gets = 0
+	active, err := holds.Active(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 1 || active[0].ID != "h-3" {
+		t.Fatalf("active: %+v", active)
+	}
+	if s.Gets != 1 {
+		t.Fatalf("%d objects fetched to find one active hold among three; the released two should cost nothing", s.Gets)
+	}
+}

@@ -136,18 +136,59 @@ func merge(a, b Record) Record {
 }
 
 // Active returns the holds still on.
+//
+// The writer asks this once a minute for as long as it runs, so it reads only
+// what it has to. The listing alone says which holds have a release record,
+// and those are not opened; a hold that was placed and released years ago
+// costs one key in a listing, not a fetch every minute until the archive is
+// gone.
 func (s Store) Active(ctx context.Context) ([]Record, error) {
-	all, err := s.List(ctx)
+	entries, err := s.Store.List(ctx, Prefix+"/", "", 0)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("hold: listing: %w", err)
 	}
-	var out []Record
-	for _, r := range all {
-		if r.Active() {
-			out = append(out, r)
+	placed, released := map[string]string{}, map[string]bool{}
+	for _, e := range entries {
+		id, kind := split(e.Key)
+		switch kind {
+		case "placed.json":
+			placed[id] = e.Key
+		case "released.json":
+			released[id] = true
 		}
 	}
+	ids := make([]string, 0, len(placed))
+	for id := range placed {
+		if !released[id] {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+
+	out := make([]Record, 0, len(ids))
+	for _, id := range ids {
+		body, err := s.Store.Get(ctx, placed[id])
+		if err != nil {
+			return nil, fmt.Errorf("hold: %s: %w", id, err)
+		}
+		var r Record
+		if err := json.Unmarshal(body, &r); err != nil {
+			return nil, fmt.Errorf("hold: %s: %w", id, err)
+		}
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].PlacedAt.After(out[j].PlacedAt) })
 	return out, nil
+}
+
+// split reads the hold id and the record kind out of a key under the prefix.
+func split(key string) (id, kind string) {
+	rest := strings.TrimPrefix(key, Prefix+"/")
+	at := strings.LastIndex(rest, "/")
+	if at < 0 {
+		return "", ""
+	}
+	return rest[:at], rest[at+1:]
 }
 
 // Place puts a hold on everything under a profile, or a tenant within it, and
@@ -166,6 +207,8 @@ func (s Store) Place(ctx context.Context, r Record) (Record, error) {
 		return r, errors.New("hold: give a reason: a hold nobody can account for cannot be safely released")
 	case r.ID == "":
 		return r, errors.New("hold: an identifier is required")
+	case strings.TrimSpace(r.PlacedBy) == "":
+		return r, errors.New("hold: say who is placing it: a hold is an operator's action, and the record has to name the operator")
 	}
 	if _, err := s.Get(ctx, r.ID); err == nil {
 		return r, fmt.Errorf("hold: %s already exists", r.ID)
@@ -189,6 +232,9 @@ func (s Store) Place(ctx context.Context, r Record) (Record, error) {
 // the deployment's break-glass role decide, and a refusal comes back from the
 // store. What this guarantees is that the attempt leaves a trace either way.
 func (s Store) Release(ctx context.Context, id, by string) (Record, error) {
+	if strings.TrimSpace(by) == "" {
+		return Record{}, errors.New("hold: say who is releasing it")
+	}
 	r, err := s.Get(ctx, id)
 	if err != nil {
 		return r, err

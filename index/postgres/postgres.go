@@ -8,10 +8,12 @@ package postgres
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,18 +23,45 @@ import (
 	"github.com/truvity/audit/index"
 )
 
-//go:embed schema/0001_index.sql
-var schemaSQL string
+//go:embed schema/*.sql
+var schemaFS embed.FS
+
+// migrations are the numbered files, applied in name order. They share one
+// chain across everything that uses this database — the index, the registry —
+// because a deployment that had to run two migrations in the right order would
+// eventually run them in the wrong one.
+func migrations() ([]string, error) {
+	names, err := fs.Glob(schemaFS, "schema/*.sql")
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(names)
+	return names, nil
+}
 
 // Version is the schema this build expects. A writer whose database is at a
 // different version refuses to start rather than guess: migrating from several
 // replicas at once is a race, so the migration is its own step and this is the
 // check that it ran.
-const Version = 1
+const Version = 2
 
-// Schema returns the migration, so that a deployment can apply it with whatever
-// it already uses rather than through this code.
-func Schema() string { return schemaSQL }
+// Schema returns the migrations in order, so that a deployment can apply them
+// with whatever it already uses rather than through this code.
+func Schema() string {
+	names, err := migrations()
+	if err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, name := range names {
+		body, err := schemaFS.ReadFile(name)
+		if err != nil {
+			return ""
+		}
+		fmt.Fprintf(&b, "-- %s\n%s\n", name, body)
+	}
+	return b.String()
+}
 
 // DB is the part of a pgx pool this package uses. Taking an interface keeps the
 // pool's construction — its size, its timeouts, its credentials — where a
@@ -47,8 +76,18 @@ type DB interface {
 // Migrate applies the schema. It is idempotent, and it is meant to be run by
 // one thing at a time: a job before the writers roll, or an operator.
 func Migrate(ctx context.Context, db DB) error {
-	if _, err := db.Exec(ctx, schemaSQL); err != nil {
-		return fmt.Errorf("postgres: applying the schema: %w", err)
+	names, err := migrations()
+	if err != nil {
+		return fmt.Errorf("postgres: %w", err)
+	}
+	for _, name := range names {
+		body, err := schemaFS.ReadFile(name)
+		if err != nil {
+			return fmt.Errorf("postgres: %w", err)
+		}
+		if _, err := db.Exec(ctx, string(body)); err != nil {
+			return fmt.Errorf("postgres: applying %s: %w", name, err)
+		}
 	}
 	return nil
 }

@@ -70,6 +70,15 @@ Foundation. No release.
   archive now goes tenant by tenant and day by day through `store.WalkDays`,
   and the S3 test double pages, sorts and groups as S3 does so that the next
   listing that stops early is caught here.
+- `audit-registry`, the catalogue registry as a service: it validates a
+  document with the same toolchain that validates it in the application's own
+  tests, refuses a source registering another's catalogue, and refuses a
+  catalogue that would leave a profile's required categories uncovered.
+  Registering the same version twice is how a deployment rolls; registering a
+  different document under the same version is refused, because a version says
+  what records already written under it mean.
+- `emit.Register` for an application to register at start-up and not start if
+  the deployment refuses its catalogue.
 - `audit-writer`, the writer as a service behind Connect and, given
   `--stream-url`, behind a durable JetStream consumer shared by every replica.
   A batch is acknowledged only once its records are in the archive, so a writer

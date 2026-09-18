@@ -27,6 +27,7 @@ import (
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/hold"
+	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
@@ -120,11 +121,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	registry := &writer.Registry{}
-	registry.Register(common)
+	local := &writer.Registry{}
+	local.Register(common)
 	registered := []*catalogue.Catalogue{common}
 	if *catalogues != "" {
-		found, err := registerAll(registry, *catalogues)
+		found, err := registerAll(local, *catalogues)
 		if err != nil {
 			return err
 		}
@@ -137,6 +138,7 @@ func run() error {
 	// the writer still writes the archive, which is the part that is evidence.
 	dedupe := writer.Dedupe(&writer.MemoryDedupe{})
 	var indexer index.Indexer
+	var shared *registry.Registry
 	if *database != "" {
 		pool, err := pgxpool.New(ctx, *database)
 		if err != nil {
@@ -152,6 +154,12 @@ func run() error {
 		if indexer, err = postgres.New(pool); err != nil {
 			return err
 		}
+		// Catalogues registered through the registry service live in the same
+		// database, so the writer reads them from it rather than through
+		// another hop. One given on disk still wins: that is what a deployment
+		// without a registry has, and what an operator reaches for when the
+		// registry is the thing that is broken.
+		shared = &registry.Registry{Store: registry.Postgres{DB: pool}}
 		if dedupe, err = postgres.NewDedupe(pool, longestDedupe(profiles)); err != nil {
 			return err
 		}
@@ -185,7 +193,7 @@ func run() error {
 		slog.Error("could not refresh the legal holds; keeping the last answer", "error", err)
 	})
 	w, err := writer.New(&writer.Writer{
-		Catalogues: registry,
+		Catalogues: resolver{local: local, shared: shared},
 		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider},
 		Roller: &writer.Roller{
 			Store: archive, Instance: instance, Interval: *rollEvery,
@@ -487,4 +495,27 @@ func consume(ctx context.Context, o streamOptions, target sink.Sink) (func(), er
 		<-done
 		_ = conn.Drain()
 	}, nil
+}
+
+// resolver answers the writer's question about a record's catalogue: on disk
+// first, then whatever the deployment registered.
+//
+// On disk first because that is what a deployment with no registry has at all,
+// and because an operator repairing a bad registration needs a way to put the
+// right document in front of the writer without going through the thing that
+// took the wrong one.
+type resolver struct {
+	local  *writer.Registry
+	shared *registry.Registry
+}
+
+func (r resolver) Get(ctx context.Context, source, version string) (*catalogue.Catalogue, error) {
+	c, err := r.local.Get(ctx, source, version)
+	if err == nil {
+		return c, nil
+	}
+	if r.shared == nil {
+		return nil, err
+	}
+	return r.shared.Get(ctx, source, version)
 }

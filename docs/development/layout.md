@@ -29,6 +29,7 @@ internal/writer/    split, treat, roll, put, index, dead-letter, dedupe, ack
 internal/query/     the query service behind auth
 internal/digest/    the digest chain: builder and verifier
 internal/hold/      legal holds: the records, and the writer's view of them
+internal/registry/  the catalogue registry: validation, storage, the service
 internal/clock/     an SNTP client, for the daily check ETSI asks be recorded
 internal/metering/  rollups, statements, rating adapters
 internal/export/    OCSF, ECS, OpenTelemetry, Parquet
@@ -38,6 +39,7 @@ cmd/audit/          validate, check-emitters, verify, replay, migrate, reindex, 
                     purge, clock-sync (conformance to come)
 cmd/protoc-gen-audit-jsonschema/  the buf plugin that writes the record's JSON Schema
 cmd/audit-writer/   split writer service
+cmd/audit-registry/ catalogue registry service
 cmd/audit-query/    query service
 cmd/audit-console/  standalone console server
 adapters/           openbao, keycloak, github, kubernetes

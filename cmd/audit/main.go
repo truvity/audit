@@ -96,7 +96,7 @@ usage:
         record who did and why. A hold keeps objects undeletable whatever
         their retention says, until somebody takes it off.
 
-  audit migrate --database <url>
+  audit migrate --database <url> [--reader <role>]
         Apply the index schema. Run it before the writers that will use it,
         and run it from one place: several replicas migrating at once is a
         race the writers cannot see.
@@ -438,6 +438,7 @@ func migrate(args []string) error {
 	var (
 		database = flags.String("database", "", "the Postgres URL of the index")
 		printSQL = flags.Bool("print", false, "print the schema and apply nothing")
+		reader   = flags.String("reader", "", "a role to grant what the query service needs: usage and select, nothing else")
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
@@ -461,6 +462,12 @@ func migrate(args []string) error {
 		return err
 	}
 	fmt.Printf("index schema version %d applied\n", postgres.Version)
+	if *reader != "" {
+		if err := postgres.GrantReader(ctx, pool, *reader); err != nil {
+			return err
+		}
+		fmt.Printf("%s may read the index\n", *reader)
+	}
 	return nil
 }
 

@@ -92,6 +92,39 @@ func Migrate(ctx context.Context, db DB) error {
 	return nil
 }
 
+// GrantReader gives a role what a reading service needs and nothing more:
+// usage on the index's schema, and select on every table in it — those there
+// are, and those the writer creates later (a month's partition), through the
+// schema's default privileges. Run it as the owner, after Migrate.
+//
+// The role must exist, and must not be the owner: row-level security does not
+// apply to the role that owns the tables, so tenant isolation for a reader that
+// owned them would rest on the service alone.
+func GrantReader(ctx context.Context, db DB, role string) error {
+	if strings.TrimSpace(role) == "" {
+		return errors.New("postgres: a reader role is required")
+	}
+	var schema, owner string
+	if err := db.QueryRow(ctx, `select current_schema(), current_user`).Scan(&schema, &owner); err != nil {
+		return fmt.Errorf("postgres: %w", err)
+	}
+	if role == owner {
+		return fmt.Errorf("postgres: %s owns the index's tables, and a reader must not: "+
+			"row-level security does not bind the owner", role)
+	}
+	id, in := pgx.Identifier{role}.Sanitize(), pgx.Identifier{schema}.Sanitize()
+	for _, statement := range []string{
+		"grant usage on schema " + in + " to " + id,
+		"grant select on all tables in schema " + in + " to " + id,
+		"alter default privileges in schema " + in + " grant select on tables to " + id,
+	} {
+		if _, err := db.Exec(ctx, statement); err != nil {
+			return fmt.Errorf("postgres: granting %s: %w", role, err)
+		}
+	}
+	return nil
+}
+
 // CheckVersion reports whether the database holds the schema this build knows.
 func CheckVersion(ctx context.Context, db DB) error {
 	var version int

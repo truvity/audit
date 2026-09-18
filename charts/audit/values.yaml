@@ -83,6 +83,11 @@ query:
     url: ""
     existingSecret: ""
     secretKey: url
+    # The role that URL connects as. When set, the migration job grants it
+    # usage on the schema and select on every table, now and later, and
+    # nothing else: the grants the deploy guide otherwise asks for by hand.
+    # The role itself must already exist; the chart creates no roles.
+    role: ""
   # The grants file: the issuers trusted to sign callers in, presets, and
   # rules. See docs/guides/read.md#access. Without an issuer nobody can sign
   # in, and the service refuses to start.

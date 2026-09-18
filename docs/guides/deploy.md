@@ -234,8 +234,17 @@ Turn it on in the same release. It needs its own database role, the issuers
 your callers sign in with, and what each may read:
 
 ```sql
--- once, as the owner: a role the tenant policies bind
+-- once, as whoever creates roles: a role the tenant policies bind
 create role audit_query login password '…';
+```
+
+and name it as `query.database.role`: the migration job then grants it usage
+on the schema and select on every table, now and later, and nothing else
+(`audit migrate --reader audit_query`). The grants by hand, for a database the
+chart does not migrate:
+
+```sql
+-- as the owner
 grant usage on schema public to audit_query;
 grant select on all tables in schema public to audit_query;
 alter default privileges in schema public grant select on tables to audit_query;
@@ -246,6 +255,7 @@ query:
   enabled: true
   database:
     existingSecret: audit-query-database   # key `url`: postgres://audit_query@…
+    role: audit_query                       # granted select by the migration job
   grants:
     issuers:
       - url: https://id.example.com

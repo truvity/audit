@@ -75,6 +75,7 @@ In the chart, under `query` (`query.enabled`):
 |---|---|
 | `query.searcher` | `postgres` (the index) or `s3scan` (the archive, within a budget; no database) |
 | `query.database.existingSecret` or `.url` | the query service's **own** role: `usage` on the schema, `select` on its tables, not the owner. Tenant row-level security binds only a non-owner, so the chart refuses the writer's credentials here |
+| `query.database.role` | that role's name. When set, the migration job grants it usage and select, now and on tables created later (`audit migrate --reader`), and nothing else; the role must already exist |
 | `query.grants` | the grants file below, inline |
 | `query.exports.bucket`, `.expiry`, `.linkValid` | a separate unlocked bucket for exports; empty refuses export |
 | `query.resolve.enabled` | give this service the keys to open sealed identifiers. `local` mounts the writer's key directory read-only (ReadWriteMany required); `transit` signs in its own way (`query.resolve.transit.role`, `.token.existingSecret` or `.tokenFile`), never as the writer |

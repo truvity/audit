@@ -755,7 +755,9 @@ spec:
         - name: migrate
           image: ghcr.io/truvity/audit:0.1.0
           imagePullPolicy: IfNotPresent
-          args: ["migrate", "--database=$(AUDIT_DATABASE)"]
+          args:
+            - migrate
+            - --database=$(AUDIT_DATABASE)
           env:
             
             - name: AUDIT_DATABASE

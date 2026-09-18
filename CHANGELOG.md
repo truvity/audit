@@ -32,6 +32,11 @@ Foundation. No release.
   produces, and an in-memory implementation. Indexing is idempotent by
   `(profile, id)` and counting has no call of its own, because only the
   transaction that inserted a row can tell a re-delivery from a new record.
+- `auth`: the `Authenticator` and `Authorizer` seams a deployment plugs into,
+  with a declarative authorizer. A grant's zero value grants nothing, every
+  tenant is said out loud rather than meant by a nil list, a refusal names
+  which of profile, operation or tenant it failed, and `resolve` — undoing a
+  pseudonym — is never implied by permission to read.
 - `index/s3scan`: a searcher with no index at all, for a deployment too small to
   run a database — and the implementation that cannot cheat, since one backed by
   a table can quietly grow a capability the interface never promised. It refuses

@@ -10,13 +10,26 @@ type Authorizer interface {
 }
 
 type Grant struct {
-    Tenants    []string  // nil = all
+    AllTenants bool      // an operator's grant, said out loud
+    Tenants    []string
     Profiles   []string
-    Operations []string  // search, facets, get, export, tail, resolve
-    Window     *TimeRange
+    Operations []Operation // search, facets, get, export, tail, resolve
+    From, Until time.Time
     Rule       string    // stamped into the log_access record
 }
 ```
+
+**The zero value grants nothing.** This sketch first had a nil tenant list mean
+every tenant. That is the wrong default here: a `Grant` nobody filled in would
+then be a grant over the whole archive, and the mistake would look like an empty
+struct rather than like a decision. Every tenant is something an operator's
+grant says out loud.
+
+The grant reaches a query as one more filter term, not as a check beside it. A
+check can be forgotten; a term cannot be, because without it there is no query.
+
+`resolve` is not implied by `get`. It is the operation that undoes the
+pseudonymisation, and a grant to read must not carry it.
 
 ## Authenticators
 
@@ -24,7 +37,9 @@ type Grant struct {
   claim mapping.
 - **trusted-upstream**: reads the principal a gateway forwarded. Bound to
   mTLS from the gateway or an internal JWT the gateway signs. Never a bare
-  header.
+  header — which is exactly what the registry reads today (`Audit-Source`),
+  and why the chart refuses to deploy it without a proxy in front. That
+  placeholder goes when this lands.
 - **none**: tests only.
 
 ## Authorizers

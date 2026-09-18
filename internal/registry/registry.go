@@ -7,10 +7,16 @@
 //
 // Registration is where the deployment gets its say. The document is validated
 // against the same toolchain that validates it in the emitter's own tests, the
-// source is checked against who is registering, and the categories the
-// deployment's profiles require are checked against what the catalogue's
-// actions carry. An application cannot register a catalogue that would leave a
-// profile unable to meet its framework.
+// source is checked against who is registering, and after each registration
+// the categories the deployment's profiles require are checked against what
+// every registered catalogue, and the component's own, carry together.
+//
+// Coverage is the deployment's property, not one application's: a profile
+// needs authentication events from whoever signs people in and log access
+// events from whoever reads the trail, and no single application does both. So
+// a gap is reported (OnUncovered, and `audit validate --deployment` in the
+// deployment's CI) rather than held against the application that happened to
+// register while it was open.
 package registry
 
 import (
@@ -18,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -49,9 +54,16 @@ var ErrNotFound = errors.New("registry: no such catalogue")
 // Registry validates and keeps catalogues.
 type Registry struct {
 	Store Store
-	// Profiles are the deployment's, whose required categories every registered
-	// catalogue is checked against.
+	// Profiles are the deployment's, whose required categories the registered
+	// catalogues together are checked against.
 	Profiles map[string]*preset.Profile
+	// Builtin are catalogues every deployment has without registering them:
+	// the component's own. They count toward coverage.
+	Builtin []*catalogue.Catalogue
+	// OnUncovered is called after a registration for each profile whose
+	// required categories nothing registered covers yet, so that the
+	// deployment can say so where someone will read it.
+	OnUncovered func(ctx context.Context, profile string, missing []string)
 	// Identity is the verified source of whoever is registering. A transport
 	// that cannot say returns "", and registration is then refused rather than
 	// taking the document's word for whose it is.
@@ -118,6 +130,7 @@ func (r *Registry) Register(ctx context.Context, e Entry) ([]string, error) {
 		return nil, err
 	}
 	r.cache(e.Source, e.Version, loaded)
+	r.checkCoverage(ctx)
 	if r.OnRegistered != nil {
 		r.OnRegistered(ctx, e)
 	}
@@ -144,38 +157,42 @@ func (r *Registry) validate(e Entry) (*catalogue.Catalogue, []string) {
 			"the document is version %q and it was registered as %q", loaded.Version, e.Version))
 	}
 
-	// The deployment's own requirement: a profile exists to satisfy a
-	// framework, and a framework requires certain categories of event. A
-	// catalogue whose actions leave one of those categories uncovered would let
-	// the profile look complete while missing what it is for.
+	return loaded, problems
+}
+
+// checkCoverage reports each profile's required categories that no catalogue
+// of the deployment covers: the component's own, and the most recently
+// registered version of every source. It reports; it does not refuse.
+func (r *Registry) checkCoverage(ctx context.Context) {
+	if r.OnUncovered == nil || len(r.Profiles) == 0 {
+		return
+	}
+	entries, err := r.Store.List(ctx)
+	if err != nil {
+		return
+	}
+	latest := map[string]Entry{}
+	for _, e := range entries {
+		if held, ok := latest[e.Source]; !ok || e.RegisteredAt.After(held.RegisteredAt) {
+			latest[e.Source] = e
+		}
+	}
+	catalogues := append([]*catalogue.Catalogue(nil), r.Builtin...)
+	for _, source := range sortedKeys(latest) {
+		e := latest[source]
+		if c, err := r.Get(ctx, e.Source, e.Version); err == nil {
+			catalogues = append(catalogues, c)
+		}
+	}
 	for _, name := range sortedProfiles(r.Profiles) {
 		p := r.Profiles[name]
 		if len(p.RequiredCategories) == 0 {
 			continue
 		}
-		missing := catalogue.MissingCategories(name, p.RequiredCategories, []*catalogue.Catalogue{loaded})
-		if len(missing) > 0 && emitsInto(loaded, name) {
-			problems = append(problems, fmt.Sprintf(
-				"profile %s requires %s and no action of this catalogue that lands in it carries them",
-				name, strings.Join(missing, ", ")))
+		if missing := catalogue.MissingCategories(name, p.RequiredCategories, catalogues); len(missing) > 0 {
+			r.OnUncovered(ctx, name, missing)
 		}
 	}
-	return loaded, problems
-}
-
-// emitsInto reports whether any action of a catalogue lands in a profile. A
-// catalogue that never writes into a profile is not the one that has to satisfy
-// it.
-func emitsInto(c *catalogue.Catalogue, profile string) bool {
-	for _, name := range c.ActionNames() {
-		a, _ := c.Action(name)
-		for _, p := range a.Profiles {
-			if p == profile {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // Get implements the writer's Catalogues: it resolves the catalogue a record
@@ -240,7 +257,7 @@ func sameDocument(a, b Entry) bool {
 	return true
 }
 
-func sortedKeys(m map[string][]byte) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

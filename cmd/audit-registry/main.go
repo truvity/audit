@@ -103,9 +103,20 @@ func run() error {
 		return err
 	}
 
+	common, err := catalogue.Common()
+	if err != nil {
+		return err
+	}
 	r := &registry.Registry{
 		Store:    registry.Postgres{DB: pool},
 		Profiles: profiles,
+		Builtin:  []*catalogue.Catalogue{common},
+		// A gap in coverage is the deployment's to close, not a reason to
+		// refuse the application that registered while it was open.
+		OnUncovered: func(_ context.Context, profile string, missing []string) {
+			slog.Warn("a profile requires categories no registered catalogue emits",
+				"profile", profile, "missing", missing)
+		},
 		// Whose catalogue a document is comes from the caller's verified
 		// service account, never from the document and never from a header.
 		Identity: callers.Map.SourceFrom,

@@ -201,3 +201,14 @@ func TestWithoutASharedTableAReplicaDoesNotAbsorb(t *testing.T) {
 		t.Fatalf("%d copies of one record, want the 2 that make this unsafe", copies)
 	}
 }
+
+// An addendum found through the real index: the row Postgres keeps for the
+// issuance is what names the object whose lock is lengthened.
+func TestARenewalFindsTheIssuanceThroughPostgres(t *testing.T) {
+	pool := pgtest.Open(t)
+	pg, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewalExtends(t, buildExtendingOn(t, pg, pg))
+}

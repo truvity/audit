@@ -1,0 +1,28 @@
+{
+  "$id": "https://schemas.truvity.com/audit/v1/common/retention-extended.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "object": {
+      "type": "string",
+      "description": "The archive object holding the earlier record, whose lock was lengthened. Every record in it is kept as long.",
+      "x-audit-class": "shared",
+      "x-audit-pii": "none",
+      "x-audit-filter": true
+    },
+    "retain_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The date the object is now kept until, RFC 3339.",
+      "x-audit-class": "shared",
+      "x-audit-pii": "none"
+    },
+    "previous_retain_until": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The date it was kept until before, RFC 3339.",
+      "x-audit-class": "shared",
+      "x-audit-pii": "none"
+    }
+  }
+}

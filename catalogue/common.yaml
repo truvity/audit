@@ -150,6 +150,17 @@ actions:
     target_types: [digest]
     delivery: block
     message: { en: "digest window {targets.0.id} FAILED verification: {outcome.reason}" }
+  audit.retention.extended:
+    summary: The lock on an object holding an earlier record was lengthened because a later record relies on it.
+    operation: modify
+    categories: [logging_control, credential_lifecycle]
+    profiles: [security, evidence]
+    # The earlier record, then the addendum that asked for it. A failure is
+    # recorded too, with the reason: the earlier evidence then keeps its old
+    # date, and this is where a reader finds out.
+    target_types: [record]
+    data_schema: https://schemas.truvity.com/audit/v1/common/retention-extended.json
+    message: { en: "the lock on record {targets.0.id} was lengthened for record {targets.1.id}" }
   audit.writer.started:
     summary: A split writer instance started.
     operation: create

@@ -102,8 +102,20 @@ increase(audit_writer_index_deferred_total[15m]) > 0
 
 The writer's other counters: `audit.writer.objects.written`,
 `audit.writer.records.written`, `audit.writer.dead_lettered` (alert on this
-too: a fault upstream is otherwise silent), `audit.writer.meta.dropped` and
-`audit.writer.duplicates.likely`.
+too: a fault upstream is otherwise silent), `audit.writer.meta.dropped`,
+`audit.writer.duplicates.likely` and `audit.writer.retention.not_extended`.
+
+The last is an addendum that could not lengthen the lock on an earlier
+record. The addendum is written; the earlier record keeps its old date. The
+`audit.retention.extended` record with outcome failure says which record,
+which object and why — typically the record was not found (no index, and it is
+older than the scan's horizon) or the role lacks `s3:PutObjectRetention`. Fix
+the cause and lengthen it by hand, which is safe to repeat:
+
+```
+aws s3api put-object-retention --bucket <b> --key <object> \
+    --retention Mode=COMPLIANCE,RetainUntilDate=<retain_until from the record>
+```
 
 ```
 audit reindex --profile <p> --from <day> --to <day> \

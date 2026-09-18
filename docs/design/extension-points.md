@@ -31,8 +31,18 @@ Enforced by `schemas/extension.schema.json`:
   is later; an object holding several such records is locked for the latest.
   The writer reads it from the record as written, so it applies even to copies
   whose profile drops the data slot. A record that does not carry it gets the
-  fallback. Extending the lock of records already written, when a later record
-  says the credential lives longer, is a separate step.
+  fallback.
+- An action's `extends: /pointer` names the data property (an id, or a list
+  of them) holding the earlier records it is an addendum to; its schema must
+  mark an expiry. After the addendum is durable the writer finds each earlier
+  record — through the index, or a scan within its budget and horizon when
+  there is none — in every `after_expiry` profile the addendum is kept in,
+  and lengthens the lock on the object holding it to the addendum's expiry
+  plus the years. Compliance mode never shortens a lock, and neither does the
+  writer: a shorter expiry changes nothing. An earlier record of another
+  tenant is refused. Each extension, and each failure with its reason, is an
+  `audit.retention.extended` record under the addendum's tenant; a failure
+  never fails the batch, and is counted for an alert.
 
 ## Example
 

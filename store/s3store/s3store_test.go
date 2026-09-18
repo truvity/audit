@@ -27,6 +27,8 @@ type fake struct {
 	putErr  error
 	objects map[string][]byte
 	holds   []*s3.PutObjectLegalHoldInput
+	// retentions are the extensions asked for.
+	retentions []*s3.PutObjectRetentionInput
 	// pageSize is how many keys one listing answers, for tests about paging.
 	pageSize int
 }
@@ -64,6 +66,11 @@ func (f *fake) HeadObject(_ context.Context, in *s3.HeadObjectInput, _ ...func(*
 		LastModified:              &modified,
 		ObjectLockRetainUntilDate: &until,
 	}, nil
+}
+
+func (f *fake) PutObjectRetention(_ context.Context, in *s3.PutObjectRetentionInput, _ ...func(*s3.Options)) (*s3.PutObjectRetentionOutput, error) {
+	f.retentions = append(f.retentions, in)
+	return &s3.PutObjectRetentionOutput{}, nil
 }
 
 func (f *fake) PutObjectLegalHold(_ context.Context, in *s3.PutObjectLegalHoldInput, _ ...func(*s3.Options)) (*s3.PutObjectLegalHoldOutput, error) {
@@ -439,5 +446,38 @@ func TestAnUnlockedStoreSendsNoLockHeaders(t *testing.T) {
 	if put.ObjectLockMode != "" || put.ObjectLockRetainUntilDate != nil || put.ObjectLockLegalHoldStatus != "" {
 		t.Fatalf("an unlocked store sent lock headers: mode=%q retain=%v hold=%q",
 			put.ObjectLockMode, put.ObjectLockRetainUntilDate, put.ObjectLockLegalHoldStatus)
+	}
+}
+
+// An extension addresses the prefixed key in the store's lock mode, so a
+// compliance bucket is asked for compliance and never for a governance
+// retention a privileged role could shorten again.
+func TestExtendRetentionAsksForTheStoresMode(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Prefix: "archive"})
+	until := time.Date(2041, 9, 17, 0, 0, 0, 0, time.UTC)
+	if err := s.ExtendRetention(context.Background(), "profile=evidence/x", until); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.retentions) != 1 {
+		t.Fatalf("%d calls", len(f.retentions))
+	}
+	got := f.retentions[0]
+	if aws.ToString(got.Key) != "archive/profile=evidence/x" {
+		t.Fatalf("key %q", aws.ToString(got.Key))
+	}
+	if got.Retention.Mode != types.ObjectLockRetentionModeCompliance || !got.Retention.RetainUntilDate.Equal(until) {
+		t.Fatalf("retention %q until %v", got.Retention.Mode, got.Retention.RetainUntilDate)
+	}
+}
+
+// An unlocked bucket has no retention to lengthen, and says so rather than
+// sending a request the bucket would refuse less clearly.
+func TestAnUnlockedStoreHasNoRetentionToExtend(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Unlocked: true})
+	if err := s.ExtendRetention(context.Background(), "x", time.Now()); err == nil {
+		t.Fatal("an unlocked store extended a retention")
+	}
+	if len(f.retentions) != 0 {
+		t.Fatal("an unlocked store sent the request anyway")
 	}
 }

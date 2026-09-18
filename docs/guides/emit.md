@@ -60,6 +60,12 @@ actions:
   e-mail addresses — are refused outright. A property marked
   `x-audit-expiry: true` is when the credential the record is about expires,
   and evidence profiles keep the record for years after it.
+- **`extends`** makes an action an addendum: it names a data property holding
+  the ids of earlier records this one relies on — a renewal naming the
+  issuance, a credential naming the identity proofing behind it. The writer
+  then locks the objects holding those records until this record's expiry
+  plus the profile's years, if that is later than their lock, and records
+  `audit.retention.extended`. Locks only ever get longer.
 
 The full vocabulary is in [the catalogue reference](../reference/catalogue.md)
 and [extension points](../design/extension-points.md). Check a catalogue

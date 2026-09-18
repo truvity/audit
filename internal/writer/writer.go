@@ -73,6 +73,11 @@ type Hooks struct {
 	// recorded. It is best-effort by construction, so this is the only place a
 	// deployment learns that the writer's own trail has a hole in it.
 	OnMetaDropped func(action, reason string)
+	// OnRetentionNotExtended is called when an addendum could not lengthen
+	// the lock on an earlier record's object. The addendum is written and the
+	// failure is in the trail; what this adds is the alert, because the earlier
+	// evidence now keeps its old date until somebody extends it by hand.
+	OnRetentionNotExtended func(profile, record string, err error)
 }
 
 // Writer takes records and puts the copies their profiles keep.
@@ -98,6 +103,9 @@ type Writer struct {
 	// a stopped writer.
 	Meta  *catalogue.Catalogue
 	Hooks Hooks
+	// Records finds earlier records for an addendum to extend. Without it an
+	// addendum is written and its extension recorded as failed.
+	Records Locator
 
 	// Identity returns the verified identity of whoever published, which the
 	// writer stamps on the record. A transport that cannot say returns "", and
@@ -168,6 +176,7 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 
 	result := &sink.Result{}
 	written := make([]string, 0, len(req.Records))
+	var pending []extension
 	inBatch := make(map[string]bool, len(req.Records))
 	for _, r := range req.Records {
 		// A batch may carry the same record twice — a redelivery bundled with
@@ -183,7 +192,7 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 			}
 			continue
 		}
-		if err := w.one(ctx, r); err != nil {
+		if err := w.one(ctx, r, &pending); err != nil {
 			return nil, err
 		}
 		if id := r.GetId(); id != "" {
@@ -211,11 +220,14 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 			w.Hooks.OnDuplicatesLikely(written, err)
 		}
 	}
+	// With the addenda durable, the earlier records they rely on are kept as
+	// long as they now need to be. See extend.go.
+	w.extend(ctx, pending)
 	return result, nil
 }
 
 // one processes a single record: resolve, validate, stamp, split, gather.
-func (w *Writer) one(ctx context.Context, r *record.Record) error {
+func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension) error {
 	c, err := w.Catalogues.Get(ctx, r.GetSource(), r.GetCatalogueVersion())
 	if err != nil {
 		return w.deadLetter(ctx, r, err.Error())
@@ -259,6 +271,10 @@ func (w *Writer) one(ctx context.Context, r *record.Record) error {
 	if err != nil {
 		return w.deadLetter(ctx, r, err.Error())
 	}
+	earlier, err := x.Extends(r)
+	if err != nil {
+		return w.deadLetter(ctx, r, err.Error())
+	}
 
 	if unhandled := w.Splitter.Unhandled(x); len(unhandled) > 0 {
 		w.reportUnhandled(r.GetAction(), unhandled)
@@ -276,12 +292,15 @@ func (w *Writer) one(ctx context.Context, r *record.Record) error {
 		return w.deadLetter(ctx, r, "no configured profile keeps this action")
 	}
 	fields := indexFields(x)
+	profiles := make([]string, 0, len(copies))
 	for _, copied := range copies {
 		profile := w.Splitter.Profiles[copied.GetProfile()]
 		if err := w.Roller.AddExpiring(ctx, profile, copied, fields, expiry); err != nil {
 			return err
 		}
+		profiles = append(profiles, copied.GetProfile())
 	}
+	*pending = append(*pending, w.addenda(r, earlier, expiry, profiles)...)
 	return nil
 }
 

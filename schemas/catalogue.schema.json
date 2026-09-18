@@ -194,6 +194,11 @@
           "data_version": {
             "type": "string"
           },
+          "extends": {
+            "description": "JSON pointer into the data slot naming the identifiers of earlier records this one is an addendum to. The writer lengthens the lock on the objects holding them to this record's x-audit-expiry plus the profile's years.",
+            "type": "string",
+            "pattern": "^/"
+          },
           "message": {
             "description": "ICU MessageFormat per locale. May reference only core fields and properties declared in data_schema.",
             "type": "object",

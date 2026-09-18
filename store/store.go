@@ -72,6 +72,11 @@ type Store interface {
 	// governed outside this interface, by whatever the deployment's break-glass
 	// role is, and this only makes the call.
 	SetLegalHold(ctx context.Context, key string, on bool) error
+	// ExtendRetention lengthens an object's retention to until. It only ever
+	// lengthens: compliance mode refuses a shorter date, and so must every
+	// implementation, or a test could shorten what a real bucket would keep.
+	// A caller that is not sure the new date is later checks with Head first.
+	ExtendRetention(ctx context.Context, key string, until time.Time) error
 	// Prefixes returns the distinct groups one level under a prefix, as S3's
 	// common prefixes: listing "profile=security/" with "/" gives the tenants
 	// without walking the objects beneath them.

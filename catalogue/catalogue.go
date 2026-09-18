@@ -93,6 +93,14 @@ type Action struct {
 	DataVersion  string            `json:"data_version,omitempty"`
 	Message      map[string]string `json:"message,omitempty"`
 	Meter        *ActionMeter      `json:"meter,omitempty"`
+	// Extends names the data property that holds the identifiers of earlier
+	// records this one is an addendum to: a renewal naming the issuance, a
+	// credential naming the identity proofing it relied on. Those records are
+	// evidence for as long as what relies on them lives, so the writer
+	// lengthens the lock on the objects holding them to this record's expiry
+	// plus the profile's years. The property is a string or an array of them,
+	// and the schema must mark an expiry, or there is nothing to extend to.
+	Extends string `json:"extends,omitempty"`
 }
 
 // ActionMeter binds an action to a meter and says where its quantity comes
@@ -263,6 +271,9 @@ func (c *Catalogue) check() error {
 				fail("action %s names target type %q, which this catalogue does not declare", name, tt)
 			}
 		}
+		if a.Extends != "" {
+			problems = append(problems, c.checkExtends(name, a)...)
+		}
 		if a.Meter != nil {
 			m, ok := c.Meters[a.Meter.Name]
 			if !ok {
@@ -280,6 +291,36 @@ func (c *Catalogue) check() error {
 		}
 	}
 	return errors.Join(problems...)
+}
+
+// checkExtends holds an addendum to what the writer needs to act on it: a
+// property it can read identifiers from, and an expiry to extend to. Either
+// missing would make the declaration a promise the writer quietly breaks.
+func (c *Catalogue) checkExtends(name string, a Action) []error {
+	s, ok := c.schemas[a.DataSchema]
+	if !ok {
+		return []error{fmt.Errorf("action %s extends earlier records but has no data schema to name them in", name)}
+	}
+	var problems []error
+	p, ok := s.Properties[a.Extends]
+	switch {
+	case !ok:
+		problems = append(problems, fmt.Errorf(
+			"action %s extends the records named by %s, which its data schema does not declare", name, a.Extends))
+	case p.Type != "string" && p.Type != "array":
+		problems = append(problems, fmt.Errorf(
+			"action %s extends the records named by %s, which is a %s rather than an identifier or a list of them",
+			name, a.Extends, p.Type))
+	}
+	expiry := false
+	for _, p := range s.Properties {
+		expiry = expiry || p.Expiry
+	}
+	if !expiry {
+		problems = append(problems, fmt.Errorf(
+			"action %s extends earlier records but its data schema marks no x-audit-expiry to extend them to", name))
+	}
+	return problems
 }
 
 // checkMessages holds templates to what they may say. A template that names an

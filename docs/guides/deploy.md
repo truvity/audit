@@ -119,8 +119,11 @@ cluster's OIDC provider URL — and it must be reachable from the pods over
 HTTPS.
 
 **Cloud credentials.** The writer's role needs `s3:PutObject`,
-`s3:PutObjectRetention` and `s3:PutObjectLegalHold` on the bucket and read
-access to `holds/`. The digest job's needs `s3:PutObject` on `digest/*` and,
+`s3:PutObjectRetention`, `s3:GetObjectRetention` and `s3:PutObjectLegalHold`
+on the bucket and read access to `holds/`. The retention pair is for
+addenda: a record that extends an earlier one lengthens the lock on the
+object holding it, and reads the lock first so that it never asks for a
+shorter one. The digest job's needs `s3:PutObject` on `digest/*` and,
 with KMS, `kms:Sign` on its key; the verify job's needs read access and
 `s3:PutObject` on `verified/*`. Annotate the service accounts with Pod Identity
 or IRSA through `serviceAccount.annotations` and
@@ -211,7 +214,9 @@ For a throwaway install — no database, no stream, callers not verified — see
 
 5. **Alerts.** With `telemetry.otlpEndpoint` set, page on
    `audit_writer_index_deferred_total` (the index is behind the archive) and
-   `audit_writer_dead_lettered_total` (records the writer could not process).
+   `audit_writer_dead_lettered_total` (records the writer could not process),
+   and, with an evidence profile, `audit_writer_retention_not_extended_total`
+   (an addendum could not lengthen the lock on an earlier record).
    The [runbook](../operations/runbook.md) says what to do about each.
 
 ## The query service

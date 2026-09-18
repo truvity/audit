@@ -72,7 +72,7 @@ func Start(ctx context.Context, service, version string, log *slog.Logger) (func
 // it rises, but the index a reader searches is behind it, and nobody notices an
 // index that is quietly behind until it answers wrongly.
 type Writer struct {
-	objects, records, deferred, deadLettered, metaDropped, duplicatesLikely metric.Int64Counter
+	objects, records, deferred, deadLettered, metaDropped, duplicatesLikely, notExtended metric.Int64Counter
 }
 
 // NewWriter makes the writer's instruments on the given provider, normally the
@@ -93,6 +93,8 @@ func NewWriter(provider metric.MeterProvider) (*Writer, error) {
 		{&w.metaDropped, "audit.writer.meta.dropped", "{record}", "The writer's own records it could not record."}, // audit:not-an-action — a metric name
 		{&w.duplicatesLikely, "audit.writer.duplicates.likely", "{record}", // audit:not-an-action — a metric name
 			"Records written but not marked as written, so a redelivery will be written again."},
+		{&w.notExtended, "audit.writer.retention.not_extended", "{object}", // audit:not-an-action — a metric name
+			"Objects an addendum should have locked for longer and did not."},
 	} {
 		counter, err := m.Int64Counter(c.name, metric.WithUnit(c.unit), metric.WithDescription(c.description))
 		if err != nil {
@@ -123,6 +125,13 @@ func (w *Writer) MetaDropped() { w.metaDropped.Add(context.Background(), 1) }
 
 // DuplicatesLikely counts records a redelivery would write again.
 func (w *Writer) DuplicatesLikely(n int) { w.duplicatesLikely.Add(context.Background(), int64(n)) }
+
+// RetentionNotExtended counts one object an addendum could not lengthen the
+// lock of. The addendum itself is written; what is at risk is the earlier
+// evidence, which keeps its old date until somebody extends it by hand.
+func (w *Writer) RetentionNotExtended(profile string) {
+	w.notExtended.Add(context.Background(), 1, metric.WithAttributes(attribute.String("profile", profile)))
+}
 
 // ProfileOf is the profile an archive key is under, or "" for a key outside
 // the profile layout. It is the one label these counters carry: a profile is

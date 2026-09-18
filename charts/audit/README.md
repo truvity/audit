@@ -24,7 +24,7 @@ The chart takes references; it creates none of these.
 | thing | value |
 |---|---|
 | a bucket with Object Lock in compliance mode | `bucket` |
-| a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`) and read `holds/` | the writer's ServiceAccount annotation |
+| a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `holds/` | the writer's ServiceAccount annotation |
 | a Secret with the 32-byte key root | `keys.local.existingSecret` |
 | the digest signing key: a Secret (PEM, ed25519), an AWS KMS ECC_NIST_P256 key, or an OpenBAO transit ed25519 key | `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` or `jobs.digest.transit` |
 | a Secret with its public half | `jobs.verify.publicKey.existingSecret` |

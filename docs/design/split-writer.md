@@ -105,7 +105,8 @@ object without rows; the nightly reindex of the day repairs it.
 ## Meta-events
 
 `audit.writer.started`, `audit.writer.stopped`,
-`audit.writer.dead_lettered`, `audit.catalogue.registered`.
+`audit.writer.dead_lettered`, `audit.catalogue.registered`,
+`audit.retention.extended`.
 
 They are records like any other, so the writer holds an emitter bound to the
 common catalogue whose sink is the writer itself, over the in-process

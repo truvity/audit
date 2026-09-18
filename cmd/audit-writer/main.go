@@ -27,6 +27,7 @@ import (
 	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
+	"github.com/truvity/audit/index/s3scan"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/hold"
 	"github.com/truvity/audit/internal/identity"
@@ -269,8 +270,18 @@ func run() error {
 		}
 	}
 
+	// An addendum names earlier records by id, and the index answers where
+	// each is directly. Without a database a scan of the archive looks, within
+	// its budget and horizon — so a renewal of a record older than the horizon
+	// is not extended there, and says so on the counter below.
+	var records writer.Locator = &s3scan.Scanner{Store: archive}
+	if located, ok := indexer.(writer.Locator); ok {
+		records = located
+	}
+
 	w, err := writer.New(&writer.Writer{
 		Identity:   auth.SubjectFrom,
+		Records:    records,
 		Catalogues: resolver{local: local, shared: shared},
 		Splitter:   &writer.Splitter{Profiles: profiles, Keys: provider, Identities: identities},
 		Roller: &writer.Roller{
@@ -322,6 +333,11 @@ func run() error {
 			OnMetaDropped: func(action, reason string) {
 				slog.Error("the writer could not record itself", "action", action, "reason", reason)
 				counts.MetaDropped()
+			},
+			OnRetentionNotExtended: func(profile, id string, err error) {
+				slog.Error("an addendum could not lengthen the lock on an earlier record",
+					"profile", profile, "record", id, "error", err)
+				counts.RetentionNotExtended(profile)
 			},
 		},
 	})

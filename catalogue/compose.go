@@ -60,17 +60,7 @@ func (x *Composed) Expiry(r *record.Record) (*time.Time, error) {
 		if !p.Expiry {
 			continue
 		}
-		v := r.GetData().AsMap()
-		var value any = v
-		for _, step := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
-			m, ok := value.(map[string]any)
-			if !ok {
-				value = nil
-				break
-			}
-			value = m[step]
-		}
-		text, ok := value.(string)
+		text, ok := dataAt(r, pointer).(string)
 		if !ok || text == "" {
 			continue
 		}
@@ -84,6 +74,52 @@ func (x *Composed) Expiry(r *record.Record) (*time.Time, error) {
 		}
 	}
 	return latest, nil
+}
+
+// Extends is the identifiers of the earlier records this one is an addendum
+// to, read from the property the action's extends names. Nil means the action
+// is no addendum, or this record names none.
+func (x *Composed) Extends(r *record.Record) ([]string, error) {
+	if x.Action.Extends == "" || r.GetData() == nil {
+		return nil, nil
+	}
+	var ids []string
+	switch v := dataAt(r, x.Action.Extends).(type) {
+	case nil:
+	case string:
+		ids = append(ids, v)
+	case []any:
+		for _, item := range v {
+			id, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("data%s names the records this one extends and holds a %T among them",
+					x.Action.Extends, item)
+			}
+			ids = append(ids, id)
+		}
+	default:
+		return nil, fmt.Errorf("data%s names the records this one extends and is a %T", x.Action.Extends, v)
+	}
+	out := ids[:0]
+	for _, id := range ids {
+		if id != "" {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+// dataAt is the value at a pointer into a record's data slot, or nil.
+func dataAt(r *record.Record, pointer string) any {
+	var value any = r.GetData().AsMap()
+	for _, step := range strings.Split(strings.TrimPrefix(pointer, "/"), "/") {
+		m, ok := value.(map[string]any)
+		if !ok {
+			return nil
+		}
+		value = m[step]
+	}
+	return value
 }
 
 // Validate holds a record to what its catalogue says it may be. An emitter runs

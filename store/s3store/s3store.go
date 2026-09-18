@@ -32,6 +32,7 @@ type API interface {
 	HeadObject(ctx context.Context, in *s3.HeadObjectInput, opts ...func(*s3.Options)) (*s3.HeadObjectOutput, error)
 	ListObjectsV2(ctx context.Context, in *s3.ListObjectsV2Input, opts ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
 	PutObjectLegalHold(ctx context.Context, in *s3.PutObjectLegalHoldInput, opts ...func(*s3.Options)) (*s3.PutObjectLegalHoldOutput, error)
+	PutObjectRetention(ctx context.Context, in *s3.PutObjectRetentionInput, opts ...func(*s3.Options)) (*s3.PutObjectRetentionOutput, error)
 }
 
 // Store is an object store backed by a bucket.
@@ -246,6 +247,26 @@ func (s *Store) SetLegalHold(ctx context.Context, key string, on bool) error {
 	})
 	if err != nil {
 		return fmt.Errorf("s3store: legal hold on %s: %w", key, err)
+	}
+	return nil
+}
+
+// ExtendRetention implements store.Store. The bucket itself refuses a shorter
+// date under compliance mode; this does not try to be cleverer than that.
+func (s *Store) ExtendRetention(ctx context.Context, key string, until time.Time) error {
+	if s.unlocked {
+		return fmt.Errorf("s3store: %s is in an unlocked bucket and has no retention to extend", key)
+	}
+	_, err := s.api.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(s.key(key)),
+		Retention: &types.ObjectLockRetention{
+			Mode:            types.ObjectLockRetentionMode(s.lock),
+			RetainUntilDate: aws.Time(until.UTC()),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("s3store: extending the retention of %s: %w", key, err)
 	}
 	return nil
 }

@@ -232,6 +232,25 @@ func (m *Memory) SetLegalHold(_ context.Context, key string, on bool) error {
 	return nil
 }
 
+// ExtendRetention implements store.Store, refusing a shorter date as a bucket
+// in compliance mode does. A memory store that let a test shorten a retention
+// would be standing in for a bucket nobody could deploy.
+func (m *Memory) ExtendRetention(_ context.Context, key string, until time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.objects[key]
+	if !ok {
+		return fmt.Errorf("%w: %s", store.ErrNotFound, key)
+	}
+	if until.Before(o.RetainUntil) {
+		return fmt.Errorf("storetest: %s is retained until %s; compliance mode does not shorten it to %s",
+			key, o.RetainUntil.Format(time.RFC3339), until.Format(time.RFC3339))
+	}
+	o.RetainUntil = until.UTC()
+	m.objects[key] = o
+	return nil
+}
+
 // HeldKeys is every object under a hold, for tests.
 func (m *Memory) HeldKeys() []string {
 	m.mu.RLock()

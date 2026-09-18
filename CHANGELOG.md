@@ -84,6 +84,14 @@ Foundation. No release.
   never be recomputed. It refuses while a legal hold covers the tenant, and
   refuses without a writer, because an erasure the trail does not record is one
   nobody can prove was lawful.
+- Retention addenda: an action that `extends` the records a data property
+  names lengthens the lock on the objects holding them — a renewal on the
+  issuance, a credential on the identity proofing it relied on — to its own
+  expiry plus the profile's years, after it is durable and never shorter.
+  `store.Store.ExtendRetention` (S3 `PutObjectRetention`; the memory store
+  refuses a shorter date as a compliance bucket does). Each extension and each
+  failure is an `audit.retention.extended` record; a failure never fails the
+  batch and is counted as `audit.writer.retention.not_extended`.
 - Legal holds: `audit hold place|release|list`, hold records in the archive
   under the same lock and append-only like everything else, and the writer
   setting the hold on objects written under a held prefix — an object held only

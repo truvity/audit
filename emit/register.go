@@ -2,6 +2,7 @@ package emit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -29,14 +30,21 @@ type Registration struct {
 	HTTP connect.HTTPClient
 }
 
+// ErrCatalogueRefused is a registration the deployment answered and refused.
+// It is a fact about the catalogue, and trying again will not change it; any
+// other error from Register is about reaching the registry, and may.
+var ErrCatalogueRefused = errors.New("emit: the deployment refused the catalogue")
+
 // Register publishes a catalogue and fails on rejection.
 //
-// An application calls this at start-up and does not start if it returns an
-// error. That is the point of it: a catalogue the deployment rejected —
-// because it is malformed, or because it leaves a profile's required
-// categories uncovered — describes records the application is about to write,
-// and writing them against a description nothing accepted is how an archive
-// ends up holding records nobody can read.
+// An application calls this at start-up and does not start if the catalogue is
+// refused (ErrCatalogueRefused). That is the point of it: a catalogue the
+// deployment rejected — because it is malformed, or registered under a source
+// the caller does not own — describes records the application is about to
+// write, and writing them against a description nothing accepted is how an
+// archive ends up holding records nobody can read. A registry that cannot be
+// reached is different: an application whose records wait in an outbox may
+// start and register again later.
 //
 // Registering the same catalogue again is not an error. Every replica does it
 // on every roll.
@@ -65,8 +73,8 @@ func Register(ctx context.Context, r Registration) error {
 		return fmt.Errorf("emit: registering %s %s: %w", r.Source, r.Version, err)
 	}
 	if problems := res.Msg.GetProblems(); len(problems) > 0 {
-		return fmt.Errorf("emit: the deployment refused catalogue %s %s:\n  %s",
-			r.Source, r.Version, strings.Join(problems, "\n  "))
+		return fmt.Errorf("%w: %s %s:\n  %s",
+			ErrCatalogueRefused, r.Source, r.Version, strings.Join(problems, "\n  "))
 	}
 	return nil
 }

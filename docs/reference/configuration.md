@@ -19,7 +19,9 @@ Draft. Names are stable; defaults are the presets' where they exist.
 
 | setting | meaning |
 |---|---|
-| `stream.url`, `stream.consumer` | JetStream |
+| `stream.url`, `stream.name`, `stream.consumer` | JetStream. Without a URL the writer only serves its sink, which is what an application embedding it wants |
+| `stream.batch` | how many records are taken at once. Default 100 |
+| `stream.ack_wait` | how long the stream waits for a batch to be taken before offering it again. Default 30s, and it must exceed the longest a write can honestly take: a batch is acknowledged only once its records are in the archive |
 | `bucket`, `region`, `kms_key` | object storage |
 | `profiles` | composition of presets and prefixes |
 | `roll.interval`, `roll.max_bytes` | object rolling |

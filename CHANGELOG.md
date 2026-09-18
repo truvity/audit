@@ -61,6 +61,12 @@ Foundation. No release.
   archive now goes tenant by tenant and day by day through `store.WalkDays`,
   and the S3 test double pages, sorts and groups as S3 does so that the next
   listing that stops early is caught here.
-- `audit-writer`, the writer as a service behind Connect.
+- `audit-writer`, the writer as a service behind Connect and, given
+  `--stream-url`, behind a durable JetStream consumer shared by every replica.
+  A batch is acknowledged only once its records are in the archive, so a writer
+  that cannot write leaves them for the redelivery; `MaxDeliver` is unlimited,
+  because a record must not fall out of the stream for having been offered a
+  few times, and nothing loops forever on a bad record — one the writer cannot
+  process is accepted and dead-lettered.
 - Decisions 0001 to 0009 accepted.
 - Design, research, reference and operations documents.

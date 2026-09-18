@@ -19,6 +19,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index"
@@ -29,6 +31,7 @@ import (
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sink/natssink"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/s3store"
 )
@@ -55,6 +58,15 @@ func run() error {
 		database   = flag.String("database", env("AUDIT_DATABASE", ""),
 			"the Postgres URL of the index; without it the writer indexes nothing and deduplicates in process")
 		listen    = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
+		streamURL = flag.String("stream-url", env("AUDIT_STREAM_URL", ""),
+			"the NATS server holding the wide stream; without it the writer only serves the sink")
+		streamName   = flag.String("stream", env("AUDIT_STREAM", "AUDIT"), "the stream to consume")
+		consumerName = flag.String("consumer", env("AUDIT_CONSUMER", "audit-writer"),
+			"the durable consumer this deployment's writers share")
+		streamBatch = flag.Int("stream-batch", envInt("AUDIT_STREAM_BATCH", 100),
+			"how many records are taken from the stream at once")
+		streamAckWait = flag.Duration("stream-ack-wait", 30*time.Second,
+			"how long the stream waits for the writer to take a batch before offering it again")
 		rollEvery = flag.Duration("roll-interval", 5*time.Minute, "how long an object stays open")
 		version   = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
 	)
@@ -200,6 +212,21 @@ func run() error {
 	}
 	defer w.Close(context.Background()) //nolint:errcheck // shutting down
 
+	// The stream, when there is one. An application that publishes straight to
+	// the writer needs none; a deployment with a stream wants the writer behind
+	// a durable consumer, so that a writer that is down is a backlog rather
+	// than a hole.
+	if *streamURL != "" {
+		stop, err := consume(ctx, streamOptions{
+			URL: *streamURL, Stream: *streamName, Durable: *consumerName,
+			Batch: *streamBatch, AckWait: *streamAckWait,
+		}, w)
+		if err != nil {
+			return err
+		}
+		defer stop()
+	}
+
 	path, handler := sink.NewHandler(w)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
@@ -330,3 +357,111 @@ func baseOf(p string) string {
 }
 
 var _ store.Store = (*s3store.Store)(nil)
+
+// streamOptions are how this writer reads the wide stream.
+type streamOptions struct {
+	URL, Stream, Durable string
+	Batch                int
+	// AckWait is how long the stream waits for a batch to be taken before
+	// offering it again. It has to be longer than the longest a write can
+	// honestly take — a batch is acknowledged only once its records are in the
+	// archive, and that is a put to object storage — or the stream will offer
+	// the same records to a second replica while the first is still writing
+	// them, and the deduplication table will earn its keep for no reason.
+	AckWait time.Duration
+}
+
+// consume binds a durable pull consumer to the writer and runs it until the
+// context is cancelled. The returned function waits for it to stop.
+//
+// The consumer is durable and shared by every replica, which is what makes a
+// second replica a second pair of hands rather than a second copy of every
+// record. A batch is acknowledged only once the writer has taken it, so a
+// writer that cannot write leaves its messages for the redelivery rather than
+// losing them, which is the whole reason the stream is there.
+func consume(ctx context.Context, o streamOptions, target sink.Sink) (func(), error) {
+	conn, err := nats.Connect(o.URL,
+		nats.Name("audit-writer"),
+		// Reconnect for as long as the process lives. A writer that gave up on
+		// the stream would go on answering its own health check while the
+		// backlog grew behind it.
+		nats.MaxReconnects(-1),
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			if err != nil {
+				slog.Error("disconnected from the stream", "error", err)
+			}
+		}),
+		nats.ReconnectHandler(func(c *nats.Conn) {
+			slog.Info("reconnected to the stream", "url", c.ConnectedUrl())
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("writer: connecting to %s: %w", o.URL, err)
+	}
+
+	js, err := jetstream.New(conn)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("writer: %w", err)
+	}
+	found, err := js.Stream(ctx, o.Stream)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf(
+			"writer: stream %q: %w; the stream is the deployment's to create, not this writer's, "+
+				"because its retention and its discard policy decide whether a full stream "+
+				"refuses publishers or drops records", o.Stream, err)
+	}
+	// The consumer is created here because its acknowledgement policy is a
+	// property of what the writer promises: every message acknowledged
+	// explicitly, only once the records are in the archive.
+	//
+	// MaxDeliver is left unlimited. A record must not fall out of the stream
+	// because the writer was unable to take it a few times, and nothing here
+	// loops forever on a bad record: a record the writer cannot process is
+	// accepted and dead-lettered, so a batch fails only on a fault that will
+	// pass.
+	jc, err := found.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Durable:       o.Durable,
+		AckPolicy:     jetstream.AckExplicitPolicy,
+		AckWait:       o.AckWait,
+		MaxAckPending: o.Batch * 2,
+	})
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("writer: consumer %q on stream %q: %w", o.Durable, o.Stream, err)
+	}
+
+	consumer, err := natssink.NewConsumer(jc, target, natssink.ConsumerOptions{
+		Batch: o.Batch,
+		OnError: func(err error) {
+			// The batch is not acknowledged, so the stream brings it back after
+			// AckWait. Saying so is the only way a deployment learns that
+			// records are going round rather than through.
+			slog.Error("the writer refused a batch from the stream", "error", err)
+		},
+	})
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("writer: %w", err)
+	}
+
+	running, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := consumer.Run(running); err != nil {
+			slog.Error("the stream consumer stopped", "error", err)
+		}
+	}()
+	slog.Info("consuming the stream", "url", o.URL, "stream", o.Stream, "consumer", o.Durable)
+
+	return func() {
+		// Stop fetching, wait for the batch in hand, then let the connection
+		// go. Closing underneath a running fetch is what produces a shelf of
+		// alarming errors on an orderly shutdown.
+		cancel()
+		<-done
+		_ = conn.Drain()
+	}, nil
+}

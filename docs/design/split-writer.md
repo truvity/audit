@@ -3,6 +3,16 @@
 The single trusted consumer of the wide stream. Runs as a service with a
 durable pull consumer, or embedded in an application that has no stream.
 
+Every replica shares one durable consumer, which is what makes a second replica
+a second pair of hands rather than a second copy of every record. The stream
+itself is the deployment's to create and the writer refuses to start without it:
+its retention and discard policy decide whether a full stream refuses publishers
+or drops records, and that is not a choice this component should make quietly.
+The acknowledgement wait must exceed the longest a write can honestly take,
+since a batch is acknowledged only once its records are in the archive; set it
+too short and the stream offers the same records to a second replica while the
+first is still writing them.
+
 ## Per record
 
 1. **Ask** the deduplication table whether the `id` has been written, within a

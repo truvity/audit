@@ -72,12 +72,17 @@ schemas on first use, index, count, ack.
 ```
 s3://<bucket>/
   profile=<name>/tenant=<id>/year=/month=/day=/<first-occurred-nanos>-<writer>-<seq>.ndjson.zst
-  payload/sha256=<hash>                              large blobs, referenced by hash
+  identity/tenant=<t>/purpose=<p>/<pseudonym>         sealed identities, for resolve
   schema/<source>/<catalogue_version>/...             catalogues and extension schemas
   schema/audit/v<major>/record.schema.json, record.proto   the record's own schema and proto
   digest/profile=<name>/year=/month=/day=/hour=/...   hourly signed digests
   dlq/year=/month=/day=/...                            records the writer could not process
+  holds/<id>/...                                       legal holds placed and released
+  verified/profile=<name>/...                          what each verification found
 ```
+
+Bodies are not detached to a payload prefix; see
+[split-writer.md](split-writer.md#payloads-are-not-detached-and-why).
 
 **Profile first, and deliberately.** A lifecycle rule filters by literal prefix
 and takes no wildcards, so a rule that moves one profile's objects to colder

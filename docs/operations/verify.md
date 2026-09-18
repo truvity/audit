@@ -28,3 +28,14 @@ and a summary. Exit code non-zero on any invalid entry.
 Auditors run it with read-only credentials scoped to the prefixes. The
 nightly run inside the cluster does the same for the previous day and
 records the outcome as `audit.digest.verified` or `audit.digest.failed`.
+
+| flag | what |
+|---|---|
+| `--last 24h` | the windows of the last this long, ending at the hour that has closed; instead of `--from` and `--to` |
+| `--lookback 168h` | how far before the range to look for objects keyed under an older day; at least what `audit digest` used |
+| `--sink <writer>` | record what was checked through the writer. The scheduled job does; an auditor's run by hand should not |
+| `--record` | also write one verification per window under `verified/`, which `Get` reports as a record's `verified_at`; needs write access there |
+
+After a signing key change, keep every public half: each digest names the key
+it was signed with (`signed_by`), and a digest checked with the wrong half
+fails its signature.

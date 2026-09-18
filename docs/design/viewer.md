@@ -1,7 +1,11 @@
 # Viewer
 
 One npm package, two surfaces. The embedded one is built (`ts/`,
-`@truvity/audit/react`). The standalone console is not built yet.
+`@truvity/audit/react`): an application's console hosts the page and proxies
+to the query service under its own sign-in
+([integrating](../guides/integrate.md#3-the-audit-page)). The standalone
+console, for an installation with no application console to host it, is
+designed and not built.
 
 - **Embedded**: headless hooks over the Connect-ES client plus a default
   MUI skin. The host passes a transport with its own bearer. No

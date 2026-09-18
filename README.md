@@ -8,7 +8,9 @@ regulatory evidence.
 
 | you want to | read |
 |---|---|
+| see how it fits together | [Architecture](docs/architecture.md) — the parts, what each holds, the life of one record |
 | run it in a cluster | [Deploying](docs/guides/deploy.md) — what to prepare, the chart, a diagram, how to check it works |
+| connect an application to an installation | [Integrating](docs/guides/integrate.md) — the catalogue, the emitter, the audit page in your console |
 | record what your application does | [Emitting records](docs/guides/emit.md) — the catalogue, registering it, the Go emitter; [`examples/emit`](examples/emit/main.go) |
 | carry the trail inside your application: its own writer, its own query API | [Embedding](docs/guides/embed.md) — `writer.Open`, `query.New`; [`examples/embed`](examples/embed/main.go) |
 | search and read the trail, or audit it | [Reading the trail](docs/guides/read.md) — access, the API, Go and TypeScript clients, `audit verify`; [`examples/read`](examples/read/main.go) |
@@ -21,14 +23,13 @@ regulatory evidence.
 | Record, catalogues, presets, `audit validate` / `check-emitters` | built |
 | Go emitter: block, outbox and best-effort delivery; Connect and JetStream sinks | built |
 | Writer: split per profile, pseudonyms, Object Lock, index, dead letters, legal holds | built |
-| Pseudonymisation keys: local (root + directory) or OpenBAO transit | built; AWS KMS not yet |
+| Pseudonymisation keys: local (root + directory) or OpenBAO transit | built; AWS KMS envelope designed ([decision](docs/decisions/0010-key-providers.md)), not built |
 | Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
 | Query service: search, facets, get with provenance, export, tail, resolve; JWT sign-in with grants | built |
 | Embedding: the writer and the query service as Go libraries (`writer`, `query`) | built |
 | Helm chart: writer, registry, query service, digest / verify / clock / purge jobs | built |
-| Helm chart: the console | not yet — it waits on the viewer |
 | TypeScript `@truvity/audit`: query client, qualifier box, catalogue sentences, React hooks and an MUI view to embed | built, not yet published |
-| TypeScript emitter; a standalone console | not yet |
+| TypeScript emitter; a standalone console | designed, not built — applications host the page in their own console |
 | Metering projection | not yet |
 | A published release | not yet — build the images with `just snapshot` |
 

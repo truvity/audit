@@ -53,7 +53,7 @@ record does not say.
 | `outcome.reason` | 512 chars |
 | `context.user_agent` | 256 chars |
 | `context.client_addresses` | 8 entries |
-| `capture.request`, `capture.response` | 64 KiB each; a larger body is dropped by the emitter. The writer detaches bodies above its own, smaller, threshold to the payload prefix |
+| `capture.request`, `capture.response` | 64 KiB each; a larger body is dropped by the emitter. Bodies stay in the record: only the security profile keeps `capture`, so there is nothing to share between copies |
 | `targets` | 32 entries |
 | truncation order | response, request, unmapped, attributes, reason |
 

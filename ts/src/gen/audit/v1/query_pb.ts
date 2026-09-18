@@ -20,7 +20,89 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file audit/v1/query.proto.
  */
 export const file_audit_v1_query: GenFile = /*@__PURE__*/
-  fileDesc("ChRhdWRpdC92MS9xdWVyeS5wcm90bxIIYXVkaXQudjEiRwoOUmVzb2x2ZVJlcXVlc3QSDwoHcHJvZmlsZRgBIAEoCRIRCgl0ZW5hbnRfaWQYAiABKAkSEQoJcHNldWRvbnltGAMgASgJIiUKD1Jlc29sdmVSZXNwb25zZRISCgppZGVudGlmaWVyGAEgASgJIooBCg1TZWFyY2hSZXF1ZXN0Eg8KB3Byb2ZpbGUYASABKAkSIAoGZmlsdGVyGAIgAygLMhAuYXVkaXQudjEuRmlsdGVyEhwKBHNvcnQYAyADKAsyDi5hdWRpdC52MS5Tb3J0Eg0KBWxpbWl0GAQgASgFEg4KBmN1cnNvchgFIAEoCRIJCgFxGAYgASgJIpcHCgZGaWx0ZXISJQoCaWQYASABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSLAoLb2NjdXJyZWRfYXQYAiABKAsyFy5hdWRpdC52MS5UaW1lUHJlZGljYXRlEiwKC3JlY29yZGVkX2F0GAMgASgLMhcuYXVkaXQudjEuVGltZVByZWRpY2F0ZRIpCgZzb3VyY2UYBCABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSKQoGYWN0aW9uGAUgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEiwKCW9wZXJhdGlvbhgGIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIqCgdvdXRjb21lGAcgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEiwKCXRlbmFudF9pZBgIIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIvCgxzdWJqZWN0X2tpbmQYCSABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSLQoKc3ViamVjdF9pZBgKIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRItCgphY3Rvcl9raW5kGAsgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEisKCGFjdG9yX2lkGAwgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEioKB3RhcmdldHMYDSABKAsyGS5hdWRpdC52MS5UYXJnZXRQcmVkaWNhdGUSLQoKcmVxdWVzdF9pZBgOIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIrCgh0cmFjZV9pZBgPIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIxCg5jbGllbnRfYWRkcmVzcxgQIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIuCgtvYnNlcnZlcl9pZBgRIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRItCgptZXRlcl9uYW1lGBIgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEiUKBGRhdGEYEyADKAsyFy5hdWRpdC52MS5QYXRoUHJlZGljYXRlEi8KCmF0dHJpYnV0ZXMYFCABKAsyGy5hdWRpdC52MS5LZXlWYWx1ZVByZWRpY2F0ZSLLAQoPU3RyaW5nUHJlZGljYXRlEg8KBWVxdWFsGAEgASgJSAASEwoJbm90X2VxdWFsGAIgASgJSAASIgoCaW4YAyABKAsyFC5hdWRpdC52MS5TdHJpbmdMaXN0SAASJgoGbm90X2luGAQgASgLMhQuYXVkaXQudjEuU3RyaW5nTGlzdEgAEhAKBnByZWZpeBgFIAEoCUgAEhEKB2lzX251bGwYBiABKAhIABIVCgtpc19ub3RfbnVsbBgHIAEoCEgAQgoKCG9wZXJhdG9yIhwKClN0cmluZ0xpc3QSDgoGdmFsdWVzGAEgAygJIqkCChBJbnRlZ2VyUHJlZGljYXRlEg8KBWVxdWFsGAEgASgDSAASEwoJbm90X2VxdWFsGAIgASgDSAASIwoCaW4YAyABKAsyFS5hdWRpdC52MS5JbnRlZ2VyTGlzdEgAEicKBm5vdF9pbhgEIAEoCzIVLmF1ZGl0LnYxLkludGVnZXJMaXN0SAASKQoHYmV0d2VlbhgFIAEoCzIWLmF1ZGl0LnYxLkludGVnZXJSYW5nZUgAEhYKDGdyZWF0ZXJfdGhhbhgGIAEoA0gAEh8KFWdyZWF0ZXJfdGhhbl9vcl9lcXVhbBgHIAEoA0gAEhMKCWxlc3NfdGhhbhgIIAEoA0gAEhwKEmxlc3NfdGhhbl9vcl9lcXVhbBgJIAEoA0gAQgoKCG9wZXJhdG9yIh0KC0ludGVnZXJMaXN0Eg4KBnZhbHVlcxgBIAMoAyIoCgxJbnRlZ2VyUmFuZ2USDAoEZnJvbRgBIAEoAxIKCgJ0bxgCIAEoAyKfAgoNVGltZVByZWRpY2F0ZRImCgdiZXR3ZWVuGAEgASgLMhMuYXVkaXQudjEuVGltZVJhbmdlSAASMgoMZ3JlYXRlcl90aGFuGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgAEjsKFWdyZWF0ZXJfdGhhbl9vcl9lcXVhbBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIABIvCglsZXNzX3RoYW4YBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAASOAoSbGVzc190aGFuX29yX2VxdWFsGAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgAQgoKCG9wZXJhdG9yIl0KCVRpbWVSYW5nZRIoCgRmcm9tGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBImCgJ0bxgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiaQoPVGFyZ2V0UHJlZGljYXRlEiIKAmluGAEgASgLMhQuYXVkaXQudjEuVGFyZ2V0TGlzdEgAEiYKBm5vdF9pbhgCIAEoCzIULmF1ZGl0LnYxLlRhcmdldExpc3RIAEIKCghvcGVyYXRvciIxCgpUYXJnZXRMaXN0EiMKBnZhbHVlcxgBIAMoCzITLmF1ZGl0LnYxLlRhcmdldFJlZiIlCglUYXJnZXRSZWYSDAoEdHlwZRgBIAEoCRIKCgJpZBgCIAEoCSKfAQoRS2V5VmFsdWVQcmVkaWNhdGUSIwoFZXF1YWwYASABKAsyEi5hdWRpdC52MS5LZXlWYWx1ZUgAEicKCW5vdF9lcXVhbBgCIAEoCzISLmF1ZGl0LnYxLktleVZhbHVlSAASFQoLa2V5X2lzX251bGwYAyABKAlIABIZCg9rZXlfaXNfbm90X251bGwYBCABKAlIAEIKCghvcGVyYXRvciImCghLZXlWYWx1ZRILCgNrZXkYASABKAkSDQoFdmFsdWUYAiABKAkirwEKDVBhdGhQcmVkaWNhdGUSDAoEcGF0aBgBIAEoCRIrCgZzdHJpbmcYAiABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGVIABItCgdpbnRlZ2VyGAMgASgLMhouYXVkaXQudjEuSW50ZWdlclByZWRpY2F0ZUgAEicKBHRpbWUYBCABKAsyFy5hdWRpdC52MS5UaW1lUHJlZGljYXRlSABCCwoJcHJlZGljYXRlIrkCCgRTb3J0EiMKBWZpZWxkGAEgASgOMhQuYXVkaXQudjEuU29ydC5GaWVsZBIjCgVvcmRlchgCIAEoDjIULmF1ZGl0LnYxLlNvcnQuT3JkZXIipwEKBUZpZWxkEhUKEUZJRUxEX1VOU1BFQ0lGSUVEEAASFQoRRklFTERfT0NDVVJSRURfQVQQARIVChFGSUVMRF9SRUNPUkRFRF9BVBACEgwKCEZJRUxEX0lEEAMSEAoMRklFTERfQUNUSU9OEAQSEwoPRklFTERfVEVOQU5UX0lEEAUSEgoORklFTERfQUNUT1JfSUQQBhIQCgxGSUVMRF9TT1VSQ0UQByI9CgVPcmRlchIVChFPUkRFUl9VTlNQRUNJRklFRBAAEg0KCU9SREVSX0FTQxABEg4KCk9SREVSX0RFU0MQAiJ9Cg5TZWFyY2hSZXNwb25zZRIfCgVpdGVtcxgBIAMoCzIQLmF1ZGl0LnYxLlJlY29yZBImCgVxdWVyeRgCIAEoCzIXLmF1ZGl0LnYxLlNlYXJjaFJlcXVlc3QSIgoHY3Vyc29ycxgDIAEoCzIRLmF1ZGl0LnYxLkN1cnNvcnMiQgoHQ3Vyc29ycxIMCgRzZWxmGAEgASgJEg0KBWZpcnN0GAIgASgJEgwKBHByZXYYAyABKAkSDAoEbmV4dBgEIAEoCSJrCg1GYWNldHNSZXF1ZXN0Eg8KB3Byb2ZpbGUYASABKAkSIAoGZmlsdGVyGAIgAygLMhAuYXVkaXQudjEuRmlsdGVyEg4KBmZpZWxkcxgDIAMoCRIXCg9saW1pdF9wZXJfZmllbGQYBCABKAUiMQoORmFjZXRzUmVzcG9uc2USHwoGZmFjZXRzGAEgAygLMg8uYXVkaXQudjEuRmFjZXQiPAoFRmFjZXQSDQoFZmllbGQYASABKAkSJAoGdmFsdWVzGAIgAygLMhQuYXVkaXQudjEuRmFjZXRWYWx1ZSIqCgpGYWNldFZhbHVlEg0KBXZhbHVlGAEgASgJEg0KBWNvdW50GAIgASgDIikKCkdldFJlcXVlc3QSDwoHcHJvZmlsZRgBIAEoCRIKCgJpZBgCIAEoCSJZCgtHZXRSZXNwb25zZRIgCgZyZWNvcmQYASABKAsyEC5hdWRpdC52MS5SZWNvcmQSKAoKcHJvdmVuYW5jZRgCIAEoCzIULmF1ZGl0LnYxLlByb3ZlbmFuY2UicgoKUHJvdmVuYW5jZRISCgpvYmplY3Rfa2V5GAEgASgJEgwKBGxpbmUYAiABKAMSEQoJZGlnZXN0X2lkGAMgASgJEi8KC3ZlcmlmaWVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK3AQoNRXhwb3J0UmVxdWVzdBIPCgdwcm9maWxlGAEgASgJEiAKBmZpbHRlchgCIAMoCzIQLmF1ZGl0LnYxLkZpbHRlchIuCgZmb3JtYXQYAyABKA4yHi5hdWRpdC52MS5FeHBvcnRSZXF1ZXN0LkZvcm1hdCJDCgZGb3JtYXQSFgoSRk9STUFUX1VOU1BFQ0lGSUVEEAASEQoNRk9STUFUX05ESlNPThABEg4KCkZPUk1BVF9DU1YQAiJGCg5FeHBvcnRSZXNwb25zZRIOCgZqb2JfaWQYASABKAkSJAoFc3RhdGUYAiABKA4yFS5hdWRpdC52MS5FeHBvcnRTdGF0ZSIiChBHZXRFeHBvcnRSZXF1ZXN0Eg4KBmpvYl9pZBgBIAEoCSKWAQoRR2V0RXhwb3J0UmVzcG9uc2USJAoFc3RhdGUYASABKA4yFS5hdWRpdC52MS5FeHBvcnRTdGF0ZRILCgN1cmwYAiABKAkSLgoKZXhwaXJlc19hdBgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDwoHcmVjb3JkcxgEIAEoAxINCgVlcnJvchgFIAEoCSp1CgtFeHBvcnRTdGF0ZRIcChhFWFBPUlRfU1RBVEVfVU5TUEVDSUZJRUQQABIYChRFWFBPUlRfU1RBVEVfUEVORElORxABEhYKEkVYUE9SVF9TVEFURV9SRUFEWRACEhYKEkVYUE9SVF9TVEFURV9FUlJPUhADMv8CCgxRdWVyeVNlcnZpY2USOwoGU2VhcmNoEhcuYXVkaXQudjEuU2VhcmNoUmVxdWVzdBoYLmF1ZGl0LnYxLlNlYXJjaFJlc3BvbnNlEjsKBkZhY2V0cxIXLmF1ZGl0LnYxLkZhY2V0c1JlcXVlc3QaGC5hdWRpdC52MS5GYWNldHNSZXNwb25zZRIyCgNHZXQSFC5hdWRpdC52MS5HZXRSZXF1ZXN0GhUuYXVkaXQudjEuR2V0UmVzcG9uc2USOwoGRXhwb3J0EhcuYXVkaXQudjEuRXhwb3J0UmVxdWVzdBoYLmF1ZGl0LnYxLkV4cG9ydFJlc3BvbnNlEkQKCUdldEV4cG9ydBIaLmF1ZGl0LnYxLkdldEV4cG9ydFJlcXVlc3QaGy5hdWRpdC52MS5HZXRFeHBvcnRSZXNwb25zZRI+CgdSZXNvbHZlEhguYXVkaXQudjEuUmVzb2x2ZVJlcXVlc3QaGS5hdWRpdC52MS5SZXNvbHZlUmVzcG9uc2VCigEKDGNvbS5hdWRpdC52MUIKUXVlcnlQcm90b1ABWi1naXRodWIuY29tL3RydXZpdHkvYXVkaXQvZ2VuL2F1ZGl0L3YxO2F1ZGl0djGiAgNBWFiqAghBdWRpdC5WMcoCCEF1ZGl0XFYx4gIUQXVkaXRcVjFcR1BCTWV0YWRhdGHqAglBdWRpdDo6VjFiBnByb3RvMw", [file_audit_v1_record, file_google_protobuf_timestamp]);
+  fileDesc("ChRhdWRpdC92MS9xdWVyeS5wcm90bxIIYXVkaXQudjEiDwoNQWNjZXNzUmVxdWVzdCI7Cg5BY2Nlc3NSZXNwb25zZRIpCghwcm9maWxlcxgBIAMoCzIXLmF1ZGl0LnYxLlByb2ZpbGVBY2Nlc3MirwEKDVByb2ZpbGVBY2Nlc3MSDwoHcHJvZmlsZRgBIAEoCRISCgpvcGVyYXRpb25zGAIgAygJEhMKC2FsbF90ZW5hbnRzGAMgASgIEg8KB3RlbmFudHMYBCADKAkSKAoEZnJvbRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKQoFdW50aWwYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIkcKDlJlc29sdmVSZXF1ZXN0Eg8KB3Byb2ZpbGUYASABKAkSEQoJdGVuYW50X2lkGAIgASgJEhEKCXBzZXVkb255bRgDIAEoCSIlCg9SZXNvbHZlUmVzcG9uc2USEgoKaWRlbnRpZmllchgBIAEoCSKKAQoNU2VhcmNoUmVxdWVzdBIPCgdwcm9maWxlGAEgASgJEiAKBmZpbHRlchgCIAMoCzIQLmF1ZGl0LnYxLkZpbHRlchIcCgRzb3J0GAMgAygLMg4uYXVkaXQudjEuU29ydBINCgVsaW1pdBgEIAEoBRIOCgZjdXJzb3IYBSABKAkSCQoBcRgGIAEoCSKXBwoGRmlsdGVyEiUKAmlkGAEgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEiwKC29jY3VycmVkX2F0GAIgASgLMhcuYXVkaXQudjEuVGltZVByZWRpY2F0ZRIsCgtyZWNvcmRlZF9hdBgDIAEoCzIXLmF1ZGl0LnYxLlRpbWVQcmVkaWNhdGUSKQoGc291cmNlGAQgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEikKBmFjdGlvbhgFIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIsCglvcGVyYXRpb24YBiABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSKgoHb3V0Y29tZRgHIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIsCgl0ZW5hbnRfaWQYCCABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSLwoMc3ViamVjdF9raW5kGAkgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlEi0KCnN1YmplY3RfaWQYCiABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSLQoKYWN0b3Jfa2luZBgLIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIrCghhY3Rvcl9pZBgMIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIqCgd0YXJnZXRzGA0gASgLMhkuYXVkaXQudjEuVGFyZ2V0UHJlZGljYXRlEi0KCnJlcXVlc3RfaWQYDiABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSKwoIdHJhY2VfaWQYDyABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSMQoOY2xpZW50X2FkZHJlc3MYECABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSLgoLb2JzZXJ2ZXJfaWQYESABKAsyGS5hdWRpdC52MS5TdHJpbmdQcmVkaWNhdGUSLQoKbWV0ZXJfbmFtZRgSIAEoCzIZLmF1ZGl0LnYxLlN0cmluZ1ByZWRpY2F0ZRIlCgRkYXRhGBMgAygLMhcuYXVkaXQudjEuUGF0aFByZWRpY2F0ZRIvCgphdHRyaWJ1dGVzGBQgASgLMhsuYXVkaXQudjEuS2V5VmFsdWVQcmVkaWNhdGUiywEKD1N0cmluZ1ByZWRpY2F0ZRIPCgVlcXVhbBgBIAEoCUgAEhMKCW5vdF9lcXVhbBgCIAEoCUgAEiIKAmluGAMgASgLMhQuYXVkaXQudjEuU3RyaW5nTGlzdEgAEiYKBm5vdF9pbhgEIAEoCzIULmF1ZGl0LnYxLlN0cmluZ0xpc3RIABIQCgZwcmVmaXgYBSABKAlIABIRCgdpc19udWxsGAYgASgISAASFQoLaXNfbm90X251bGwYByABKAhIAEIKCghvcGVyYXRvciIcCgpTdHJpbmdMaXN0Eg4KBnZhbHVlcxgBIAMoCSKpAgoQSW50ZWdlclByZWRpY2F0ZRIPCgVlcXVhbBgBIAEoA0gAEhMKCW5vdF9lcXVhbBgCIAEoA0gAEiMKAmluGAMgASgLMhUuYXVkaXQudjEuSW50ZWdlckxpc3RIABInCgZub3RfaW4YBCABKAsyFS5hdWRpdC52MS5JbnRlZ2VyTGlzdEgAEikKB2JldHdlZW4YBSABKAsyFi5hdWRpdC52MS5JbnRlZ2VyUmFuZ2VIABIWCgxncmVhdGVyX3RoYW4YBiABKANIABIfChVncmVhdGVyX3RoYW5fb3JfZXF1YWwYByABKANIABITCglsZXNzX3RoYW4YCCABKANIABIcChJsZXNzX3RoYW5fb3JfZXF1YWwYCSABKANIAEIKCghvcGVyYXRvciIdCgtJbnRlZ2VyTGlzdBIOCgZ2YWx1ZXMYASADKAMiKAoMSW50ZWdlclJhbmdlEgwKBGZyb20YASABKAMSCgoCdG8YAiABKAMinwIKDVRpbWVQcmVkaWNhdGUSJgoHYmV0d2VlbhgBIAEoCzITLmF1ZGl0LnYxLlRpbWVSYW5nZUgAEjIKDGdyZWF0ZXJfdGhhbhgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIABI7ChVncmVhdGVyX3RoYW5fb3JfZXF1YWwYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wSAASLwoJbGVzc190aGFuGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEgAEjgKEmxlc3NfdGhhbl9vcl9lcXVhbBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBIAEIKCghvcGVyYXRvciJdCglUaW1lUmFuZ2USKAoEZnJvbRgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASJgoCdG8YAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wImkKD1RhcmdldFByZWRpY2F0ZRIiCgJpbhgBIAEoCzIULmF1ZGl0LnYxLlRhcmdldExpc3RIABImCgZub3RfaW4YAiABKAsyFC5hdWRpdC52MS5UYXJnZXRMaXN0SABCCgoIb3BlcmF0b3IiMQoKVGFyZ2V0TGlzdBIjCgZ2YWx1ZXMYASADKAsyEy5hdWRpdC52MS5UYXJnZXRSZWYiJQoJVGFyZ2V0UmVmEgwKBHR5cGUYASABKAkSCgoCaWQYAiABKAkinwEKEUtleVZhbHVlUHJlZGljYXRlEiMKBWVxdWFsGAEgASgLMhIuYXVkaXQudjEuS2V5VmFsdWVIABInCglub3RfZXF1YWwYAiABKAsyEi5hdWRpdC52MS5LZXlWYWx1ZUgAEhUKC2tleV9pc19udWxsGAMgASgJSAASGQoPa2V5X2lzX25vdF9udWxsGAQgASgJSABCCgoIb3BlcmF0b3IiJgoIS2V5VmFsdWUSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJIq8BCg1QYXRoUHJlZGljYXRlEgwKBHBhdGgYASABKAkSKwoGc3RyaW5nGAIgASgLMhkuYXVkaXQudjEuU3RyaW5nUHJlZGljYXRlSAASLQoHaW50ZWdlchgDIAEoCzIaLmF1ZGl0LnYxLkludGVnZXJQcmVkaWNhdGVIABInCgR0aW1lGAQgASgLMhcuYXVkaXQudjEuVGltZVByZWRpY2F0ZUgAQgsKCXByZWRpY2F0ZSK5AgoEU29ydBIjCgVmaWVsZBgBIAEoDjIULmF1ZGl0LnYxLlNvcnQuRmllbGQSIwoFb3JkZXIYAiABKA4yFC5hdWRpdC52MS5Tb3J0Lk9yZGVyIqcBCgVGaWVsZBIVChFGSUVMRF9VTlNQRUNJRklFRBAAEhUKEUZJRUxEX09DQ1VSUkVEX0FUEAESFQoRRklFTERfUkVDT1JERURfQVQQAhIMCghGSUVMRF9JRBADEhAKDEZJRUxEX0FDVElPThAEEhMKD0ZJRUxEX1RFTkFOVF9JRBAFEhIKDkZJRUxEX0FDVE9SX0lEEAYSEAoMRklFTERfU09VUkNFEAciPQoFT3JkZXISFQoRT1JERVJfVU5TUEVDSUZJRUQQABINCglPUkRFUl9BU0MQARIOCgpPUkRFUl9ERVNDEAIifQoOU2VhcmNoUmVzcG9uc2USHwoFaXRlbXMYASADKAsyEC5hdWRpdC52MS5SZWNvcmQSJgoFcXVlcnkYAiABKAsyFy5hdWRpdC52MS5TZWFyY2hSZXF1ZXN0EiIKB2N1cnNvcnMYAyABKAsyES5hdWRpdC52MS5DdXJzb3JzIkIKB0N1cnNvcnMSDAoEc2VsZhgBIAEoCRINCgVmaXJzdBgCIAEoCRIMCgRwcmV2GAMgASgJEgwKBG5leHQYBCABKAkiawoNRmFjZXRzUmVxdWVzdBIPCgdwcm9maWxlGAEgASgJEiAKBmZpbHRlchgCIAMoCzIQLmF1ZGl0LnYxLkZpbHRlchIOCgZmaWVsZHMYAyADKAkSFwoPbGltaXRfcGVyX2ZpZWxkGAQgASgFIjEKDkZhY2V0c1Jlc3BvbnNlEh8KBmZhY2V0cxgBIAMoCzIPLmF1ZGl0LnYxLkZhY2V0IjwKBUZhY2V0Eg0KBWZpZWxkGAEgASgJEiQKBnZhbHVlcxgCIAMoCzIULmF1ZGl0LnYxLkZhY2V0VmFsdWUiKgoKRmFjZXRWYWx1ZRINCgV2YWx1ZRgBIAEoCRINCgVjb3VudBgCIAEoAyIpCgpHZXRSZXF1ZXN0Eg8KB3Byb2ZpbGUYASABKAkSCgoCaWQYAiABKAkiWQoLR2V0UmVzcG9uc2USIAoGcmVjb3JkGAEgASgLMhAuYXVkaXQudjEuUmVjb3JkEigKCnByb3ZlbmFuY2UYAiABKAsyFC5hdWRpdC52MS5Qcm92ZW5hbmNlInIKClByb3ZlbmFuY2USEgoKb2JqZWN0X2tleRgBIAEoCRIMCgRsaW5lGAIgASgDEhEKCWRpZ2VzdF9pZBgDIAEoCRIvCgt2ZXJpZmllZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAitwEKDUV4cG9ydFJlcXVlc3QSDwoHcHJvZmlsZRgBIAEoCRIgCgZmaWx0ZXIYAiADKAsyEC5hdWRpdC52MS5GaWx0ZXISLgoGZm9ybWF0GAMgASgOMh4uYXVkaXQudjEuRXhwb3J0UmVxdWVzdC5Gb3JtYXQiQwoGRm9ybWF0EhYKEkZPUk1BVF9VTlNQRUNJRklFRBAAEhEKDUZPUk1BVF9OREpTT04QARIOCgpGT1JNQVRfQ1NWEAIiRgoORXhwb3J0UmVzcG9uc2USDgoGam9iX2lkGAEgASgJEiQKBXN0YXRlGAIgASgOMhUuYXVkaXQudjEuRXhwb3J0U3RhdGUiIgoQR2V0RXhwb3J0UmVxdWVzdBIOCgZqb2JfaWQYASABKAkilgEKEUdldEV4cG9ydFJlc3BvbnNlEiQKBXN0YXRlGAEgASgOMhUuYXVkaXQudjEuRXhwb3J0U3RhdGUSCwoDdXJsGAIgASgJEi4KCmV4cGlyZXNfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg8KB3JlY29yZHMYBCABKAMSDQoFZXJyb3IYBSABKAkqdQoLRXhwb3J0U3RhdGUSHAoYRVhQT1JUX1NUQVRFX1VOU1BFQ0lGSUVEEAASGAoURVhQT1JUX1NUQVRFX1BFTkRJTkcQARIWChJFWFBPUlRfU1RBVEVfUkVBRFkQAhIWChJFWFBPUlRfU1RBVEVfRVJST1IQAzK8AwoMUXVlcnlTZXJ2aWNlEjsKBlNlYXJjaBIXLmF1ZGl0LnYxLlNlYXJjaFJlcXVlc3QaGC5hdWRpdC52MS5TZWFyY2hSZXNwb25zZRI7CgZGYWNldHMSFy5hdWRpdC52MS5GYWNldHNSZXF1ZXN0GhguYXVkaXQudjEuRmFjZXRzUmVzcG9uc2USMgoDR2V0EhQuYXVkaXQudjEuR2V0UmVxdWVzdBoVLmF1ZGl0LnYxLkdldFJlc3BvbnNlEjsKBkV4cG9ydBIXLmF1ZGl0LnYxLkV4cG9ydFJlcXVlc3QaGC5hdWRpdC52MS5FeHBvcnRSZXNwb25zZRJECglHZXRFeHBvcnQSGi5hdWRpdC52MS5HZXRFeHBvcnRSZXF1ZXN0GhsuYXVkaXQudjEuR2V0RXhwb3J0UmVzcG9uc2USPgoHUmVzb2x2ZRIYLmF1ZGl0LnYxLlJlc29sdmVSZXF1ZXN0GhkuYXVkaXQudjEuUmVzb2x2ZVJlc3BvbnNlEjsKBkFjY2VzcxIXLmF1ZGl0LnYxLkFjY2Vzc1JlcXVlc3QaGC5hdWRpdC52MS5BY2Nlc3NSZXNwb25zZUKKAQoMY29tLmF1ZGl0LnYxQgpRdWVyeVByb3RvUAFaLWdpdGh1Yi5jb20vdHJ1dml0eS9hdWRpdC9nZW4vYXVkaXQvdjE7YXVkaXR2MaICA0FYWKoCCEF1ZGl0LlYxygIIQXVkaXRcVjHiAhRBdWRpdFxWMVxHUEJNZXRhZGF0YeoCCUF1ZGl0OjpWMWIGcHJvdG8z", [file_audit_v1_record, file_google_protobuf_timestamp]);
+
+/**
+ * @generated from message audit.v1.AccessRequest
+ */
+export type AccessRequest = Message<"audit.v1.AccessRequest"> & {
+};
+
+/**
+ * Describes the message audit.v1.AccessRequest.
+ * Use `create(AccessRequestSchema)` to create a new message.
+ */
+export const AccessRequestSchema: GenMessage<AccessRequest> = /*@__PURE__*/
+  messageDesc(file_audit_v1_query, 0);
+
+/**
+ * @generated from message audit.v1.AccessResponse
+ */
+export type AccessResponse = Message<"audit.v1.AccessResponse"> & {
+  /**
+   * In the order the grants name them.
+   *
+   * @generated from field: repeated audit.v1.ProfileAccess profiles = 1;
+   */
+  profiles: ProfileAccess[];
+};
+
+/**
+ * Describes the message audit.v1.AccessResponse.
+ * Use `create(AccessResponseSchema)` to create a new message.
+ */
+export const AccessResponseSchema: GenMessage<AccessResponse> = /*@__PURE__*/
+  messageDesc(file_audit_v1_query, 1);
+
+/**
+ * @generated from message audit.v1.ProfileAccess
+ */
+export type ProfileAccess = Message<"audit.v1.ProfileAccess"> & {
+  /**
+   * @generated from field: string profile = 1;
+   */
+  profile: string;
+
+  /**
+   * search, facets, get, export, tail, resolve: those the caller holds on
+   * this profile over at least one tenant.
+   *
+   * @generated from field: repeated string operations = 2;
+   */
+  operations: string[];
+
+  /**
+   * Every tenant, as an operator's grant says; otherwise the tenants listed.
+   *
+   * @generated from field: bool all_tenants = 3;
+   */
+  allTenants: boolean;
+
+  /**
+   * @generated from field: repeated string tenants = 4;
+   */
+  tenants: string[];
+
+  /**
+   * The period the caller may read, from the grant that allows search, or the
+   * first operation allowed. Unset is unbounded at that end.
+   *
+   * @generated from field: google.protobuf.Timestamp from = 5;
+   */
+  from?: Timestamp | undefined;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp until = 6;
+   */
+  until?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message audit.v1.ProfileAccess.
+ * Use `create(ProfileAccessSchema)` to create a new message.
+ */
+export const ProfileAccessSchema: GenMessage<ProfileAccess> = /*@__PURE__*/
+  messageDesc(file_audit_v1_query, 2);
 
 /**
  * @generated from message audit.v1.ResolveRequest
@@ -50,7 +132,7 @@ export type ResolveRequest = Message<"audit.v1.ResolveRequest"> & {
  * Use `create(ResolveRequestSchema)` to create a new message.
  */
 export const ResolveRequestSchema: GenMessage<ResolveRequest> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 0);
+  messageDesc(file_audit_v1_query, 3);
 
 /**
  * @generated from message audit.v1.ResolveResponse
@@ -67,7 +149,7 @@ export type ResolveResponse = Message<"audit.v1.ResolveResponse"> & {
  * Use `create(ResolveResponseSchema)` to create a new message.
  */
 export const ResolveResponseSchema: GenMessage<ResolveResponse> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 1);
+  messageDesc(file_audit_v1_query, 4);
 
 /**
  * @generated from message audit.v1.SearchRequest
@@ -121,7 +203,7 @@ export type SearchRequest = Message<"audit.v1.SearchRequest"> & {
  * Use `create(SearchRequestSchema)` to create a new message.
  */
 export const SearchRequestSchema: GenMessage<SearchRequest> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 2);
+  messageDesc(file_audit_v1_query, 5);
 
 /**
  * Filter is a conjunction. Every set predicate must hold.
@@ -238,7 +320,7 @@ export type Filter = Message<"audit.v1.Filter"> & {
  * Use `create(FilterSchema)` to create a new message.
  */
 export const FilterSchema: GenMessage<Filter> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 3);
+  messageDesc(file_audit_v1_query, 6);
 
 /**
  * @generated from message audit.v1.StringPredicate
@@ -297,7 +379,7 @@ export type StringPredicate = Message<"audit.v1.StringPredicate"> & {
  * Use `create(StringPredicateSchema)` to create a new message.
  */
 export const StringPredicateSchema: GenMessage<StringPredicate> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 4);
+  messageDesc(file_audit_v1_query, 7);
 
 /**
  * @generated from message audit.v1.StringList
@@ -316,7 +398,7 @@ export type StringList = Message<"audit.v1.StringList"> & {
  * Use `create(StringListSchema)` to create a new message.
  */
 export const StringListSchema: GenMessage<StringList> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 5);
+  messageDesc(file_audit_v1_query, 8);
 
 /**
  * @generated from message audit.v1.IntegerPredicate
@@ -387,7 +469,7 @@ export type IntegerPredicate = Message<"audit.v1.IntegerPredicate"> & {
  * Use `create(IntegerPredicateSchema)` to create a new message.
  */
 export const IntegerPredicateSchema: GenMessage<IntegerPredicate> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 6);
+  messageDesc(file_audit_v1_query, 9);
 
 /**
  * @generated from message audit.v1.IntegerList
@@ -404,7 +486,7 @@ export type IntegerList = Message<"audit.v1.IntegerList"> & {
  * Use `create(IntegerListSchema)` to create a new message.
  */
 export const IntegerListSchema: GenMessage<IntegerList> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 7);
+  messageDesc(file_audit_v1_query, 10);
 
 /**
  * @generated from message audit.v1.IntegerRange
@@ -426,7 +508,7 @@ export type IntegerRange = Message<"audit.v1.IntegerRange"> & {
  * Use `create(IntegerRangeSchema)` to create a new message.
  */
 export const IntegerRangeSchema: GenMessage<IntegerRange> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 8);
+  messageDesc(file_audit_v1_query, 11);
 
 /**
  * @generated from message audit.v1.TimePredicate
@@ -473,7 +555,7 @@ export type TimePredicate = Message<"audit.v1.TimePredicate"> & {
  * Use `create(TimePredicateSchema)` to create a new message.
  */
 export const TimePredicateSchema: GenMessage<TimePredicate> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 9);
+  messageDesc(file_audit_v1_query, 12);
 
 /**
  * @generated from message audit.v1.TimeRange
@@ -495,7 +577,7 @@ export type TimeRange = Message<"audit.v1.TimeRange"> & {
  * Use `create(TimeRangeSchema)` to create a new message.
  */
 export const TimeRangeSchema: GenMessage<TimeRange> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 10);
+  messageDesc(file_audit_v1_query, 13);
 
 /**
  * @generated from message audit.v1.TargetPredicate
@@ -524,7 +606,7 @@ export type TargetPredicate = Message<"audit.v1.TargetPredicate"> & {
  * Use `create(TargetPredicateSchema)` to create a new message.
  */
 export const TargetPredicateSchema: GenMessage<TargetPredicate> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 11);
+  messageDesc(file_audit_v1_query, 14);
 
 /**
  * @generated from message audit.v1.TargetList
@@ -541,7 +623,7 @@ export type TargetList = Message<"audit.v1.TargetList"> & {
  * Use `create(TargetListSchema)` to create a new message.
  */
 export const TargetListSchema: GenMessage<TargetList> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 12);
+  messageDesc(file_audit_v1_query, 15);
 
 /**
  * @generated from message audit.v1.TargetRef
@@ -565,7 +647,7 @@ export type TargetRef = Message<"audit.v1.TargetRef"> & {
  * Use `create(TargetRefSchema)` to create a new message.
  */
 export const TargetRefSchema: GenMessage<TargetRef> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 13);
+  messageDesc(file_audit_v1_query, 16);
 
 /**
  * @generated from message audit.v1.KeyValuePredicate
@@ -606,7 +688,7 @@ export type KeyValuePredicate = Message<"audit.v1.KeyValuePredicate"> & {
  * Use `create(KeyValuePredicateSchema)` to create a new message.
  */
 export const KeyValuePredicateSchema: GenMessage<KeyValuePredicate> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 14);
+  messageDesc(file_audit_v1_query, 17);
 
 /**
  * @generated from message audit.v1.KeyValue
@@ -628,7 +710,7 @@ export type KeyValue = Message<"audit.v1.KeyValue"> & {
  * Use `create(KeyValueSchema)` to create a new message.
  */
 export const KeyValueSchema: GenMessage<KeyValue> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 15);
+  messageDesc(file_audit_v1_query, 18);
 
 /**
  * @generated from message audit.v1.PathPredicate
@@ -668,7 +750,7 @@ export type PathPredicate = Message<"audit.v1.PathPredicate"> & {
  * Use `create(PathPredicateSchema)` to create a new message.
  */
 export const PathPredicateSchema: GenMessage<PathPredicate> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 16);
+  messageDesc(file_audit_v1_query, 19);
 
 /**
  * @generated from message audit.v1.Sort
@@ -690,7 +772,7 @@ export type Sort = Message<"audit.v1.Sort"> & {
  * Use `create(SortSchema)` to create a new message.
  */
 export const SortSchema: GenMessage<Sort> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 17);
+  messageDesc(file_audit_v1_query, 20);
 
 /**
  * @generated from enum audit.v1.Sort.Field
@@ -741,7 +823,7 @@ export enum Sort_Field {
  * Describes the enum audit.v1.Sort.Field.
  */
 export const Sort_FieldSchema: GenEnum<Sort_Field> = /*@__PURE__*/
-  enumDesc(file_audit_v1_query, 17, 0);
+  enumDesc(file_audit_v1_query, 20, 0);
 
 /**
  * @generated from enum audit.v1.Sort.Order
@@ -767,7 +849,7 @@ export enum Sort_Order {
  * Describes the enum audit.v1.Sort.Order.
  */
 export const Sort_OrderSchema: GenEnum<Sort_Order> = /*@__PURE__*/
-  enumDesc(file_audit_v1_query, 17, 1);
+  enumDesc(file_audit_v1_query, 20, 1);
 
 /**
  * SearchResponse is the page object: items, the normalised query the
@@ -798,7 +880,7 @@ export type SearchResponse = Message<"audit.v1.SearchResponse"> & {
  * Use `create(SearchResponseSchema)` to create a new message.
  */
 export const SearchResponseSchema: GenMessage<SearchResponse> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 18);
+  messageDesc(file_audit_v1_query, 21);
 
 /**
  * @generated from message audit.v1.Cursors
@@ -830,7 +912,7 @@ export type Cursors = Message<"audit.v1.Cursors"> & {
  * Use `create(CursorsSchema)` to create a new message.
  */
 export const CursorsSchema: GenMessage<Cursors> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 19);
+  messageDesc(file_audit_v1_query, 22);
 
 /**
  * @generated from message audit.v1.FacetsRequest
@@ -866,7 +948,7 @@ export type FacetsRequest = Message<"audit.v1.FacetsRequest"> & {
  * Use `create(FacetsRequestSchema)` to create a new message.
  */
 export const FacetsRequestSchema: GenMessage<FacetsRequest> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 20);
+  messageDesc(file_audit_v1_query, 23);
 
 /**
  * @generated from message audit.v1.FacetsResponse
@@ -883,7 +965,7 @@ export type FacetsResponse = Message<"audit.v1.FacetsResponse"> & {
  * Use `create(FacetsResponseSchema)` to create a new message.
  */
 export const FacetsResponseSchema: GenMessage<FacetsResponse> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 21);
+  messageDesc(file_audit_v1_query, 24);
 
 /**
  * @generated from message audit.v1.Facet
@@ -905,7 +987,7 @@ export type Facet = Message<"audit.v1.Facet"> & {
  * Use `create(FacetSchema)` to create a new message.
  */
 export const FacetSchema: GenMessage<Facet> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 22);
+  messageDesc(file_audit_v1_query, 25);
 
 /**
  * @generated from message audit.v1.FacetValue
@@ -927,7 +1009,7 @@ export type FacetValue = Message<"audit.v1.FacetValue"> & {
  * Use `create(FacetValueSchema)` to create a new message.
  */
 export const FacetValueSchema: GenMessage<FacetValue> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 23);
+  messageDesc(file_audit_v1_query, 26);
 
 /**
  * @generated from message audit.v1.GetRequest
@@ -949,7 +1031,7 @@ export type GetRequest = Message<"audit.v1.GetRequest"> & {
  * Use `create(GetRequestSchema)` to create a new message.
  */
 export const GetRequestSchema: GenMessage<GetRequest> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 24);
+  messageDesc(file_audit_v1_query, 27);
 
 /**
  * @generated from message audit.v1.GetResponse
@@ -971,7 +1053,7 @@ export type GetResponse = Message<"audit.v1.GetResponse"> & {
  * Use `create(GetResponseSchema)` to create a new message.
  */
 export const GetResponseSchema: GenMessage<GetResponse> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 25);
+  messageDesc(file_audit_v1_query, 28);
 
 /**
  * Provenance says where the copy was read from and whether a digest has
@@ -1006,7 +1088,7 @@ export type Provenance = Message<"audit.v1.Provenance"> & {
  * Use `create(ProvenanceSchema)` to create a new message.
  */
 export const ProvenanceSchema: GenMessage<Provenance> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 26);
+  messageDesc(file_audit_v1_query, 29);
 
 /**
  * @generated from message audit.v1.ExportRequest
@@ -1033,7 +1115,7 @@ export type ExportRequest = Message<"audit.v1.ExportRequest"> & {
  * Use `create(ExportRequestSchema)` to create a new message.
  */
 export const ExportRequestSchema: GenMessage<ExportRequest> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 27);
+  messageDesc(file_audit_v1_query, 30);
 
 /**
  * @generated from enum audit.v1.ExportRequest.Format
@@ -1059,7 +1141,7 @@ export enum ExportRequest_Format {
  * Describes the enum audit.v1.ExportRequest.Format.
  */
 export const ExportRequest_FormatSchema: GenEnum<ExportRequest_Format> = /*@__PURE__*/
-  enumDesc(file_audit_v1_query, 27, 0);
+  enumDesc(file_audit_v1_query, 30, 0);
 
 /**
  * @generated from message audit.v1.ExportResponse
@@ -1081,7 +1163,7 @@ export type ExportResponse = Message<"audit.v1.ExportResponse"> & {
  * Use `create(ExportResponseSchema)` to create a new message.
  */
 export const ExportResponseSchema: GenMessage<ExportResponse> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 28);
+  messageDesc(file_audit_v1_query, 31);
 
 /**
  * @generated from message audit.v1.GetExportRequest
@@ -1098,7 +1180,7 @@ export type GetExportRequest = Message<"audit.v1.GetExportRequest"> & {
  * Use `create(GetExportRequestSchema)` to create a new message.
  */
 export const GetExportRequestSchema: GenMessage<GetExportRequest> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 29);
+  messageDesc(file_audit_v1_query, 32);
 
 /**
  * @generated from message audit.v1.GetExportResponse
@@ -1135,7 +1217,7 @@ export type GetExportResponse = Message<"audit.v1.GetExportResponse"> & {
  * Use `create(GetExportResponseSchema)` to create a new message.
  */
 export const GetExportResponseSchema: GenMessage<GetExportResponse> = /*@__PURE__*/
-  messageDesc(file_audit_v1_query, 30);
+  messageDesc(file_audit_v1_query, 33);
 
 /**
  * @generated from enum audit.v1.ExportState
@@ -1226,6 +1308,20 @@ export const QueryService: GenService<{
     methodKind: "unary";
     input: typeof ResolveRequestSchema;
     output: typeof ResolveResponseSchema;
+  },
+  /**
+   * Access says what the caller may read: every profile a grant names, the
+   * operations allowed on it, and over which tenants and period. It is the
+   * same grants every other call is held to, so a page can show what the
+   * caller may open without its host knowing the deployment's profiles. It
+   * reads no record, and is not recorded.
+   *
+   * @generated from rpc audit.v1.QueryService.Access
+   */
+  access: {
+    methodKind: "unary";
+    input: typeof AccessRequestSchema;
+    output: typeof AccessResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_audit_v1_query, 0);

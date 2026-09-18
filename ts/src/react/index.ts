@@ -5,11 +5,13 @@
 
 export {
   AuditProvider,
+  useAccess,
   useAudit,
   useFacets,
   useRecord,
   useSearch,
   useTail,
+  type Access,
   type AuditProviderProps,
   type Facets,
   type ReadError,

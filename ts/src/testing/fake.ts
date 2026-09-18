@@ -42,6 +42,8 @@ export interface FakeOptions {
   deny?: Code;
   /** Records the fake says a verified digest covers. */
   verified?: string[];
+  /** The profiles access() says the caller may search; default every profile a record is in. */
+  readable?: string[];
 }
 
 /**
@@ -54,6 +56,12 @@ export function fakeQueryService(options: FakeOptions = {}): Fake {
   const searches: SearchRequest[] = [];
   const transport = createRouterTransport(({ service }) => {
     service(QueryService, {
+      access() {
+        const names = options.readable ?? [...new Set(records.map((r) => r.profile))];
+        return {
+          profiles: names.map((profile) => ({ profile, operations: ["search", "facets", "get"], allTenants: true })),
+        };
+      },
       search(req) {
         searches.push(req);
         if (options.deny !== undefined) throw new ConnectError("the grant does not cover this profile", options.deny);

@@ -29,11 +29,14 @@ import { Fragment, useMemo, useState } from "react";
 
 import { Outcome_Result, RecordSchema, type Record as AuditRecord } from "../gen/audit/v1/record_pb.js";
 import { compileQualifiers, qualifier } from "../qualifiers.js";
-import { useAudit, useFacets, useRecord, useSearch, useTail } from "./hooks.js";
+import { useAccess, useAudit, useFacets, useRecord, useSearch, useTail } from "./hooks.js";
 
 export interface AuditViewProps {
-  /** The profiles this caller may read, in the order to show them. */
-  profiles: string[];
+  /**
+   * The profiles to show, in order. Without them the view asks the query
+   * service which profiles the caller may search, and shows those.
+   */
+  profiles?: string[];
   /** The profile to open on; default the first. */
   profile?: string;
   /** The qualifier box's starting text. */
@@ -62,7 +65,21 @@ const ranges: { label: string; since: string }[] = [
  * It holds no credentials and signs nobody in: it asks through the client the
  * AuditProvider was given, and shows what the caller's grant lets through.
  */
-export function AuditView({ profiles, profile: initial, query = "", facets = ["action", "outcome"], pageSize = 50, permalink }: AuditViewProps) {
+export function AuditView(props: AuditViewProps) {
+  if (props.profiles) return <Trail {...props} profiles={props.profiles} />;
+  return <GrantedTrail {...props} />;
+}
+
+/** The view over the profiles the query service says the caller may search. */
+function GrantedTrail(props: AuditViewProps) {
+  const access = useAccess();
+  if (access.loading) return <Typography color="text.secondary">Loading…</Typography>;
+  if (access.error) return <Alert severity="error">{explain(access.error.code, access.error.message)}</Alert>;
+  const readable = access.profiles.filter((p) => p.operations.includes("search")).map((p) => p.profile);
+  return <Trail {...props} profiles={readable} />;
+}
+
+function Trail({ profiles, profile: initial, query = "", facets = ["action", "outcome"], pageSize = 50, permalink }: AuditViewProps & { profiles: string[] }) {
   const [profile, setProfile] = useState(initial ?? profiles[0] ?? "");
   const [text, setText] = useState(query);
   const [applied, setApplied] = useState(query);

@@ -261,6 +261,59 @@ func (s *Service) Get(
 	return row, where, g, err
 }
 
+// ProfileAccess is what the caller may do on one profile.
+type ProfileAccess struct {
+	Profile    string
+	Operations []auth.Operation
+	// Grant is the effective grant for search, or for the first operation
+	// allowed when search is not: its tenants and window.
+	Grant auth.Grant
+}
+
+// operations are every operation a grant can name, in the order a caller
+// meets them.
+var operations = []auth.Operation{auth.Search, auth.Facets, auth.Get, auth.Tail, auth.Export, auth.Resolve}
+
+// Access says what the caller may read, profile by profile, from the same
+// grants and the same rule (Effective) every other call is held to. It reads
+// no record and so records nothing: what a person may see is not something
+// they saw.
+func (s *Service) Access(ctx context.Context, p auth.Principal) ([]ProfileAccess, error) {
+	held, err := s.Authorizer.Grants(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	var profiles []string
+	seen := map[string]bool{}
+	for _, g := range held {
+		for _, name := range g.Profiles {
+			if !seen[name] {
+				seen[name] = true
+				profiles = append(profiles, name)
+			}
+		}
+	}
+	var out []ProfileAccess
+	for _, name := range profiles {
+		access := ProfileAccess{Profile: name}
+		found := false
+		for _, op := range operations {
+			g, err := auth.Effective(held, name, op)
+			if err != nil {
+				continue
+			}
+			access.Operations = append(access.Operations, op)
+			if !found || op == auth.Search {
+				access.Grant, found = g, true
+			}
+		}
+		if len(access.Operations) > 0 {
+			out = append(out, access)
+		}
+	}
+	return out, nil
+}
+
 // allow authorizes the caller for one profile and operation.
 //
 // The grant comes back even on a refusal, because the refusal is recorded and

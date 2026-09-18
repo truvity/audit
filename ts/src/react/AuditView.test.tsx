@@ -18,11 +18,11 @@ const shop: Sentences = {
   },
 };
 
-function show(options: FakeOptions = {}, profiles = ["security"]) {
+function show(options: FakeOptions = {}, profiles: string[] | null = ["security"]) {
   const fake = fakeQueryService(options);
   render(
     <AuditProvider client={createQueryClient(fake.transport)} sentences={[shop]}>
-      <AuditView profiles={profiles} permalink={(p, id) => `/audit/${p}/${id}`} />
+      <AuditView {...(profiles ? { profiles } : {})} permalink={(p, id) => `/audit/${p}/${id}`} />
     </AuditProvider>,
   );
   return fake;
@@ -31,6 +31,16 @@ function show(options: FakeOptions = {}, profiles = ["security"]) {
 afterEach(cleanup);
 
 describe("the audit view", () => {
+  it("asks the query service which profiles to show when the host names none", async () => {
+    show({}, null);
+    expect(await screen.findByText("ps_alice placed order o-3")).toBeTruthy();
+  });
+
+  it("says so when the caller may search no profile", async () => {
+    show({ readable: [] }, null);
+    expect(await screen.findByText("No audit profile is readable with this sign-in.")).toBeTruthy();
+  });
+
   it("shows records as their catalogues' sentences, the application's and the component's own", async () => {
     show();
     expect(await screen.findByText("ps_alice placed order o-3")).toBeTruthy();

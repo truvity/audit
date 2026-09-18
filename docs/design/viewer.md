@@ -16,7 +16,7 @@ designed and not built.
 ## Navigation
 
 Profiles are the top level. A user sees only the profiles their grant
-allows. Inside a profile: tenant scope, time range with a histogram from
+allows, as the query service's `Access` reports them. Inside a profile: tenant scope, time range with a histogram from
 the counts table, a facet sidebar, a qualifier box (`actor:` `action:`
 `target:` `outcome:` `tenant:` and a time range) that compiles to the
 typed filter, and the reverse-chronological table.

@@ -92,9 +92,10 @@ err := emit.Register(ctx, emit.Registration{
 ```
 
 **Do not start if it fails.** The registry refuses a catalogue that is
-malformed, or that leaves a profile's required categories uncovered, and
-records written against a description nobody accepted are records nobody can
-read. Registering the same version again is not an error; every replica does it
+malformed, or registered under another workload's source, and records written
+against a description nobody accepted are records nobody can read. (A
+profile's required categories are the deployment's to cover, across every
+catalogue; a gap is reported, not held against you.) Registering the same version again is not an error; every replica does it
 on every roll.
 
 The registry decides whose catalogue it is from your **service account**, not

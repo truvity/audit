@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/preset"
 )
@@ -152,41 +153,57 @@ func TestAnUnverifiedCallerIsRefused(t *testing.T) {
 	}
 }
 
-// The deployment's requirement: a profile exists to satisfy a framework, and a
-// catalogue that writes into it must carry what the framework asks for.
-func TestACatalogueMissingARequiredCategoryIsRejected(t *testing.T) {
+// Coverage is the deployment's: a gap is reported, and the application that
+// registered while it was open is not refused for it.
+func TestAnUncoveredCategoryIsReportedNotRefused(t *testing.T) {
 	profiles := map[string]*preset.Profile{
-		"needs-auth": {Name: "needs-auth", RequiredCategories: []string{"authentication", "authorisation"}},
+		"needs-auth": {Name: "needs-auth", RequiredCategories: []string{"authentication", "log_access"}},
 	}
 	r := registryFor(t, profiles, "wallet")
+	var reported []string
+	r.OnUncovered = func(_ context.Context, profile string, missing []string) {
+		reported = append(reported, profile+": "+strings.Join(missing, ", "))
+	}
 	problems, err := r.Register(context.Background(), entry(thinDoc))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(problems) == 0 {
-		t.Fatal("a catalogue leaving a profile's required categories uncovered was accepted")
+	if len(problems) != 0 {
+		t.Fatalf("a catalogue was refused for what the deployment lacks: %v", problems)
 	}
-	joined := strings.Join(problems, " ")
-	for _, want := range []string{"needs-auth", "authentication", "authorisation"} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("the rejection should name %q: %v", want, problems)
-		}
+	if len(reported) != 1 || reported[0] != "needs-auth: authentication, log_access" {
+		t.Fatalf("reported %q", reported)
 	}
 }
 
-// A catalogue that never writes into a profile is not the one that has to
-// satisfy it.
-func TestACatalogueThatDoesNotUseAProfileIsNotHeldToIt(t *testing.T) {
-	profiles := map[string]*preset.Profile{
-		"needs-auth": {Name: "needs-auth", RequiredCategories: []string{"authentication"}},
-	}
-	r := registryFor(t, profiles, "wallet")
-	problems, err := r.Register(context.Background(), entry(walletDoc))
+// What one application does not emit, another, or the component itself, may:
+// coverage counts every catalogue of the deployment.
+func TestCoverageCountsEveryCatalogueOfTheDeployment(t *testing.T) {
+	own, err := catalogue.Load([]byte(`
+source: audit
+version: "1.0.0"
+locales: [en]
+actions:
+  audit.search:
+    summary: A search.
+    operation: access
+    categories: [log_access]
+    profiles: [needs-auth]
+    message: { en: "{actor} searched" }
+`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(problems) != 0 {
-		t.Fatalf("a catalogue was held to a profile it never writes into: %v", problems)
+	profiles := map[string]*preset.Profile{
+		"needs-auth": {Name: "needs-auth", RequiredCategories: []string{"data_change", "log_access"}},
+	}
+	r := registryFor(t, profiles, "wallet")
+	r.Builtin = []*catalogue.Catalogue{own}
+	r.OnUncovered = func(_ context.Context, profile string, missing []string) {
+		t.Errorf("%s reported uncovered: %v", profile, missing)
+	}
+	if problems, err := r.Register(context.Background(), entry(thinDoc)); err != nil || len(problems) != 0 {
+		t.Fatalf("problems %v, err %v", problems, err)
 	}
 }
 

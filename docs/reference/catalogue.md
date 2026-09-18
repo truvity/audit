@@ -25,8 +25,13 @@ start-up. The registry copies every version into the archive on first use.
 
 ## Categories
 
-Presets require categories, never actions. A source in scope of a preset
-must have at least one action per required category:
+Presets require categories, never actions. A profile's required categories
+must be covered by the deployment as a whole — every registered catalogue and
+the component's own together — not by each source: an application that signs
+people in need not also read logs. `audit validate --deployment` fails on a
+gap in the deployment's CI, and the registry logs one after each
+registration; neither refuses an application for what another should emit.
+The categories:
 
 `authentication`, `privileged_access`, `account_lifecycle`,
 `authorization_decision`, `configuration_change`, `data_access`,

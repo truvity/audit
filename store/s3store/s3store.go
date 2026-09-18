@@ -117,6 +117,15 @@ func (s *Store) Put(ctx context.Context, o store.Object) error {
 	if o.Key == "" {
 		return errors.New("s3store: an object needs a key")
 	}
+	// A locked bucket takes a mode and a date together or neither, so an object
+	// with no retention would be sent as half a lock and refused by S3 with a
+	// message about headers. Refusing it here says what is actually wrong, and
+	// makes the alternative — dropping the lock headers and writing the object
+	// unlocked into the archive — impossible to reach by accident. Nothing may
+	// enter the archive without a retention; that is what the archive is.
+	if !s.unlocked && o.RetainUntil.IsZero() {
+		return fmt.Errorf("s3store: %s: an object in a locked archive must carry a retention", o.Key)
+	}
 	in := &s3.PutObjectInput{
 		Bucket:                    aws.String(s.bucket),
 		Key:                       aws.String(s.key(o.Key)),
@@ -251,8 +260,10 @@ func (s *Store) lockMode() types.ObjectLockMode {
 	return s.lock
 }
 
+// retainUntil is the date, or nothing for an unlocked store. Put has already
+// refused a locked object without one.
 func (s *Store) retainUntil(o store.Object) *time.Time {
-	if s.unlocked || o.RetainUntil.IsZero() {
+	if s.unlocked {
 		return nil
 	}
 	return aws.Time(o.RetainUntil.UTC())

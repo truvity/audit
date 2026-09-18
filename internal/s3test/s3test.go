@@ -8,19 +8,24 @@
 //
 // So these tests run against LocalStack, which pages ListObjectsV2 at a
 // thousand like AWS and honours Delimiter and continuation tokens the same way.
-// What it does not do is enforce compliance retention: a delete may succeed
-// here where AWS would refuse. Nothing in this package may therefore claim that
-// a lock holds — that property belongs to the tamper tests over the memory
-// store and to a check against a real bucket. What is proved here is that the
-// requests are right and that the walks are complete.
+//
+// What it does and does not enforce was measured rather than assumed, because
+// the first version of this comment guessed and guessed wrong. It refuses to
+// delete a version held by a compliance retention, which is the guarantee the
+// whole archive rests on and is asserted here. It does not implement
+// PutObjectRetention at all — it answers MethodNotAllowed where AWS answers
+// AccessDenied — so nothing here may claim that a retention cannot be
+// shortened; that one is still owed a check against a real bucket.
 package s3test
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -43,12 +48,34 @@ const URLEnv = "AUDIT_S3_URL"
 // region is the one these tests create buckets in.
 const region = "eu-central-1"
 
-// Open returns a store over a bucket of this test's own, emptied when it ends.
+// Open returns a store over a bucket of this test's own.
 //
 // Object Lock has to be asked for when a bucket is created and cannot be added
 // afterwards, so the bucket is made with it: what these tests exercise is the
 // writer's real path, which always names a lock mode.
+//
+// The bucket's name ends in a random suffix, because a locked bucket cannot be
+// taken away afterwards and so the same name cannot be asked for twice. See
+// release.
 func Open(t *testing.T, lock bool) store.Store {
+	t.Helper()
+	return OpenRaw(t, lock).Store
+}
+
+// Raw is a store together with the client and bucket underneath it.
+//
+// It exists for the tests that have to attempt what store.Store deliberately
+// offers no way to do — delete an object — because showing that the bucket
+// refuses is the only way to know the archive's central claim is true rather
+// than merely unexercised.
+type Raw struct {
+	Store  store.Store
+	Client *s3.Client
+	Bucket string
+}
+
+// OpenRaw is Open with the client and bucket name kept.
+func OpenRaw(t *testing.T, lock bool) Raw {
 	t.Helper()
 	endpoint := os.Getenv(URLEnv)
 	if endpoint == "" {
@@ -86,19 +113,30 @@ func Open(t *testing.T, lock bool) store.Store {
 	if _, err := client.CreateBucket(ctx, in); err != nil {
 		t.Fatalf("s3test: creating %s: %v", bucket, err)
 	}
-	t.Cleanup(func() { empty(client, bucket) })
+	t.Cleanup(func() { release(client, bucket, lock) })
 
 	built, err := s3store.New(client, s3store.Options{Bucket: bucket, Unlocked: !lock})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return built
+	return Raw{Store: built, Client: client, Bucket: bucket}
 }
 
-// empty removes a bucket's objects and the bucket. It is best effort: a test
-// that leaves a bucket behind is untidy, not wrong, and failing the cleanup
-// would hide whatever the test actually found.
-func empty(client *s3.Client, bucket string) {
+// release gives back what can be given back.
+//
+// An unlocked bucket is emptied and removed. A locked one is left exactly where
+// it is: its objects are under a retention that refuses deletion until it
+// expires, which is the property the archive is built on, and a harness that
+// deleted them anyway would be standing in for a bucket nobody would deploy.
+// This is why Open's names are unique — the leftovers must not collide with the
+// next run, since they cannot be cleared out of its way.
+//
+// It is best effort either way: a test that leaves a bucket behind is untidy,
+// not wrong, and failing the cleanup would hide whatever the test found.
+func release(client *s3.Client, bucket string, lock bool) {
+	if lock {
+		return
+	}
 	ctx := context.Background()
 	var token *string
 	for {
@@ -111,7 +149,6 @@ func empty(client *s3.Client, bucket string) {
 		for _, v := range out.Versions {
 			_, _ = client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: aws.String(bucket), Key: v.Key, VersionId: v.VersionId,
-				BypassGovernanceRetention: aws.Bool(true),
 			})
 		}
 		for _, m := range out.DeleteMarkers {
@@ -127,8 +164,17 @@ func empty(client *s3.Client, bucket string) {
 	_, _ = client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
 }
 
+// suffix is how many random characters end a bucket name.
+const suffix = 8
+
 // bucketName turns a test's name into one S3 will take: lower case, letters,
-// digits and hyphens.
+// digits and hyphens, ending in random characters.
+//
+// The randomness is not decoration. A bucket made with Object Lock outlives the
+// test that made it, so a name derived from the test alone is a name that is
+// already taken the second time that test runs against the same endpoint — and
+// CreateBucket answers BucketAlreadyOwnedByYou, which fails the test for a
+// reason that has nothing to do with what it was checking.
 func bucketName(name string) string {
 	var b strings.Builder
 	b.WriteString("audit-")
@@ -140,11 +186,12 @@ func bucketName(name string) string {
 			b.WriteByte('-')
 		}
 	}
-	out := b.String()
-	if len(out) > 63 {
-		out = out[:63]
+	// 63 is the longest name S3 takes, and the suffix has to fit inside it.
+	out := strings.Trim(b.String(), "-")
+	if longest := 63 - suffix - 1; len(out) > longest {
+		out = strings.Trim(out[:longest], "-")
 	}
-	return strings.Trim(out, "-")
+	return out + "-" + strings.ToLower(rand.Text()[:suffix])
 }
 
 // Fill writes n objects under one profile and tenant on one day, so that a test
@@ -155,7 +202,14 @@ func Fill(t *testing.T, s store.Store, profile, tenant, day string, n int) []str
 	keys := make([]string, 0, n)
 	for i := 0; i < n; i++ {
 		key := fmt.Sprintf("profile=%s/tenant=%s/%s/%06d.ndjson.zst", profile, tenant, day, i)
-		if err := s.Put(ctx, store.Object{Key: key, Body: []byte("{}")}); err != nil {
+		// The retention is always set, so that Fill serves a locked bucket as
+		// well as an unlocked one: a locked archive refuses an object without
+		// one, and a harness that only worked on the easy bucket would be the
+		// kinder double this package exists to avoid.
+		if err := s.Put(ctx, store.Object{
+			Key: key, Body: []byte("{}"),
+			RetainUntil: time.Now().Add(24 * time.Hour).UTC(),
+		}); err != nil {
 			t.Fatalf("s3test: %s: %v", key, err)
 		}
 		keys = append(keys, key)

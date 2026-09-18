@@ -340,13 +340,56 @@ func (c *Catalogue) checkMessages(name string, a Action) []error {
 		}
 		allowed := c.messageArguments(a)
 		for _, arg := range MessageArguments(template) {
-			if !allowed[arg] {
+			switch {
+			case allowed[arg]:
+			case strings.Contains(arg, "."):
+				// ICU forbids a dot in an argument name, so a template with one
+				// is valid to nobody's renderer.
+				problems = append(problems, fmt.Errorf(
+					"action %s, locale %s: the template names %q; argument names use underscores, not dots: %q",
+					name, locale, arg, strings.ReplaceAll(arg, ".", "_")))
+			default:
 				problems = append(problems, fmt.Errorf(
 					"action %s, locale %s: the template names %q, which a record of this action does not carry", name, locale, arg))
 			}
 		}
 	}
+	return append(problems, c.argumentCollisions(name, a)...)
+}
+
+// argumentCollisions refuses a data schema two of whose properties would
+// answer to the same template argument: /a_b and /a/b are both data_a_b.
+func (c *Catalogue) argumentCollisions(name string, a Action) []error {
+	s, ok := c.schemas[a.DataSchema]
+	if !ok {
+		return nil
+	}
+	seen := map[string]string{}
+	var problems []error
+	pointers := make([]string, 0, len(s.Properties))
+	for pointer := range s.Properties {
+		pointers = append(pointers, pointer)
+	}
+	sort.Strings(pointers)
+	for _, pointer := range pointers {
+		arg := DataArgument(pointer)
+		if other, taken := seen[arg]; taken {
+			problems = append(problems, fmt.Errorf(
+				"action %s: data properties %s and %s would both be the template argument %s; rename one",
+				name, other, pointer, arg))
+			continue
+		}
+		seen[arg] = pointer
+	}
 	return problems
+}
+
+// DataArgument is the template argument that names a data property: its JSON
+// pointer under data, with each step joined by an underscore, so that the
+// name is one ICU accepts. /items is data_items; /address/city is
+// data_address_city.
+func DataArgument(pointer string) string {
+	return "data" + strings.ReplaceAll(pointer, "/", "_")
 }
 
 // messageArguments is what a template of this action may name: the core fields
@@ -355,9 +398,9 @@ func (c *Catalogue) messageArguments(a Action) map[string]bool {
 	allowed := map[string]bool{}
 	for _, core := range []string{
 		"id", "source", "action", "operation", "tenant", "profile",
-		"actor", "actor.id", "actor.kind", "subject", "subject.id", "subject.kind",
-		"outcome", "outcome.result", "outcome.reason", "outcome.code",
-		"observer.id", "observer.instance", "occurred_at", "recorded_at",
+		"actor", "actor_id", "actor_kind", "subject", "subject_id", "subject_kind",
+		"outcome", "outcome_result", "outcome_reason", "outcome_code",
+		"observer_id", "observer_instance", "occurred_at", "recorded_at",
 	} {
 		allowed[core] = true
 	}
@@ -365,16 +408,16 @@ func (c *Catalogue) messageArguments(a Action) map[string]bool {
 	// sentence stops being a sentence.
 	for i := 0; i < 4; i++ {
 		for _, part := range []string{"id", "name", "type"} {
-			allowed[fmt.Sprintf("targets.%d.%s", i, part)] = true
+			allowed[fmt.Sprintf("targets_%d_%s", i, part)] = true
 		}
 	}
 	if s, ok := c.schemas[a.DataSchema]; ok {
 		for pointer := range s.Properties {
-			allowed["data"+strings.ReplaceAll(pointer, "/", ".")] = true
+			allowed[DataArgument(pointer)] = true
 		}
 	}
 	if a.Meter != nil {
-		allowed["meter.quantity"], allowed["meter.unit"], allowed["meter.name"] = true, true, true
+		allowed["meter_quantity"], allowed["meter_unit"], allowed["meter_name"] = true, true, true
 	}
 	return allowed
 }

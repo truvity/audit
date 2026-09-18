@@ -63,7 +63,7 @@ actions:
     data_schema: https://schemas.example/wallet/credential-issued.json
     data_version: "1"
     message:
-      en: "{actor} was issued a {data.credential_format} credential"
+      en: "{actor} was issued a {data_credential_format} credential"
     meter:
       name: issued
 `
@@ -142,7 +142,7 @@ func TestLoadRefusesAMissingSchema(t *testing.T) {
 // A template that names something no record carries renders as a gap in the one
 // place a reader is entitled to a straight sentence.
 func TestLoadRefusesATemplateNamingUnknownData(t *testing.T) {
-	doc := strings.Replace(walletDoc, "{data.credential_format}", "{data.holder_name}", 1)
+	doc := strings.Replace(walletDoc, "{data_credential_format}", "{data_holder_name}", 1)
 	err := loadWith(t, doc, walletSchema)
 	if err == nil || !strings.Contains(err.Error(), "holder_name") {
 		t.Fatalf("want a refusal naming the unknown argument, got %v", err)
@@ -304,7 +304,7 @@ func TestMessageArguments(t *testing.T) {
 		want     []string
 	}{
 		{"{actor} signed in", []string{"actor"}},
-		{"{actor} removed {targets.0.id} from {targets.1.id}", []string{"actor", "targets.0.id", "targets.1.id"}},
+		{"{actor} removed {targets_0_id} from {targets_1_id}", []string{"actor", "targets_0_id", "targets_1_id"}},
 		{"{count, plural, one {# record} other {# records}}", []string{"count"}},
 		{"{a} and {b, select, x {{c}} other {}}", []string{"a", "b", "c"}},
 		{"no arguments here", nil},
@@ -395,5 +395,34 @@ func TestMeterCountsSuccessUnlessToldOtherwise(t *testing.T) {
 	bad := strings.Replace(walletDoc, "      name: issued", "      name: issued\n      outcomes: [maybe]", 1)
 	if _, err := Load([]byte(bad), [][]byte{[]byte(walletSchema)}); err == nil {
 		t.Fatal("an outcome that is not one of the four must be refused")
+	}
+}
+
+// A dotted argument is refused with the underscore spelling it should have:
+// ICU forbids the dot, so no renderer could fill it.
+func TestLoadRefusesADottedArgumentWithTheUnderscoreSpelling(t *testing.T) {
+	doc := strings.Replace(walletDoc, "{data_credential_format}", "{data.credential_format}", 1)
+	err := loadWith(t, doc, walletSchema)
+	if err == nil || !strings.Contains(err.Error(), `"data_credential_format"`) {
+		t.Fatalf("want a refusal suggesting data_credential_format, got %v", err)
+	}
+}
+
+// Two data properties that would answer to one argument are refused, since a
+// template naming it could mean either.
+func TestLoadRefusesDataPropertiesThatCollideAsArguments(t *testing.T) {
+	schema := strings.Replace(walletSchema, `"credential_id": {`, `"credential": {
+      "type": "object",
+      "additionalProperties": false,
+      "x-audit-class": "evidence",
+      "x-audit-pii": "none",
+      "properties": {
+        "id": {"type": "string", "x-audit-class": "evidence", "x-audit-pii": "none"}
+      }
+    },
+    "credential_id": {`, 1)
+	err := loadWith(t, walletDoc, schema)
+	if err == nil || !strings.Contains(err.Error(), "data_credential_id") {
+		t.Fatalf("want a refusal naming the colliding argument, got %v", err)
 	}
 }

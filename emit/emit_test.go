@@ -37,7 +37,7 @@ actions:
     target_types: [order]
     delivery: block
     message:
-      en: "{actor} placed order {targets.0.id}"
+      en: "{actor} placed order {targets_0_id}"
     meter:
       name: orders
   shop.order.viewed:
@@ -48,7 +48,7 @@ actions:
     target_types: [order]
     delivery: best_effort
     message:
-      en: "{actor} read order {targets.0.id}"
+      en: "{actor} read order {targets_0_id}"
 `
 
 func shop(t *testing.T) *catalogue.Catalogue { return catalogueFrom(t, doc) }

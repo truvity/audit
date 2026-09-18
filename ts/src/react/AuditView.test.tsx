@@ -13,7 +13,7 @@ const shop: Sentences = {
   actions: {
     "shop.order.placed": {
       summary: "A customer placed an order.",
-      message: { en: "{actor} placed order {targets.0.id}" },
+      message: { en: "{actor} placed order {targets_0_id}" },
     },
   },
 };

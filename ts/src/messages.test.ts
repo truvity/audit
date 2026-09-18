@@ -41,24 +41,24 @@ const record = create(RecordSchema, {
 });
 
 describe("rendering", () => {
-  it("fills dotted paths, which ICU alone refuses", () => {
-    expect(renderMessage("{actor} placed order {targets.0.id}", recordArguments(record))).toBe(
+  it("fills the record's fields by their underscore names", () => {
+    expect(renderMessage("{actor} placed order {targets_0_id}", recordArguments(record))).toBe(
       "ps_alice placed order o-1",
     );
   });
 
   it("counts with plural on a number from the data slot", () => {
-    const t = "{data.items, plural, one {# item} other {# items}} to {data.address.city}";
+    const t = "{data_items, plural, one {# item} other {# items}} to {data_address_city}";
     expect(renderMessage(t, recordArguments(record))).toBe("2 items to Delft");
   });
 
   it("chooses with select on the outcome", () => {
-    const t = "{outcome, select, success {done} other {refused: {outcome.reason}}}";
+    const t = "{outcome, select, success {done} other {refused: {outcome_reason}}}";
     expect(renderMessage(t, recordArguments(record))).toBe("refused: card declined");
   });
 
   it("leaves a gap where the record carries nothing", () => {
-    expect(renderMessage("by {subject.kind} on {targets.3.id}.", recordArguments(record))).toBe("by holder on .");
+    expect(renderMessage("by {subject_kind} on {targets_3_id}.", recordArguments(record))).toBe("by holder on .");
   });
 
   it("returns nothing for a template ICU cannot read, so the caller falls back", () => {

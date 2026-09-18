@@ -1,0 +1,101 @@
+# Calls the shared workflow (truvity/ci-workflows), which runs each
+# Justfile recipe as its OWN parallel job, reported under its own name.
+#
+# Pinned by COMMIT SHA, never a tag — tags move, and this code runs in
+# every repository of both organizations.
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # `check` is the hermetic gate: it needs nothing but this checkout — no
+  # containers, no network, no C toolchain — so that a contributor can run
+  # exactly what CI runs. The three that need more are their own jobs
+  # below.
+  recipes:
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    with:
+      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "vuln", "leak-canary"]'
+
+  # The race detector is the one thing here that needs a C toolchain, and
+  # everything else builds with cgo off — which is what makes the binaries
+  # static. Putting it in `check` would mean every contributor needs one to
+  # run the gate at all.
+  race:
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    with:
+      recipes: '["race"]'
+
+  # The TypeScript half of the generated-code check. It needs the plugin
+  # from a remote registry that rate limits, and a gate that fails because
+  # somebody else was generating code is a gate people learn to ignore.
+  drift-ts:
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    with:
+      recipes: '["drift-ts"]'
+
+  # The index is the one part of this repository that cannot be tested
+  # without a database, and mocking it would prove nothing about the
+  # idempotency that is its whole contract. The tests skip when
+  # AUDIT_POSTGRES_URL is unset, so this job is what makes them run.
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: audit_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
+        with:
+          go-version-file: go.mod
+      - name: go test ./... with a database
+        env:
+          AUDIT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/audit_test?sslmode=disable
+          CGO_ENABLED: "0"
+          GOEXPERIMENT: jsonv2
+        run: go test ./...
+      - name: the Postgres tests must have run, not skipped
+        env:
+          AUDIT_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/audit_test?sslmode=disable
+          CGO_ENABLED: "0"
+          GOEXPERIMENT: jsonv2
+        # A URL that stopped reaching the tests would turn this job green
+        # while proving nothing, which is the failure mode these tests were
+        # written to avoid in the first place.
+        run: |
+          go test ./index/postgres/ -run TestMigrateIsIdempotent -v | tee out.txt
+          grep -q -- "--- PASS: TestMigrateIsIdempotent" out.txt
+
+  # Stable name for branch protection: the matrix reports as
+  # "recipes / lint" and so on, so a required context called "check"
+  # would never arrive and every PR would hang waiting for it.
+  check:
+    needs: [recipes, race, drift-ts, postgres]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          [ "${{ needs.recipes.result }}" = "success" ] &&
+          [ "${{ needs.race.result }}" = "success" ] &&
+          [ "${{ needs.drift-ts.result }}" = "success" ] &&
+          [ "${{ needs.postgres.result }}" = "success" ]

@@ -1,0 +1,33 @@
+# Tag-triggered release — the shared implementation (truvity/ci-workflows).
+# goreleaser builds the `audit` toolchain as archives, so that an auditor
+# can run `verify` with a copy of their own, and, through ko, the three
+# images the chart deploys. The chart itself is packaged at the tag's
+# version and pushed to oci://ghcr.io/truvity/charts/audit.
+#
+# The caller grants the permissions because a reusable workflow can
+# narrow them but never widen them.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: write
+
+# Never cancel a running publish — a half-pushed artifact set is worse
+# than a queued wait.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      packages: write
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    with:
+      charts: '["audit"]'

@@ -130,9 +130,16 @@ chart:
 snapshot:
     goreleaser release --snapshot --clean
 
+# This repository is public and its history cannot be unpublished — a rewrite
+# changes the SHAs but not what was already fetched. So the rule (nothing here
+# names a real cluster, account, host or ticket) is enforced mechanically
+# rather than remembered.
+leak-canary:
+    hack/leak-canary.sh
+
 # Run Go vulnerability check
 vuln:
     govulncheck ./...
 
 # Everything CI runs
-check: build test lint proto drift schemas chart vuln
+check: build test lint proto drift schemas chart leak-canary vuln

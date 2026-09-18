@@ -232,7 +232,10 @@ func TestPutIsConditionalOnTheKeyBeingFree(t *testing.T) {
 }
 
 func TestPutEncryptsWithTheGivenKey(t *testing.T) {
-	s, f := newStore(t, s3store.Options{KMSKeyID: "arn:aws:kms:eu-central-1:1:key/abc"})
+	// An alias rather than an ARN: the test is about the key reaching the
+	// request, and a fixture shaped like a real ARN is the shape the leak
+	// canary is looking for.
+	s, f := newStore(t, s3store.Options{KMSKeyID: "alias/audit-test"})
 	if err := s.Put(context.Background(), object()); err != nil {
 		t.Fatal(err)
 	}

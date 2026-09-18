@@ -32,6 +32,13 @@ Foundation. No release.
   produces, and an in-memory implementation. Indexing is idempotent by
   `(profile, id)` and counting has no call of its own, because only the
   transaction that inserted a row can tell a re-delivery from a new record.
+- `index`: the `Searcher` contract — a closed query, keyset cursors, facets,
+  provenance on a single record — and the Postgres implementation of it. The
+  grant is one more term in the query rather than a layer above it, so there is
+  no path to a row outside it. Paging is keyset, so a deep page costs what a
+  shallow one does and a record appended meanwhile cannot shift a page already
+  handed out. The last page still carries its boundary, because a tail keeps
+  polling it.
 - `index/postgres`: the default index and the shared deduplication table, with
   a checked-in schema, monthly partitions created on demand, and row-level
   security by tenant.
@@ -70,6 +77,10 @@ Foundation. No release.
   archive now goes tenant by tenant and day by day through `store.WalkDays`,
   and the S3 test double pages, sorts and groups as S3 does so that the next
   listing that stops early is caught here.
+- CI, as the estate's other public repositories have it: each `just` recipe is
+  its own job, with the race detector, the TypeScript drift check and a
+  Postgres-backed run as jobs of their own, and a `leak-canary` recipe that
+  enforces mechanically what a public repository may not contain.
 - `audit-registry`, the catalogue registry as a service: it validates a
   document with the same toolchain that validates it in the application's own
   tests, refuses a source registering another's catalogue, and refuses a

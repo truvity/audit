@@ -112,15 +112,32 @@ asking and marking cannot be one.
 
 ## Query model
 
-Closed by design (decision 0006). The Authorizer's grant is a filter term
-AND-ed into every query. Cursors carry the keyset boundary, the direction and a
-hash of the normalised query. Not yet built.
+Closed by design (decision 0006). A caller names fields and operators from a
+fixed set rather than handing over an expression, which is what lets the
+Authorizer's grant be AND-ed in as one more term — there is no path to a row
+outside the grant, because a query that forgot it would have to forget to name
+a profile too.
+
+Built for Postgres: predicates on the core fields, on targets, and on the
+extension properties a catalogue marked filterable. No regular expression and
+no substring search: both are unbounded work on a table that only grows, and an
+index that cannot answer them quickly would answer them slowly instead. A
+prefix is a range rather than a pattern, so it reads the same index a sorted
+scan does.
+
+Paging is keyset, never an offset. An offset re-reads everything before it, so
+a deep page costs more than a shallow one, and a row appended meanwhile shifts
+every page after it — in a trail that is appended to constantly, that means a
+poller silently skipping records. Every ordering ends with the identifier, or
+two rows with the same occurred time would have no defined order and a boundary
+on the tie would repeat one or skip the other.
 
 ## Tail
 
 `next` on the last page stays valid and advances on `recorded_at` plus the
 writer sequence, so late events are never missed by a poller. The index orders
-rows that way for the same reason. The paging itself is not yet built.
+rows that way for the same reason. An empty page keeps the boundary it was
+asked from, so a tail polling a quiet profile does not lose its place.
 
 ## Reindex
 

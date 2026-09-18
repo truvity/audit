@@ -35,6 +35,11 @@ spec:
                 - --deployment=/etc/audit/deployment.yaml
                 {{- if .Values.jobs.digest.kmsKey }}
                 - --kms-key={{ .Values.jobs.digest.kmsKey }}
+                {{- else if .Values.jobs.digest.transit.key }}
+                - --transit-key={{ .Values.jobs.digest.transit.key }}
+                - --transit-address={{ .Values.jobs.digest.transit.address }}
+                - --transit-mount={{ .Values.jobs.digest.transit.mount }}
+                - --transit-token-file=/etc/audit/transit/{{ .Values.jobs.digest.transit.token.secretKey }}
                 {{- else }}
                 - --key=/etc/audit/signing/{{ .Values.jobs.digest.signingKey.secretKey }}
                 {{- with .Values.jobs.digest.signingKey.keyID }}
@@ -63,9 +68,14 @@ spec:
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
-                {{- if not .Values.jobs.digest.kmsKey }}
+                {{- if .Values.jobs.digest.signingKey.existingSecret }}
                 - name: signing
                   mountPath: /etc/audit/signing
+                  readOnly: true
+                {{- end }}
+                {{- if .Values.jobs.digest.transit.key }}
+                - name: transit
+                  mountPath: /etc/audit/transit
                   readOnly: true
                 {{- end }}
                 {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 16 }}{{- end }}
@@ -73,10 +83,15 @@ spec:
             - name: deployment
               configMap:
                 name: {{ $full }}-deployment
-            {{- if not .Values.jobs.digest.kmsKey }}
+            {{- if .Values.jobs.digest.signingKey.existingSecret }}
             - name: signing
               secret:
                 secretName: {{ .Values.jobs.digest.signingKey.existingSecret }}
+            {{- end }}
+            {{- if .Values.jobs.digest.transit.key }}
+            - name: transit
+              secret:
+                secretName: {{ .Values.jobs.digest.transit.token.existingSecret }}
             {{- end }}
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 12 }}{{- end }}
 {{- end }}

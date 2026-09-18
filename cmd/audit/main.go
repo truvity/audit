@@ -52,7 +52,7 @@ usage:
         Send dead letters back to a writer once the cause is fixed. Without
         --sink it reads and summarises them and sends nothing.
 
-  audit digest --deployment <file> --key <file>|--kms-key <id> [flags]
+  audit digest --deployment <file> --key <file>|--kms-key <id>|--transit-key <name> [flags]
         Seal the windows since the last digest into the signed chain. Run it
         hourly. It catches up on windows a missed run left behind, because a
         gap in the chain cannot be told from a digest somebody removed.
@@ -72,7 +72,7 @@ usage:
         pseudonyms can never be recomputed again: this is what erasure means
         here, and it cannot be undone.
 
-  audit key public --key <file>|--kms-key <id>
+  audit key public --key <file>|--kms-key <id>|--transit-key <name>
         Print the public half of a digest signing key: all an auditor needs,
         with the archive, to verify the chain.
 
@@ -566,6 +566,7 @@ func digestCmd(args []string) error {
 		key        = flags.String("key", "", "PEM private key the digests are signed with")
 		keyID      = flags.String("key-id", "", "the name a digest records the signing key under")
 		kmsKey     = flags.String("kms-key", "", "an AWS KMS ECC_NIST_P256 key to sign with instead of --key")
+		transit    = transitFlags(flags)
 		from       = flags.String("from", "", "first window; default the hour after the last digest")
 		to         = flags.String("to", "", "last window; default the hour that has just closed")
 		bucket     = flags.String("bucket", "", "the bucket the archive is in")
@@ -585,10 +586,10 @@ func digestCmd(args []string) error {
 		return errors.New("give the profile configuration with --deployment")
 	case *bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
-	case *key == "" && *kmsKey == "":
-		return errors.New("give the signing key with --key or --kms-key: an unsigned chain proves nothing")
-	case *key != "" && *kmsKey != "":
-		return errors.New("give --key or --kms-key, not both: one chain has one signer")
+	}
+	if n := given(*key, *kmsKey, *transit.key); n != 1 {
+		return errors.New("give exactly one of --key, --kms-key and --transit-key: " +
+			"an unsigned chain proves nothing, and one chain has one signer")
 	}
 
 	profiles, err := profilesFor(*deployment)
@@ -602,7 +603,7 @@ func digestCmd(args []string) error {
 		}
 		profiles = map[string]*preset.Profile{*only: p}
 	}
-	signer, err := signerFor(context.Background(), *key, *keyID, *kmsKey, *region)
+	signer, err := signerFor(context.Background(), *key, *keyID, *kmsKey, *region, transit)
 	if err != nil {
 		return err
 	}
@@ -637,20 +638,54 @@ func digestCmd(args []string) error {
 	return err
 }
 
-// signerFor is the digest signer a command was given: a key file, or a KMS key
-// whose private half never leaves KMS.
-func signerFor(ctx context.Context, keyFile, keyID, kmsKey, region string) (keys.Signer, error) {
-	if kmsKey == "" {
+// transitOptions names an OpenBAO transit signing key.
+type transitOptions struct {
+	key, address, mount, tokenFile *string
+}
+
+func transitFlags(flags *flag.FlagSet) transitOptions {
+	return transitOptions{
+		key:     flags.String("transit-key", "", "an OpenBAO transit ed25519 key to sign with"),
+		address: flags.String("transit-address", os.Getenv("BAO_ADDR"), "the OpenBAO server; default BAO_ADDR"),
+		mount:   flags.String("transit-mount", "transit", "where the transit engine is mounted"),
+		tokenFile: flags.String("transit-token-file", "",
+			"a file holding the token, read on every call; default the BAO_TOKEN environment variable"),
+	}
+}
+
+// given counts the options that were set.
+func given(values ...string) int {
+	n := 0
+	for _, v := range values {
+		if v != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// signerFor is the digest signer a command was given: a key file, a KMS key or
+// a transit key — the last two keeping the private half out of the archive's
+// reach.
+func signerFor(ctx context.Context, keyFile, keyID, kmsKey, region string, transit transitOptions) (keys.Signer, error) {
+	switch {
+	case kmsKey != "":
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if region != "" {
+			cfg.Region = region
+		}
+		return &keys.KMSSigner{Client: kms.NewFromConfig(cfg), Key: kmsKey}, nil
+	case transit.key != nil && *transit.key != "":
+		return keys.NewTransitSigner(ctx, &keys.TransitSigner{
+			Address: *transit.address, Mount: *transit.mount, Key: *transit.key,
+			Token: os.Getenv("BAO_TOKEN"), TokenFile: *transit.tokenFile,
+		})
+	default:
 		return keys.LoadLocalSignerFile(keyID, keyFile)
 	}
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if region != "" {
-		cfg.Region = region
-	}
-	return &keys.KMSSigner{Client: kms.NewFromConfig(cfg), Key: kmsKey}, nil
 }
 
 // keyPublic prints the public half of a digest signing key, which is all an
@@ -658,18 +693,19 @@ func signerFor(ctx context.Context, keyFile, keyID, kmsKey, region string) (keys
 func keyPublic(args []string) error {
 	flags := flag.NewFlagSet("key public", flag.ContinueOnError)
 	var (
-		key    = flags.String("key", "", "PEM private key file")
-		kmsKey = flags.String("kms-key", "", "an AWS KMS signing key")
-		region = flags.String("region", "", "the region, when it is not in the environment")
+		key     = flags.String("key", "", "PEM private key file")
+		kmsKey  = flags.String("kms-key", "", "an AWS KMS signing key")
+		region  = flags.String("region", "", "the region, when it is not in the environment")
+		transit = transitFlags(flags)
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
-	if (*key == "") == (*kmsKey == "") {
-		return errors.New("give exactly one of --key and --kms-key")
+	if given(*key, *kmsKey, *transit.key) != 1 {
+		return errors.New("give exactly one of --key, --kms-key and --transit-key")
 	}
 	ctx := context.Background()
-	signer, err := signerFor(ctx, *key, "", *kmsKey, *region)
+	signer, err := signerFor(ctx, *key, "", *kmsKey, *region, transit)
 	if err != nil {
 		return err
 	}

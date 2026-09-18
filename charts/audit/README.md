@@ -26,7 +26,7 @@ The chart takes references; it creates none of these.
 | a bucket with Object Lock in compliance mode | `bucket` |
 | a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`) and read `holds/` | the writer's ServiceAccount annotation |
 | a Secret with the 32-byte key root | `keys.local.existingSecret` |
-| a Secret with the digest signing key (PEM, ed25519) | `jobs.digest.signingKey.existingSecret` |
+| the digest signing key: a Secret (PEM, ed25519), an AWS KMS ECC_NIST_P256 key, or an OpenBAO transit ed25519 key | `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` or `jobs.digest.transit` |
 | a Secret with its public half | `jobs.verify.publicKey.existingSecret` |
 | a Postgres URL, in a Secret | `database.existingSecret` |
 | the JetStream stream, already created | `stream.url`, `stream.name` |
@@ -53,7 +53,7 @@ chart refuses to render with neither issuers nor that flag set.
 
 ## What it refuses to render
 
-Seventeen configurations, each one the binaries reject at start-up or accept and
+Nineteen configurations, each one the binaries reject at start-up or accept and
 get quietly wrong. They are listed with their reasons in
 `testdata/refusals.txt`, and `testdata/refuse.sh` holds each refusal to its
 words. The two least obvious:

@@ -40,11 +40,18 @@ understand, or — worse — to a trail that looks fine and is not.
 {{- end -}}
 
 {{- if .Values.jobs.digest.enabled -}}
-  {{- if not (or .Values.jobs.digest.signingKey.existingSecret .Values.jobs.digest.kmsKey) -}}
-  {{- fail "audit: `jobs.digest.signingKey.existingSecret` or `jobs.digest.kmsKey` is required while `jobs.digest.enabled`. An unsigned chain proves nothing, so the command refuses without a key and the job would only ever fail." -}}
+  {{- $signers := 0 -}}
+  {{- if .Values.jobs.digest.signingKey.existingSecret }}{{ $signers = add1 $signers }}{{ end -}}
+  {{- if .Values.jobs.digest.kmsKey }}{{ $signers = add1 $signers }}{{ end -}}
+  {{- if .Values.jobs.digest.transit.key }}{{ $signers = add1 $signers }}{{ end -}}
+  {{- if eq $signers 0 -}}
+  {{- fail "audit: `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` or `jobs.digest.transit.key` is required while `jobs.digest.enabled`. An unsigned chain proves nothing, so the command refuses without a key and the job would only ever fail." -}}
   {{- end -}}
-  {{- if and .Values.jobs.digest.signingKey.existingSecret .Values.jobs.digest.kmsKey -}}
-  {{- fail "audit: `jobs.digest.signingKey.existingSecret` and `jobs.digest.kmsKey` are both set. One chain has one signer; pick one." -}}
+  {{- if gt $signers 1 -}}
+  {{- fail "audit: more than one of `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` and `jobs.digest.transit.key` is set. One chain has one signer; pick one." -}}
+  {{- end -}}
+  {{- if and .Values.jobs.digest.transit.key (not (and .Values.jobs.digest.transit.address .Values.jobs.digest.transit.token.existingSecret)) -}}
+  {{- fail "audit: `jobs.digest.transit.key` needs `jobs.digest.transit.address` and `jobs.digest.transit.token.existingSecret`: the job signs through the transit engine and has to reach it and be allowed to." -}}
   {{- end -}}
 {{- end -}}
 

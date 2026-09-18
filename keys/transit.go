@@ -1,0 +1,221 @@
+package keys
+
+import (
+	"bytes"
+	"context"
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// TransitSigner signs the digest chain with an OpenBAO (or Vault) transit key.
+//
+// Like the KMS signer it keeps the private half out of the archive's reach:
+// the key lives in the transit engine, the digest job's policy may call
+// transit/sign on it, and the writer's may not. It is the signer for a
+// deployment whose secrets live in OpenBAO rather than a cloud's KMS.
+//
+// The key is an ed25519 transit key, which signs the message itself — so its
+// signatures are checked by the same Verify as a local key, with only the
+// public half this exports.
+//
+// A transit key can be rotated, and transit signs with the newest version
+// unless told otherwise. So the signer reads the key's latest version once and
+// pins every signature to it: the public half it exports and the signatures it
+// makes always belong together, and KeyID names the version, so a verifier can
+// tell which public half a digest wants after a rotation.
+type TransitSigner struct {
+	// Address is the server, e.g. https://openbao.example:8200.
+	Address string
+	// Mount is where the transit engine is mounted. Empty means "transit".
+	Mount string
+	// Key is the transit key's name.
+	Key string
+	// Token authenticates; TokenFile, read on every call, is for a token an
+	// agent keeps renewed. One of the two.
+	Token     string
+	TokenFile string
+	HTTP      *http.Client
+
+	once    sync.Once
+	version int
+	public  []byte
+	err     error
+}
+
+// NewTransitSigner returns a signer that has already read its key.
+//
+// Loading first matters: a digest names its signer before it is signed, and the
+// name carries the key version, which is only known once the key has been read.
+// It also means a key of the wrong type, or a token that cannot read it, stops
+// the job before any window is sealed.
+func NewTransitSigner(ctx context.Context, s *TransitSigner) (*TransitSigner, error) {
+	if s.Address == "" || s.Key == "" {
+		return nil, errors.New("keys: a transit signer needs an address and a key")
+	}
+	if err := s.load(ctx); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+func (s *TransitSigner) mount() string {
+	if s.Mount == "" {
+		return "transit"
+	}
+	return strings.Trim(s.Mount, "/")
+}
+
+func (s *TransitSigner) client() *http.Client {
+	if s.HTTP != nil {
+		return s.HTTP
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
+func (s *TransitSigner) token() (string, error) {
+	if s.TokenFile != "" {
+		raw, err := os.ReadFile(s.TokenFile)
+		if err != nil {
+			return "", fmt.Errorf("keys: transit token: %w", err)
+		}
+		return strings.TrimSpace(string(raw)), nil
+	}
+	if s.Token == "" {
+		return "", errors.New("keys: a transit signer needs a token or a token file")
+	}
+	return s.Token, nil
+}
+
+// call makes one request to the transit engine and decodes its data.
+func (s *TransitSigner) call(ctx context.Context, method, path string, body, into any) error {
+	token, err := s.token()
+	if err != nil {
+		return err
+	}
+	var payload io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		payload = bytes.NewReader(raw)
+	}
+	url := strings.TrimRight(s.Address, "/") + "/v1/" + s.mount() + "/" + path
+	req, err := http.NewRequestWithContext(ctx, method, url, payload)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Vault-Token", token)
+	res, err := s.client().Do(req)
+	if err != nil {
+		return fmt.Errorf("keys: transit %s: %w", path, err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode/100 != 2 {
+		return fmt.Errorf("keys: transit %s: %s: %s", path, res.Status, strings.TrimSpace(string(raw)))
+	}
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return fmt.Errorf("keys: transit %s: %w", path, err)
+	}
+	return json.Unmarshal(envelope.Data, into)
+}
+
+// load reads the key's type and latest version, once.
+func (s *TransitSigner) load(ctx context.Context) error {
+	s.once.Do(func() {
+		// The versions are described differently per key type — a
+		// symmetric key's are bare timestamps — so the type is checked before
+		// a version is read as a signing key's.
+		var key struct {
+			Type          string                     `json:"type"`
+			LatestVersion int                        `json:"latest_version"`
+			Keys          map[string]json.RawMessage `json:"keys"`
+		}
+		if err := s.call(ctx, http.MethodGet, "keys/"+s.Key, nil, &key); err != nil {
+			s.err = err
+			return
+		}
+		if key.Type != "ed25519" {
+			s.err = fmt.Errorf("keys: transit key %s is %s; the digest chain is signed with ed25519", s.Key, key.Type)
+			return
+		}
+		var version struct {
+			PublicKey string `json:"public_key"`
+		}
+		if err := json.Unmarshal(key.Keys[strconv.Itoa(key.LatestVersion)], &version); err != nil {
+			s.err = fmt.Errorf("keys: transit key %s v%d: %w", s.Key, key.LatestVersion, err)
+			return
+		}
+		raw, err := base64.StdEncoding.DecodeString(version.PublicKey)
+		if err != nil || len(raw) != ed25519.PublicKeySize {
+			s.err = fmt.Errorf("keys: transit key %s v%d has no ed25519 public key", s.Key, key.LatestVersion)
+			return
+		}
+		der, err := x509.MarshalPKIXPublicKey(ed25519.PublicKey(raw))
+		if err != nil {
+			s.err = err
+			return
+		}
+		s.version = key.LatestVersion
+		s.public = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	})
+	return s.err
+}
+
+// Sign implements Signer.
+func (s *TransitSigner) Sign(ctx context.Context, message []byte) ([]byte, error) {
+	if err := s.load(ctx); err != nil {
+		return nil, err
+	}
+	var out struct {
+		Signature string `json:"signature"`
+	}
+	if err := s.call(ctx, http.MethodPost, "sign/"+s.Key, map[string]any{
+		"input":       base64.StdEncoding.EncodeToString(message),
+		"key_version": s.version,
+	}, &out); err != nil {
+		return nil, err
+	}
+	// "vault:v<N>:<base64>", whichever server it came from.
+	parts := strings.SplitN(out.Signature, ":", 3)
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("keys: transit returned a signature it did not explain: %q", out.Signature)
+	}
+	return base64.StdEncoding.DecodeString(parts[2])
+}
+
+// PublicKey implements Signer.
+func (s *TransitSigner) PublicKey(ctx context.Context) ([]byte, error) {
+	if err := s.load(ctx); err != nil {
+		return nil, err
+	}
+	return s.public, nil
+}
+
+// KeyID implements Signer. It names the version, so that after a rotation a
+// verifier can tell which public half a digest was signed with.
+func (s *TransitSigner) KeyID() string {
+	if s.version == 0 {
+		return "transit:" + s.Key
+	}
+	return fmt.Sprintf("transit:%s:v%d", s.Key, s.version)
+}

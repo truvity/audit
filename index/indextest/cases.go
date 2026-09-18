@@ -128,6 +128,25 @@ func Cases() []Case {
 			{Path: "/batch", Op: index.Equal, Kind: index.Int, Int: 3}}}),
 		Want: []int{5, 4},
 	}, {
+		Name: "a time extension property",
+		Need: DataPredicates,
+		// Stored in its own column, as a timestamp, so it is compared as an
+		// instant rather than as the string it arrived as.
+		Query: with(index.Conjunction{Data: []index.PathPredicate{{
+			Path: "/expires_at", Op: index.Equal, Kind: index.Time,
+			At: time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC),
+		}}}),
+		Want: []int{3, 2, 1, 0},
+	}, {
+		Name: "a boolean extension property",
+		Need: DataPredicates,
+		// Held as an integer, which is how two kinds come to share a column —
+		// and why a searcher that stored a boolean as text would answer a
+		// neighbouring question here.
+		Query: with(index.Conjunction{Data: []index.PathPredicate{
+			{Path: "/renewable", Op: index.Equal, Kind: index.Bool, Int: 1}}}),
+		Want: []int{8, 6, 4, 2, 0},
+	}, {
 		Name: "ordered by when it was recorded, not when it happened",
 		Need: SortRecordedAt,
 		Query: func() index.Query {

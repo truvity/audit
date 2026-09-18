@@ -40,7 +40,11 @@ const Profile = "security"
 // searcher is given the same answer, so that a predicate on /credential_type
 // means the same thing to all three.
 var Fields = index.Fields{
-	Filter: []string{"/credential_type", "/batch"},
+	// One property of each kind the index has, so that a searcher which stores
+	// or compares one of them differently from the others is caught. Three of
+	// the four were invisible until this list held them: a kind nobody filters
+	// on in a test is a kind nobody has checked.
+	Filter: []string{"/credential_type", "/batch", "/expires_at", "/renewable"},
 	Facet:  []string{"/credential_type"},
 }
 
@@ -99,25 +103,38 @@ func Corpus(t *testing.T) []Placed {
 		kind     string
 		credType string
 		batch    int64
+		// expires is the day part of an RFC 3339 value, which the index stores
+		// as a time; renewable is stored as a boolean.
+		expires   string
+		renewable bool
 	}{
 		{Early.Add(0 * time.Minute), 5 * time.Minute, "initech", "a.ndjson.zst", 1,
-			"wallet.credential.issued", false, "olga", "operator", "pid", 1},
+			"wallet.credential.issued", false, "olga", "operator", "pid", 1,
+			"2027-01-01T00:00:00Z", true},
 		{Early.Add(1 * time.Minute), 1 * time.Minute, "initech", "a.ndjson.zst", 2,
-			"wallet.credential.revoked", false, "olga", "operator", "pid", 1},
+			"wallet.credential.revoked", false, "olga", "operator", "pid", 1,
+			"2027-01-01T00:00:00Z", false},
 		{Early.Add(2 * time.Minute), 9 * time.Minute, "initech", "b.ndjson.zst", 1,
-			"wallet.credential.issued", true, "ivan", "operator", "mdl", 2},
+			"wallet.credential.issued", true, "ivan", "operator", "mdl", 2,
+			"2027-01-01T00:00:00Z", true},
 		{Early.Add(3 * time.Minute), 4 * time.Minute, "globex", "a.ndjson.zst", 1,
-			"wallet.credential.issued", false, "svc-issuer", "service", "mdl", 2},
+			"wallet.credential.issued", false, "svc-issuer", "service", "mdl", 2,
+			"2027-01-01T00:00:00Z", false},
 		{Late.Add(0 * time.Minute), 7 * time.Minute, "globex", "a.ndjson.zst", 1,
-			"wallet.credential.revoked", false, "svc-issuer", "service", "pid", 3},
+			"wallet.credential.revoked", false, "svc-issuer", "service", "pid", 3,
+			"2027-06-01T00:00:00Z", true},
 		{Late.Add(1 * time.Minute), 3 * time.Minute, "globex", "a.ndjson.zst", 2,
-			"wallet.credential.issued", true, "olga", "operator", "pid", 3},
+			"wallet.credential.issued", true, "olga", "operator", "pid", 3,
+			"2027-06-01T00:00:00Z", false},
 		{Late.Add(2 * time.Minute), 11 * time.Minute, "initech", "a.ndjson.zst", 1,
-			"wallet.credential.issued", false, "ivan", "operator", "mdl", 4},
+			"wallet.credential.issued", false, "ivan", "operator", "mdl", 4,
+			"2027-06-01T00:00:00Z", true},
 		{Late.Add(3 * time.Minute), 6 * time.Minute, "initech", "b.ndjson.zst", 1,
-			"wallet.credential.revoked", false, "ivan", "operator", "pid", 4},
+			"wallet.credential.revoked", false, "ivan", "operator", "pid", 4,
+			"2027-06-01T00:00:00Z", false},
 		{Late.Add(4 * time.Minute), 2 * time.Minute, "initech", "b.ndjson.zst", 2,
-			"wallet.credential.issued", false, "olga", "operator", "mdl", 5},
+			"wallet.credential.issued", false, "olga", "operator", "mdl", 5,
+			"2027-06-01T00:00:00Z", true},
 	}
 
 	out := make([]Placed, 0, len(spec))
@@ -125,6 +142,8 @@ func Corpus(t *testing.T) []Placed {
 		data, err := structpb.NewStruct(map[string]any{
 			"credential_type": s.credType,
 			"batch":           float64(s.batch),
+			"expires_at":      s.expires,
+			"renewable":       s.renewable,
 		})
 		if err != nil {
 			t.Fatal(err)

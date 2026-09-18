@@ -76,7 +76,7 @@ surface and keep the rest private.
    clock-sync jobs — **done**. `just chart` holds it: golden renders, and the
    refusals for every configuration the binaries would reject or get quietly
    wrong.
-8. Legal holds (INF-802) and `audit key destroy` — **done**. What is left of
+8. Legal holds and `audit key destroy` — **done**. What is left of
    the key providers is `kms` and `transit`, which want a fake of each.
 9. `index`, read side: the `Searcher`, cursors, facets, tail.
 10. `internal/query` + `auth` + `cmd/audit-query`.
@@ -106,6 +106,9 @@ searcher and every transport.
 
 ## Dogfooding
 
-The first consumer is access-roster's audit trail, replacing its internal
-package; the second is a multi-tenant product with billing. Neither
-migrates old records.
+This is used by its authors before it is offered to anyone else, and the
+first adopters replace an audit trail they already had rather than starting
+from nothing. Neither migrates its old records: the formats differ, a
+translation layer would have to be trusted, and the old objects age out
+under their own retention. A component whose authors have not lived with it
+is a component whose rough edges are still everybody else's to find.

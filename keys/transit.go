@@ -1,7 +1,6 @@
 package keys
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/x509"
@@ -10,13 +9,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 )
 
 // TransitSigner signs the digest chain with an OpenBAO (or Vault) transit key.
@@ -70,73 +66,14 @@ func NewTransitSigner(ctx context.Context, s *TransitSigner) (*TransitSigner, er
 	return s, nil
 }
 
-func (s *TransitSigner) mount() string {
-	if s.Mount == "" {
-		return "transit"
-	}
-	return strings.Trim(s.Mount, "/")
-}
-
-func (s *TransitSigner) client() *http.Client {
-	if s.HTTP != nil {
-		return s.HTTP
-	}
-	return &http.Client{Timeout: 30 * time.Second}
-}
-
-func (s *TransitSigner) token() (string, error) {
-	if s.TokenFile != "" {
-		raw, err := os.ReadFile(s.TokenFile)
-		if err != nil {
-			return "", fmt.Errorf("keys: transit token: %w", err)
-		}
-		return strings.TrimSpace(string(raw)), nil
-	}
-	if s.Token == "" {
-		return "", errors.New("keys: a transit signer needs a token or a token file")
-	}
-	return s.Token, nil
+// conn is the signer's connection to the engine.
+func (s *TransitSigner) conn() openbao {
+	return openbao{Address: s.Address, Mount: s.Mount, Token: s.Token, TokenFile: s.TokenFile, HTTP: s.HTTP}
 }
 
 // call makes one request to the transit engine and decodes its data.
 func (s *TransitSigner) call(ctx context.Context, method, path string, body, into any) error {
-	token, err := s.token()
-	if err != nil {
-		return err
-	}
-	var payload io.Reader
-	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		payload = bytes.NewReader(raw)
-	}
-	url := strings.TrimRight(s.Address, "/") + "/v1/" + s.mount() + "/" + path
-	req, err := http.NewRequestWithContext(ctx, method, url, payload)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("X-Vault-Token", token)
-	res, err := s.client().Do(req)
-	if err != nil {
-		return fmt.Errorf("keys: transit %s: %w", path, err)
-	}
-	defer func() { _ = res.Body.Close() }()
-	raw, err := io.ReadAll(res.Body)
-	if err != nil {
-		return err
-	}
-	if res.StatusCode/100 != 2 {
-		return fmt.Errorf("keys: transit %s: %s: %s", path, res.Status, strings.TrimSpace(string(raw)))
-	}
-	var envelope struct {
-		Data json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &envelope); err != nil {
-		return fmt.Errorf("keys: transit %s: %w", path, err)
-	}
-	return json.Unmarshal(envelope.Data, into)
+	return s.conn().call(ctx, method, path, body, into)
 }
 
 // load reads the key's type and latest version, once.

@@ -162,6 +162,7 @@ spec:
             - --roll-interval=60s
             - --replicas=1
             - --anonymous-writes
+            - --key-provider=local
             - --key-root=/etc/audit/keys/root
             - --key-dir=/var/lib/audit/keys
             - --version=0.1.0

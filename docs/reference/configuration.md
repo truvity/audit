@@ -32,7 +32,9 @@ binary's flags with dots.
 | `roll.interval` | how often an object is rolled and put |
 | `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database. Without it the writer indexes nothing and deduplicates in process |
 | `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
-| `keys.provider` | `local` only, until `kms` and `transit` land |
+| `keys.provider` | `local` (a root and a directory) or `transit` (OpenBAO; the one for several replicas — see [OpenBAO keys](../operations/openbao-keys.md)) |
+| `keys.transit.address`, `.mount`, `.prefix` | the engine, where transit is mounted (`transit`), and what every key name starts with (`audit`) |
+| `keys.transit.token.existingSecret` or `keys.transit.tokenFile` | the writer's token, from a Secret or from a file an agent keeps renewed; one of the two |
 | `keys.local.existingSecret` | the 32-byte root the data keys are wrapped under |
 | `keys.local.persistence` | where the wrapped keys live. They are random, not derived, so this is the only copy: back it up, and use ReadWriteMany for more than one replica |
 | `catalogues` | catalogue documents registered at start-up, by name |

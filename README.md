@@ -20,6 +20,7 @@ regulatory evidence.
 | Record, catalogues, presets, `audit validate` / `check-emitters` | built |
 | Go emitter: block, outbox and best-effort delivery; Connect and JetStream sinks | built |
 | Writer: split per profile, pseudonyms, Object Lock, index, dead letters, legal holds | built |
+| Pseudonymisation keys: local (root + directory) or OpenBAO transit | built; AWS KMS not yet |
 | Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
 | Query service: search, facets, get with provenance, export, tail, resolve; JWT sign-in with grants | built |
 | Helm chart: writer, registry, digest / verify / clock / purge jobs | built |

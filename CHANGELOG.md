@@ -84,6 +84,15 @@ Foundation. No release.
   never be recomputed. It refuses while a legal hold covers the tenant, and
   refuses without a writer, because an erasure the trail does not record is one
   nobody can prove was lawful.
+- `keys.Transit`: pseudonymisation keys in an OpenBAO (or Vault) transit
+  engine, one key per purpose and tenant named `<prefix>.<purpose>.<tenant>`
+  so the engine's policy scopes each role to its purposes. A pseudonym is the
+  engine's HMAC and a sealed identifier its encryption, both pinned to the
+  key's first version, so the key never leaves the engine and every replica
+  agrees without a shared directory. Destroy trims the first version and
+  leaves the key as its own erasure marker. `--key-provider local|transit` on
+  the writer, the query service and `audit key destroy`; the chart's
+  `keys.provider: transit`.
 - Retention addenda: an action that `extends` the records a data property
   names lengthens the lock on the objects holding them — a renewal on the
   issuance, a credential on the identity proofing it relied on — to its own

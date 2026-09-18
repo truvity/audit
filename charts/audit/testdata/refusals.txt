@@ -7,7 +7,10 @@
 --set bucket=b --set replicas=3 --set database.url=postgres://x	different pseudonym
 --set bucket=b --set keys.local.existingSecret=	32-byte root
 --set bucket=b --set keys.local.persistence.enabled=false	re-keys every tenant
---set bucket=b --set keys.provider=kms	not built yet
+--set bucket=b --set keys.provider=kms	not one this chart knows
+--set bucket=b --set keys.provider=transit --set keys.transit.token.existingSecret=t	keys.transit.address
+--set bucket=b --set keys.provider=transit --set keys.transit.address=https://bao	needs a token
+--set bucket=b --set keys.provider=transit --set keys.transit.address=https://bao --set keys.transit.token.existingSecret=t --set keys.transit.tokenFile=/f	not both
 --set bucket=b --set jobs.digest.signingKey.existingSecret=	unsigned chain
 --set bucket=b --set jobs.verify.publicKey.existingSecret=	public half
 --set bucket=b --set jobs.purge.enabled=true	nothing for it to do

@@ -150,6 +150,8 @@ chart:
         > charts/audit/testdata/golden/minimal.yaml
     helm template audit charts/audit -f charts/audit/testdata/values/full.yaml \
         > charts/audit/testdata/golden/full.yaml
+    helm template audit charts/audit -f charts/audit/testdata/values/transit.yaml \
+        > charts/audit/testdata/golden/transit.yaml
     git diff --exit-code -- charts/audit/testdata/golden
 
 # Build everything a release would, locally and unpublished: the archives and,

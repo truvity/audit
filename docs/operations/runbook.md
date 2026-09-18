@@ -192,6 +192,9 @@ writers registered (`audit_key_directory`). Two causes:
   the directory from backup if there is one — the identity is a file in it, so
   a restored directory is accepted as it was.
 
+The transit key provider has no directory, and so none of this; a deployment
+that has hit it is one to move to transit.
+
 If there is no backup and the new pseudonyms are accepted, register the new
 directory by removing the old binding, and record why in the trail by hand:
 

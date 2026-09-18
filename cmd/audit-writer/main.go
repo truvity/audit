@@ -59,8 +59,6 @@ func run() error {
 			"write the weaker lock mode; for a non-production bucket where a mistake has to be undoable")
 		deployment = flag.String("deployment", env("AUDIT_DEPLOYMENT", ""), "the profile configuration")
 		catalogues = flag.String("catalogues", env("AUDIT_CATALOGUES", ""), "a directory of catalogues to register")
-		keyRoot    = flag.String("key-root", env("AUDIT_KEY_ROOT", ""), "file holding the 32-byte root the data keys are wrapped under")
-		keyDir     = flag.String("key-dir", env("AUDIT_KEY_DIR", ""), "where wrapped data keys are kept")
 		replicas   = flag.Int("replicas", envInt("AUDIT_REPLICAS", 1), "how many writers share this stream")
 		database   = flag.String("database", env("AUDIT_DATABASE", ""),
 			"the Postgres URL of the index; without it the writer indexes nothing and deduplicates in process")
@@ -83,6 +81,7 @@ func run() error {
 		rollEvery = flag.Duration("roll-interval", 5*time.Minute, "how long an object stays open")
 		version   = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
 	)
+	keyFlags := cli.NewKeyFlags(flag.CommandLine, env)
 	flag.Parse()
 
 	switch {
@@ -119,7 +118,7 @@ func run() error {
 		return err
 	}
 
-	provider, err := keyProvider(*keyRoot, *keyDir)
+	provider, err := keyFlags.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -193,7 +192,7 @@ func run() error {
 	if err := writer.GuardReplicas(*replicas, dedupe); err != nil {
 		return err
 	}
-	if *replicas > 1 && *keyDir == "" {
+	if *replicas > 1 && keyFlags.Local() && *keyFlags.Dir == "" {
 		return errors.New(
 			"writer: more than one replica with keys held only in memory: each replica would mint " +
 				"its own keys and the same person would get a different pseudonym on each. Give " +
@@ -406,19 +405,6 @@ func run() error {
 		return err
 	}
 	return nil
-}
-
-func keyProvider(rootPath, dir string) (keys.Provider, error) {
-	if rootPath == "" {
-		return nil, errors.New(
-			"give the pseudonymisation root with --key-root: without keys a profile that " +
-				"pseudonymises would write identifiers in clear, and this refuses to start rather than do that")
-	}
-	root, err := os.ReadFile(rootPath)
-	if err != nil {
-		return nil, err
-	}
-	return keys.NewLocal(root, dir)
 }
 
 func registerAll(r *writer.Registry, dir string) ([]*catalogue.Catalogue, error) {

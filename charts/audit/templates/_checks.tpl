@@ -35,8 +35,18 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- if and (not .Values.keys.local.persistence.enabled) (not .Values.keys.local.ephemeralIsAcceptable) -}}
   {{- fail "audit: `keys.local.persistence.enabled` is false. Data keys are random and wrapped into that directory, so losing it re-keys every tenant: the same person gets a new pseudonym and the trail stops linking across the restart. Set `keys.local.ephemeralIsAcceptable: true` if this install is disposable." -}}
   {{- end -}}
+{{- else if eq .Values.keys.provider "transit" -}}
+  {{- if not .Values.keys.transit.address -}}
+  {{- fail "audit: set `keys.transit.address` to the OpenBAO server the keys live in." -}}
+  {{- end -}}
+  {{- if eq (len (compact (list .Values.keys.transit.token.existingSecret .Values.keys.transit.tokenFile))) 0 -}}
+  {{- fail "audit: the transit key provider needs a token: `keys.transit.token.existingSecret`, or `keys.transit.tokenFile` where an agent writes one." -}}
+  {{- end -}}
+  {{- if and .Values.keys.transit.token.existingSecret .Values.keys.transit.tokenFile -}}
+  {{- fail "audit: give the transit token one way, `keys.transit.token.existingSecret` or `keys.transit.tokenFile`, not both." -}}
+  {{- end -}}
 {{- else -}}
-{{- fail (printf "audit: key provider %q is not built yet. Only `local` is." .Values.keys.provider) -}}
+{{- fail (printf "audit: key provider %q is not one this chart knows: `local` or `transit`." .Values.keys.provider) -}}
 {{- end -}}
 
 {{- if .Values.jobs.digest.enabled -}}

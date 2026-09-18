@@ -73,9 +73,15 @@ spec:
             {{- if .Values.catalogues }}
             - --catalogues=/etc/audit/catalogues
             {{- end }}
+            - --key-provider={{ .Values.keys.provider }}
             {{- if eq .Values.keys.provider "local" }}
             - --key-root=/etc/audit/keys/{{ .Values.keys.local.secretKey }}
             - --key-dir=/var/lib/audit/keys
+            {{- else if eq .Values.keys.provider "transit" }}
+            - --transit-address={{ .Values.keys.transit.address }}
+            - --transit-mount={{ .Values.keys.transit.mount }}
+            - --transit-prefix={{ .Values.keys.transit.prefix }}
+            - --transit-token-file={{ .Values.keys.transit.tokenFile | default (printf "/etc/audit/transit/%s" .Values.keys.transit.token.secretKey) }}
             {{- end }}
             {{- if .Values.stream.url }}
             - --stream-url={{ .Values.stream.url }}
@@ -124,6 +130,10 @@ spec:
               readOnly: true
             - name: keys
               mountPath: /var/lib/audit/keys
+            {{- else if and (eq .Values.keys.provider "transit") .Values.keys.transit.token.existingSecret }}
+            - name: transit-token
+              mountPath: /etc/audit/transit
+              readOnly: true
             {{- end }}
             - name: tmp
               mountPath: /tmp
@@ -148,6 +158,10 @@ spec:
           # Acknowledged as disposable: pseudonyms change on every restart.
           emptyDir: {}
           {{- end }}
+        {{- else if and (eq .Values.keys.provider "transit") .Values.keys.transit.token.existingSecret }}
+        - name: transit-token
+          secret:
+            secretName: {{ .Values.keys.transit.token.existingSecret }}
         {{- end }}
         - name: tmp
           emptyDir: {}

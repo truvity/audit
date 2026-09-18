@@ -877,13 +877,12 @@ func keyCmd(args []string) error {
 		purpose = flags.String("purpose", "", "the purpose the key is for")
 		by      = flags.String("by", "", "who is destroying it, as this deployment names them")
 		reason  = flags.String("reason", "", "why, recorded with the erasure")
-		keyRoot = flags.String("key-root", "", "file holding the 32-byte root the data keys are wrapped under")
-		keyDir  = flags.String("key-dir", "", "where wrapped data keys are kept")
 		bucket  = flags.String("bucket", "", "the bucket the archive is in, read to check for legal holds")
 		prefix  = flags.String("prefix", "", "the prefix within the bucket")
 		region  = flags.String("region", "", "the region, when it is not in the environment")
 		sinkURL = flags.String("sink", "", "the writer the erasure is recorded through")
 	)
+	keyFlags := cli.NewKeyFlags(flags, nil)
 	if _, err := parse(flags, args[1:]); err != nil {
 		return err
 	}
@@ -892,8 +891,8 @@ func keyCmd(args []string) error {
 		return errors.New("name the archive's bucket with --bucket: the holds are read from it")
 	case *sinkURL == "":
 		return errors.New("give the writer with --sink: an erasure nobody recorded is one nobody can prove was lawful")
-	case *keyRoot == "":
-		return errors.New("give the pseudonymisation root with --key-root")
+	case !keyFlags.Configured():
+		return errors.New("name the keys: --key-root (and --key-dir), or --key-provider transit with --transit-address")
 	}
 
 	ctx := context.Background()
@@ -901,7 +900,7 @@ func keyCmd(args []string) error {
 	if err != nil {
 		return err
 	}
-	provider, err := keyProvider(*keyRoot, *keyDir)
+	provider, err := keyFlags.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -915,13 +914,4 @@ func keyCmd(args []string) error {
 		Provider: provider, Store: archive, Sink: cli.WriterClient(*sinkURL),
 		Catalogue: common, Tenant: *tenant, Purpose: *purpose, By: *by, Reason: *reason,
 	}.Run(ctx)
-}
-
-// keyProvider builds the local provider from a root file.
-func keyProvider(rootPath, dir string) (keys.Provider, error) {
-	root, err := os.ReadFile(rootPath)
-	if err != nil {
-		return nil, err
-	}
-	return keys.NewLocal(root, dir)
 }

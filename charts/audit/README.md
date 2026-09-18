@@ -25,12 +25,12 @@ The chart takes references; it creates none of these.
 |---|---|
 | a bucket with Object Lock in compliance mode | `bucket` |
 | a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `holds/` | the writer's ServiceAccount annotation |
-| a Secret with the 32-byte key root | `keys.local.existingSecret` |
+| the pseudonymisation keys: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine and a token whose policy grants the writer's purposes ([policies](../../docs/operations/openbao-keys.md)) | `keys.local.existingSecret`, or `keys.provider: transit` with `keys.transit` |
 | the digest signing key: a Secret (PEM, ed25519), an AWS KMS ECC_NIST_P256 key, or an OpenBAO transit ed25519 key | `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` or `jobs.digest.transit` |
 | a Secret with its public half | `jobs.verify.publicKey.existingSecret` |
 | a Postgres URL, in a Secret | `database.existingSecret` |
 | the JetStream stream, already created | `stream.url`, `stream.name` |
-| a `ReadWriteMany` storage class, for more than one replica | `keys.local.persistence` |
+| a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keys.local.persistence` |
 | egress to the NTP references | `jobs.clockSync.ntp` |
 | the images | `image.writer`, `image.cli`, `image.registry` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
@@ -58,6 +58,8 @@ get quietly wrong. They are listed with their reasons in
 `testdata/refusals.txt`, and `testdata/refuse.sh` holds each refusal to its
 words. The two least obvious:
 
+- the `transit` key provider needs an address and exactly one way to the
+  token (`keys.transit.token.existingSecret` or `keys.transit.tokenFile`);
 - more than one replica with the `local` key provider needs a key directory
   every replica can write, because data keys are random rather than derived —
   separate directories mean a different pseudonym for the same person on each

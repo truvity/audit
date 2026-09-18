@@ -88,7 +88,9 @@ grant covers. The resolution is recorded as `audit.pseudonym.resolved`, and
 the record confirmed, **before** the identity is returned; if the trail cannot
 take it, nothing is resolved. The record names the pseudonym and the rule,
 never the identity. The service offers resolve only when it is given the keys
-(`audit-query --key-root --key-dir --bucket`); otherwise `unimplemented`.
+(`audit-query --key-root --key-dir --bucket`, or `--key-provider transit
+--transit-address … --bucket` with a token that may decrypt); otherwise
+`unimplemented`.
 
 Only actor and subject pseudonyms resolve. The writer keeps each one's
 identifier sealed under the same tenant's key (`identity/` in the archive), so

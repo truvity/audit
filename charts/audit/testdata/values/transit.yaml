@@ -1,0 +1,25 @@
+# Several writers on the transit key provider: no key directory, no volume and
+# no ReadWriteMany, because every replica asks the same engine. The replicas
+# still need the database, for deduplication across them.
+bucket: audit-archive
+anonymousWrites: true
+replicas: 3
+database:
+  existingSecret: audit-database
+keys:
+  provider: transit
+  transit:
+    address: https://openbao.example:8200
+    token:
+      existingSecret: audit-writer-transit
+jobs:
+  digest:
+    signingKey:
+      existingSecret: audit-signing-key
+  verify:
+    publicKey:
+      existingSecret: audit-signing-public
+  purge:
+    enabled: false
+  clockSync:
+    ntp: [time.cloudflare.com]

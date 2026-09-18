@@ -92,10 +92,14 @@ nats stream add AUDIT --subjects 'audit.records' --storage file \
   --discard new --dupe-window 2m --defaults
 ```
 
-**Keys.**
+**Keys.** Pseudonymisation keys come from a root Secret and a directory
+(`local`, below) or from an OpenBAO transit engine (`keys.provider: transit`).
+Choose transit for more than one writer: the keys never leave the engine,
+every replica asks the same one, and there is no directory to lose. It needs
+policies per role, which [OpenBAO keys](../operations/openbao-keys.md) gives.
 
 ```sh
-# The 32-byte root the pseudonymisation keys are wrapped under.
+# local: the 32-byte root the pseudonymisation keys are wrapped under.
 head -c 32 /dev/urandom > root
 kubectl create secret generic audit-key-root --from-file=root=root
 
@@ -234,7 +238,7 @@ variables):
 | `--deployment <file>` | the profiles, when the grants file uses a preset |
 | `--sink http://audit.audit:8080` | the writer: every read is itself recorded |
 | `--exports <bucket>` | a separate, unlocked bucket for exports; without it export is refused |
-| `--key-root --key-dir` | only if this service may resolve pseudonyms |
+| `--key-root --key-dir`, or `--key-provider transit --transit-address` | only if this service may resolve pseudonyms |
 
 Connect it to Postgres as a role that **does not own** the tables and has
 `SELECT` only: row-level security applies to that role and not to an owner, and

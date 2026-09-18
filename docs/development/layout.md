@@ -17,7 +17,8 @@ catalogue/          catalogue loading, validation, composition, templates
 preset/             preset loading and profile composition
 emit/               the emitter an application imports
 sink/               Sink interface and transports (inprocess, s3, nats)
-keys/               Provider and Signer interfaces, with local (kms, transit to come)
+keys/               Provider and Signer interfaces: local and OpenBAO transit providers;
+                    local, AWS KMS and transit signers
 store/              the object store interface; s3store/ the bucket; storetest/ the memory
                     store a test writes to, which can also be tampered with on purpose
 index/              Indexer and Searcher interfaces, and the memory implementation
@@ -79,7 +80,8 @@ surface and keep the rest private.
    refusals for every configuration the binaries would reject or get quietly
    wrong.
 8. Legal holds and `audit key destroy` — **done**. What is left of
-   the key providers is `kms` and `transit`, which want a fake of each.
+   the key providers is `kms`; `transit` is built and tested against a real
+   OpenBAO dev server.
 9. `index`, read side: the `Searcher`, cursors, facets, tail — **done**, in
    memory, Postgres and an object-storage scan. What is left is the one
    corpus asked of all three, which is the conformance suite's.

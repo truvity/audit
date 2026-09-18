@@ -18,7 +18,9 @@ keyed pseudonyms for external actors and subjects.
   person. Destruction: delete the wrapped material and record
   `audit.key.destroyed`. Pseudonyms computed under a destroyed key are
   unlinkable from then on.
-- Implementations: `kms`, `transit`, `local` (tests, single-node).
+- Implementations: `transit` (OpenBAO; the keys never leave the engine, see
+  [OpenBAO keys](openbao-keys.md)), `local` (tests, single-node, or several
+  replicas on one shared directory). `kms` is not built yet.
 
 ## Signer (digests)
 
@@ -37,6 +39,7 @@ operation is granted to as few roles as possible and is itself recorded.
 ```
 audit key destroy --tenant <id> --purpose <p> --by <who> --reason <why> \
     --bucket <b> --key-root <file> --key-dir <dir> --sink <writer>
+# or, with transit: --key-provider transit (BAO_ADDR, BAO_TOKEN)
 ```
 
 It refuses while a legal hold covers the tenant's copies, and refuses to run
@@ -46,4 +49,5 @@ was lawful. It names whoever ran it, and will not default that.
 
 Destroyed is remembered. The local provider leaves a marker beside the key it
 removed, so that a restart does not mint a fresh key for that tenant and purpose
-and hand the same person a second identity.
+and hand the same person a second identity. The transit provider trims the
+key's only version and leaves the key, which is its own marker.

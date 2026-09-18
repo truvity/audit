@@ -46,6 +46,8 @@ type parts struct {
 	identity func(context.Context) string
 	// keepIdentities turns on the identity map, over the same store and keys.
 	keepIdentities bool
+	// provider replaces the local key provider.
+	provider keys.Provider
 }
 
 func build(t *testing.T) *built {
@@ -66,11 +68,15 @@ func buildWith(t *testing.T, p parts) *built {
 	if _, err := rand.Read(root); err != nil {
 		t.Fatal(err)
 	}
-	provider, err := keys.NewLocal(root, t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+	provider := p.provider
+	if provider == nil {
+		local, err := keys.NewLocal(root, t.TempDir())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = local.Close() })
+		provider = local
 	}
-	t.Cleanup(func() { _ = provider.Close() })
 
 	s := p.store
 	if s == nil {
@@ -103,7 +109,7 @@ func buildWith(t *testing.T, p parts) *built {
 	}
 	splitter := &writer.Splitter{Profiles: profiles(t), Keys: provider}
 	if p.keepIdentities {
-		b.identities = &identity.Map{Store: s, Keys: provider}
+		b.identities = &identity.Map{Store: s, Keys: provider.(keys.Sealer)}
 		splitter.Identities = b.identities
 	}
 	w, err := writer.New(&writer.Writer{

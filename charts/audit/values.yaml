@@ -110,8 +110,23 @@ database:
 
 # Pseudonymisation keys.
 keys:
-  # Only `local` is built. `kms` and `transit` come with the key-provider work.
+  # `local` (a root Secret and a directory) or `transit` (OpenBAO). Transit is
+  # the one for more than one replica: the keys never leave the engine, every
+  # replica asks the same one, and there is no directory to lose. See
+  # docs/operations/openbao-keys.md for the policies the engine needs.
   provider: local
+  transit:
+    address: ""
+    mount: transit
+    # Every key is <prefix>.<purpose>.<tenant>; the policies glob on it.
+    prefix: audit
+    # The writer's token: from a Secret, or from a file an agent keeps renewed
+    # (tokenFile, a path inside the pod). One of the two. Its policy grants
+    # hmac and encrypt on this writer's purposes and nothing on transit/keys.
+    token:
+      existingSecret: ""
+      secretKey: token
+    tokenFile: ""
   local:
     # A Secret holding the 32-byte root the data keys are wrapped under.
     existingSecret: ""

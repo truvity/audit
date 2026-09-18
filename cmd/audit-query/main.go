@@ -46,7 +46,7 @@ func run() error {
 		prefix   = flag.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
 		region   = flag.String("region", env("AUDIT_REGION", ""), "the region, when it is not in the environment")
 		grants   = flag.String("grants", env("AUDIT_GRANTS", ""),
-			"the file mapping claims to grants; without it nobody is granted anything")
+			"the file naming the trusted issuers and mapping their claims to grants")
 		sinkURL = flag.String("sink", env("AUDIT_SINK", ""),
 			"the writer reads are recorded through")
 		exports = flag.String("exports", env("AUDIT_EXPORTS", ""),
@@ -69,7 +69,16 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	rules, err := cli.LoadGrants(*grants)
+	access, err := cli.LoadAccess(*grants)
+	if err != nil {
+		return err
+	}
+	if len(access.Issuers) == 0 {
+		return errors.New(
+			"the grants file names no issuers, so nobody could ever authenticate: " +
+				"a query service nobody can use is a misconfiguration, not a safe default")
+	}
+	authenticator, err := auth.NewJWT(ctx, access.Issuers, slog.Default())
 	if err != nil {
 		return err
 	}
@@ -95,7 +104,7 @@ func run() error {
 	service, err := query.New(&query.Service{
 		Searcher:   found,
 		Exporter:   exporter,
-		Authorizer: rules,
+		Authorizer: access.Rules,
 		Sink:       sink.NewClient(nil, *sinkURL),
 		Catalogue:  common,
 		Version:    *version,
@@ -110,11 +119,7 @@ func run() error {
 	}
 	defer service.Close() //nolint:errcheck // shutting down
 
-	// Until an authenticator lands, the deployment puts one in front and this
-	// refuses to invent an identity: `none` gives every caller the same empty
-	// principal, and the declarative authorizer denies a principal with no
-	// subject.
-	path, handler := query.NewHandler(service, auth.None{})
+	path, handler := query.NewHandler(service, authenticator)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })

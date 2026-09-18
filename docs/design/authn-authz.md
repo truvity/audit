@@ -33,8 +33,18 @@ pseudonymisation, and a grant to read must not carry it.
 
 ## Authenticators
 
-- **jwt**: a list of trusted issuers, each with its JWKS URL, audience and
-  claim mapping.
+- **jwt** (built): a list of trusted issuers, each with a required audience.
+  A token's `iss` is read unverified only to choose whose keys to check it
+  against; that issuer's verifier then requires the same issuer, so a token
+  claiming a trusted issuer on another key's signature fails. Verification is
+  gateway-auth's, the same as every fleet service's.
+
+  More than one issuer creates a problem one issuer does not have: two issuers
+  can assert the same claim. The staff identity provider and a customer's can
+  both put `all:audit:auditor` in `groups`. So a rule carries the issuer it
+  trusts that claim from, and with several issuers every rule must name one.
+  Claim mapping is therefore per rule, not per issuer: a rule names the claim
+  it reads, from the issuer it trusts.
 - **trusted-upstream**: reads the principal a gateway forwarded. Bound to
   mTLS from the gateway or an internal JWT the gateway signs. Never a bare
   header — which is exactly what the registry reads today (`Audit-Source`),

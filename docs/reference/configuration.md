@@ -54,6 +54,51 @@ first, from one place.
 | `auth.grants[]` | claim value → tenants, profiles, operations, window |
 | `limits.max_range`, `limits.export_max_records` | caps |
 
+The built `audit-query` reads who may authenticate and what each caller may
+see from one file, `--grants`/`AUDIT_GRANTS`:
+
+```yaml
+issuers:
+  - url: https://id.example.com        # exactly as the tokens' iss claim says it
+    audience: audit                    # required
+  - url: https://customers.example.com
+    audience: audit
+rules:                                 # first match wins
+  - name: auditors
+    issuer: https://id.example.com     # required once more than one issuer is trusted
+    claim: groups
+    value: all:audit:auditor
+    grant:
+      all_tenants: true
+      profiles: [security, operational]
+      operations: [search, facets, get, export]
+  - name: acme-viewers
+    issuer: https://customers.example.com
+    claim: groups
+    value: acme:audit:viewer
+    grant:
+      tenants: [acme]
+      profiles: [security]
+      operations: [search, get]
+```
+
+It refuses to start when:
+
+- the file names no issuer, because then nobody could ever sign in;
+- an issuer has no audience. An audit log must not accept a token minted for
+  another service, because any workload holding that token could replay it here;
+- more than one issuer is trusted and a rule names none. Every issuer can assert
+  any claim, so a rule matching a group from anyone gives operator access to
+  whoever administers the least-trusted issuer;
+- a rule names an issuer that is not listed, or an operation that does not
+  exist.
+
+A bearer token in `Authorization` is accepted, and so is the access token the
+fleet gateway forwards. Verification is
+[gateway-auth](https://github.com/truvity/gateway-auth)'s, one verifier per
+issuer: discovery, a key set refreshed in the background, signature, issuer,
+audience and expiry. That library allows no clock skew.
+
 ## Digest job
 
 | setting | meaning |

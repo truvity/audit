@@ -169,6 +169,14 @@ type Declarative struct {
 type Rule struct {
 	// Name is stamped into the record of every read this rule allowed.
 	Name string
+	// Issuer, when set, is the only issuer whose principals this rule matches.
+	//
+	// With one trusted issuer it can be left empty. With several it cannot,
+	// and the service refuses to start if a rule omits it: every issuer can
+	// assert any claim it likes, so a rule matching groups=all:audit:auditor
+	// from anyone would hand operator access to whoever administers the least
+	// trusted of them — a customer's own identity provider, say.
+	Issuer string
 	// Claim and Value are what must be present. An empty Claim matches any
 	// authenticated principal, which is how a deployment writes a rule for
 	// "anyone who got this far".
@@ -196,6 +204,9 @@ func (d Declarative) Grant(_ context.Context, p Principal) (Grant, error) {
 }
 
 func (r Rule) matches(p Principal) bool {
+	if r.Issuer != "" && r.Issuer != p.Issuer {
+		return false
+	}
 	if r.Claim == "" {
 		return true
 	}
@@ -207,6 +218,27 @@ func (r Rule) matches(p Principal) bool {
 	return false
 }
 
+// BoundTo checks that every rule names one of the given issuers, which a
+// deployment trusting more than one issuer must do; see Rule.Issuer. With a
+// single issuer an unnamed rule is allowed and means that issuer.
+func (d Declarative) BoundTo(issuers []string) error {
+	known := map[string]bool{}
+	for _, is := range issuers {
+		known[is] = true
+	}
+	for _, r := range d.Rules {
+		switch {
+		case r.Issuer == "" && len(issuers) > 1:
+			return fmt.Errorf("auth: rule %q names no issuer, and with %d trusted issuers it would "+
+				"match a claim any of them asserts; say which issuer it is for", r.Name, len(issuers))
+		case r.Issuer != "" && !known[r.Issuer]:
+			return fmt.Errorf("auth: rule %q is for issuer %s, which is not trusted, so it can "+
+				"never match", r.Name, r.Issuer)
+		}
+	}
+	return nil
+}
+
 // Describe renders the rules, so that `audit` can print what a deployment
 // grants without anybody reading the configuration format.
 func (d Declarative) Describe() string {
@@ -215,6 +247,9 @@ func (d Declarative) Describe() string {
 		who := "any authenticated caller"
 		if r.Claim != "" {
 			who = r.Claim + "=" + r.Value
+		}
+		if r.Issuer != "" {
+			who += " from " + r.Issuer
 		}
 		tenants := strings.Join(r.Grant.Tenants, ",")
 		if r.Grant.AllTenants {

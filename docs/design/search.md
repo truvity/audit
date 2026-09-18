@@ -113,9 +113,20 @@ running over a month boundary at three in the morning does not stop, and a
 deployment that forgot the job does not lose its index.
 
 Indexes are tenant-leading composites, BRIN on time, GIN on `target_ids`.
-Row-level security filters on `tenant_id` from a per-request setting, binding
-roles that do not bypass it; the writer owns the tables and writes every
-tenant's rows.
+Row-level security is the second line under the grant. The service turns a
+grant into a term of every query; the policies hold when a query forgets that
+term. They read two transaction-local settings: `audit.tenant_ids`, a JSON
+array of the tenants a connection may see, and `audit.all_tenants`, which only
+an operator's grant sets. A connection that sets neither sees nothing — the
+policies refuse by default, because a forgotten pin is the mistake they exist
+to catch.
+
+`postgres.NewReader` pins every read from the query's own tenant term, inside a
+read-only transaction so the pin cannot leak back into a connection pool.
+`audit-query` uses it. The policies bind only a role that does not own the
+tables: the writer owns them and writes every tenant's rows, and the reading
+service should connect as a separate role with `select` and nothing else. Over
+the owner's connection the pin is harmless and does nothing.
 
 `audit migrate` applies the schema, and a writer whose database is at another
 version refuses to start. Migrating is a step an operator takes, not something

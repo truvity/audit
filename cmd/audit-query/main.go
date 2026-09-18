@@ -175,7 +175,7 @@ func searcherFor(ctx context.Context, kind, database, bucket, prefix, region str
 		if err := postgres.CheckVersion(ctx, pool); err != nil {
 			return nil, err
 		}
-		return postgres.New(pool)
+		return postgres.NewReader(pool)
 	case "s3scan":
 		if bucket == "" {
 			return nil, errors.New("the s3scan searcher needs --bucket")

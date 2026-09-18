@@ -43,7 +43,7 @@ func migrations() ([]string, error) {
 // different version refuses to start rather than guess: migrating from several
 // replicas at once is a race, so the migration is its own step and this is the
 // check that it ran.
-const Version = 3
+const Version = 4
 
 // Schema returns the migrations in order, so that a deployment can apply them
 // with whatever it already uses rather than through this code.
@@ -117,6 +117,8 @@ type Index struct {
 
 	mu      sync.Mutex
 	ensured map[string]bool
+	// reader pins every read; see NewReader.
+	reader bool
 }
 
 // New returns an index over a pool.

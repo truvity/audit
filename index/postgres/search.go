@@ -39,6 +39,15 @@ func (b *builder) arg(v any) string {
 
 // Search implements index.Searcher.
 func (i *Index) Search(ctx context.Context, q index.Query) (index.Page, error) {
+	if i.reader {
+		var page index.Page
+		err := AsTenants(ctx, i.DB, PinOf(q.Tenants), func(pinned *Index) error {
+			var err error
+			page, err = pinned.Search(ctx, q)
+			return err
+		})
+		return page, err
+	}
 	if q.Profile == "" {
 		return index.Page{}, errors.New("postgres: a search names one profile")
 	}
@@ -273,6 +282,15 @@ func boundaryOf(r index.Row, order []index.SortBy) *index.Boundary {
 func (i *Index) Facets(
 	ctx context.Context, q index.Query, fields []string, limit int,
 ) ([]index.Facet, error) {
+	if i.reader {
+		var out []index.Facet
+		err := AsTenants(ctx, i.DB, PinOf(q.Tenants), func(pinned *Index) error {
+			var err error
+			out, err = pinned.Facets(ctx, q, fields, limit)
+			return err
+		})
+		return out, err
+	}
 	if q.Profile == "" {
 		return nil, errors.New("postgres: facets name one profile")
 	}

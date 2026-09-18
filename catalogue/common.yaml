@@ -81,6 +81,7 @@ actions:
     profiles: [security, evidence]
     target_types: [profile]
     delivery: block
+    data_schema: https://schemas.truvity.com/audit/v1/common/profile-changed.json
     message: { en: "{actor} changed profile {targets.0.id}" }
   audit.preset.changed:
     summary: A preset version in use changed.
@@ -89,6 +90,7 @@ actions:
     profiles: [security, evidence]
     target_types: [preset]
     delivery: block
+    data_schema: https://schemas.truvity.com/audit/v1/common/preset-changed.json
     message: { en: "{actor} changed preset {targets.0.id}" }
   audit.key.destroyed:
     summary: A pseudonymisation key was destroyed, unlinking its pseudonyms.

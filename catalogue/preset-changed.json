@@ -1,0 +1,20 @@
+{
+  "$id": "https://schemas.truvity.com/audit/v1/common/preset-changed.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "The preset version now in use.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none",
+      "x-audit-filter": true
+    },
+    "previous_version": {
+      "type": "string",
+      "description": "The version in use until now. Empty when a profile has started drawing on this preset.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    }
+  }
+}

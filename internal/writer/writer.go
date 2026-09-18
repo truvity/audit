@@ -110,6 +110,7 @@ type Writer struct {
 	Now func() time.Time
 
 	self      *emit.Emitter
+	confirmed *emit.Emitter
 	unhandled sync.Map
 }
 
@@ -350,6 +351,11 @@ func (w *Writer) Close(ctx context.Context) error {
 		w.stopped(ctx)
 		if err := w.self.Close(); err != nil {
 			return fmt.Errorf("writer: closing its own emitter: %w", err)
+		}
+	}
+	if w.confirmed != nil {
+		if err := w.confirmed.Close(); err != nil {
+			return fmt.Errorf("writer: closing its confirmed emitter: %w", err)
 		}
 	}
 	if err := w.Roller.Flush(ctx); err != nil {

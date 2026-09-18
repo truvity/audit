@@ -1,0 +1,32 @@
+{
+  "$id": "https://schemas.truvity.com/audit/v1/common/profile-changed.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "fingerprint": {
+      "type": "string",
+      "description": "SHA-256 of the composed profile now in force: what copies keep, how identities are treated, how long they are kept.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none",
+      "x-audit-filter": true
+    },
+    "previous_fingerprint": {
+      "type": "string",
+      "description": "The composition in force until now.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "sequence": {
+      "type": "integer",
+      "description": "Which composition of this profile this is, counting from one.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "composition": {
+      "type": "string",
+      "description": "The archive key of the composition in full, so that what the profile kept from this point on can be read back.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    }
+  }
+}

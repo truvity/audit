@@ -74,3 +74,21 @@ The validator refuses:
 
 Emits `audit.preset.changed` with block delivery. Retention already set on
 written objects is unaffected; only new objects take the new value.
+
+## Changing a profile
+
+A profile's rules decide what every record written under it means, so a change
+is itself recorded. At start-up the writer fingerprints each composed profile
+and compares it with the last composition in the archive, under
+`schema/profile/<name>/`:
+
+- the first composition a deployment records is kept there and is not a change;
+- a different composition is kept beside the old one (both stay readable, so
+  "what did this profile keep in April" has an answer) and emits
+  `audit.profile.changed` with both fingerprints;
+- a different preset version emits `audit.preset.changed`, even when the rules
+  it composes to are the same — a library upgrade changes meaning nobody typed.
+
+Both actions are declared `block`: a writer that cannot record the change does
+not start. The events are recorded before the new composition is written, so a
+writer stopped in between records the change again next time rather than never.

@@ -317,6 +317,18 @@ func run() error {
 	}
 	defer w.Close(context.Background()) //nolint:errcheck // shutting down
 
+	// Before the first record: what each profile keeps now, and whether that
+	// changed since the last composition recorded. A writer that cannot record
+	// a change does not start, since every record it wrote would mean
+	// something the trail does not say.
+	versions := make(map[string]string, len(presets))
+	for name, p := range presets {
+		versions[name] = p.Version
+	}
+	if err := w.RecordCompositions(ctx, profiles, versions); err != nil {
+		return err
+	}
+
 	// The stream, when there is one. An application that publishes straight to
 	// the writer needs none; a deployment with a stream wants the writer behind
 	// a durable consumer, so that a writer that is down is a backlog rather

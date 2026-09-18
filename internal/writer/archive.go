@@ -98,17 +98,21 @@ func (a *SchemaArchive) EnsureRecord(ctx context.Context, schemaVersion string) 
 	return nil
 }
 
-func (a *SchemaArchive) put(ctx context.Context, key string, body []byte, contentType string) error {
+// retainUntil is how long a description written now is kept.
+func (a *SchemaArchive) retainUntil() time.Time {
 	now := time.Now().UTC()
 	if a.Now != nil {
 		now = a.Now().UTC()
 	}
-	retain := now.AddDate(10, 0, 0)
 	if a.RetainUntil != nil {
-		retain = a.RetainUntil(now)
+		return a.RetainUntil(now)
 	}
+	return now.AddDate(10, 0, 0)
+}
+
+func (a *SchemaArchive) put(ctx context.Context, key string, body []byte, contentType string) error {
 	err := a.Store.Put(ctx, store.Object{
-		Key: key, Body: body, RetainUntil: retain, ContentType: contentType,
+		Key: key, Body: body, RetainUntil: a.retainUntil(), ContentType: contentType,
 	})
 	if errors.Is(err, store.ErrExists) {
 		// A catalogue version is immutable by construction: a changed

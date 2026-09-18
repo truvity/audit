@@ -2,6 +2,7 @@ package writer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/truvity/audit/catalogue"
@@ -80,7 +81,34 @@ func (w *Writer) startMeta(c *catalogue.Catalogue) error {
 		return fmt.Errorf("writer: the writer's own emitter: %w", err)
 	}
 	w.self = self
+
+	// The same loop, confirmed: for the few of the writer's own actions that are
+	// declared block and are recorded outside any batch — a profile changing
+	// at start-up — where failing to record them must stop the writer rather
+	// than let it write under rules the trail does not mention.
+	confirmed, err := emit.New(emit.Options{
+		Source:    c.Source,
+		Catalogue: c,
+		Sink: sink.Func(func(ctx context.Context, req *sink.Request) (*sink.Result, error) {
+			return w.Write(withMeta(ctx, instance), req)
+		}),
+		Version:  w.Version,
+		Instance: instance,
+	})
+	if err != nil {
+		return fmt.Errorf("writer: the writer's confirmed emitter: %w", err)
+	}
+	w.confirmed = confirmed
 	return nil
+}
+
+// confirm records one of the writer's own block actions and returns whether it
+// was taken. It must not be called from inside a Write.
+func (w *Writer) confirm(ctx context.Context, r *record.Record) error {
+	if w.confirmed == nil {
+		return errors.New("writer: no catalogue for the writer's own actions")
+	}
+	return w.confirmed.Record(ctx, r)
 }
 
 // meta returns a record of one of the writer's own actions, filled with what

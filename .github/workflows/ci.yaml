@@ -25,7 +25,7 @@ jobs:
   # `just conformance` runs the service-backed tests and `just ts` the
   # TypeScript package.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
     with:
       recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "vuln", "leak-canary"]'
 
@@ -34,7 +34,7 @@ jobs:
   # static. Putting it in `check` would mean every contributor needs one to
   # run the gate at all.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
     with:
       recipes: '["race"]'
 
@@ -42,7 +42,7 @@ jobs:
   # from a remote registry that rate limits, and a gate that fails because
   # somebody else was generating code is a gate people learn to ignore.
   drift-ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
     with:
       recipes: '["drift-ts"]'
 
@@ -172,7 +172,7 @@ jobs:
   # publish would ship. It installs from the registry, which is why it is not
   # in `check`.
   ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@367635e4cd8312c449772fe8e43e6a7afe4f3bf9 # v2.19.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
     with:
       recipes: '["ts"]'
 

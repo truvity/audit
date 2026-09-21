@@ -5,16 +5,16 @@ image:
   # Deployment, the toolchain in the jobs. Both are distroless and have no
   # shell, which is why every job below is a command with arguments.
   writer:
-    repository: ghcr.io/truvity/audit-writer
+    repository: ghcr.io/truvity/audit/audit-writer
     tag: ""        # defaults to the chart's appVersion
   cli:
-    repository: ghcr.io/truvity/audit
+    repository: ghcr.io/truvity/audit/audit
     tag: ""
   registry:
-    repository: ghcr.io/truvity/audit-registry
+    repository: ghcr.io/truvity/audit/audit-registry
     tag: ""
   query:
-    repository: ghcr.io/truvity/audit-query
+    repository: ghcr.io/truvity/audit/audit-query
     tag: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []

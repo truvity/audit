@@ -199,7 +199,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query
-          image: ghcr.io/truvity/audit-query:0.1.0
+          image: ghcr.io/truvity/audit/audit-query:0.1.0
           imagePullPolicy: IfNotPresent
           args:
             - --searcher=postgres
@@ -330,7 +330,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: writer
-          image: ghcr.io/truvity/audit-writer:0.1.0
+          image: ghcr.io/truvity/audit/audit-writer:0.1.0
           imagePullPolicy: IfNotPresent
           args:
             - --deployment=/etc/audit/deployment.yaml
@@ -453,7 +453,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: digest
-              image: ghcr.io/truvity/audit:0.1.0
+              image: ghcr.io/truvity/audit/audit:0.1.0
               imagePullPolicy: IfNotPresent
               args:
                 - digest
@@ -550,7 +550,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: verify
-              image: ghcr.io/truvity/audit:0.1.0
+              image: ghcr.io/truvity/audit/audit:0.1.0
               imagePullPolicy: IfNotPresent
               args:
                 - verify
@@ -621,7 +621,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: verify
-              image: ghcr.io/truvity/audit:0.1.0
+              image: ghcr.io/truvity/audit/audit:0.1.0
               imagePullPolicy: IfNotPresent
               args:
                 - verify
@@ -692,7 +692,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: clock-sync
-              image: ghcr.io/truvity/audit:0.1.0
+              image: ghcr.io/truvity/audit/audit:0.1.0
               imagePullPolicy: IfNotPresent
               args:
                 - clock-sync
@@ -753,7 +753,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: ghcr.io/truvity/audit:0.1.0
+          image: ghcr.io/truvity/audit/audit:0.1.0
           imagePullPolicy: IfNotPresent
           args:
             - migrate

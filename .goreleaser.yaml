@@ -51,36 +51,68 @@ archives:
 kos:
   - id: audit-writer
     build: audit-writer
-    repositories: [ghcr.io/truvity/audit-writer]
     bare: true
     preserve_import_paths: false
+    # The image name is the command's import-path base appended to
+    # KO_DOCKER_REPO, which the shared release workflow exports as
+    # ghcr.io/truvity/audit — so ./cmd/audit-writer publishes
+    # ghcr.io/truvity/audit/audit-writer. A per-ko `repositories:` list does
+    # NOT win over that env var: v0.1.0 set one and ko still pushed
+    # to ghcr.io/truvity itself, which the registry answered with a
+    # 400. This is the shape access-roster publishes its two images
+    # with, and the chart's defaults name the same paths.
+    base_import_paths: true
     base_image: cgr.dev/chainguard/static:latest
     platforms: [linux/amd64, linux/arm64]
     tags: ["{{ .Version }}", latest]
     sbom: spdx
   - id: audit-query
     build: audit-query
-    repositories: [ghcr.io/truvity/audit-query]
     bare: true
     preserve_import_paths: false
+    # The image name is the command's import-path base appended to
+    # KO_DOCKER_REPO, which the shared release workflow exports as
+    # ghcr.io/truvity/audit — so ./cmd/audit-query publishes
+    # ghcr.io/truvity/audit/audit-query. A per-ko `repositories:` list does
+    # NOT win over that env var: v0.1.0 set one and ko still pushed
+    # to ghcr.io/truvity itself, which the registry answered with a
+    # 400. This is the shape access-roster publishes its two images
+    # with, and the chart's defaults name the same paths.
+    base_import_paths: true
     base_image: cgr.dev/chainguard/static:latest
     platforms: [linux/amd64, linux/arm64]
     tags: ["{{ .Version }}", latest]
     sbom: spdx
   - id: audit-registry
     build: audit-registry
-    repositories: [ghcr.io/truvity/audit-registry]
     bare: true
     preserve_import_paths: false
+    # The image name is the command's import-path base appended to
+    # KO_DOCKER_REPO, which the shared release workflow exports as
+    # ghcr.io/truvity/audit — so ./cmd/audit-registry publishes
+    # ghcr.io/truvity/audit/audit-registry. A per-ko `repositories:` list does
+    # NOT win over that env var: v0.1.0 set one and ko still pushed
+    # to ghcr.io/truvity itself, which the registry answered with a
+    # 400. This is the shape access-roster publishes its two images
+    # with, and the chart's defaults name the same paths.
+    base_import_paths: true
     base_image: cgr.dev/chainguard/static:latest
     platforms: [linux/amd64, linux/arm64]
     tags: ["{{ .Version }}", latest]
     sbom: spdx
   - id: audit
     build: audit
-    repositories: [ghcr.io/truvity/audit]
     bare: true
     preserve_import_paths: false
+    # The image name is the command's import-path base appended to
+    # KO_DOCKER_REPO, which the shared release workflow exports as
+    # ghcr.io/truvity/audit — so ./cmd/audit publishes
+    # ghcr.io/truvity/audit/audit. A per-ko `repositories:` list does
+    # NOT win over that env var: v0.1.0 set one and ko still pushed
+    # to ghcr.io/truvity itself, which the registry answered with a
+    # 400. This is the shape access-roster publishes its two images
+    # with, and the chart's defaults name the same paths.
+    base_import_paths: true
     base_image: cgr.dev/chainguard/static:latest
     platforms: [linux/amd64, linux/arm64]
     tags: ["{{ .Version }}", latest]

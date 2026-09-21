@@ -36,3 +36,6 @@ jobs:
       # accessctl: an auditor's copy of the verifier should be the one they
       # chose, not the one on the path.
       nix-flakes: '["audit"]'
+      # Four images under one path, as the chart's values name them:
+      # ko appends each command's import-path base to this.
+      ko-docker-repo: ghcr.io/truvity/audit

@@ -5,6 +5,16 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [0.1.1] - 2026-09-21
+
+The images publish where the chart looks for them. 0.1.0's release
+failed: the four ko images carried a `repositories:` list each, and the
+release workflow's `KO_DOCKER_REPO` wins over it, so ko tried to publish
+`ghcr.io/truvity` itself and the registry answered 400. They now take
+their name from the command's import path under one repository path, as
+access-roster's two images do, and the chart's defaults name the same
+four: `ghcr.io/truvity/audit/{audit,audit-writer,audit-query,audit-registry}`.
+
 ## [0.1.0] - 2026-09-21
 
 The foundation, released so that consumers have something to pin. Every

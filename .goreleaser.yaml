@@ -51,6 +51,10 @@ archives:
 kos:
   - id: audit-writer
     build: audit-writer
+    # Named here as well as in KO_DOCKER_REPO, and the same value in both,
+    # so `goreleaser check` validates in a checkout that has no env — the
+    # lint recipe runs it without one.
+    repositories: [ghcr.io/truvity/audit]
     bare: true
     preserve_import_paths: false
     # The image name is the command's import-path base appended to
@@ -68,6 +72,10 @@ kos:
     sbom: spdx
   - id: audit-query
     build: audit-query
+    # Named here as well as in KO_DOCKER_REPO, and the same value in both,
+    # so `goreleaser check` validates in a checkout that has no env — the
+    # lint recipe runs it without one.
+    repositories: [ghcr.io/truvity/audit]
     bare: true
     preserve_import_paths: false
     # The image name is the command's import-path base appended to
@@ -85,6 +93,10 @@ kos:
     sbom: spdx
   - id: audit-registry
     build: audit-registry
+    # Named here as well as in KO_DOCKER_REPO, and the same value in both,
+    # so `goreleaser check` validates in a checkout that has no env — the
+    # lint recipe runs it without one.
+    repositories: [ghcr.io/truvity/audit]
     bare: true
     preserve_import_paths: false
     # The image name is the command's import-path base appended to
@@ -102,6 +114,10 @@ kos:
     sbom: spdx
   - id: audit
     build: audit
+    # Named here as well as in KO_DOCKER_REPO, and the same value in both,
+    # so `goreleaser check` validates in a checkout that has no env — the
+    # lint recipe runs it without one.
+    repositories: [ghcr.io/truvity/audit]
     bare: true
     preserve_import_paths: false
     # The image name is the command's import-path base appended to

@@ -50,7 +50,7 @@ by a discriminator that selects a registered JSON Schema:
 | `meter.dimensions` | meter |
 
 Extension schemas are closed objects with every property annotated with its
-class and PII level. See [extension points](design/extension-points.md).
+class and PII level. See [extension points](reference/extension-points.md).
 
 ## Actor kinds and identity tiers
 
@@ -59,9 +59,19 @@ external (end users, customers' people), machine (services, API keys, the
 system). Presets decide the identity treatment per category: clear,
 pseudonym, scoped or omit. Tenant identifiers are legal entities and stay
 in clear everywhere. Internal actors stay in clear for the security
-retention because accountability is a legal obligation. External actors and
+retention because accountability is a legal obligation.
+
+What a preset asks for is not always what a copy gets. A deployment that
+runs no key provider — the default since
+[0013](decisions/0013-no-pseudonymisation-keys-by-default.md) — declares
+that the identifiers it receives for external people are already opaque,
+and a preset's `pseudonym` is then treated as `clear`: the identifier
+written is the one the application minted, which identifies nobody without
+the application's own database. A deployment that must be able to
+crypto-shred chooses a key provider instead, and then external actors and
 subjects become a keyed pseudonym per tenant and purpose, so copies cannot
-be joined on a person, and erasure is key destruction.
+be joined on a person and erasure is key destruction.
+`audit profile explain <name>` prints the effective treatment either way.
 
 ## Profiles and presets
 

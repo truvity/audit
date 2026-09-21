@@ -6,7 +6,7 @@
 ## Context
 
 The store must be append-only, provable, cheap for years, and acceptable
-as evidence. Options surveyed ([research/storage.md](../research/storage.md)):
+as evidence. Options surveyed (see the storage survey in this repository's history):
 object storage with Object Lock, log stores (Loki, VictoriaLogs, Quickwit,
 OpenSearch), analytical databases (ClickHouse), ledger databases (QLDB,
 retired), and hosted audit lakes (CloudTrail Lake, closing to new

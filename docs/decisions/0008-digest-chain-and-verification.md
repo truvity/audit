@@ -12,7 +12,7 @@ was it changed, when was it written, and can you prove it without trusting
 the writer. The cloud provider's own trail uses hourly digest files with a
 signature chain and a validation command; transparency logs (Merkle trees
 with inclusion and consistency proofs) are the stronger model but a real
-service to run ([research/storage.md](../research/storage.md)).
+service to run (see the storage survey in this repository's history).
 
 ## Decision
 

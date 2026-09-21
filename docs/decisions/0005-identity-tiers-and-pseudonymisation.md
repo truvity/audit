@@ -9,7 +9,7 @@ Accountability requires knowing who acted. Data protection requires
 minimisation, storage limitation and erasure. Digital-identity regulation
 forbids a wallet provider combining usage data about a person across
 purposes. These pull in different directions on the same field
-([research/regulation.md](../research/regulation.md)).
+(see the regulation survey in this repository's history).
 
 ## Decision
 

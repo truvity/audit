@@ -7,8 +7,16 @@ Example: [common.yaml](../../catalogue/common.yaml).
 
 Next to the code that emits, under version control with it, validated in
 that repository's CI against this repository's validator, embedded in the
-binary or mounted by the chart, and registered with `RegistryService` at
-start-up. The registry copies every version into the archive on first use.
+binary or mounted by the chart, and registered at start-up over
+`RegistryService`, which the **receiver** serves — there is no registry
+service of its own
+([0011](../decisions/0011-one-installation-per-service-or-product.md)). The
+receiver copies every version into the archive on first use.
+
+One catalogue belongs to one application, and an installation admits one
+application. What is shared between applications is this format and the
+[presets](../../presets/README.md) that profiles are composed from, never a
+catalogue.
 
 ## Fields
 
@@ -23,14 +31,41 @@ start-up. The registry copies every version into the archive on first use.
   version, message per locale, meter with quantity path and the outcomes
   that count (success only unless the action says otherwise).
 
+## Delivery
+
+An action declares one of two deliveries, and the choice is the action's,
+not the deployment's: the same catalogue behaves the same way in direct and
+in stream mode
+([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
+
+| `delivery` | the application's call returns | if the receiver is down | for |
+|---|---|---|---|
+| `block` | when the receiver has acknowledged durability | the action **fails** | a privileged sign-in, a key destruction, a billable operation |
+| `async` (the default) | at once | the record waits in a bounded in-memory queue and is retried with backoff | everything else |
+
+An acknowledgement always means durable, in either shape. An `async` record
+is dropped only if the queue overflows, and then it is counted
+(`audit.emit.records.dropped`) and logged.
+
+`outbox` and `best_effort` are retired. **The loader refuses either, naming
+the replacement**: `outbox` is `block` where the action may not go
+unrecorded, and `async` otherwise; `best_effort` is `async`. There is no
+file outbox and no volume on the emitting pod.
+
+The two-value enum, the `async` default and the refusal are not built yet:
+they arrive with the rewrite.
+[catalogue.schema.json](../../schemas/catalogue.schema.json) today still
+lists four values and defaults to `best_effort`.
+
 ## Categories
 
 Presets require categories, never actions. A profile's required categories
-must be covered by the deployment as a whole — every registered catalogue and
-the component's own together — not by each source: an application that signs
-people in need not also read logs. `audit validate --deployment` fails on a
-gap in the deployment's CI, and the registry logs one after each
-registration; neither refuses an application for what another should emit.
+must be covered by the installation as a whole — the application's catalogue
+and the component's own together — not by each source: an application that
+signs people in need not also read logs. `audit validate --deployment` fails
+on a gap in the application's CI, and the receiver logs one after each
+registration; neither refuses an application for a category it has no reason
+to emit.
 The categories:
 
 `authentication`, `privileged_access`, `account_lifecycle`,

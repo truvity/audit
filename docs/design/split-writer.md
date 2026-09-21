@@ -1,17 +1,28 @@
 # Split writer
 
-The single trusted consumer of the wide stream. Runs as a service with a
-durable pull consumer, or embedded in an application that has no stream.
+The single trusted consumer of the wide stream. **It is a service**, never a
+library inside the application: the credentials for the archive, the index and
+the stream live in its pods and nowhere else, and a fix to it does not rebuild
+the application
+([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 
-Every replica shares one durable consumer, which is what makes a second replica
-a second pair of hands rather than a second copy of every record. The stream
-itself is the deployment's to create and the writer refuses to start without it:
-its retention and discard policy decide whether a full stream refuses publishers
-or drops records, and that is not a choice this component should make quietly.
-The acknowledgement wait must exceed the longest a write can honestly take,
-since a batch is acknowledged only once its records are in the archive; set it
-too short and the stream offers the same records to a second replica while the
-first is still writing them.
+It runs in one of two ways, and the steps below are the same in both. In
+[stream mode](../deployment/stream.md) it is `audit-writer` in consumer mode,
+N pods reading a durable pull consumer. In
+[direct mode](../deployment/direct.md) the receiver is the writer: the same
+code, in the process the application talks to, with the records arriving from
+the request instead of from the stream, and the acknowledgement withheld until
+the roll that holds them has been put and indexed.
+
+With a stream, every replica shares one durable consumer, which is what makes a
+second replica a second pair of hands rather than a second copy of every record.
+The stream itself is the deployment's to create and the writer refuses to start
+without it: its retention and discard policy decide whether a full stream
+refuses publishers or drops records, and that is not a choice this component
+should make quietly. The acknowledgement wait must exceed the longest a write
+can honestly take, since a batch is acknowledged only once its records are in
+the archive; set it too short and the stream offers the same records to a
+second replica while the first is still writing them.
 
 ## Per record
 
@@ -26,7 +37,10 @@ first is still writing them.
 5. **Split**: for each profile the action belongs to, build a copy with the
    profile's allowed fields and classes.
 6. **Treat identities** per profile: clear, pseudonym (HMAC with the
-   tenant-and-purpose key), scoped, or omit. Apply `x-audit-sensitive`.
+   tenant-and-purpose key), scoped, or omit. Apply `x-audit-sensitive`. With
+   `keys.provider: none` — the default — there is no pseudonym treatment at
+   all, and a deployment declares `external_identifiers_are_opaque` instead
+   ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
 8. **Buffer** per profile, tenant and day. Roll on interval (one to five
    minutes) or size, measured before compression. An object's retention is
    fixed when it is opened rather than when it is written, so every copy in
@@ -45,7 +59,9 @@ first is still writing them.
     deployment is told, because an index nobody notices is behind is one that
     quietly answers wrongly.
 12. **Mark** the identifiers as written, now that the copies are durable.
-13. **Ack** the stream message only after the PUT.
+13. **Acknowledge** only after the PUT: the stream message in stream mode,
+    the caller's batch in direct mode. In both, an acknowledgement means the
+    records are in the archive.
 
 ## Asking and marking are two calls
 
@@ -95,12 +111,17 @@ object without rows; the nightly reindex of the day repairs it.
 
 ## Failure
 
-- Object storage unavailable: the buffer holds until the stream horizon,
-  then the writer stops consuming and alerts; the stream's discard-new
-  policy surfaces the stall to emitters as publish failures.
+- Object storage unavailable: in stream mode the buffer holds until the
+  stream horizon, then the writer stops consuming and alerts, and the
+  stream's discard-new policy surfaces the stall to emitters as publish
+  failures. In direct mode there is no buffer to hold it: nothing is
+  acknowledged, so a `block` call fails and an `async` record waits in the
+  application's queue.
 - Postgres unavailable: PUT proceeds, index is deferred to reindex, ack is
   withheld until a configurable grace, then dead-letter.
-- Writer restart: unacked messages are redelivered; dedupe absorbs them.
+- Writer restart: in stream mode unacknowledged messages are redelivered and
+  dedupe absorbs them; in direct mode nothing was acknowledged, so the
+  emitter's queue retries what it holds.
 
 ## Meta-events
 
@@ -113,10 +134,11 @@ common catalogue whose sink is the writer itself, over the in-process
 transport. That is a loop by construction and it is the right one: the
 writer's own account of itself lands in the same archive under the same rules,
 and there is no second path to keep honest. Two rules keep the loop safe. The
-emitter uses best-effort delivery, because a block write from inside the
-writer's own batch would wait on itself. And a dead letter caused by one of
-these records is dead-lettered and logged, never emitted about, or one bad
-meta-record would beget another.
+emitter uses `async` delivery by construction, because a `block` write from
+inside the writer's own batch would wait on itself
+([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)). And a dead
+letter caused by one of these records is dead-lettered and logged, never
+emitted about, or one bad meta-record would beget another.
 
 ## Replay
 
@@ -133,9 +155,3 @@ so once a blocking write returns, whatever it could not process is already
 back. It is also the only way to tell: the writer *accepts* a record it
 dead-letters, and is right to, because a record that can never become valid
 must not be retried forever by every hop below.
-
-## Embedded mode
-
-The same library inside an application, with the in-process transport.
-Many writers may exist; the digest job is separate and lists the prefix.
-Dedupe is best-effort at the emitter; the outbox mode covers restarts.

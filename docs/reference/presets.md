@@ -1,11 +1,16 @@
 # Presets reference
 
 Format: [preset.schema.json](../../schemas/preset.schema.json). Files:
-[presets/](../../presets/).
+[presets/](../../presets/). This page is the mechanism — what a preset says
+and what composing two of them produces. Which presets an installation is
+expected to compose, and what each costs to run, is
+[the presets policy](../operations/presets-policy.md).
 
 ## Composition into a profile
 
-A profile is declared in deployment configuration:
+A profile is declared in the installation's configuration, and the profiles
+are that installation's own: the application names them in its catalogue,
+and nothing else composes them.
 
 ```yaml
 profiles:
@@ -54,7 +59,39 @@ not in `forbidden_pii`. The free-form bags (`attributes`, `unmapped`) count as
 class `audit`.
 
 `audit profile explain <name>` prints the result for a deployment, which is what
-a reviewer checks the deployment against.
+a reviewer checks the deployment against. It reports the **effective**
+treatment per identity category, including the override below, so what is
+actually written is inspectable rather than inferred from the preset files.
+
+## What a deployment can relax
+
+Composition only ever tightens, with one exception. A deployment declares
+`external_identifiers_are_opaque` when the identifiers it receives for
+external people are ones it minted itself and that mean nothing outside its
+own database. When it does, a composed profile's `external: pseudonym` is
+treated as `clear`, and the writer refuses a record whose external actor,
+subject or person target carries something that looks like a direct
+identifier — an address, or whitespace — naming the field and why.
+
+This is what lets `keys.provider: none` be the default: a profile that asks
+for a pseudonym does not force a key provider on a deployment that has
+nothing to pseudonymise
+([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). When the
+declaration is false and the provider is `none`, the writer refuses to start
+if the registered catalogue declares an external actor kind or a person
+target type: a deployment chooses, and may not arrive at clear-text
+addresses in a locked archive by omission.
+
+`external_identifiers_are_opaque` and `keys.provider: none` are not built
+yet: they arrive with the rewrite. Nothing relaxes `internal`, `scoped` or
+`omit`.
+
+The `history` preset is being reworked for the same reason. It treats
+internal actors as `pseudonym` today, which makes a tenant-facing view need
+a key provider before it renders; it becomes `internal: omit`, so a staff
+actor is shown by kind and role and never by identity, and `external:
+scoped` stays. The file still says `internal: pseudonym`; the change arrives
+with the code rewrite.
 
 ## Validation
 

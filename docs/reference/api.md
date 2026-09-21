@@ -7,15 +7,54 @@ JSON is snake_case, timestamps RFC 3339. As in all proto3 JSON, a field
 at its zero value is omitted, so a search that matches nothing returns no
 `items` key at all rather than an empty list; read absence as empty.
 
+Two processes serve these. The **receiver** (`audit-writer`) serves
+`SinkService` and `RegistryService`; the **query service** (`audit-query`)
+serves `QueryService`. There is no third service and no `audit-registry`
+binary: an installation has one application to hear a catalogue from, so the
+process that validates every record against the catalogue is also the one
+that accepts it
+([0011](../decisions/0011-one-installation-per-service-or-product.md)).
+
 ## Write
 
-`audit.v1.SinkService/Write` — batch of records with a delivery hint.
-Reachable by workloads and adapters; never by browsers.
+`audit.v1.SinkService/Write` — a batch of records with a delivery.
+Reachable by the application's workloads and by adapters; never by browsers.
 
-## Registry
+The response says how many were accepted and lists each `Rejection` by id
+with a machine-readable reason. A whole batch is refused before any record
+is accepted when the refusal is structural — an unknown catalogue version, a
+schema violation.
+
+There are two deliveries, `block` and `async`, and an acknowledgement always
+means durable
+([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
+
+| the catalogue says | on the wire | the call returns |
+|---|---|---|
+| `block` | `DELIVERY_BLOCK` | when the records are durable at the next hop |
+| `async` (the default) | `DELIVERY_ASYNC` | at once; the record waits in the emitter's bounded queue |
+
+`DELIVERY_ASYNC` is not built yet: it arrives with the rewrite, as the rename
+of `DELIVERY_BEST_EFFORT`, which is what the enum spells today.
+`DELIVERY_OUTBOX` is retired and leaves the enum with the same change; it
+never reached the wire, because it named a mode of the emitter, and the file
+outbox is gone.
+
+## Catalogue registration
 
 `audit.v1.RegistryService/RegisterCatalogue`, `GetCatalogue`,
-`ListCatalogues`.
+`ListCatalogues` — **served by the receiver**, on the same port as `Write`.
+
+The application calls `RegisterCatalogue` at start-up with the catalogue
+document and the JSON Schemas of its extension slots. An empty `problems`
+list means registered; a malformed catalogue comes back with its findings
+and the application does not start. The first use of a version copies it
+into the archive, beside the records it describes, so a record written under
+it still reads after the catalogue changed.
+
+`GetCatalogue` and `ListCatalogues` answer what this installation has been
+told. An installation admits one application, so the list is short and the
+source is the one the receiver verified.
 
 ## Query
 
@@ -47,8 +86,6 @@ Response:
   "cursors": { "self": "…", "first": "…", "prev": "…", "next": "…" }
 }
 ```
-
-Operators per type:
 
 `first` is a cursor like the others and means this same question from the
 beginning, so a client holds one kind of cursor rather than two. There is no
@@ -138,6 +175,12 @@ it: `{"profile": "security", "tenant_id": "acme", "pseudonym": "ps_…"}` →
 `{"identifier": "…"}`. Pseudonyms differ per profile, so name the profile whose
 copy carried it.
 
+**It is `unimplemented` in a deployment with no key provider, which is the
+default** ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)):
+where nothing was pseudonymised there is nothing to resolve, and the service
+says so rather than returning nothing. The rest of this section describes a
+deployment that has chosen a provider.
+
 It needs the `resolve` operation on that profile, which no read grant implies
 and no group name grants — only an explicit rule. The tenant must be one the
 grant covers. The resolution is recorded as `audit.pseudonym.resolved`, and
@@ -165,7 +208,7 @@ Connect codes:
 | `resource_exhausted` | a published limit exceeded, or an export over its cap |
 | `failed_precondition` | resolve of a pseudonym whose tenant key was destroyed — erasure did what it is for; retrying never helps |
 | `not_found` | no such record — **also** what a record outside the grant returns, because "no such record" and "a record you may not read" are the same answer to somebody who should not know it exists |
-| `unimplemented` | something this deployment does not offer, such as export with no bucket configured |
+| `unimplemented` | something this deployment does not offer: resolve with no key provider, export with no bucket configured |
 | `unavailable` | the searcher is down |
 
 `unavailable` is the default for anything unrecognised, deliberately. Calling a

@@ -1,8 +1,14 @@
 # Configuration reference
 
 The Go emitter's options, and the chart's values for each component. Every
-name here exists in the code or in `charts/audit/values.yaml`; the chart's
-file has a comment on each.
+name here exists in the code or in `charts/audit/values.yaml`, except the
+handful marked *not built yet*, which arrive with the rewrite this
+documentation specifies. The chart's file has a comment on each value.
+
+One installation serves one application, in that application's namespace,
+rendered by the application's own chart with this one as a dependency
+([0011](../decisions/0011-one-installation-per-service-or-product.md)).
+There is no registry service and nothing configures one.
 
 ## Emitter library
 
@@ -11,11 +17,9 @@ file has a comment on each.
 | option | meaning |
 |---|---|
 | `Source`, `Catalogue` | the source this emitter speaks for, and its loaded catalogue; a record of an action the catalogue does not declare is refused |
-| `Sink` | where records go: `sink.NewClient(httpClient, writerURL)` for a writer over Connect (with `auth.TokenFile` for the workload token), a JetStream sink, or a writer in the same process |
-| `Outbox` | `emit.OpenFileOutbox(dir)`: the local store outbox delivery needs. An emitter without one refuses a catalogue that declares `outbox` |
-| `Publish` | how often the outbox is drained. Default one second |
+| `Sink` | where records go: `sink.NewClient(httpClient, receiverURL)` for the receiver over Connect, with `auth.TokenFile` for the workload token. The application's sink is the receiver in its own namespace; the JetStream hop, in stream mode, is the receiver's, not the application's |
 | `Timeout` | how long a `block` write may take. Default 10s |
-| `Queue`, `Batch`, `Flush` | best-effort buffering: how many records may wait (1024), how many are sent together (100), and how often (one second) |
+| `Queue`, `Batch`, `Flush` | the `async` queue: how many records may wait (1024), how many are sent together (100), and how often (one second). A full queue drops the oldest, counts it and calls `OnDropped` |
 | `Bounds` | size limits; default `record.Default` |
 | `Version`, `Instance` | this process on every record; the writer replaces the observer's identity with the one it verified |
 | `Hooks` | `OnDropped`, `OnFailed`, `OnWritten`, `OnRefused`: where a deployment counts and alerts |
@@ -25,26 +29,49 @@ agent, request and trace ids on every record made while serving it.
 `trustedHops` is how many proxies of your own sit in front: 0 records the
 connection's peer, and getting it wrong records a load balancer as the actor's
 address. `emit.Register(ctx, emit.Registration{…})` registers the catalogue
-with an installation's registry at start-up.
+with the **receiver** at start-up — the same address the sink writes to,
+because the receiver serves `RegistryService`.
 
-## Split writer
+`Options.Outbox` and `Options.Publish` are still in the code and are removed
+with the rewrite: there are two deliveries and no file outbox
+([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
+
+Two metrics are worth alerting on, and they are the pair that says whether
+anything was lost:
+
+| metric | means |
+|---|---|
+| `audit.emit.queue.pending` | how many records are waiting. A number that only grows is a receiver that has stopped acknowledging. Not built yet: today the emitter publishes `audit.emit.outbox.pending`, which this replaces |
+| `audit.emit.records.dropped` | records the queue overflowed and gave up on. Every one of them is also a log line. This is the incident; the one above is the alert |
+
+## Receiver and writer
+
+One binary, `audit-writer`, in two roles. In direct mode the receiver is the
+writer: it validates, splits, rolls and puts, then acknowledges. In stream
+mode it publishes to JetStream and acknowledges the replicated publish, and
+the same image runs again in consumer mode as the writer. In both it serves
+`RegistryService`, so the application registers its catalogue with the
+address it writes to.
 
 These are the chart's values (`charts/audit/values.yaml`), which are the
 binary's flags with dots.
 
 | setting | meaning |
 |---|---|
-| `bucket`, `prefix`, `region`, `kmsKey` | the archive |
+| `mode` | `direct` or `stream`. Not built yet: it arrives with the rewrite, and replaces inferring the shape from whether `stream.url` is set |
+| `bucket`, `prefix`, `region`, `kmsKey` | the archive. `prefix` is required in a bucket shared with other applications: it is what keeps two installations apart |
 | `governance` | lets a privileged role shorten a retention. Off, and the chart refuses it on: a deployment that wants it says so in a values file of its own |
 | `profiles` | composition of presets and prefixes, the document `audit-writer --deployment` reads |
-| `replicas` | writers sharing the stream. Above one needs `database` and a key directory every replica can write |
-| `stream.url`, `stream.name`, `stream.consumer` | JetStream. Without a URL the writer only serves its sink, which is what an application embedding it wants |
+| `externalIdentifiersAreOpaque` | the deployment declares that the identifiers it receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](presets.md#what-a-deployment-can-relax)). Not built yet |
+| `replicas` | receiver pods |
+| `writer.consumers` | writer pods consuming the stream, in stream mode. Not built yet: today `replicas` is both |
+| `stream.url`, `stream.name`, `stream.consumer` | JetStream, in stream mode. The chart refuses `mode: stream` without a URL |
 | `stream.batch` | how many records are taken at once. Default 100 |
 | `stream.ackWait` | how long the stream waits for a batch to be taken before offering it again. Default 30s, and it must exceed the longest a write can honestly take: a batch is acknowledged only once its records are in the archive |
-| `roll.interval` | how often an object is rolled and put |
-| `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database. Without it the writer indexes nothing and deduplicates in process |
+| `roll.interval` | how often an object is rolled and put. In direct mode this is also the `async` loss window, because an `async` batch is acknowledged only after its roll is stored |
+| `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database in the application's Postgres. Without it the writer indexes nothing and deduplicates in process |
 | `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
-| `keys.provider` | `local` (a root and a directory) or `transit` (OpenBAO; the one for several replicas — see [OpenBAO keys](../operations/openbao-keys.md)) |
+| `keys.provider` | `none` (the default), `local` (a root and a directory) or `transit` (OpenBAO — see [OpenBAO keys](../operations/openbao-keys.md)). With `none` there are no pseudonyms, no key directory, no login to a secret manager and no resolve ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). `none` is not built yet: today the default is `local` |
 | `openbao.address`, `.mount`, `.namespace` | the OpenBAO the transit key provider and the transit digest signer reach: the server, where transit is mounted (`transit`), and the namespace (empty is root) |
 | `openbao.auth.mount`, `.audience`, `.expirationSeconds` | the JWT auth mount each component signs in on with its projected service-account token (e.g. `jwt-devel`), the token's audience (`openbao`) and lifetime (600) |
 | `keys.transit.prefix` | what every key name starts with (`audit`) |
@@ -52,14 +79,15 @@ binary's flags with dots.
 | `trust.configMap`, `trust.key` | a CA bundle trusted beside the system roots, e.g. trust-manager's for a private chain; mounted by every pod that reaches OpenBAO or Postgres (`PGSSLROOTCERT`) |
 | `keys.local.existingSecret` | the 32-byte root the data keys are wrapped under |
 | `keys.local.persistence` | where the wrapped keys live. They are random, not derived, so this is the only copy: back it up, and use ReadWriteMany for more than one replica |
-| `catalogues` | catalogue documents registered at start-up, by name |
+| `catalogues` | catalogue documents mounted at start-up, by name. An application that registers its own over `RegisterCatalogue` needs none |
+| `extensions.billing.enabled`, `extensions.quotas.enabled` | the two projections, both off. Not built yet: they arrive with the rewrite, and the chart refuses either without the profile it reads |
 
-The writer verifies who publishes with `--workloads`/`AUDIT_WORKLOADS`, a file
-naming the issuers trusted to name a workload (see "Workload identity" below),
-and stamps the caller's service account as each record's observer. Without it,
-the writer refuses to start unless given `--anonymous-writes`, which is for a
-trial install. Records that arrive over the stream carry no verified observer:
-the stream's own authentication is what admits a publisher there.
+The receiver verifies who writes with `--workloads`/`AUDIT_WORKLOADS`, a file
+naming the issuers trusted to name a workload (see "Workload identity"
+below), and stamps the caller's service account as each record's observer.
+Without it, it refuses to start unless given `--anonymous-writes`, which is
+for a trial install. Records that arrive over the stream carry no verified
+observer: the stream's own authentication is what admits a publisher there.
 
 The built `audit-writer` takes these as flags or environment variables:
 `--database`/`AUDIT_DATABASE` is the index, `--replicas`/`AUDIT_REPLICAS` is how
@@ -78,7 +106,7 @@ In the chart, under `query` (`query.enabled`):
 | `query.database.role` | that role's name. When set, the migration job grants it usage and select, now and on tables created later (`audit migrate --reader`), and nothing else; the role must already exist |
 | `query.grants` | the grants file below, inline |
 | `query.exports.bucket`, `.expiry`, `.linkValid` | a separate unlocked bucket for exports; empty refuses export |
-| `query.resolve.enabled` | give this service the keys to open sealed identifiers. `local` mounts the writer's key directory read-only (ReadWriteMany required); `transit` signs in its own way (`query.resolve.transit.role`, `.token.existingSecret` or `.tokenFile`), never as the writer |
+| `query.resolve.enabled` | give this service the keys to open sealed identifiers. It needs a key provider: with `keys.provider: none` there is nothing to resolve and the RPC is `unimplemented`. `local` mounts the writer's key directory read-only (ReadWriteMany required); `transit` signs in its own way (`query.resolve.transit.role`, `.token.existingSecret` or `.tokenFile`), never as the writer |
 | `query.serviceAccount.annotations` | its role: read on the archive, write on the exports bucket |
 | `networkPolicy.queryIngressFrom` | who may reach it, normally the gateway; empty leaves it open in the cluster |
 
@@ -229,22 +257,24 @@ the job runs; `--sink` is the writer it records itself through
 
 ## Workload identity
 
-The writer and the registry read one file, `--workloads`/`AUDIT_WORKLOADS`:
+The receiver reads one file, `--workloads`/`AUDIT_WORKLOADS`:
 
 ```yaml
 issuers:
   - url: https://oidc.example.com/id/CLUSTER   # the cluster's service-account issuer
     audience: audit
-workloads:                                     # the registry's map; the writer ignores it
-  - subject: system:serviceaccount:wallet:wallet-api
-    source: wallet
 ```
 
 A caller presents its projected service-account token as a bearer. The tools
 in this repository read it from the file named by `AUDIT_TOKEN_FILE` on every
-request, because the kubelet replaces it before it expires. With more than one
-issuer, every workload entry must name its issuer, since two clusters can both
-have that namespace and service account.
+request, because the kubelet replaces it before it expires.
+
+The file's `workloads` list — which service account may register which
+source — goes with the registry service: an installation admits one
+application, and the receiver verifies that one caller
+([0011](../decisions/0011-one-installation-per-service-or-product.md)). It is
+still read today and is removed with the rewrite, together with the chart's
+`workloadIdentity.workloads`.
 
 The issuer's discovery document is fetched at start-up, so it must be reachable
 over HTTPS from the pods. A managed cluster's public OIDC provider is. The API

@@ -16,7 +16,8 @@ catalogue/            catalogue loading, validation, composition, sentences;
 
 record/               the canonical record: identifiers, bounds, negative list, canonical form
 preset/               presets, profile composition, the deployment document
-emit/                 the emitter an application imports; outbox; request middleware; Register
+emit/                 the emitter an application imports; the async queue; request
+                      middleware; Register
 sink/                 the write contract; Connect client and handler; sink/natssink (JetStream)
 keys/                 pseudonymisation providers (local, OpenBAO transit) and digest signers
                       (key file, AWS KMS, OpenBAO transit)
@@ -37,7 +38,8 @@ internal/query/       search, facets, get, export, resolve, behind grants
 internal/digest/      the digest chain: builder, verifier, provenance
 internal/identity/    sealed identities, for resolve
 internal/hold/        legal holds, and the writer's view of them
-internal/registry/    the catalogue registry: validation, storage, the service
+internal/registry/    registered catalogues: validation, storage, the archive copy —
+                      served by the writer, not by a service of its own
 internal/clock/       an SNTP client for the daily clock check
 internal/telemetry/   OTLP metrics
 internal/cli/         the commands of cmd/audit
@@ -49,13 +51,15 @@ internal/metaschema/, internal/schemagen/   meta-schema validation; the record's
 cmd/audit/            the operator's command: validate, check-emitters, messages, profile,
                       verify, digest, conformance, replay, migrate, reindex, purge,
                       clock-sync, hold, key
-cmd/audit-writer/     the writer service; cmd/audit-query/ the query service;
-cmd/audit-registry/   the registry service
+cmd/audit-writer/     the receiver and the writer (one binary, two modes), and
+                      RegisterCatalogue
+cmd/audit-query/      the query service
 cmd/protoc-gen-audit-jsonschema/   the buf plugin for the record's JSON Schema
 
-charts/audit/         the installation: writer, registry, query service, jobs
+charts/audit/         the installation an application's own chart instantiates:
+                      receiver, writer, query service, the four jobs
 ts/                   @truvity/audit: client, qualifier box, sentences, React hooks and view
-examples/             emit, read, embed — compiled and tested by the gate
+examples/             emit, read — compiled and tested by the gate
 testdata/             the record corpus; the template fixture both scanners share
 hack/                 the leak canary
 ```
@@ -66,8 +70,17 @@ promise: `record`, `catalogue`, `preset`, `emit`, `sink`, `keys`, `store`,
 `index`, `auth`, `writer`, `query`. Everything only this repository's own
 binaries use is under `internal/`. A helper only a test should use lives in a
 `*test` package beside what it helps (`store/storetest`, `index/indextest`).
-`examples/` imports only public packages, and `examples/embed` has a test that
-fails if it stops doing so.
+`examples/` imports only public packages, and a test fails if that stops being
+true. `writer` and `query` are public because the two binaries are built on
+them, not because a deployment should run a writer inside an application: there
+is no such shape
+([0011](../decisions/0011-one-installation-per-service-or-product.md)).
+
+**The tree above is the one this documentation specifies.** Three parts of it
+arrive with the code rewrite: `cmd/audit-registry` and `examples/embed` are
+still in the checkout and are being deleted, and `emit/` still carries the file
+outbox that [0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)
+retires.
 
 ## Tests, by what they need
 
@@ -78,6 +91,7 @@ fails if it stops doing so.
 | `just test-postgres` | Postgres (started under `.devbox`) | the index, the dedupe table, the writer against a database |
 | `just test-s3` | Docker (LocalStack) | the archive walks, the Object Lock refusal, KMS signing |
 | `just conformance` | Docker, Postgres | everything, with Postgres, LocalStack and OpenBAO |
+| `just chart` | the checkout | the chart's goldens and its list of refusals |
 | `just ts` | the npm registry | the TypeScript package: typecheck, tests, build, what a publish ships |
 
 A test skips when its service is absent and runs in CI, where every service

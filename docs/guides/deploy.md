@@ -1,82 +1,40 @@
-# Deploying
+# Deploying an installation
 
-How to run an audit installation in a Kubernetes cluster: what to prepare,
-how to install the chart, and how to check that it works. For what each piece
-is and holds, read [the architecture](../architecture.md); this page is the
-procedure. Applications then connect to the installation as
-[integrating](integrate.md) describes.
+An installation belongs to one application and runs in that application's
+namespace, rendered by the application's own chart with this repository's
+chart as a dependency
+([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 
-The installation can write into a bucket it shares with other data, under a
-prefix of its own (`prefix`); the [S3 guide](../operations/s3-guide.md#sharing-a-bucket)
-says what it needs from such a bucket and gives the IAM for each component.
+This page is the **procedure**: what to prepare before anything is installed,
+how to install it, and how to tell that it works. It does not repeat the
+shapes. Pick one first — [direct](../deployment/direct.md) or
+[stream](../deployment/stream.md) — and take that page's values as the body of
+your values file; [what to prepare](../deployment/README.md) is the same for
+both. For what each part is and what it holds, read
+[the architecture](../architecture.md). For what the application does at its
+end, [integrating](integrate.md).
 
-## What runs where
+## 1. Pick the shape
 
-```mermaid
-flowchart LR
-  subgraph apps["Your applications"]
-    A1["service A<br/>(Go emitter)"]
-    A2["service B"]
-  end
+| shape | for | needs |
+|---|---|---|
+| [direct](../deployment/direct.md) | an internal service, or any cluster without a stream | a bucket, a database |
+| [stream](../deployment/stream.md) | a product: many pods, metering, quotas | a bucket, a database, a NATS account |
 
-  subgraph audit["audit (this chart)"]
-    REG["audit-registry<br/>catalogues"]
-    W["audit-writer<br/>split, lock, index"]
-    J1["digest job<br/>hourly, signs"]
-    J2["verify job<br/>nightly"]
-    J3["clock-sync, purge<br/>jobs"]
-    Q["audit-query<br/>search, get, export, resolve"]
-  end
+Switching later is a change to the receiver's configuration and to no record,
+so a first installation that is unsure should start direct.
 
-  subgraph infra["What you provide"]
-    NATS[("NATS JetStream<br/>stream AUDIT")]
-    S3[("S3 bucket<br/>Object Lock, compliance")]
-    PG[("Postgres<br/>index, dedupe")]
-    KEY["signing key<br/>Secret, KMS or OpenBAO transit"]
-  end
+## 2. Prepare
 
-  A1 -- "register catalogue<br/>at start-up" --> REG
-  A1 -- "records (Connect)" --> W
-  A2 -- "records" --> NATS --> W
-  W -- "locked objects" --> S3
-  W -- "rows, counts" --> PG
-  REG --> PG
-  J1 -- "signed digests" --> S3
-  J1 -. "sign" .-> KEY
-  J2 -- "reads chain,<br/>records result" --> S3
-  Q --> PG
-  Q -- "provenance, resolve" --> S3
-  People(["people and auditors"]) -- "JWT" --> Q
-```
+Five things, none of which the chart creates. It takes references to all of
+them and refuses to render when one is missing.
 
-- **Applications** register their catalogue with the registry once at start-up,
-  then send records to the writer: directly over Connect, or through a NATS
-  JetStream stream the writer consumes. Every call carries the workload's
-  projected service-account token, which the writer and the registry verify.
-- **The writer** validates each record against its catalogue, splits it into
-  one copy per profile, pseudonymises what each profile says to, writes the
-  copies into the bucket under Object Lock, and indexes them in Postgres.
-- **The jobs** seal each hour into a signed digest chain, verify it nightly,
-  record the clock's offset from UTC, and prune the index past each profile's
-  retention.
-- **The query service** answers searches and reads for people, behind their
-  sign-in and your grants. The chart does not deploy it yet
-  ([below](#the-query-service)).
+### A bucket with Object Lock, and a prefix
 
-## Before you start
-
-**Images.** Four images, one per binary, built by ko from `.goreleaser.yaml`
-into `ghcr.io/truvity/audit-writer`, `audit`, `audit-registry` and
-`audit-query`. No release has been published yet; until one is, build them
-with `just snapshot` and push them to a registry your cluster can pull from,
-then set `image.*.repository` and `image.*.tag`.
-
-**A bucket with Object Lock in compliance mode.** Object Lock can only be
-turned on when a bucket is created. The writer sets each object's retention
-itself, from its profile, so the bucket needs no default retention. Everything
-else — encryption, the policy that denies deletes, replication, the
-break-glass role — is in [the S3 guide](../operations/s3-guide.md). The shortest
-correct start:
+The bucket belongs to the **environment**, not to the installation: Object
+Lock in compliance mode, versioning, a policy that denies deletes to everyone,
+replication and lifecycle, configured once. Object Lock can only be turned on
+when a bucket is created:
 
 ```sh
 aws s3api create-bucket --bucket example-audit \
@@ -84,217 +42,215 @@ aws s3api create-bucket --bucket example-audit \
   --object-lock-enabled-for-bucket
 ```
 
-**Postgres** for the index, the deduplication table and the registry. Any
-Postgres 15 or later; the chart takes a URL from a Secret and runs the schema
-migration as a hook before the writer rolls.
+The bucket needs no default retention: the writer sets each object's from its
+profile. Each application then writes under a **prefix of its own**
+(`audit/<application>/…`), which is what keeps two installations apart in one
+bucket. [Sharing a bucket](../operations/s3-guide.md#sharing-a-bucket) has the
+policy, and [IAM per component](../operations/s3-guide.md#iam-per-component)
+has the statements for each of the four roles, each scoped to its own part of
+the prefix and none of them with a delete:
 
-**A NATS JetStream stream**, if applications publish through one. Create it
-yourself — the writer refuses to start on a stream that is not there, and never
-creates one — and make it refuse rather than drop when full:
+| role | on the prefix |
+|---|---|
+| writer | put objects, put and read their retention, put a legal hold, read `holds/` |
+| digest job | put under `digest/`, and `kms:Sign` on the signing key |
+| verify job | read, and put under `verified/` |
+| query service | read, and write on the exports bucket if exports are wanted |
+
+Bind each through its ServiceAccount's annotations — `serviceAccount`,
+`query.serviceAccount`, `jobs.digest.serviceAccount`,
+`jobs.verify.serviceAccount` — with Pod Identity or IRSA.
+
+### A database, and a read-only role for the query service
+
+One Postgres database, in the application's existing cluster if it has one.
+The writer owns it. The query service reads it as a **separate role**, because
+the tenant row-level policies bind a role that does not own the tables, and it
+is what still holds if a query forgets its tenant term. The chart refuses the
+writer's Secret or URL under `query.database`.
+
+Create the role — the chart creates none — and let the migration grant it:
 
 ```sh
-nats stream add AUDIT --subjects 'audit.records' --storage file \
-  --discard new --dupe-window 2m --defaults
+psql "$OWNER_URL" -c "create role audit_query login password '…'"
+audit migrate --database "$OWNER_URL" --reader audit_query
 ```
 
-**Keys.** Pseudonymisation keys come from a root Secret and a directory
-(`local`, below) or from an OpenBAO transit engine (`keys.provider: transit`).
-Choose transit for more than one writer: the keys never leave the engine,
-every replica asks the same one, and there is no directory to lose. It needs
-policies per role, which [OpenBAO keys](../operations/openbao-keys.md) gives.
+`--reader` grants that role usage on the schema and select on every table, now
+and later, and nothing else. The chart runs the same migration as a hook Job
+before the writer rolls when `database.migrate` is true, with
+`query.database.role` as the reader.
+
+The index is a projection: `audit reindex` rebuilds it from the archive. It
+needs no backup and no replica, and losing it costs search until the rebuild
+finishes, not evidence.
+
+### A signing key for the digest chain
+
+Writing the archive and vouching for it must stay different privileges, so the
+digest job signs with a key the writer's role cannot use. Three ways, in order
+of preference:
 
 ```sh
-# local: the 32-byte root the pseudonymisation keys are wrapped under.
-head -c 32 /dev/urandom > root
-kubectl create secret generic audit-key-root --from-file=root=root
+# AWS KMS (jobs.digest.kmsKey): an ECC_NIST_P256 key. The private half never
+# leaves KMS, and only the digest job's role has kms:Sign on it.
+# OpenBAO transit (jobs.digest.transit.key): an ed25519 key, the same
+# separation for a deployment whose secrets live in OpenBAO.
 
-# The digest signing key, if you sign with a key file. Signing with AWS KMS
-# (jobs.digest.kmsKey) or OpenBAO transit (jobs.digest.transit) keeps the
-# private half out of the cluster instead, and is the better choice.
+# Or a key file, when there is neither:
 openssl genpkey -algorithm ed25519 -out key.pem
 openssl pkey -in key.pem -pubout -out public.pem
-kubectl create secret generic audit-signing-key --from-file=key.pem=key.pem
-kubectl create secret generic audit-signing-public --from-file=public.pem=public.pem
+kubectl create secret generic audit-signing-key -n <app> --from-file=key.pem=key.pem
+kubectl create secret generic audit-signing-public -n <app> --from-file=public.pem=public.pem
 ```
 
-Keep `root` and `key.pem` somewhere other than the cluster. Losing the root
-makes every pseudonym unrecomputable; see
+The verify job and every auditor need only the public half:
+`audit key public --kms-key <id>` (or `--transit-key`, or `--key`) prints it.
+Keep a key file somewhere other than the cluster —
 [key custody](../operations/key-custody.md).
 
-**Workload identity.** The writer and the registry verify each caller's
-projected service-account token against your cluster's OIDC issuer. You need
-the issuer URL exactly as the tokens' `iss` claim spells it — on EKS, the
-cluster's OIDC provider URL — and it must be reachable from the pods over
-HTTPS.
+### A reference clock
 
-**Cloud credentials.** The writer's role needs `s3:PutObject`,
-`s3:PutObjectRetention`, `s3:GetObjectRetention` and `s3:PutObjectLegalHold`
-on the bucket and read access to `holds/`. The retention pair is for
-addenda: a record that extends an earlier one lengthens the lock on the
-object holding it, and reads the lock first so that it never asks for a
-shorter one. The digest job's needs `s3:PutObject` on `digest/*` and,
-with KMS, `kms:Sign` on its key; the verify job's needs read access and
-`s3:PutObject` on `verified/*`. Annotate the service accounts with Pod Identity
-or IRSA through `serviceAccount.annotations` and
-`jobs.*.serviceAccount.annotations`.
-
-## Install
-
-A production values file:
+Every preset with a compliance obligation asks for a daily record of the
+clock's offset from UTC, and the chart refuses to render an installation that
+composes one without a reference configured:
 
 ```yaml
-bucket: example-audit
-region: eu-central-1
-kmsKey: alias/audit            # SSE-KMS for every object
-
-profiles:                      # what copies are kept, each from presets
-  security: { presets: [security] }
-  history:  { presets: [history] }
-
-database:
-  existingSecret: audit-database   # key `url`: postgres://…
-
-stream:
-  url: nats://nats.nats.svc:4222
-
-keys:
-  local:
-    existingSecret: audit-key-root
-    persistence:
-      accessModes: [ReadWriteMany]  # required for more than one replica
-replicas: 3
-
-workloadIdentity:
-  issuers:
-    - url: https://oidc.eks.eu-central-1.amazonaws.com/id/EXAMPLE
-  workloads:                   # which service account speaks for which source
-    - subject: system:serviceaccount:shop:shop
-      source: shop
-
-registry:
-  enabled: true
-
 jobs:
-  digest:
-    kmsKey: alias/audit-digest # or signingKey.existingSecret, or transit
-  verify:
-    publicKey:
-      existingSecret: audit-signing-public
   clockSync:
-    ntp: [time.cloudflare.com]
-
-telemetry:
-  otlpEndpoint: http://otel-collector.observability.svc:4318
+    enabled: true
+    ntp: ["169.254.169.123"]
+    maxOffset: 1s          # beyond this the run fails, so the job going red is the alert
 ```
+
+The job does not set the clock. Whatever runs the machine does that, and
+recording the time of things is a separate job from setting it. The pods need
+egress to the reference.
+
+### The images
+
+One image per binary, built by ko from `.goreleaser.yaml` under
+`ghcr.io/truvity/audit/`: `audit-writer` (the receiver and the writer),
+`audit` (the toolchain the jobs run) and `audit-query`. No release has been
+published yet; until one is, build them with `just snapshot`, push them to a
+registry the cluster can pull from, and set `image.*.repository` and
+`image.*.tag`. The `audit-registry` image goes away with the rewrite, because
+the receiver serves `RegisterCatalogue`.
+
+All of them are distroless and have no shell, which is why every job in the
+chart is a command with arguments.
+
+### What you do not have to prepare
+
+**Pseudonymisation keys.** `keys.provider: none` is the default — *not built
+yet: it arrives with the rewrite, and today's default is `local`* — so there
+is no key directory, no secret manager to log in to, no `identity/` prefix,
+and resolve is refused as unimplemented. The deployment declares instead that the external
+identifiers it receives are opaque. A deployment that must be able to
+crypto-shred configures a provider deliberately
+([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
+
+## 3. Install
+
+The application's chart takes this one as a dependency:
+
+```yaml
+# the application's Chart.yaml
+dependencies:
+  - name: audit
+    version: 0.1.0
+    repository: file://./vendor/audit   # no release yet: vendor the chart until one is published
+```
+
+and its values file carries an `audit:` block. Take the body of that block
+from the shape you picked — [direct](../deployment/direct.md#values) or
+[stream](../deployment/stream.md#values) — which is where every value and its
+reason lives. What every installation sets, whichever shape:
+
+| value | what it is |
+|---|---|
+| `bucket`, `prefix`, `region`, `kmsKey` | the archive, and this application's part of it |
+| `profiles` | what copies are kept, each composed from presets |
+| `database` | the index, as a Secret holding the URL |
+| `query.enabled`, `query.database`, `query.grants` | the read path, its own role, and who may read what |
+| `jobs.*` | digest, verify, purge and clock-sync |
+
+Which presets to compose is a policy question, not a values question:
+[which presets a deployment composes](../operations/presets-policy.md).
+Compose `security` always, `billing-nl` where the installation meters, and the
+rest only where an obligation is real — retention cannot be shortened later.
+
+Then, from the application's chart:
 
 ```sh
-helm install audit ./charts/audit -n audit --create-namespace -f values.yaml
+helm dependency build ./charts/<application>
+helm upgrade --install <application> ./charts/<application> -n <app> -f values.yaml
 ```
 
-The chart **refuses to render** a configuration the binaries would reject or
-accept and get quietly wrong — more replicas than the key directory can serve,
-a digest job with no signer, a registry with no way to verify callers, and
-others. Each refusal says why; the list is in
-[the chart README](../../charts/audit/README.md). Every setting is in
-[`values.yaml`](../../charts/audit/values.yaml) with its reason beside it.
+The chart **refuses to render** a configuration the binaries would reject, or
+accept and get quietly wrong: a digest job with no signer, a compliance preset
+with no reference clock, the writer's credentials given to the query service
+and — *not built yet: these arrive with the rewrite* — `mode: stream` with no
+`stream.url`, or an extension whose profile the deployment does not compose.
+Each refusal says why, and they are listed in
+[the chart README](../../charts/audit/README.md) with
+[`values.yaml`](../../charts/audit/values.yaml) commenting every setting.
 
-For a throwaway install — no database, no stream, callers not verified — see
-[`testdata/values/minimal.yaml`](../../charts/audit/testdata/values/minimal.yaml).
+## 4. Check that it works
 
-## Check that it works
-
-1. **The writer is up.** `kubectl -n audit rollout status deploy/audit`. It
-   refuses to start, with the reason in its log, if the database is at another
-   schema version, the stream is missing, the holds cannot be read, or its key
-   directory is not the one the other replicas share.
-2. **A record goes through.** Run [the example application](emit.md) with
-   `AUDIT_WRITER=http://audit.audit:8080`, or send one from any workload the
-   chart's `workloadIdentity.workloads` lists.
-3. **It is in the archive.** `aws s3 ls s3://example-audit/profile=security/ --recursive`
+1. **The receiver is up.** The chart names its Deployment after the release
+   and the dependency — `kubectl -n <app> rollout status deploy/<release>-audit`.
+   It refuses to start, with the reason in its log, if the database is at a
+   schema version it does not know, the stream is missing, or the holds cannot
+   be read.
+2. **The application registered its catalogue.** It logs the registration at
+   start-up, and refuses to start if the receiver refused the catalogue.
+3. **A record goes through.** Perform an action the catalogue declares, or run
+   [the example application](../../examples/emit/main.go) against the
+   receiver's Service.
+4. **It is in the archive.**
+   `aws s3 ls s3://example-audit/audit/app/profile=security/ --recursive`
    lists an object per profile, tenant and roll interval.
-4. **The chain seals and verifies.** After the next hour the digest job writes
-   `digest/profile=…/hour=NN.json`; the next night the verify job records a
-   result under `verified/`. An auditor checks the same thing with nothing but
-   read access and the public key:
+5. **The chain seals and verifies.** After the next hour the digest job writes
+   under `digest/`, and the following night the verify job records a result
+   under `verified/`. An auditor checks the same thing with read access and
+   the public key:
 
    ```sh
-   audit verify --profile security --last 24h --bucket example-audit --public-key public.pem
+   audit verify --profile security --last 24h \
+     --bucket example-audit --prefix audit/app --public-key public.pem
    ```
 
-5. **Alerts.** With `telemetry.otlpEndpoint` set, page on
-   `audit_writer_index_deferred_total` (the index is behind the archive) and
-   `audit_writer_dead_lettered_total` (records the writer could not process),
-   and, with an evidence profile, `audit_writer_retention_not_extended_total`
-   (an addendum could not lengthen the lock on an earlier record).
-   The [runbook](../operations/runbook.md) says what to do about each.
+6. **The query service keeps its contract.** With a token that may read:
 
-## The query service
+   ```sh
+   audit conformance --query https://audit-query.<app>.svc:8080 \
+     --profile security --token-file token
+   ```
 
-Turn it on in the same release. It needs its own database role, the issuers
-your callers sign in with, and what each may read:
+   Run it after the first records land, and `audit verify` an hour later, so
+   that there is a sealed hour to walk.
 
-```sql
--- once, as whoever creates roles: a role the tenant policies bind
-create role audit_query login password '…';
-```
+7. **Alerts.** With `telemetry.otlpEndpoint` set, page on
+   `audit.writer.index.deferred` (the index is behind the archive) and the
+   dead-letter counter (records the writer could not take), and — in the
+   application — on `audit.emit.records.dropped`. The
+   [runbook](../operations/runbook.md) says what to do about each.
 
-and name it as `query.database.role`: the migration job then grants it usage
-on the schema and select on every table, now and later, and nothing else
-(`audit migrate --reader audit_query`). The grants by hand, for a database the
-chart does not migrate:
+Each shape has one more thing to watch, and its page says which: the roll
+interval in [direct](../deployment/direct.md#checking-it-works), the
+consumer's pending count in [stream](../deployment/stream.md#checking-it-works).
 
-```sql
--- as the owner
-grant usage on schema public to audit_query;
-grant select on all tables in schema public to audit_query;
-alter default privileges in schema public grant select on tables to audit_query;
-```
+## 5. Day two
 
-```yaml
-query:
-  enabled: true
-  database:
-    existingSecret: audit-query-database   # key `url`: postgres://audit_query@…
-    role: audit_query                       # granted select by the migration job
-  grants:
-    issuers:
-      - url: https://id.example.com
-        audience: audit
-    presets:
-      - name: access-roster
-        issuer: https://id.example.com
-  exports:
-    bucket: example-audit-exports          # no Object Lock; optional
-  serviceAccount:
-    annotations:
-      eks.amazonaws.com/role-arn: "<the query role's ARN>"
-networkPolicy:
-  queryIngressFrom:                        # who may reach it: your gateway
-    - namespaceSelector:
-        matchLabels: { kubernetes.io/metadata.name: gateway }
-```
-
-Connect it as a role that **does not own** the tables. Row-level security
-applies to that role and not to an owner, and it is what still holds if a query
-forgets its tenant term. The chart refuses the writer's credentials here.
-
-Its role needs read on the archive bucket (for provenance: which digest covers
-a record, and when it was verified) and write on the exports bucket.
-`query.resolve.enabled` also gives it the keys to open sealed identifiers.
-With `local` keys it mounts the writer's key directory read-only (ReadWriteMany
-required). With `transit` it takes its own token, whose policy grants
-`decrypt` and nothing else ([OpenBAO keys](../operations/openbao-keys.md)).
-Resolving still needs an explicit `resolve` rule in the grants for each caller.
-
-Grants are described in [reading](read.md#access). The service is at
-`http://<release>-query:8080`; expose it through the gateway that terminates
-your callers' sign-in.
-
-## Day two
-
-- [Runbook](../operations/runbook.md): the index is behind, a dead letter, the
-  key directory changed, a clock out of tolerance.
-- [Legal holds](../operations/s3-guide.md#legal-hold): `audit hold place|release|list`.
-- Erasure: `audit key destroy --tenant <t> --purpose <profile>`; refused while a
-  hold covers the tenant.
-- Rebuilding the index: `audit reindex --profile <p> --from <day> --to <day>`.
+- [Runbook](../operations/runbook.md): the index is behind, a dead letter, a
+  clock out of tolerance, a gap in the chain.
+- [Legal holds](../operations/s3-guide.md#legal-hold):
+  `audit hold place|release|list`.
+- Rebuilding the index:
+  `audit reindex --profile <p> --from <day> --to <day>`.
+- [Verification](../operations/verify.md), which an auditor performs against
+  the archive and nothing else.
+- Extensions, switched on per installation and neither in the request path:
+  [billing](../deployment/extensions/billing.md),
+  [usage quotas](../deployment/extensions/quotas.md).

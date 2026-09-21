@@ -19,21 +19,35 @@ A deployment composes presets into **profiles**. Composition is a union:
 - `review`: the most frequent cadence wins.
 
 The validator (`schemas/preset.schema.json` plus the composition rules in
-`docs/reference/presets.md`) refuses a profile whose presets both require and
+[the presets reference](../docs/reference/presets.md)) refuses a profile whose presets both require and
 forbid a field, directly or through an ancestor, and a deployment whose
 catalogues do not emit a category a profile requires. `audit profile explain
 <name>` prints what a profile keeps.
 
-| preset | framework | retention default |
-|---|---|---|
-| `security` | NIS2 + ISO/IEC 27001:2022 + PCI DSS as the prescriptive floor | 365 days, 90 hot |
-| `billing-nl` | Dutch tax administration duty (AWR art. 52) | 7 years |
-| `evidence-etsi` | ETSI EN 319 401 / 411 for trust service providers | 7 years after expiry |
-| `history` | product policy for tenant-facing activity | 365 days |
-| `pci-dss` | PCI DSS v4.0.1 Requirement 10 | 12 months, 3 hot |
-| `dora` | DORA RTS on ICT risk management, Art. 12 | entity-defined, 365 default |
-| `nen-7513` | NEN 7513 healthcare access logging | 5 years |
+| preset | framework | retention default | identities: internal / external |
+|---|---|---|---|
+| `security` | NIS2 + ISO/IEC 27001:2022 + PCI DSS as the prescriptive floor | 365 days, 90 hot | clear / pseudonym |
+| `billing-nl` | Dutch tax administration duty (AWR art. 52) | 7 years | omit / omit |
+| `evidence-etsi` | ETSI EN 319 401 / 411 for trust service providers | 7 years after expiry | clear / pseudonym |
+| `history` | product policy for tenant-facing activity | 365 days | **omit** / scoped |
+| `pci-dss` | PCI DSS v4.0.1 Requirement 10 | 12 months, 3 hot | clear / pseudonym |
+| `dora` | DORA RTS on ICT risk management, Art. 12 | entity-defined, 365 default | clear / pseudonym |
+| `nen-7513` | NEN 7513 healthcare access logging | 5 years | clear / scoped |
+
+`history`'s `internal: omit` is not in the file yet: it arrives with the code
+rewrite, and `history.yaml` still says `internal: pseudonym`. The rework is
+what lets a tenant-facing view of activity render with no key provider: a
+staff actor is shown by kind and role, never by identity, which is what a
+tenant's administrator should see anyway
+([0013](../docs/decisions/0013-no-pseudonymisation-keys-by-default.md)).
+
+A deployment that has declared its external identifiers opaque gets `clear`
+where the table says `pseudonym`; `audit profile explain <name>` prints the
+effective treatment.
 
 Where a framework gives no number, and NIS2, ISO 27001 and DORA all say
 "define it yourself", the preset carries a defended default and marks it
 `configurable`.
+
+Which of these an installation is expected to compose, and what each costs to
+run, is [the presets policy](../docs/operations/presets-policy.md).

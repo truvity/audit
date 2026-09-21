@@ -1,12 +1,34 @@
 # Keys: what they are for, how many, where they live
 
-Two kinds of key, for two different jobs. Neither is ever rotated, and that
-is deliberate.
+**Pseudonymisation keys are off by default.** `keys.provider: none` is what a
+deployment runs unless it says otherwise: no key directory, no login to a
+secret manager, no `identity/` prefix, and resolve refused as unimplemented.
+(`keys.provider: none` and `external_identifiers_are_opaque` are not built
+yet: they arrive with the rewrite this documentation specifies, and the
+chart's default today is `local`.)
+Most installations need none of it, because the identifiers they record are
+already opaque and the staff they record are meant to be readable
+([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). Such a
+deployment declares `external_identifiers_are_opaque` instead, and skips
+everything on this page about pseudonymisation.
+
+Everything below about pseudonymisation keys applies to **a deployment that
+must be able to crypto-shred**: one whose contract demands erasure of an
+identifier from a locked archive, or whose records unavoidably carry direct
+identifiers. That is a deliberate choice, made once and recorded by the
+deployer, and it cannot be undone or migrated afterwards.
+
+The **signing key is different**: every installation has one, whatever it
+does about pseudonyms, because without a signed digest chain the archive
+proves nothing to anybody outside. [Signing key](#signing-key) is that half
+of the page.
 
 | kind | what it does | how many | who holds it | ends by |
 |---|---|---|---|---|
-| **pseudonymisation** (symmetric) | turns an identifier into a stable pseudonym; seals the identity behind it | one per **tenant × purpose**, created on first use | the writer (make), resolve (open) | destruction — that is erasure |
-| **signing** (asymmetric) | signs the hourly digest chain | one per deployment | the digest job only | replacement, with the old public half kept |
+| **pseudonymisation** (symmetric), off by default | turns an identifier into a stable pseudonym; seals the identity behind it | one per **tenant × purpose**, created on first use | the writer (make), resolve (open) | destruction — that is erasure |
+| **signing** (asymmetric), always | signs the hourly digest chain | one per installation | the digest job only | replacement, with the old public half kept |
+
+Neither is ever rotated, and that is deliberate.
 
 ## Why keys at all
 
@@ -14,9 +36,11 @@ The archive is write-once under Object Lock, for years. Two things follow.
 
 - A person can lawfully ask to be forgotten, and some profiles must not hold
   a directly identifying name in the first place. Nothing in the archive can
-  be deleted or edited, so the only way to honour that is to write something
-  that **can be made meaningless later**: a pseudonym under a key, and
-  destroy the key.
+  be deleted or edited, so where a record does carry such a name, the only
+  way to honour that is to write something that **can be made meaningless
+  later**: a pseudonym under a key, and destroy the key. Where the
+  identifier was opaque to begin with there is nothing to make meaningless,
+  which is why the default is no keys at all.
 - Object Lock stops deletion. It does not prove the trail is complete and
   genuine to anyone outside: a record can be added beside the real ones, a
   quiet hour cannot be told from an emptied one, and a copy (an export, a
@@ -140,7 +164,8 @@ count in the thousands.
 
 ### Which one
 
-- Tests, a laptop, a single-instance trial: `local`.
+- Anything that does not have to crypto-shred: `none`, the default.
+- Tests, a laptop, a single-instance trial that does: `local`.
 - Anything with more than one replica, or where secrets already live in
   OpenBAO: `transit`.
 - A deployment on AWS with no OpenBAO: `kms`, once built.
@@ -190,6 +215,7 @@ long as the archive lives.
 
 | provider | Secret or engine | rights |
 |---|---|---|
+| `none` (default) | nothing | — |
 | `local` | a 32-byte root in a Secret; a persistent, shared directory | — |
 | `transit` | an OpenBAO transit mount in the environment's namespace; a JWT role per component | writer: `hmac`, `encrypt` on its purposes; resolve: `decrypt`; eraser (human): `read`, `update` on `transit/keys/<prefix>.*` |
 | signing, KMS | one asymmetric key | digest job: `kms:Sign`, `kms:GetPublicKey`; verify job: `kms:GetPublicKey` |

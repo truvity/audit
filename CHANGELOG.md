@@ -5,6 +5,46 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [Unreleased]
+
+The documentation is rewritten around one installation per application. The
+code still has the shape the previous documentation described; this release
+of the documentation is the specification the code is being changed to
+match, and every page marks what does not exist yet.
+
+- **Three decisions.**
+  [0011](docs/decisions/0011-one-installation-per-service-or-product.md): one
+  installation per service or product, in that application's namespace,
+  rendered by its own chart, with the receiver serving `RegisterCatalogue`
+  and no registry service.
+  [0012](docs/decisions/0012-two-deliveries-and-a-durable-ack.md): two
+  deliveries, `block` and `async`, the file outbox removed, and the
+  receiver's acknowledgement always meaning durable.
+  [0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md):
+  `keys.provider: none` by default, with `external_identifiers_are_opaque`
+  declared by the deployment. 0004's delivery modes and 0010's preference
+  for a managed provider are superseded.
+- **A deployment page per shape**, each with a deployment diagram and the
+  sequence of one record: [direct](docs/deployment/direct.md) for an
+  internal service, [stream](docs/deployment/stream.md) for a product, and
+  the two extensions, [billing](docs/deployment/extensions/billing.md) and
+  [usage quotas](docs/deployment/extensions/quotas.md), with the five slots
+  each. There is no embedded shape: a writer inside the application is no
+  longer a way to deploy this, and `docs/guides/embed.md` is gone.
+- **The README is a map**: what it is, the two shapes, the two extensions,
+  a row per kind of reader, and the status table.
+- **A presets policy**
+  ([docs/operations/presets-policy.md](docs/operations/presets-policy.md)):
+  compose `security` always, `billing-nl` where the installation meters,
+  and leave `dora`, `pci-dss`, `evidence-etsi` and `nen-7513` as files until
+  a contract asks. `history` is reworked before anyone composes it.
+- **`docs/research/` is removed** from the tree: it read as design and was
+  not. The decisions that used it quote what they needed, and the surveys
+  remain in the repository's history. `docs/design/pipeline.md` is folded
+  into the architecture page, `docs/design/extension-points.md` moves to
+  `docs/reference/`, and `docs/design/viewer.md` becomes
+  `docs/design/audit-page.md` with the standalone console dropped.
+
 ## [0.1.1] - 2026-09-21
 
 The images publish where the chart looks for them. 0.1.0's release

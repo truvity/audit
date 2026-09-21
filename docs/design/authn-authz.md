@@ -45,16 +45,18 @@ pseudonymisation, and a grant to read must not carry it.
   trusts that claim from, and with several issuers every rule must name one.
   Claim mapping is therefore per rule, not per issuer: a rule names the claim
   it reads, from the issuer it trusts.
-- **workload tokens** (built, replacing trusted-upstream): a service in the
-  cluster presents its projected service-account token. The writer and the
-  registry verify it as a JWT from the cluster's own OIDC issuer. The subject
+- **workload tokens** (built, replacing trusted-upstream): a workload in the
+  application's namespace presents its projected service-account token. The
+  receiver verifies it as a JWT from the cluster's own OIDC issuer. The subject
   is the service account, which the kubelet vouches for and the workload cannot
-  choose. The writer stamps it on each record as the observer. The registry
-  maps it to the one source whose catalogue that workload may register.
+  choose. The receiver stamps it on each record as the observer, and it is also
+  what `RegisterCatalogue` is authenticated by: there is no registry service,
+  because an installation hears from one application
+  ([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 
   The earlier sketch had a gateway forward the principal, bound to mTLS or a
-  gateway-signed token, and the registry read an `Audit-Source` header meanwhile.
-  The header is gone. mTLS needs a certificate for every caller and a mesh or
+  gateway-signed token, and a registry service read an `Audit-Source` header
+  meanwhile. The header is gone. mTLS needs a certificate for every caller and a mesh or
   cert-manager to issue them; a projected token needs neither, and is verified
   by the same code as a person's token. mTLS remains possible behind the same
   interface for a deployment that already runs a mesh.
@@ -78,14 +80,21 @@ pseudonymisation, and a grant to read must not carry it.
 - **policy-engine adapter** (optional): for an engine whose query plan
   returns a filter and whose decision log names the rule.
 
-## Console
+## The Audit page
 
-The standalone console is an OIDC relying party (authorization code with
-PKCE, cookie session) and also runs behind a gateway in trusted-upstream
-mode. Embedded viewers pass their host's bearer.
+The page is hosted by the application's own console and passes the token that
+console already holds — normally the one its gateway issued for the person's
+session. There is no console of this component's own to authenticate anybody:
+see [the Audit page](audit-page.md).
 
 ## Resolution
 
 `resolve` is a separate operation: mapping a pseudonym back to a person
 through the identity map. It is granted to as few roles as possible and
 emits `audit.get`-class records naming the rule.
+
+Where the deployment runs no pseudonymisation keys — `keys.provider: none`,
+the default — there is nothing to resolve, and the operation is refused as
+unimplemented rather than answered emptily
+([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). A grant
+may still name it; it will never be exercised.

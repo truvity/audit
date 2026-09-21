@@ -1,7 +1,11 @@
 # 0010. Key providers: local, OpenBAO transit and AWS KMS envelope, behind one interface
 
-- Status: accepted
+- Status: accepted; the default is `none` per [0013](0013-no-pseudonymisation-keys-by-default.md)
 - Date: 2026-09-18
+
+The three providers and the interface below stand, for a deployment that
+needs to crypto-shred. What changed on 2026-09-22 is which one a deployment
+starts with: none of them.
 
 ## Context
 

@@ -1,16 +1,20 @@
 # 0004. One sink interface at every hop; the queue is invisible
 
-- Status: accepted
+- Status: accepted; the delivery modes are superseded by [0012](0012-two-deliveries-and-a-durable-ack.md)
 - Date: 2026-09-17
+
+The sink contract, the transports and the adapter model below stand. The
+three delivery modes do not: `outbox` and `best_effort` were retired on
+2026-09-22 in favour of `block` and `async`, and the file outbox was
+removed.
 
 ## Context
 
 Emitters run in clusters with a message stream, in clusters without one,
 and outside clusters as adapters. Audit needs a business-visible
 acknowledgement for privileged and billable actions, which log pipelines
-cannot give ([research/storage.md](../research/storage.md): the
-OpenTelemetry Collector has no delivery guarantee by default, drops when
-its queue fills, and has sampling processors). A prior internal telemetry
+cannot give: the OpenTelemetry Collector has no delivery guarantee by
+default, drops when its queue fills, and has sampling processors. A prior internal telemetry
 pipeline was lossy at three hops and is the negative example.
 
 ## Decision

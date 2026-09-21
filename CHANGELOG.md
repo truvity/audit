@@ -1,12 +1,17 @@
 # Changelog
 
 All notable changes to this project are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The Unreleased
-section describes the state of the repository, not the history of edits.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A section
+describes the state of the repository at that version, not the history of
+edits that got there.
 
-## [Unreleased]
+## [0.1.0] - 2026-09-21
 
-Foundation. No release.
+The foundation, released so that consumers have something to pin. Every
+contract, binary and chart below is at its first published version, and
+nothing outside this repository depends on it yet — which is the point of
+cutting it now rather than later: a version that exists can be adopted a
+piece at a time.
 
 - Contracts in `proto/audit/v1/`: record, sink, registry, query. Generated
   Go and TypeScript committed under `gen/` and `ts/src/gen`.

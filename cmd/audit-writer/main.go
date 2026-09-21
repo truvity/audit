@@ -63,9 +63,6 @@ func run() error {
 		listen    = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
 		workloads = flag.String("workloads", env("AUDIT_WORKLOADS", ""),
 			"the file naming the issuers trusted to say which workload is publishing")
-		source = flag.String("source", env("AUDIT_SOURCE", ""),
-			"the one application this installation serves: any verified caller registers a catalogue as it. "+
-				"For an installation admitting several workloads, map each to its source in --workloads instead")
 		keepIdentities = flag.Bool("keep-identities", true,
 			"keep the identity behind each pseudonym, sealed under its key, so that resolve can find it")
 		anonymous = flag.Bool("anonymous-writes", false,
@@ -157,10 +154,12 @@ func run() error {
 	// nobody's name — which it does only when told to, for a trial.
 	var authenticated auth.Authenticator
 	// Whose catalogue a document is, is never the document's to claim: it comes
-	// from the caller's verified service account. cli.SourceOf says how, and
-	// answers "" — registration refused — for an installation that configured
-	// no way to tell.
-	sourceOf := cli.SourceOf(nil, "")
+	// from the caller's verified service account, mapped to a source in the
+	// workloads file. An empty mapping answers "" for everybody, which refuses
+	// every registration — the right answer for a deployment that never said
+	// who may register what. It must never be nil: the registry reads a nil
+	// Identity as "nobody is checking" and would then take the document's word.
+	sourceOf := auth.Workloads(nil).SourceFrom
 	switch {
 	case *workloads != "":
 		callers, err := cli.LoadWorkloads(*workloads)
@@ -170,7 +169,7 @@ func run() error {
 		if authenticated, err = auth.NewJWT(ctx, callers.Issuers, slog.Default()); err != nil {
 			return err
 		}
-		sourceOf = cli.SourceOf(callers.Map, *source)
+		sourceOf = callers.Map.SourceFrom
 	case *anonymous:
 		slog.Warn("accepting writes from callers nobody verified: records written over HTTP " +
 			"carry no observer identity, and anyone who can reach this port can write them")

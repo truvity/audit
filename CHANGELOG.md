@@ -23,11 +23,11 @@ same Postgres store, the same copy into the archive, the same coverage report
 that warns and never refuses.
 
 Whose catalogue a registration is still comes from the caller's verified
-service account and never from the document. New value `source` names the one
-application an installation serves, and any caller the deployment verifies
-registers as it — which is what an installation belonging to one application
-wants. `workloadIdentity.workloads` stays for an installation that admits
-several, and the chart refuses to render with neither.
+service account and never from the document, and `workloadIdentity.workloads`
+is still the only thing that says so: one entry per workload that may
+register, naming the source it speaks for. An installation that keeps an index
+and verifies callers must fill it in, and the chart now refuses to render when
+it is empty rather than letting every registration be refused at run time.
 
 - **Three decisions.**
   [0011](docs/decisions/0011-one-installation-per-service-or-product.md): one

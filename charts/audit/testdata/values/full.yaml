@@ -38,14 +38,12 @@ jobs:
     dedupeWindow: 336h
   clockSync:
     ntp: [time.cloudflare.com, time.google.com]
-source: wallet
 workloadIdentity:
   issuers:
     - url: https://oidc.example.com/id/CLUSTER
   workloads:
     - subject: system:serviceaccount:wallet:wallet-api
-      source: wallet
-networkPolicy:
+      networkPolicy:
   enabled: true
 telemetry:
   otlpEndpoint: http://otel-collector.observability.svc:4318

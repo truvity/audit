@@ -10,9 +10,6 @@ image:
   cli:
     repository: ghcr.io/truvity/audit/audit
     tag: ""
-  registry:
-    repository: ghcr.io/truvity/audit/audit-registry
-    tag: ""
   query:
     repository: ghcr.io/truvity/audit/audit-query
     tag: ""
@@ -27,6 +24,14 @@ fullnameOverride: ""
 # through; the chart refuses to render otherwise, because the binary refuses to
 # start and a manifest it will reject is worse than an error here.
 replicas: 1
+
+# The one application this installation serves. The writer accepts its
+# catalogue at start-up (RegisterCatalogue, beside the sink — there is no
+# registry service), and whose catalogue a document is comes from the caller's
+# verified service account, never from the document. With `source` set, any
+# caller this deployment verifies registers as that application, which is what
+# an installation belonging to one application wants.
+source: ""
 
 # The archive.
 bucket: ""
@@ -44,25 +49,6 @@ profiles:
     presets: [security]
   history:
     presets: [history]
-
-# The catalogue registry. Applications register their catalogue here at deploy
-# and do not start if this deployment refuses it.
-#
-# It needs the same database as the index — the catalogues live beside the rows
-# they describe and share one migration chain — and the profiles, against
-# which it reports, after each registration, any category a profile's
-# framework requires that no registered catalogue covers yet. It reports and
-# does not refuse: coverage is the deployment's, not one application's.
-registry:
-  enabled: false
-  replicas: 2
-  service:
-    port: 8080
-  # Its own identity: the registry needs the database and the writer, and none
-  # of the bucket rights the writer's role carries.
-  serviceAccount:
-    create: true
-    annotations: {}
 
 # The query service: search, facets, get, export, tail and resolve, behind the
 # grants below. Every read it serves is recorded through the writer.
@@ -128,14 +114,14 @@ query:
     create: true
     annotations: {}
 
-# Who is calling the writer and the registry.
+# Who is calling the writer.
 #
-# A workload presents its projected service-account token, and the services
-# verify it against the cluster's own OIDC issuer. The subject is the service
+# A workload presents its projected service-account token, and the writer
+# verifies it against the cluster's own OIDC issuer. The subject is the service
 # account, which the kubelet vouches for and the workload cannot choose. The
-# writer stamps it on every record as the observer; the registry maps it to the
-# source whose catalogue that workload may register. The jobs below present
-# their own tokens the same way.
+# writer stamps it on every record as the observer, and it is also how the
+# writer decides whose catalogue a registration is — `source` above, or the
+# mapping below. The jobs present their own tokens the same way.
 workloadIdentity:
   # The issuers trusted to name a workload, exactly as their tokens' iss claim
   # reads — on EKS, the cluster's OIDC provider URL. Discovery is fetched from
@@ -148,8 +134,11 @@ workloadIdentity:
   # How long a projected token lives. The kubelet replaces it before then, and
   # the jobs read it afresh on every request.
   expirationSeconds: 3600
-  # Which service account speaks for which source, for the registry. A workload
-  # not listed here cannot register a catalogue.
+  # Which service account speaks for which source. An installation serving one
+  # application needs none of this: name the application in `source` above and
+  # any verified caller registers as it. Map workloads here instead where one
+  # installation admits several, and then a workload not listed cannot register
+  # a catalogue at all.
   workloads: []
   #  - subject: system:serviceaccount:wallet:wallet-api
   #    source: wallet
@@ -164,9 +153,9 @@ anonymousWrites: false
 telemetry:
   otlpEndpoint: ""
 
-# Catalogues registered at start-up, as name -> document. The common catalogue
-# is built in and needs no entry here. A deployment running the registry
-# usually leaves this empty: an application registers its own.
+# Catalogues mounted for the writer at start-up, as name -> document. The
+# common catalogue is built in and needs no entry here. Most deployments leave
+# this empty: the application registers its own over RegisterCatalogue.
 catalogues: {}
 
 # The index and the shared deduplication table. Without it the writer indexes
@@ -341,7 +330,7 @@ serviceAccount:
   name: ""
 
 # Who may reach each component. The writer's sink takes this release's own
-# pods (the jobs, the registry and the query service record through it) and
+# pods (the jobs and the query service record through it) and
 # whatever `ingressFrom` adds — the namespaces of the workloads that emit.
 # The query service takes `queryIngressFrom`, normally the gateway in front of
 # it; empty leaves it open inside the cluster, because a read path nobody can

@@ -131,11 +131,10 @@ egress to the reference.
 
 One image per binary, built by ko from `.goreleaser.yaml` under
 `ghcr.io/truvity/audit/`: `audit-writer` (the receiver and the writer),
-`audit` (the toolchain the jobs run) and `audit-query`. No release has been
-published yet; until one is, build them with `just snapshot`, push them to a
-registry the cluster can pull from, and set `image.*.repository` and
-`image.*.tag`. The `audit-registry` image goes away with the rewrite, because
-the receiver serves `RegisterCatalogue`.
+`audit` (the toolchain the jobs run) and `audit-query`. Three, because the
+receiver serves `RegisterCatalogue` itself. No release has been published yet;
+until one is, build them with `just snapshot`, push them to a registry the
+cluster can pull from, and set `image.*.repository` and `image.*.tag`.
 
 All of them are distroless and have no shell, which is why every job in the
 chart is a command with arguments.

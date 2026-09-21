@@ -14,7 +14,7 @@ data:
     profiles:
       {{- toYaml .Values.profiles | nindent 6 }}
   {{- if include "audit.verifiesWorkloads" . }}
-  # What `audit-writer --workloads` and `audit-registry --workloads` read: the
+  # What `audit-writer --workloads` reads: the
   # issuers trusted to name a calling workload, and the source each speaks for.
   workloads.yaml: |
     issuers:

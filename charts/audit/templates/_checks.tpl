@@ -66,12 +66,9 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- end -}}
 {{- end -}}
 
-{{- if .Values.registry.enabled -}}
-  {{- if not (include "audit.hasDatabase" .) -}}
-  {{- fail "audit: `registry.enabled` needs `database`. Registered catalogues live in the same database as the index and share its migration chain; there is nowhere else to put them." -}}
-  {{- end -}}
-  {{- if not (and .Values.workloadIdentity.issuers .Values.workloadIdentity.workloads) -}}
-  {{- fail "audit: `registry.enabled` needs `workloadIdentity.issuers` and `workloadIdentity.workloads`. The registry decides whose catalogue a document is from the caller's verified service account, so with no mapping it would refuse every registration; and a registry that took the document's own word for whose catalogue it is would let any workload describe another's records." -}}
+{{- if and .Values.workloadIdentity.issuers (include "audit.hasDatabase" .) -}}
+  {{- if and (not .Values.workloadIdentity.workloads) (not .Values.source) -}}
+  {{- fail "audit: give `source`, or map every workload in `workloadIdentity.workloads`. The writer serves RegisterCatalogue beside the sink, and whose catalogue a document is comes from the caller's verified service account and never from the document — with neither, every registration would be refused. `source` is the usual answer: an installation serves one application." -}}
   {{- end -}}
 {{- end -}}
 

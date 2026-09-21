@@ -31,17 +31,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{ .Values.image.writer.repository }}:{{ .Values.image.writer.tag | default .Chart.AppVersion }}
 {{- end -}}
 
-{{- define "audit.registryImage" -}}
-{{ .Values.image.registry.repository }}:{{ .Values.image.registry.tag | default .Chart.AppVersion }}
-{{- end -}}
-
 {{- define "audit.queryImage" -}}
 {{ .Values.image.query.repository }}:{{ .Values.image.query.tag | default .Chart.AppVersion }}
 {{- end -}}
 
 {{/* The writer's pods. Every component carries the release's labels, so the
 writer names itself too: a selector of the release's labels alone would take
-the registry's and the query service's pods into the writer's Service. */}}
+the query service's and the jobs' pods into the writer's Service. */}}
 {{- define "audit.writerSelectorLabels" -}}
 {{ include "audit.selectorLabels" . }}
 app.kubernetes.io/component: writer
@@ -56,14 +52,6 @@ app.kubernetes.io/component: writer
 {{- default (include "audit.fullname" .) .Values.serviceAccount.name -}}
 {{- else -}}
 {{- default "default" .Values.serviceAccount.name -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "audit.registryServiceAccountName" -}}
-{{- if .Values.registry.serviceAccount.create -}}
-{{- printf "%s-registry" (include "audit.fullname" .) -}}
-{{- else -}}
-{{- include "audit.serviceAccountName" . -}}
 {{- end -}}
 {{- end -}}
 
@@ -195,7 +183,7 @@ for it.
           expirationSeconds: {{ .Values.workloadIdentity.expirationSeconds }}
 {{- end -}}
 
-{{/* The workloads file mount, for the writer and the registry. */}}
+{{/* The workloads file mount, for the writer. */}}
 {{- define "audit.workloadsMount" -}}
 - name: deployment
   mountPath: /etc/audit/workloads.yaml

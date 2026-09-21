@@ -67,8 +67,8 @@ understand, or — worse — to a trail that looks fine and is not.
 {{- end -}}
 
 {{- if and .Values.workloadIdentity.issuers (include "audit.hasDatabase" .) -}}
-  {{- if and (not .Values.workloadIdentity.workloads) (not .Values.source) -}}
-  {{- fail "audit: give `source`, or map every workload in `workloadIdentity.workloads`. The writer serves RegisterCatalogue beside the sink, and whose catalogue a document is comes from the caller's verified service account and never from the document — with neither, every registration would be refused. `source` is the usual answer: an installation serves one application." -}}
+  {{- if not .Values.workloadIdentity.workloads -}}
+  {{- fail "audit: map every workload that registers a catalogue in `workloadIdentity.workloads`. The writer serves RegisterCatalogue beside the sink, and takes whose catalogue a document is from the caller's verified service account and never from the document, so with no mapping every registration would be refused." -}}
   {{- end -}}
 {{- end -}}
 

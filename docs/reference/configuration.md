@@ -59,7 +59,6 @@ binary's flags with dots.
 | setting | meaning |
 |---|---|
 | `mode` | `direct` or `stream`. Not built yet: it arrives with the rewrite, and replaces inferring the shape from whether `stream.url` is set |
-| `source` | the one application this installation serves. The writer accepts its catalogue at start-up, and any caller the deployment verifies registers as it. An installation admitting several workloads maps them in `workloadIdentity.workloads` instead |
 | `bucket`, `prefix`, `region`, `kmsKey` | the archive. `prefix` is required in a bucket shared with other applications: it is what keeps two installations apart |
 | `governance` | lets a privileged role shorten a retention. Off, and the chart refuses it on: a deployment that wants it says so in a values file of its own |
 | `profiles` | composition of presets and prefixes, the document `audit-writer --deployment` reads |
@@ -271,12 +270,14 @@ in this repository read it from the file named by `AUDIT_TOKEN_FILE` on every
 request, because the kubelet replaces it before it expires.
 
 Whose catalogue a registration is, comes from that verified identity and never
-from the document. An installation serving one application says so once with
-`source`, and any caller it verifies registers as that application. The file's
-`workloads` list — which service account speaks for which source — is for the
-installation that admits several, and where it is set a workload missing from
-it cannot register at all. The chart refuses to render with neither
-([0011](../decisions/0011-one-installation-per-service-or-product.md)).
+from the document. The file's `workloads` list is what says so: which service
+account speaks for which source. A caller missing from it registers as nobody
+and its registration is refused, which is also why an installation that keeps
+an index and verifies callers must fill the list in — the chart refuses to
+render otherwise. There is deliberately no shortcut that lets any verified
+caller register for the application: a workload that could register under
+another source could describe another application's records, and everything
+downstream reads the description.
 
 The issuer's discovery document is fetched at start-up, so it must be reachable
 over HTTPS from the pods. A managed cluster's public OIDC provider is. The API

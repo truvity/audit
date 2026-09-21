@@ -64,9 +64,6 @@ spec:
             {{- else if .Values.anonymousWrites }}
             - --anonymous-writes
             {{- end }}
-            {{- with .Values.source }}
-            - --source={{ . }}
-            {{- end }}
             {{- if .Values.kmsKey }}
             - --kms-key={{ .Values.kmsKey }}
             {{- end }}

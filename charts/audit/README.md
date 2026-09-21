@@ -42,12 +42,12 @@ Three images, one per binary: `image.writer`, `image.query`, `image.cli`. The
 receiver serves `RegisterCatalogue`, so there is no fourth.
 
 **Whose catalogue is whose.** The writer takes it from the caller's verified
-service account, never from the document. Name the application in `source` and
-any caller the deployment verifies registers as it, which is what an
-installation belonging to one application wants. An installation admitting
-several workloads maps each in `workloadIdentity.workloads` instead, and then a
-workload missing from the map cannot register at all. With neither, every
-registration would be refused, so the chart refuses to render.
+service account, never from the document, and `workloadIdentity.workloads` is
+the mapping: one entry per workload that may register, naming the source it
+speaks for. A workload missing from it cannot register at all. An installation
+that keeps an index and verifies callers must fill it in, and the chart refuses
+to render when it is empty — with no mapping every registration would be
+refused at run time instead.
 
 ## What the deployment brings
 
@@ -140,10 +140,9 @@ binaries reject at start-up or, worse, accept and get quietly wrong, and
   not a flag.
 
 There is one more, which the writer serving `RegisterCatalogue` brought with
-it: an installation that verifies callers and keeps an index must say whose
-catalogue a registration is, with `source` or with
-`workloadIdentity.workloads`. The first two of the list above are not built
-yet and arrive with the rest of the rewrite.
+it: an installation that verifies callers and keeps an index must map the
+workloads that may register in `workloadIdentity.workloads`. The first two of
+the list above are not built yet and arrive with the rest of the rewrite.
 
 ## Checking it
 

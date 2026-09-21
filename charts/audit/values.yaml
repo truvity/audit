@@ -25,14 +25,6 @@ fullnameOverride: ""
 # start and a manifest it will reject is worse than an error here.
 replicas: 1
 
-# The one application this installation serves. The writer accepts its
-# catalogue at start-up (RegisterCatalogue, beside the sink — there is no
-# registry service), and whose catalogue a document is comes from the caller's
-# verified service account, never from the document. With `source` set, any
-# caller this deployment verifies registers as that application, which is what
-# an installation belonging to one application wants.
-source: ""
-
 # The archive.
 bucket: ""
 prefix: ""
@@ -119,9 +111,9 @@ query:
 # A workload presents its projected service-account token, and the writer
 # verifies it against the cluster's own OIDC issuer. The subject is the service
 # account, which the kubelet vouches for and the workload cannot choose. The
-# writer stamps it on every record as the observer, and it is also how the
-# writer decides whose catalogue a registration is — `source` above, or the
-# mapping below. The jobs present their own tokens the same way.
+# writer stamps it on every record as the observer, and the mapping below is
+# how it decides whose catalogue a registration is. The jobs present their own
+# tokens the same way.
 workloadIdentity:
   # The issuers trusted to name a workload, exactly as their tokens' iss claim
   # reads — on EKS, the cluster's OIDC provider URL. Discovery is fetched from
@@ -134,11 +126,12 @@ workloadIdentity:
   # How long a projected token lives. The kubelet replaces it before then, and
   # the jobs read it afresh on every request.
   expirationSeconds: 3600
-  # Which service account speaks for which source. An installation serving one
-  # application needs none of this: name the application in `source` above and
-  # any verified caller registers as it. Map workloads here instead where one
-  # installation admits several, and then a workload not listed cannot register
-  # a catalogue at all.
+  # Which service account speaks for which source. The writer accepts a
+  # catalogue at start-up (RegisterCatalogue, beside the sink — there is no
+  # registry service), and takes whose it is from here and never from the
+  # document. A workload not listed cannot register a catalogue at all, which
+  # is why an installation that keeps an index and verifies callers must fill
+  # this in.
   workloads: []
   #  - subject: system:serviceaccount:wallet:wallet-api
   #    source: wallet

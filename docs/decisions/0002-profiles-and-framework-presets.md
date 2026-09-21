@@ -11,7 +11,7 @@ as PCI DSS, DORA or healthcare access logging. They disagree on which fields
 may be kept, how identities are treated, and for how long. A single store
 with a single retention over-retains for one purpose and under-retains for
 another, and lets a reader with one purpose see fields justified only by
-another ([research/regulation.md](../research/regulation.md)).
+another (see the regulation survey in this repository's history).
 
 ## Decision
 

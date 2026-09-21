@@ -1,5 +1,14 @@
 # Pseudonymisation keys in OpenBAO
 
+Pseudonymisation keys are off by default: `keys.provider: none`, and nothing
+on this page applies
+([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),
+[key custody](key-custody.md)). Read on only for a deployment that must be
+able to crypto-shred and has chosen `transit` to do it with — or for one
+whose digest job signs with a transit key, which is a different key that
+every installation has
+([signing key](key-custody.md#signing-key)).
+
 The `transit` key provider keeps every tenant's key for every purpose in an
 OpenBAO (or Vault) transit engine. It is the provider for a deployment of more
 than one writer:

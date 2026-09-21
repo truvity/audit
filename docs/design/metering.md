@@ -1,12 +1,21 @@
 # Metering
 
-One stream, two projections, two locked prefixes.
+One write path, two projections, two locked prefixes — both under the
+installation's own prefix in the environment's bucket.
 
 This projection reads only what the write path already produces: the billing
-profile's copies, the outcome rule on metered actions, and pseudonyms that
-differ per purpose. It is what validates the design's central claim, that two
-projections of one stream cannot be joined on a person, and so it is built
-before the first adopter rather than after.
+profile's copies and the outcome rule on metered actions. It is what validates
+the design's central claim, that two projections of one record cannot be joined
+on a person. They cannot because the metering profile keeps nobody: no actor,
+no subject, only a quantity per tenant and meter. Where a deployment does run
+pseudonymisation keys, the two copies also carry different pseudonyms for one
+person, but that is a second line and not the one the claim rests on
+([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
+
+It runs in either deployment shape. The rollups are filled at index time by
+whichever process writes, and only the
+[usage quotas](../deployment/extensions/quotas.md) extension — a second
+consumer of the same records — needs [stream mode](../deployment/stream.md).
 
 ## Fields
 

@@ -3,17 +3,22 @@
 Proto for what is compiled, JSON Schema for what is loaded. The core record
 is fixed; sources extend it through predefined slots.
 
+The slots and the annotations are part of the contract, alongside
+[the record](record.md) and [the catalogue](catalogue.md). An application's
+schemas live in its own repository and reach the receiver with its
+catalogue.
+
 | slot | keyed by | registered by |
 |---|---|---|
-| `data` | `action` | the emitting source |
+| `data` | `action` | the application |
 | `targets[].attributes` | `targets[].type` | whoever owns the type |
-| `actor.attributes` | `actor.kind` | the platform or the source |
-| `context.areas.<area>` | area name | the platform |
-| `meter.dimensions` | `meter.name` | the emitting source |
+| `actor.attributes` | `actor.kind` | the application |
+| `context.areas.<area>` | area name | the application, in its catalogue |
+| `meter.dimensions` | `meter.name` | the application |
 
 ## Rules an extension schema must satisfy
 
-Enforced by `schemas/extension.schema.json`:
+Enforced by [extension.schema.json](../../schemas/extension.schema.json):
 
 - A closed object (`additionalProperties: false`) with a URI `$id` under
   the source's namespace.
@@ -66,13 +71,16 @@ Enforced by `schemas/extension.schema.json`:
 ## How components use the annotations
 
 - **Emitter**: validates against the composed schema before publishing.
-- **Split writer**: routes each property to the profiles whose classes
-  include it; applies the pseudonym treatment to `identifier` properties by
-  the kind's category; applies `x-audit-sensitive`.
+- **[Split writer](../design/split-writer.md)**: routes each property to the
+  profiles whose classes include it; applies each `identifier` property the
+  treatment its kind's category has in the profile — which, with no key
+  provider, is clear or dropped rather than a pseudonym
+  ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md));
+  applies `x-audit-sensitive`.
 - **Indexer**: creates facet columns and typed filter predicates from
   `x-audit-facet` and `x-audit-filter`.
-- **Viewer**: renders the detail panel, facets and filters from `title`,
-  `description`, `enum` and `format`.
+- **[Audit page](../design/audit-page.md)**: renders the detail panel, facets
+  and filters from `title`, `description`, `enum` and `format`.
 - **Exporters**: map by `x-ocsf-path` and `x-ecs-path`.
 
 ## Discipline

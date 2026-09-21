@@ -13,7 +13,8 @@ This component exists so that there is one answer.
 ## What it must be
 
 - **Complete.** A record that was accepted is never lost. Privileged and
-  billable actions do not complete until the record is durable.
+  billable actions do not complete until the record is durable, and an
+  action that is not worth keeping does not belong in the catalogue.
 - **Immutable and provable.** Copies live under S3 Object Lock in
   compliance mode. An hourly signed digest chains every object to the
   previous digest. A `verify` command lets an auditor check the chain
@@ -24,6 +25,11 @@ This component exists so that there is one answer.
   seven years and no people. Evidence keeps lifecycle facts for seven years
   after expiry. A tenant's history keeps sentences and diffs for as long as
   the product promises.
+- **Owned by the application it records.** One installation belongs to one
+  application, in its namespace, rendered by its chart
+  ([0011](decisions/0011-one-installation-per-service-or-product.md)). No
+  team waits on another team's audit service to ship, and no application
+  holds the archive's credentials.
 - **Extensible without forks.** Applications add their own data through
   predefined slots described in JSON Schema, register an action catalogue,
   and every generic component understands them at runtime.
@@ -42,8 +48,8 @@ This component exists so that there is one answer.
   own log of presentations on the user's device, and the wallet provider
   must not be able to read it. This component never carries presentation
   contents, attribute values or identifiers that would let transactions be
-  linked. It sees operational events with pseudonymous subjects, nothing
-  else.
+  linked. It sees operational events, whose subjects are the identifiers the
+  application itself minted, and nothing else.
 - **Not a ledger database.** Object storage is the record; every database
   is a rebuildable projection.
 

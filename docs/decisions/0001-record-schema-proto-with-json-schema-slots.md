@@ -11,7 +11,7 @@ detection and a binary encoding on the queue. Generic components (the split
 writer's field routing, the indexer's facet columns, the viewer's detail
 panel, the exporters) must understand an application's own data at runtime
 without being recompiled. Existing schema standards were surveyed
-([research/standards.md](../research/standards.md)): OCSF is the right
+(see the standards survey in this repository's history): OCSF is the right
 export target but too heavy to author in; ECS is frozen since its donation
 to OpenTelemetry; OpenTelemetry has no audit convention; CloudEvents is an
 envelope, not a record; CADF is dormant but its initiator, action, target,

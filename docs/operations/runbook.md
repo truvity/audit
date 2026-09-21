@@ -1,19 +1,87 @@
 # Runbook
 
-## The writer is down
+One installation belongs to one application and runs in that application's
+namespace
+([0011](../decisions/0011-one-installation-per-service-or-product.md)). What
+is actually running depends on the mode, and most of what follows differs
+between the two:
 
-Emitters with block delivery see publish failures and their requests fail
-closed. Emitters with outbox delivery accumulate locally. The stream holds
-messages up to its horizon. Restore the writer; it resumes from its
-consumer position; dedupe absorbs redeliveries. If the horizon was
-exceeded, the stream's discard-new policy refused publishes rather than
-dropping, so nothing accepted was lost.
+| | [direct](../deployment/direct.md) | [stream](../deployment/stream.md) |
+|---|---|---|
+| receiver | is the writer: one process validates, puts the object and indexes it | publishes to the stream and acknowledges when it is replicated |
+| writer | the receiver's own pods | `audit-writer` in consumer mode, N pods, scaled apart |
+| "behind" looks like | a roll interval of queued records in the application | the stream consumer's pending count |
+| a writer rollout is | a pause | a backlog |
+
+## The receiver is down
+
+An action declared `block` fails, and the application's request fails with
+it: that is what `block` is for. An action declared `async` waits in the
+emitter's bounded in-memory queue and is retried with backoff until the
+receiver acknowledges it. It is dropped only if that queue overflows, and
+every drop is a log line in the application as well as a count.
+
+Restore the receiver. Nothing it acknowledged was lost, because it
+acknowledges nothing it has not stored
+([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
+
+There is no file outbox and no volume on the emitting pod. What a pod holds
+is the queue, and the queue dies with the pod: up to one roll interval of
+`async` records in direct mode, milliseconds' worth in stream mode. A
+`block` record is never lost, because the application had no acknowledgement
+to act on.
+
+## The emitter's queue is filling
+
+Two numbers say it, both from the application's own process:
+
+| metric | what it means |
+|---|---|
+| `audit.emit.queue.pending` | records waiting to be delivered. Rising means the receiver is slow or down. **Not built yet: arrives with the rewrite**, replacing `audit.emit.outbox.pending` |
+| `audit.emit.records.dropped` | records the queue gave up on. This is the incident |
+
+Alert on the second and watch the first: a queue that is filling is the
+warning, a drop is the loss. With the usual OTLP-to-Prometheus naming:
+
+```
+increase(audit_emit_records_dropped_total[15m]) > 0
+```
+
+The emitter's other counters are `audit.emit.records.written` (what a sink
+accepted, by delivery), `audit.emit.records.refused` (records that do not
+satisfy their catalogue — a bug in the emitting code, not an outage) and
+`audit.emit.batches.failed`.
+
+## The writer is down, or is being rolled
+
+**Direct mode: a rollout is a pause.** The receiver is the writer, so while
+no replica is ready, `block` calls fail and `async` records accumulate in
+the applications' queues. Two replicas and a rolling update make the pause
+the time one pod takes to become ready. Two replicas are safe because the
+deduplication table is in Postgres and not in a pod.
+
+**Stream mode: a rollout is a backlog.** The receiver keeps publishing and
+acknowledging, the application notices nothing, and the stream's consumer
+pending count rises and then falls again. The alert is a pending count that
+rises and does not come back down: the writers cannot keep up, or cannot
+write. Restore them; a writer resumes from its consumer position and the
+dedupe table absorbs the redeliveries of whatever batch was in flight.
+
+If the stream's horizon was exceeded, its discard-new policy refused
+publishes rather than dropping, so nothing that was accepted was lost — the
+refusals appear at the receiver, and from there as failed `block` calls and
+a filling queue.
 
 ## Object storage is unreachable
 
-The writer buffers, stops acking, and alerts. Nothing is dropped while the
-stream horizon holds. After recovery, objects are written with their
-original `occurred_at`; `recorded_at` shows the delay.
+In direct mode the receiver cannot make anything durable, so it acknowledges
+nothing: `block` fails and `async` queues, exactly as when the receiver is
+down. In stream mode the writers stop acknowledging batches and the stream
+holds them up to its horizon; the application is unaffected until that
+horizon is reached.
+
+Nothing is dropped in either case. After recovery, objects are written with
+their original `occurred_at`; `recorded_at` shows the delay.
 
 ## A record was dead-lettered
 
@@ -56,6 +124,10 @@ why, one line each (`--json` for the same as data):
 Nothing in the archive can be repaired: that is its point. Record what was
 found and when, place a legal hold on the affected prefix if it may be needed
 as evidence, and fix what let it happen.
+
+The chain covers one installation's prefix. An application whose records
+share a bucket with another application's is not affected by a problem under
+the other's prefix, and the two are verified separately.
 
 ## The clock-sync job is failing
 
@@ -143,6 +215,39 @@ If the index is not merely behind but wrong — a bad migration, a partial
 restore — drop it, run `audit migrate`, and reindex the range. Nothing in the
 index is evidence, and the archive is unaffected.
 
+## The index is gone
+
+A dropped database, a lost cluster, a restore that cannot be trusted. This
+is a documented incident with a documented recovery, because **the index is
+not backed up on purpose**: everything in it is derived from the archive, and
+the archive is what is under the lock and the chain.
+
+What is lost is search, facets and tail until the rebuild finishes, and the
+deduplication table — so a redelivery that arrives during the gap is written
+a second time. That costs an object: the index keeps one row per identifier,
+the digest chain accounts for both objects, and a reader sees the record
+once. Not one record is lost. `audit verify` reads the archive
+and the chain only, so the trail can still be proved intact while the index
+is being rebuilt.
+
+Recreate the schema and the reader role, then rebuild, oldest range first,
+one profile at a time:
+
+```
+audit migrate --database "$OWNER_URL" --reader audit_query
+audit reindex --profile <p> --from <day> --to <day> \
+    --database <url> --bucket <b> --catalogue <file>...
+```
+
+The catalogues must be every version the range was written under; the
+archive keeps a copy of each under `schema/`. A rebuild is asserted to
+produce the same rows and the same counts the writer produced, which is why
+this is a rebuild and not a reconstruction.
+
+Writers keep writing the archive throughout. Start them against the new
+database once `audit migrate` has run — a writer whose database is at
+another schema version refuses to start — and reindex the days behind them.
+
 ## The index or the deduplication table is growing without end
 
 Neither is bounded by anything but this:
@@ -161,7 +266,55 @@ while keeping what happened. It has no default on purpose: the presets cite
 retention for the record, and none of them states a separate, shorter life for
 the actor and subject columns, so the number is a deployment's own policy.
 
-## A tenant asks for erasure
+## The application's catalogue changed
+
+The application registers its catalogue with the receiver at start-up, over
+`RegisterCatalogue`. There is no registry service: an installation hears from
+one application, so the receiver serves that call and validates the
+catalogue's categories against the profiles the installation composes
+([0011](../decisions/0011-one-installation-per-service-or-product.md)).
+
+A malformed catalogue is refused and the application does not start. A
+receiver that is merely unreachable is retried. The first records under a new
+version copy its schemas into the archive, so a record written under it still
+reads correctly years later — which is also why a version the archive has
+never seen arrives as a dead letter rather than as a loss.
+
+## Reading from the replica
+
+When the primary bucket's region is unavailable, the replica — same Object
+Lock, retention replicated — is the archive. Point `audit verify` and the
+query service's `--bucket` at it (reads only; the writer keeps writing to the
+primary, and a writer that cannot reach it withholds acknowledgements until it
+can). Verification against the replica is as good as against the primary: the
+chain was replicated with the objects it covers.
+
+## A legal hold is needed
+
+```
+audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b> --sink <writer>
+audit hold list --bucket <b>
+audit hold release --id <id> --by <who> --bucket <b> --sink <writer>   # break-glass only
+```
+
+Placing sets an Object Lock legal hold on every existing object under the
+prefix and writes the hold under `holds/`; the writer reads the holds every
+minute and puts new objects under a held prefix with the hold already on.
+Releasing needs the break-glass role: the bucket policy refuses
+`s3:PutObjectLegalHold` with `OFF` to everyone else, and the refused attempt
+is still recorded.
+
+## When the deployment runs pseudonymisation keys
+
+The three sections below apply only to an installation that configured a key
+provider. `keys.provider: none` is the default — most deployments run no
+pseudonymisation keys at all, there is no `identity/` prefix, and resolve is
+refused as unimplemented
+([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),
+[key custody](key-custody.md)). That default is not built yet: it arrives
+with the rewrite, and the chart's default today is `local`.
+
+### A tenant asks for erasure
 
 ```
 audit key destroy --tenant <id> --purpose <p> --by <who> --reason <why> \
@@ -184,12 +337,19 @@ then failed — and a reader trusting the trail would believe a person's data
 unlinkable when it is not. A missing record is discoverable by comparing the
 keys that exist to the records of their destruction; a false one is not
 discoverable at all. If the record cannot be written the command says, loudly,
-that the key is already gone and must be accounted for by hand. Destroy the tenant's pseudonymisation keys for the
-purposes not under a legal duty; the security and history copies become
-unlinkable. Billing and evidence copies stay under Art. 17(3)(b). Record is
-automatic (`audit.key.destroyed`).
+that the key is already gone and must be accounted for by hand.
 
-## Keys are never rotated
+Destroy the tenant's pseudonymisation keys for the purposes not under a legal
+duty; the security and history copies become unlinkable. Billing and evidence
+copies stay under Art. 17(3)(b). The record is automatic
+(`audit.key.destroyed`).
+
+Where there are no keys, erasure of an end user is the application's, in the
+application's own database. The archive keeps the opaque identifier it was
+given, and after the application's deletion that identifier resolves to
+nobody.
+
+### Keys are never rotated
 
 A pseudonymisation key is not rotated on a schedule, after staff leave, or
 after an incident with the writer: a rotation gives every person a second,
@@ -201,36 +361,10 @@ answer is where the keys live and who may use them
 digest signing key can be replaced — each digest names the key it was signed
 with — as long as every public half ever used is kept.
 
-## A legal hold is needed
+The signing key is a different key and a different job, and every
+installation has one: see [key custody](key-custody.md).
 
-```
-audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b> --sink <writer>
-audit hold list --bucket <b>
-audit hold release --id <id> --by <who> --bucket <b> --sink <writer>   # break-glass only
-```
-
-Placing sets an Object Lock legal hold on every existing object under the
-prefix and writes the hold under `holds/`; the writer reads the holds every
-minute and puts new objects under a held prefix with the hold already on. A
-held tenant's key cannot be destroyed. Releasing needs the break-glass role:
-the bucket policy refuses `s3:PutObjectLegalHold` with `OFF` to everyone else,
-and the refused attempt is still recorded.
-
-## Reading from the replica
-
-When the primary bucket's region is unavailable, the replica — same Object
-Lock, retention replicated — is the archive. Point `audit verify` and the
-query service's `--bucket` at it (reads only; the writer keeps writing to the
-primary, and a writer that cannot reach it withholds acknowledgements until it
-can). Verification against the replica is as good as against the primary: the
-chain was replicated with the objects it covers.
-
-## A new source arrives
-
-Register its catalogue; the registry validates categories against the
-profiles it emits into. First records copy the schemas into the archive.
-
-## The key directory changed
+### The key directory changed
 
 A writer refuses to start with `this writer's key directory is not the
 deployment's` when the directory it mounts is not the one the deployment's
@@ -255,4 +389,3 @@ delete from audit_key_directory;
 ```
 
 The next writer to start registers its directory, and the rest must share it.
-

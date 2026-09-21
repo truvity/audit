@@ -78,8 +78,8 @@ non-zero on any invalid entry. Auditors run it with read-only credentials.
 ## Nightly
 
 The nightly run verifies the previous day, records `audit.digest.verified`
-or `audit.digest.failed`, and marks the windows in the index so the viewer
-shows a badge.
+or `audit.digest.failed`, and marks the windows in the index so the
+[Audit page](audit-page.md) shows a badge.
 
 ### The job
 
@@ -91,9 +91,10 @@ evidence of tampering that nobody can resolve. It never seals the hour it wakes
 in — objects are still being written into it — and it bounds one run to a week
 of windows and reports how many are left. A window already sealed is left alone.
 
-Objects are keyed by the day their records happened, and an outbox delay puts a
-record under a day older than the window it was written in, so both the builder
-and the verifier look back seven days from the window. The verifier's lookback
+Objects are keyed by the day their records happened, and a record retried out
+of an emitter's queue or redelivered by the stream is written under a day older
+than the window it was written in, so both the builder and the verifier look
+back seven days from the window. The verifier's lookback
 wants to be at least the builder's, or an object the builder covered from
 further back is not looked at.
 

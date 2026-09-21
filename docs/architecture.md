@@ -1,133 +1,216 @@
 # Architecture
 
-What is built, how the parts fit, and what each part holds — and must never
-hold. [Concepts](concepts.md) defines the vocabulary; the
-[design pages](README.md) explain each part in depth; the
-[decisions](decisions/README.md) say why.
+One installation belongs to one application. This page says what the parts
+are, what each holds and must never hold, how the application's catalogue
+binds them together, what an acknowledgement means, and what can be lost.
+
+[Concepts](concepts.md) defines the vocabulary. The
+[deployment pages](deployment/direct.md) show each shape as it is actually
+run. The [decisions](decisions/README.md) say why, starting with
+[0011](decisions/0011-one-installation-per-service-or-product.md).
 
 ## The parts
 
 ```mermaid
 flowchart LR
-  subgraph apps["Applications"]
-    E1["emitter<br/>(Go library)"]
-    UI["console page<br/>(@truvity/audit/react)"]
+  subgraph app["application pod"]
+    E["emit library<br/>validates against the catalogue<br/>block, or async queue"]
   end
-
-  subgraph install["An audit installation (charts/audit)"]
-    REG["registry"]
-    W["writer"]
-    Q["query service"]
-    D["digest job<br/>hourly"]
-    V["verify job<br/>nightly"]
-    P["purge, clock-sync<br/>jobs"]
-  end
-
-  S3[("archive<br/>Object-Locked bucket")]
-  PG[("index<br/>Postgres")]
-  K["keys<br/>OpenBAO transit, KMS or local"]
-  SK["signing key<br/>KMS, transit or file"]
-  X[("exports bucket<br/>no lock")]
-
-  E1 -- "catalogue, at start" --> REG
-  E1 -- "records (Connect, or JetStream)" --> W
-  W -- "one locked object per profile, tenant, day" --> S3
-  W -- "rows, facet counts, dedupe" --> PG
-  W -. "pseudonymise, seal" .-> K
-  REG --> PG
-  D -- "reads objects, writes signed digests" --> S3
-  D -. "sign" .-> SK
-  V -- "walks the chain, writes verified/" --> S3
-  P --> PG
-  UI -- "via the host, with the host's sign-in" --> Q
-  Q --> PG
-  Q -- "provenance, sealed identities" --> S3
-  Q -. "open, for resolve only" .-> K
-  Q -- "exports" --> X
-  Q -- "records every read" --> W
-  W -- "its own account of itself" --> W
+  E -- "Connect, ack = durable" --> R["receiver<br/>(audit-writer, front door)"]
+  R -- "direct mode: put, then ack" --> W
+  R -- "stream mode: publish, ack when replicated" --> NATS[("JetStream<br/>the application's stream")]
+  NATS --> W["writer<br/>(audit-writer, consumer mode, N pods)"]
+  W -- "locked objects" --> S3[("the environment's bucket<br/>audit/app/ — THE RECORD")]
+  W -- "rows, dedupe, rollups" --> PG[("index database<br/>in the application's Postgres")]
+  D["digest CronJob, hourly"] --> S3
+  V["verify CronJob, nightly"] --> S3
+  D -. sign .-> KMS[("signing key")]
+  Q["query service<br/>(audit-query)"] --> PG
+  Q --> S3
+  UI["Audit page<br/>in the application's console"] -- "the console's own token" --> Q
 ```
 
-| part | what it does | holds | never holds |
+| part | runs as | holds | never holds |
 |---|---|---|---|
-| **emitter** (`emit`) | validates each record against the catalogue, then delivers it: `block` (the call waits for the archive), `outbox` (a local file, retried) or `best_effort` (may drop, and says so) | the catalogue; an outbox file | keys; the archive's credentials |
-| **registry** (`audit-registry`) | takes an application's catalogue at start-up and refuses one the deployment's profiles cannot keep | catalogues, in Postgres | bucket rights; keys |
-| **writer** (`audit-writer`, or `writer.Open` embedded) | validates again, splits a record into one copy per profile, applies each profile's identity treatment, rolls copies into objects, puts them under Object Lock, indexes them | the pseudonymisation keys (or a role that may use them); write rights on the archive | the signing key; any right to read what it wrote back to a caller |
-| **query service** (`audit-query`, or `query.New` embedded) | answers search, facets, get, export, tail and resolve behind the caller's grant, and records each read through the writer | read on the index and the archive; write on the exports bucket; decrypt on the keys **only** if it resolves | write on the archive; the signing key |
-| **digest job** (`audit digest`) | every hour, per profile, signs a digest of every object written in that hour and links it to the previous one — a job, not a signature per record, because only a signed list shows what was removed ([why](design/integrity.md#why-a-job-and-not-a-signature-on-each-record)) | the signing key | the pseudonymisation keys; write outside `digest/` |
-| **verify job** (`audit verify`) | walks the chain with the public key and reports anything changed, added or missing | the public key | any private key |
-| **purge, clock-sync** | bring the index back within the profiles' retention; record the clock's offset from UTC daily | the index; nothing | — |
-| **console page** (`@truvity/audit/react`) | shows a profile's records as sentences, with search, detail, integrity and live updates | nothing: it asks through the host's transport | credentials of its own |
+| **emit** | a library in the application (`emit`) | the compiled-in catalogue, a bounded in-memory queue | credentials for the bucket, the index or the stream |
+| **receiver** | `audit-writer`, one or two pods, the application's front door over Connect | the stream's credentials in stream mode, and it serves `RegisterCatalogue` | — |
+| **writer** | the same image in consumer mode, N pods (stream mode); the receiver itself (direct mode) | write rights on its prefix, the index owner's credentials | the signing key, any way to hand a record back to a caller |
+| **stream** | one JetStream stream on the application's own account (stream mode only) | records not yet archived, replicated | — |
+| **bucket** | one per environment, Object Lock in compliance mode | every record, one copy per profile, locked | — |
+| **index** | one database in the application's existing Postgres | rows, facet counts, the dedupe table, rollups | anything that is not rebuildable |
+| **digest / verify** | two CronJobs | the signing key (digest), the public key (verify) | write rights outside `digest/` and `verified/` |
+| **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive, the signing key |
+| **Audit page** | a React component in the application's console | nothing — it calls the query service with the console's own token | credentials of its own |
+| **usage consumer** | a small Deployment, [quotas](deployment/extensions/quotas.md) only | the counter cache | — |
 
-## Two ways to run it
+Two things follow from the table. The application holds no credentials for
+anything the trail is kept in, so a compromised application pod cannot reach
+the archive except by emitting records. And nothing in the write path can
+read a record back out: the query service is the only way in, and it records
+every read.
 
-**An installation, with applications as plugins.** The chart deploys the
-writer, registry, query service and jobs, with Postgres for the index. An
-application connects: it registers its catalogue with the registry, emits to
-the writer with its workload identity (a projected service-account token), and
-mounts the console page in its own console, which proxies to the query service
-under the application's sign-in. This is the shape for more than one
-application, and the one [integrating](guides/integrate.md) describes.
+## The catalogue is the contract
 
-**Embedded.** An application with nowhere to send records can open a writer
-and a query service inside its own process (`writer.Open`, `query.New`) and
-write straight to the bucket. [Embedding](guides/embed.md) describes it; the
-guarantees are the same.
+One YAML file lives next to the application's code, with a JSON Schema for
+each action that carries data. It names every action the application
+records and, for each, what kind of operation it is, what frameworks call
+it, which profiles keep a copy (and therefore for how long), what it is
+about, who may act, the schema of its data, its delivery, and how it reads
+as a sentence.
 
-Records can reach the writer over Connect directly or through a JetStream
-stream with a durable consumer; the stream turns a writer that is down into a
-backlog rather than a hole.
+```mermaid
+flowchart LR
+  CAT["catalogue<br/>one YAML plus data schemas<br/>in the application's repository"]
+  CAT --> CI["CI: audit validate, check-emitters<br/>the code emits exactly what is declared"]
+  CAT --> EM["emit library<br/>refuses a record that does not match,<br/>before it leaves the application"]
+  CAT --> RW["receiver and writer<br/>validate again, decide delivery,<br/>profile copies, retention"]
+  CAT --> Q["query service and Audit page<br/>render each record as its sentence,<br/>know the facets"]
+  CAT --> S3[("archive: schema/…<br/>a copy of every version ever used")]
+```
+
+- **One per application, not shared.** What is shared, and shipped here, is
+  the format and the [presets](../presets/README.md) that profiles are
+  composed from. A catalogue names profiles; it never defines them.
+- **Versioned with the code.** Every record names the catalogue version it
+  was written under, and the archive keeps a copy of every version, so a
+  record written last year still reads correctly after the catalogue
+  changed.
+- **It reaches the receiver at start-up**, over `RegisterCatalogue`. A
+  malformed catalogue is refused and the application does not start; a
+  receiver that is merely unreachable is retried. There is no registry
+  service: the receiver serves that call, because an installation has one
+  application to hear it from
+  ([0011](decisions/0011-one-installation-per-service-or-product.md)).
+- **One constructor per action in the application's code**, so the name is
+  spelled once and `check-emitters` can hold the code to the file.
+
+[The catalogue reference](reference/catalogue.md) is the full format.
+
+## What an acknowledgement means
+
+Delivery is chosen per action in the catalogue, not per installation.
+
+| delivery | the application's call returns | if the receiver is down | for |
+|---|---|---|---|
+| `block` | when the receiver has acknowledged durability | the action **fails** | a privileged sign-in, a key destruction, a billable operation |
+| `async` (default) | at once | the record waits in a bounded queue and is retried with backoff | everything else |
+
+**The acknowledgement always means durable.** In stream mode that is the
+stream's replicated publish acknowledgement. In direct mode it is the object
+in the bucket: an `async` batch is acknowledged only after the roll holding
+it has been put and indexed. Nobody is waiting on an `async` batch, so that
+delay costs only queue depth, and `roll.interval` is the knob.
+[0012](decisions/0012-two-deliveries-and-a-durable-ack.md) has the
+reasoning.
+
+## What each mode can lose
+
+A `block` record is never lost in either mode: the application had no
+acknowledgement to act on. For `async`:
+
+| what happens | direct mode | stream mode |
+|---|---|---|
+| the application's pod dies with records still queued | up to one roll interval (default 60 s) | milliseconds' worth |
+| the receiver or writer crashes | nothing — it acknowledged nothing it had not stored | nothing |
+| a long receiver outage overflows the queue | the oldest are dropped and counted | the same, but a replicated stream makes the outage a rollout's seconds |
+| the application's container restarts, pod intact | the queue is gone, as in the first row | the same |
+
+Every record that is dropped or lost is still a log line in the
+application. Watch `audit.emit.queue.pending`, which tells you a queue is
+filling, and alert on `audit.emit.records.dropped`, which tells you one
+overflowed.
+
+Graceful shutdown of a receiver or writer is readiness off, flush the roll,
+exit. Two direct-mode replicas are safe because the dedupe table is in
+Postgres, not in a pod.
+
+## Batching, not aggregation
+
+Neither the receiver nor the writer ever combines two records into one.
+Every record is stored as it was emitted. What they do is **batch** — many
+records become one object per profile, tenant and day within a roll interval
+— and keep **projections beside the records**: index rows, facet counts,
+rollups, usage counters. Every projection can be recomputed from the archive
+with `audit reindex`, which is why none of them is backed up and none of
+them is the record.
 
 ## The life of one record
 
 1. **The application records an action.** The emitter fills what it knows
    (id, time, source, sequence, the request's client address and ids),
    validates the record against the catalogue — the action exists, the data
-   matches its schema, nothing on the negative list is present — and delivers
-   it as the catalogue declares.
-2. **The writer checks it again**, against the same catalogue resolved from
-   the registry, and stamps what it verified itself: `recorded_at`, the
-   observer (the caller's service account, from its token), and the
-   `origin_hash` over the canonical form.
-3. **It splits the record** into one copy per profile the action names. Each
-   copy keeps only the fields that profile's presets allow (default-deny),
-   and each actor or subject is treated by its kind's category: kept in
-   clear, replaced by a keyed pseudonym (one key per tenant and purpose), or
-   dropped. Where resolve is kept, the identity behind a pseudonym is sealed
-   under the same key.
+   matches its schema, nothing on the negative list is present — and
+   delivers it as the catalogue declares.
+2. **The receiver checks it again** against the registered catalogue and
+   stamps what it verified itself: `recorded_at`, the observer taken from
+   the caller's verified token, and the `origin_hash` over the canonical
+   form. A caller never says who it is.
+3. **The writer splits the record** into one copy per profile the action
+   names. Each copy keeps only the fields that profile's presets allow
+   (default-deny), and each identity is treated by its category: kept in
+   clear, replaced by a keyed pseudonym, or dropped. With
+   `keys.provider: none` — the default — there are no pseudonyms, and
+   [0013](decisions/0013-no-pseudonymisation-keys-by-default.md) says what
+   the deployment must declare instead.
 4. **It rolls copies into objects** — one per profile, tenant and day — and
-   puts each with an Object Lock retention computed from the profile: a fixed
-   number of days, or years after the credential the record is about expires.
-   Nothing is acknowledged before the object is in the bucket. A record the
-   writer cannot take is written to the dead-letter prefix, never dropped.
-5. **It indexes** each copy's row and facet counts in Postgres, and marks the
-   record's id as written so a redelivery is absorbed.
+   puts each under an Object Lock retention computed from the profile: a
+   fixed number of days, or years after the thing the record is about
+   expires. Nothing is acknowledged before the object is in the bucket. A
+   record the writer cannot take goes to the dead-letter prefix, never
+   nowhere.
+5. **It indexes** each copy's row and facet counts, and marks the record's
+   id so that a redelivery is absorbed exactly once.
 6. **Every hour the digest job** signs, per profile, a digest listing every
    object of that hour with its hash and the previous digest's hash —
-   including for a quiet hour, so that silence can be told from removal.
+   including for a quiet hour, so silence can be told from removal.
 7. **Every night the verify job** walks the chain with the public key and
    records what it checked, which `Get` later reports as a record's
    `verified_at`.
-8. **A reader asks** through the query service. The caller's token names
-   them; the grants say which profiles, tenants, operations and period they
-   may read; the grant becomes one more term of the query, so there is no path
-   to a row outside it. The read itself is recorded (`audit.search`,
-   `audit.get`, …) before or as it is answered.
+8. **A reader asks** through the query service. Their token names them; the
+   grants say which profiles, tenants, operations and period they may read,
+   and the grant becomes one more term of the query, so there is no path to
+   a row outside it. The read is itself recorded.
 
-The writer keeps its own account in the archive it writes (`audit.writer.*`),
+The installation keeps its own account of itself in the archive it writes,
 and every job records what it did, so the trail says when it was and was not
 being kept.
 
-## Built, designed, not yet
+## The two shapes
+
+| | [direct](deployment/direct.md) | [stream](deployment/stream.md) |
+|---|---|---|
+| for | an internal service, low volume, or a cluster with no stream | a product: many pods, metering, quotas |
+| the receiver | is the writer: it puts to the bucket | publishes to JetStream |
+| writers | the receiver's own pods | N consumers, scaled apart |
+| `async` loss window | one roll interval | milliseconds |
+| needs | a bucket, a database | a bucket, a database, a NATS account |
+
+Switching an installation from direct to stream is a change to the
+receiver's configuration. It does not change a single record, because the
+archive's layout is the same either way — which is also why two
+installations on different versions can share one bucket.
+
+## Extensions
+
+Both are projections of the same records, switched on per installation, and
+neither puts anything new in the request path.
+
+- [Billing](deployment/extensions/billing.md): rollups at index time and an
+  immutable monthly statement.
+- [Usage quotas](deployment/extensions/quotas.md): a second stream consumer
+  counting into a cache, a decision point in front of the application, and
+  an hourly reconciler that corrects the cache from the index.
+
+## What is built
 
 | | state |
 |---|---|
-| record, catalogue, presets, emitter, writer, registry, query service, digest chain, verify, legal holds, retention addenda | built |
-| keys: `local`, OpenBAO `transit` | built |
-| keys: AWS KMS envelope | designed ([key custody](operations/key-custody.md)); not built |
-| signers: key file, AWS KMS, OpenBAO transit | built |
+| record, catalogue, presets, emitter, writer, query service, digest chain, verify, legal holds, retention addenda | built |
 | searchers: Postgres, archive scan, memory | built |
-| Helm chart for the installation | built |
-| `@truvity/audit` TypeScript package and React view to embed | built; published with the first release |
-| a standalone console | not built — the first applications host the page in their own console |
-| metering projection, exporters (OCSF, ECS, Parquet), adapters | designed; not built |
+| signers: key file, AWS KMS, OpenBAO transit | built |
+| key providers `local` and OpenBAO `transit`; AWS KMS envelope designed | built, and off by default |
+| the chart, instantiated per application | built; `mode`, the extension toggles and the per-shape goldens arrive with the rewrite |
+| `@truvity/audit`: query client, sentences, React hooks and view | built, published with the first release |
+| TypeScript emitter | designed, not built |
+| billing statement, usage consumer, reconciler | designed, not built |
+| exporters (OCSF, ECS, Parquet), adapters | designed, not built |

@@ -1,87 +1,86 @@
 # audit
 
-A company-wide audit trail: one record format, one write path, one
-immutable store, and projections for security, billing, history and
-regulatory evidence.
+An audit trail an application owns: one record format, one write path, an
+immutable archive, and projections for security, billing and history.
+
+An installation belongs to **one application** and runs in its namespace,
+rendered by its chart. The application emits through a library; the
+receiver, the writer and the query service are separate Deployments, so the
+application holds no credentials for the archive and a fix never rebuilds
+it.
+
+```mermaid
+flowchart LR
+  subgraph app["application pod"]
+    E["emit library<br/>validates, block or async"]
+  end
+  E -- "ack = durable" --> R["receiver"]
+  R -- "direct mode" --> W["writer"]
+  R -- "stream mode" --> N[("JetStream")] --> W
+  W --> S3[("Object-Locked bucket<br/>THE RECORD")]
+  W --> PG[("index — rebuildable")]
+  D["digest, hourly<br/>verify, nightly"] --> S3
+  Q["query service"] --> PG
+  Q --> S3
+  UI["Audit page in the<br/>application's console"] --> Q
+```
+
+## The two shapes
+
+| shape | for | how a record becomes durable |
+|---|---|---|
+| [direct](docs/deployment/direct.md) | an internal service, or a cluster with no stream | the receiver puts the object, then acknowledges |
+| [stream](docs/deployment/stream.md) | a product: many pods, metering, quotas | the receiver publishes, writers consume and put |
+
+Both write the same archive and are verified by the same command. There is
+no shape that puts the writer inside the application
+([why](docs/decisions/0011-one-installation-per-service-or-product.md)).
+
+## The two extensions
+
+| extension | what it adds | needs |
+|---|---|---|
+| [billing](docs/deployment/extensions/billing.md) | rollups at index time, an immutable monthly statement | a metering profile |
+| [usage quotas](docs/deployment/extensions/quotas.md) | a usage consumer, a counter cache, an hourly reconciler | stream mode |
 
 ## Start here
 
 | you want to | read |
 |---|---|
-| see how it fits together | [Architecture](docs/architecture.md) — the parts, what each holds, the life of one record |
-| run it in a cluster | [Deploying](docs/guides/deploy.md) — what to prepare, the chart, a diagram, how to check it works |
-| connect an application to an installation | [Integrating](docs/guides/integrate.md) — the catalogue, the emitter, the audit page in your console |
-| record what your application does | [Emitting records](docs/guides/emit.md) — the catalogue, registering it, the Go emitter; [`examples/emit`](examples/emit/main.go) |
-| carry the trail inside your application: its own writer, its own query API | [Embedding](docs/guides/embed.md) — `writer.Open`, `query.New`; [`examples/embed`](examples/embed/main.go) |
-| search and read the trail, or audit it | [Reading the trail](docs/guides/read.md) — access, the API, Go and TypeScript clients, `audit verify`; [`examples/read`](examples/read/main.go) |
-| understand why it is built this way | [why](docs/why.md), then [concepts](docs/concepts.md), then [the decisions](docs/decisions/) |
+| see how it fits together | [Architecture](docs/architecture.md) — the parts, the catalogue, what an acknowledgement means, what can be lost |
+| connect an application | [Integrating](docs/guides/integrate.md) — the catalogue, one constructor per action, the CI check, the Audit page |
+| run one in a cluster | [Deployment](docs/deployment/README.md) — what to prepare, then [direct](docs/deployment/direct.md) or [stream](docs/deployment/stream.md) |
+| record what your application does | [Emitting](docs/guides/emit.md) — deliveries, registration, the Go emitter; [`examples/emit`](examples/emit/main.go) |
+| search the trail, or audit it | [Reading](docs/guides/read.md) — grants, the API, the clients, `audit verify`; [`examples/read`](examples/read/main.go) |
+| know which presets to compose | [Presets policy](docs/operations/presets-policy.md), then [presets/](presets/README.md) |
+| understand why it is built this way | [why](docs/why.md), [concepts](docs/concepts.md), [the decisions](docs/decisions/README.md) |
+| work on this repository | [layout](docs/development/layout.md), [CONTRIBUTING](CONTRIBUTING.md) |
 
 ## Status
 
 | part | state |
 |---|---|
 | Record, catalogues, presets, `audit validate` / `check-emitters` | built |
-| Go emitter: block, outbox and best-effort delivery; Connect and JetStream sinks | built |
-| Writer: split per profile, pseudonyms, Object Lock, index, dead letters, legal holds | built |
-| Pseudonymisation keys: local (root + directory) or OpenBAO transit | built; AWS KMS envelope designed ([decision](docs/decisions/0010-key-providers.md)), not built |
+| Go emitter: `block` and `async`; Connect and JetStream sinks | built |
+| Writer: split per profile, Object Lock, index, dead letters, legal holds, retention addenda | built |
+| Query service: search, facets, get, export, tail; JWT with declarative grants | built |
 | Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
-| Query service: search, facets, get with provenance, export, tail, resolve; JWT sign-in with grants | built |
-| Embedding: the writer and the query service as Go libraries (`writer`, `query`) | built |
-| Helm chart: writer, registry, query service, digest / verify / clock / purge jobs | built |
-| TypeScript `@truvity/audit`: query client, qualifier box, catalogue sentences, React hooks and an MUI view to embed | built, not yet published |
-| TypeScript emitter; a standalone console | designed, not built — applications host the page in their own console |
-| Metering projection | not yet |
-| A published release | not yet — build the images with `just snapshot` |
-
-## What it is
-
-- A canonical **record** described in Protocol Buffers, with predefined
-  **extension slots** described in JSON Schema so applications add their
-  own data without changing the core.
-- An **action catalogue** per application: which actions exist, what they
-  carry, which profiles they belong to, how they read as a sentence, and
-  how they meter.
-- A **split writer** that turns each record into one copy per **profile**,
-  each in its own Object-Locked S3 prefix with its own field allow-list,
-  identity treatment and retention. Profiles are composed from
-  **framework presets** shipped in [presets/](presets/).
-- A **query service** with faceted search, cursor pagination, export and a
-  tail cursor, behind pluggable authentication and authorization.
-- A **viewer**: an embeddable React package and a standalone console.
-- A **digest chain** and a `verify` command so an auditor can prove nothing
-  was removed or altered without trusting the operator.
-- **Metering projections** so the same records feed usage-based billing.
+| Pseudonymisation keys: `local` and OpenBAO transit, **off by default** ([0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md)) | built |
+| Helm chart: receiver, writer, query service, the four jobs | built; `mode`, the extension toggles and per-shape goldens arrive with the rewrite |
+| `@truvity/audit`: query client, sentences, React hooks and view | built, published with the first release |
+| TypeScript emitter | designed, not built |
+| Billing statement, usage consumer, reconciler | designed, not built |
+| Exporters (OCSF, ECS, Parquet), adapters | designed, not built |
 
 ## What it is not
 
-- Not an application log pipeline. Application logs keep flowing through
-  the observability stack; this component records what happened, who did
-  it, to what, with what outcome, and keeps it for as long as a framework
-  requires.
-- Not a SIEM. It exports to one.
-- Not a wallet transaction log. A digital-identity wallet's own log lives on
-  the user's device and is invisible to the provider by law; this component
-  only ever sees operational events with pseudonymous subjects.
-
-## Layout
-
-```
-examples/           an application that emits, a program that reads — compiled in CI
-proto/audit/v1/     record, sink and query contracts (canonical schema)
-schemas/            JSON Schema for catalogues, presets and the annotation vocabulary
-presets/            one file per framework: required fields, retention, citations
-catalogue/          the common catalogue (the component's own meta-events)
-docs/guides/        deploying, emitting, reading: start here
-docs/why.md         what this is and is not
-docs/concepts.md    record, catalogue, slots, profiles, presets, prefixes
-docs/design/        pipeline, split writer, search, authz, integrity, metering, viewer
-docs/decisions/     architecture decision records
-docs/research/      the surveys the design rests on, with sources
-docs/reference/     record, catalogue, presets, API, configuration
-docs/operations/    S3 guide, key custody, verification, runbook
-docs/development/   package layout and build order for implementers
-charts/audit/       writer, registry and jobs, deployable; refuses what the binaries would
-```
+- **Not an application log pipeline.** Logs keep flowing through the
+  observability stack. This records what happened, who did it, to what, with
+  what outcome, and keeps it for as long as a framework requires.
+- **Not a SIEM.** It exports to one.
+- **Not a wallet transaction log.** A digital identity wallet's own log
+  lives on the user's device and is invisible to the provider by law. This
+  component sees operational events only.
 
 ## Licence
 

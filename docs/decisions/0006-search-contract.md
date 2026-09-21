@@ -5,7 +5,7 @@
 
 ## Context
 
-Product audit APIs surveyed ([research/products.md](../research/products.md))
+Product audit APIs surveyed (see the product survey in this repository's history)
 converge on a small typed filter grammar with cursor pagination, and the
 ones that grew a free query language regret its cost. A faceted-search
 design already used by a public API of ours expresses filters as

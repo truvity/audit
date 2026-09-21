@@ -45,7 +45,13 @@ their own jobs, and they matter as much.
   an OpenBAO dev server, and runs the whole suite against them. Every test that
   skips without its service runs there: the searchers' conformance suite
   against all three searchers, the transports' corpus, the archive walks, the
-  transit keys and signer. About twenty seconds; it needs Docker.
+  transit keys and signer. About twenty seconds; it needs Docker. The OpenBAO
+  half covers a path a deployment opts into rather than the usual one:
+  pseudonymisation keys are off by default
+  ([0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md)), so the
+  transit provider is tested because it is offered, not because it is the
+  default. The transit digest signer is a separate choice, and is tested the
+  same way.
 - `just ts` installs the TypeScript package's dependencies, then typechecks,
   tests, builds, and checks what a publish would ship.
 - Against real S3, on demand: `AUDIT_S3_REAL_BUCKET=<bucket> go test
@@ -54,7 +60,7 @@ their own jobs, and they matter as much.
   Point it at an Object-Locked sandbox bucket: each run leaves one small object
   locked for two days.
 
-## Documentation
+## Documentation held to the code
 
 Documentation is held to the code it describes. Every command shown is one the
 binary takes, every chart value named exists in `charts/audit/values.yaml`,
@@ -62,6 +68,15 @@ and every example worth compiling lives in `examples/` and is built by the
 gate. `internal/docscheck` fails the gate on a relative link to a file that
 does not exist, or to a heading a page does not have. When you rename a flag,
 a value or a heading, search the docs for it in the same change.
+
+Where the documentation runs ahead of the code — as it does while the
+architecture of
+[0011](docs/decisions/0011-one-installation-per-service-or-product.md),
+[0012](docs/decisions/0012-two-deliveries-and-a-durable-ack.md) and
+[0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md) is being
+built — every name that does not exist yet says so where it is used: `# not
+built yet: arrives with the rewrite`, or a sentence beside it. A reference
+that cannot be told apart from the built thing is worse than a gap.
 
 ## Commits and pull requests
 

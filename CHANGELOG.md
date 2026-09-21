@@ -7,10 +7,27 @@ edits that got there.
 
 ## [Unreleased]
 
-The documentation is rewritten around one installation per application. The
-code still has the shape the previous documentation described; this release
-of the documentation is the specification the code is being changed to
-match, and every page marks what does not exist yet.
+The documentation is rewritten around one installation per application, and
+the code is being changed to match it. The pages are the specification, and
+each still marks what does not exist yet.
+
+### The registry service is gone
+
+The writer serves `RegisterCatalogue` beside the sink, so an installation is
+one Deployment smaller and an application registers its catalogue with the
+same address it writes to. `cmd/audit-registry`, its image, the chart's
+`registry.*` values, its Deployment, Service, ServiceAccount and network
+policy are all removed, and a release now carries three images instead of
+four. Nothing about registration itself changed: the same validation, the
+same Postgres store, the same copy into the archive, the same coverage report
+that warns and never refuses.
+
+Whose catalogue a registration is still comes from the caller's verified
+service account and never from the document. New value `source` names the one
+application an installation serves, and any caller the deployment verifies
+registers as it — which is what an installation belonging to one application
+wants. `workloadIdentity.workloads` stays for an installation that admits
+several, and the chart refuses to render with neither.
 
 - **Three decisions.**
   [0011](docs/decisions/0011-one-installation-per-service-or-product.md): one

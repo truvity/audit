@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -75,4 +76,32 @@ func WriterClient(url string) *sink.Client {
 		return sink.NewClient(auth.TokenFile(path), url)
 	}
 	return sink.NewClient(nil, url)
+}
+
+// SourceOf says whose catalogue a registration is, from the caller's verified
+// identity and never from the document — a workload that could register under
+// another source could describe another application's records, and everything
+// downstream reads the description.
+//
+// An installation serves one application, so naming it in `one` is the usual
+// answer: every caller the deployment verifies registers as it. A deployment
+// admitting several workloads maps each to its source instead, and then a
+// caller missing from the map speaks for nobody. With neither, nothing can be
+// registered, which is what the returned function says by answering "".
+func SourceOf(ws auth.Workloads, one string) func(context.Context) string {
+	switch {
+	case len(ws) > 0:
+		return ws.SourceFrom
+	case one != "":
+		return func(ctx context.Context) string {
+			// Verified, still: "any caller" means any caller this deployment
+			// authenticated, not any caller that reached the port.
+			if _, ok := auth.PrincipalFrom(ctx); ok {
+				return one
+			}
+			return ""
+		}
+	default:
+		return func(context.Context) string { return "" }
+	}
 }

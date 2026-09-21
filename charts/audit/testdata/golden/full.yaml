@@ -23,39 +23,8 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        # This release's own pods: the jobs, the registry and the query
-        # service record themselves through the writer.
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: audit
-              app.kubernetes.io/instance: audit
-      ports:
-        - protocol: TCP
-          port: 8080
-
----
-# Source: audit/templates/networkpolicy.yaml
-# The registry is called by the same workloads that emit, at deploy.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: audit-registry
-  labels:
-    helm.sh/chart: audit-0.1.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: registry
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: audit
-      app.kubernetes.io/instance: audit
-      app.kubernetes.io/component: registry
-  policyTypes: [Ingress]
-  ingress:
-    - from:
+        # This release's own pods: the jobs and the query service record
+        # themselves through the writer.
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: audit
@@ -70,21 +39,6 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: audit
-  labels:
-    helm.sh/chart: audit-0.1.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: Helm
-
----
-# Source: audit/templates/serviceaccount.yaml
-# The registry needs the database and the writer, and none of the bucket rights
-# the writer's identity carries.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: audit-registry
   labels:
     helm.sh/chart: audit-0.1.0
     app.kubernetes.io/name: audit
@@ -170,7 +124,7 @@ data:
       security:
         presets:
         - security
-  # What `audit-writer --workloads` and `audit-registry --workloads` read: the
+  # What `audit-writer --workloads` reads: the
   # issuers trusted to name a calling workload, and the source each speaks for.
   workloads.yaml: |
     issuers:
@@ -243,30 +197,6 @@ spec:
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
     app.kubernetes.io/component: query
-  ports:
-    - name: http
-      port: 8080
-      targetPort: http
-
----
-# Source: audit/templates/registry.yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: audit-registry
-  labels:
-    helm.sh/chart: audit-0.1.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: registry
-spec:
-  type: ClusterIP
-  selector:
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/component: registry
   ports:
     - name: http
       port: 8080
@@ -437,115 +367,6 @@ spec:
           emptyDir: {}
 
 ---
-# Source: audit/templates/registry.yaml
-# The catalogue registry. An application registers its catalogue here at deploy
-# and does not start if this deployment refuses it, which is what keeps the
-# thing that describes the records true about them.
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: audit-registry
-  labels:
-    helm.sh/chart: audit-0.1.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: registry
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: audit
-      app.kubernetes.io/instance: audit
-      app.kubernetes.io/component: registry
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: audit
-        app.kubernetes.io/instance: audit
-        app.kubernetes.io/component: registry
-      annotations:
-        # A profile change alters what the registry will accept, so a running
-        # one has to be replaced for it to take effect.
-        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
-        # A new workload mapping changes whose catalogues it accepts.
-        checksum/workloads: 39e3e218697a14745595e798499f2b11360f39592b20deadb03638c9b804af35
-    spec:
-      serviceAccountName: audit-registry
-      
-      securityContext:
-        fsGroup: 65532
-        runAsNonRoot: true
-        runAsUser: 65532
-        seccompProfile:
-          type: RuntimeDefault
-      containers:
-        - name: registry
-          image: ghcr.io/truvity/audit/audit-registry:0.1.0
-          imagePullPolicy: IfNotPresent
-          args:
-            - --deployment=/etc/audit/deployment.yaml
-            - --listen=:8080
-            - --sink=http://audit:8080
-            - --workloads=/etc/audit/workloads.yaml
-            - --version=0.1.0
-          env:
-            
-            - name: AUDIT_DATABASE
-              valueFrom:
-                secretKeyRef:
-                  name: audit-database
-                  key: url
-            
-            - name: AUDIT_TOKEN_FILE
-              value: /var/run/audit/token
-          ports:
-            - name: http
-              containerPort: 8080
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-          readinessProbe:
-            httpGet:
-              path: /healthz
-              port: http
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-              - ALL
-            readOnlyRootFilesystem: true
-          resources:
-            {}
-          volumeMounts:
-            - name: deployment
-              mountPath: /etc/audit/deployment.yaml
-              subPath: deployment.yaml
-              readOnly: true
-            - name: deployment
-              mountPath: /etc/audit/workloads.yaml
-              subPath: workloads.yaml
-              readOnly: true
-            - name: audit-token
-              mountPath: /var/run/audit
-              readOnly: true
-            
-      volumes:
-        - name: deployment
-          configMap:
-            name: audit-deployment
-        - name: audit-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  path: token
-                  audience: "audit"
-                  expirationSeconds: 3600
-        
-
----
 # Source: audit/templates/writer.yaml
 apiVersion: apps/v1
 kind: Deployment
@@ -595,6 +416,7 @@ spec:
             - --roll-interval=60s
             - --replicas=3
             - --workloads=/etc/audit/workloads.yaml
+            - --source=wallet
             - --kms-key=alias/audit
             - --key-provider=local
             - --key-root=/etc/audit/keys/root

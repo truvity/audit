@@ -38,8 +38,7 @@ jobs:
     dedupeWindow: 336h
   clockSync:
     ntp: [time.cloudflare.com, time.google.com]
-registry:
-  enabled: true
+source: wallet
 workloadIdentity:
   issuers:
     - url: https://oidc.example.com/id/CLUSTER

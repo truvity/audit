@@ -1,7 +1,11 @@
-// Command audit-writer takes records and puts the copies their profiles keep.
+// Command audit-writer is an installation's front door and its write path.
 //
-// It is the one component that holds the pseudonymisation keys and the only one
-// that writes to the archive. Everything else either hands it records or reads
+// It takes records and puts the copies their profiles keep, and it accepts the
+// application's catalogue at start-up (RegisterCatalogue) — an installation
+// belongs to one application, so a registry service of its own would be a
+// Deployment for a single call. It is the only component that writes to the
+// archive, and the only one that holds the pseudonymisation keys where a
+// deployment configures any. Everything else either hands it records or reads
 // what it wrote.
 package main
 
@@ -24,9 +28,12 @@ import (
 
 	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
 	"github.com/truvity/audit/sink/natssink"
 	"github.com/truvity/audit/store"
@@ -56,6 +63,9 @@ func run() error {
 		listen    = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
 		workloads = flag.String("workloads", env("AUDIT_WORKLOADS", ""),
 			"the file naming the issuers trusted to say which workload is publishing")
+		source = flag.String("source", env("AUDIT_SOURCE", ""),
+			"the one application this installation serves: any verified caller registers a catalogue as it. "+
+				"For an installation admitting several workloads, map each to its source in --workloads instead")
 		keepIdentities = flag.Bool("keep-identities", true,
 			"keep the identity behind each pseudonym, sealed under its key, so that resolve can find it")
 		anonymous = flag.Bool("anonymous-writes", false,
@@ -146,6 +156,11 @@ func run() error {
 	// verify, a writer reachable over HTTP would take anybody's records under
 	// nobody's name — which it does only when told to, for a trial.
 	var authenticated auth.Authenticator
+	// Whose catalogue a document is, is never the document's to claim: it comes
+	// from the caller's verified service account. cli.SourceOf says how, and
+	// answers "" — registration refused — for an installation that configured
+	// no way to tell.
+	sourceOf := cli.SourceOf(nil, "")
 	switch {
 	case *workloads != "":
 		callers, err := cli.LoadWorkloads(*workloads)
@@ -155,6 +170,7 @@ func run() error {
 		if authenticated, err = auth.NewJWT(ctx, callers.Issuers, slog.Default()); err != nil {
 			return err
 		}
+		sourceOf = cli.SourceOf(callers.Map, *source)
 	case *anonymous:
 		slog.Warn("accepting writes from callers nobody verified: records written over HTTP " +
 			"carry no observer identity, and anyone who can reach this port can write them")
@@ -206,6 +222,40 @@ func run() error {
 	path, handler := w.Handler(authenticated)
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
+
+	// Catalogue registration is served here, beside the sink. An installation
+	// belongs to one application, so a registry of its own would be a
+	// Deployment, a ServiceAccount and a network policy for one call at
+	// start-up: docs/decisions/0011-one-installation-per-service-or-product.md.
+	// It needs the database the index is in, because a registered catalogue
+	// lives beside the rows it describes and shares their migration chain.
+	if pool != nil {
+		common, err := catalogue.Common()
+		if err != nil {
+			return err
+		}
+		reg := &registry.Registry{
+			Store:    registry.Postgres{DB: pool},
+			Profiles: profiles,
+			Builtin:  []*catalogue.Catalogue{common},
+			Identity: sourceOf,
+			// A gap in coverage is the deployment's to close, not a reason to
+			// refuse the application that registered while it was open.
+			OnUncovered: func(_ context.Context, profile string, missing []string) {
+				slog.Warn("a profile requires categories no registered catalogue emits",
+					"profile", profile, "missing", missing)
+			},
+			// Recorded through this writer itself: a catalogue arriving changes
+			// what the archive's records mean, so the archive should say when.
+			OnRegistered: recorder(w, *version),
+		}
+		regPath, regHandler := registry.NewHandler(reg)
+		mux.Handle(regPath, auth.Middleware(authenticated, regHandler))
+	} else {
+		slog.Warn("no database: this writer serves no catalogue registration, " +
+			"because a registered catalogue is kept beside the index it describes")
+	}
+
 	mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) })
 	server := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
@@ -226,6 +276,46 @@ func run() error {
 		return err
 	}
 	return nil
+}
+
+// recorder records a registration, because a catalogue arriving changes what
+// the archive's records mean.
+func recorder(to sink.Sink, version string) func(context.Context, registry.Entry) {
+	return func(ctx context.Context, e registry.Entry) {
+		_, err := to.Write(ctx, &sink.Request{
+			Delivery: auditv1.Delivery_DELIVERY_BLOCK,
+			Records: []*record.Record{{
+				Action:           "audit.catalogue.registered",
+				Operation:        auditv1.Operation_OPERATION_CREATE,
+				TenantId:         record.TenantPlatform,
+				Source:           "audit",
+				CatalogueVersion: catalogueVersion(),
+				SchemaVersion:    record.SchemaVersion,
+				Id:               record.NewID(),
+				Actor:            &record.Actor{Kind: "service", Id: e.RegisteredBy},
+				Observer:         &record.Observer{Version: version, Instance: record.InstanceName()},
+				Outcome:          &record.Outcome{Result: auditv1.Outcome_RESULT_SUCCESS},
+				Targets: []*record.Target{
+					{Type: "catalogue", Id: e.Source + "@" + e.Version},
+				},
+			}},
+		})
+		if err != nil {
+			// The catalogue is registered and the trail does not say so. A
+			// deployment alerts on this: what a record means has changed and
+			// there is no event marking when.
+			slog.Error("a catalogue was registered and could not be recorded",
+				"source", e.Source, "version", e.Version, "error", err)
+		}
+	}
+}
+
+func catalogueVersion() string {
+	c, err := catalogue.Common()
+	if err != nil {
+		return ""
+	}
+	return c.Version
 }
 
 // loadAll reads every catalogue in a directory.

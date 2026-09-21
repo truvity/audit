@@ -38,9 +38,16 @@ the application. The deployment pages show the values each shape takes:
 `mode` is not built yet: it arrives with the rewrite and replaces inferring
 the shape from whether `stream.url` is set.
 
-Three images, one per binary: `image.writer`, `image.query`, `image.cli`.
-`image.registry` goes with the registry service, and is removed with the
-rewrite.
+Three images, one per binary: `image.writer`, `image.query`, `image.cli`. The
+receiver serves `RegisterCatalogue`, so there is no fourth.
+
+**Whose catalogue is whose.** The writer takes it from the caller's verified
+service account, never from the document. Name the application in `source` and
+any caller the deployment verifies registers as it, which is what an
+installation belonging to one application wants. An installation admitting
+several workloads maps each in `workloadIdentity.workloads` instead, and then a
+workload missing from the map cannot register at all. With neither, every
+registration would be refused, so the chart refuses to render.
 
 ## What the deployment brings
 
@@ -132,9 +139,11 @@ binaries reject at start-up or, worse, accept and get quietly wrong, and
   so turning persistence off takes `keys.local.ephemeralIsAcceptable: true`,
   not a flag.
 
-The first two are not built yet: they arrive with the rewrite, which also
-takes away the two refusals that guard the registry service, because there
-is no registry service to guard.
+There is one more, which the writer serving `RegisterCatalogue` brought with
+it: an installation that verifies callers and keeps an index must say whose
+catalogue a registration is, with `source` or with
+`workloadIdentity.workloads`. The first two of the list above are not built
+yet and arrive with the rest of the rewrite.
 
 ## Checking it
 

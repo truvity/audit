@@ -51,7 +51,7 @@ audit:
       presets: [billing-nl]
   extensions:
     billing:
-      enabled: true               # not built yet: renders the statement job
+      enabled: true               # renders nothing yet: the statement job is designed, not built
 ```
 
 The chart refuses `extensions.billing.enabled` when no profile composes a

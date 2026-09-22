@@ -200,12 +200,12 @@ schemas:
 # start-up, or accept and then get quietly wrong, and a chart that renders one
 # anyway moves the failure somewhere nobody is looking.
 chart:
-    helm lint charts/audit -f charts/audit/testdata/values/full.yaml
+    helm lint charts/audit -f charts/audit/testdata/values/stream.yaml
     bash charts/audit/testdata/refuse.sh
-    helm template audit charts/audit -f charts/audit/testdata/values/minimal.yaml \
-        > charts/audit/testdata/golden/minimal.yaml
-    helm template audit charts/audit -f charts/audit/testdata/values/full.yaml \
-        > charts/audit/testdata/golden/full.yaml
+    helm template audit charts/audit -f charts/audit/testdata/values/direct.yaml \
+        > charts/audit/testdata/golden/direct.yaml
+    helm template audit charts/audit -f charts/audit/testdata/values/stream.yaml \
+        > charts/audit/testdata/golden/stream.yaml
     helm template audit charts/audit -f charts/audit/testdata/values/transit.yaml \
         > charts/audit/testdata/golden/transit.yaml
     git diff --exit-code -- charts/audit/testdata/golden

@@ -19,11 +19,32 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# How many writers share the stream. More than one needs a shared deduplication
+# The writers that consume the stream, in `mode: stream`. They scale with the
+# record rate; the receivers above scale with the application's request rate.
+writer:
+  consumers: 3
+
+# How many front-door pods there are. More than one needs a shared deduplication
 # table (`database`) and a key provider every replica sees the same keys
 # through; the chart refuses to render otherwise, because the binary refuses to
 # start and a manifest it will reject is worse than an error here.
 replicas: 1
+
+# How the write path is arranged.
+#
+#   direct  one Deployment: the front door and the write path in one process.
+#           It serves the sink, puts every batch it takes before it answers,
+#           and needs no stream. For an internal service, or any cluster
+#           without one.
+#   stream  two: a receiver that serves the sink and publishes to JetStream,
+#           holding neither the bucket nor a key, and `writer.consumers`
+#           writers that read the stream and put the objects. For a product.
+#
+# The application is configured the same way either side of the choice: the
+# Service keeps its name and the receiver keeps the `writer` component label,
+# because it is the address records are written to and that should not move
+# when a deployment changes shape.
+mode: direct
 
 # The archive.
 bucket: ""
@@ -36,11 +57,15 @@ governance: false
 
 # The profiles this deployment keeps, as `audit-writer --deployment` reads them.
 # Each is composed from the presets the library ships.
+# Adding a profile here is additive: Helm merges maps, so a values file that
+# names one profile gets this one as well. Name every profile the installation
+# should keep.
+#
+# `security` is composed everywhere; see docs/operations/presets-policy.md for
+# which of the others a deployment should compose, and what each costs.
 profiles:
   security:
     presets: [security]
-  history:
-    presets: [history]
 
 # The query service: search, facets, get, export, tail and resolve, behind the
 # grants below. Every read it serves is recorded through the writer.
@@ -140,6 +165,22 @@ workloadIdentity:
 # observer. For a trial install only: anyone who can reach the writer's port
 # can then write records, and nothing says who did.
 anonymousWrites: false
+
+# What a product switches on in its own installation. Both are projections of
+# records the installation already keeps, and neither is in the request path.
+# Both render nothing yet: the work that fills them is scheduled, and the
+# toggles are here so that a deployment's values do not have to change when it
+# lands.
+extensions:
+  # Rollups at index time and a monthly immutable statement. Needs a profile
+  # composed from a metering preset, or there is no copy to compute from.
+  billing:
+    enabled: false
+  # A usage consumer counting into a cache, an hourly reconciler, and the
+  # decision point in front of the application. Needs `mode: stream`: without
+  # a stream there is nothing for a second consumer to read.
+  quotas:
+    enabled: false
 
 # Metrics, pushed over OTLP. Empty sends nothing and costs nothing. The counter
 # to alert on is audit.writer.index.deferred: see docs/operations/runbook.md.

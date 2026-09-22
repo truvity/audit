@@ -310,8 +310,7 @@ provider. `keys.provider: none` is the default — most deployments run no
 pseudonymisation keys at all, there is no `identity/` prefix, and resolve is
 refused as unimplemented
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),
-[key custody](key-custody.md)). That default is not built yet: it arrives
-with the rewrite, and the chart's default today is `local`.
+[key custody](key-custody.md)).
 
 ### A tenant asks for erasure
 

@@ -35,8 +35,13 @@ the application. The deployment pages show the values each shape takes:
   obligation asks for a daily record of the offset, and the chart refuses to
   render without one.
 
-`mode` is not built yet: it arrives with the rewrite and replaces inferring
-the shape from whether `stream.url` is set.
+`mode` chooses between them. In `direct` the chart renders one Deployment that
+serves the sink and writes the archive. In `stream` it renders two: a receiver
+that serves the sink and publishes, holding neither the bucket nor a key, and
+`writer.consumers` writers that read the stream and put the objects. The
+Service keeps its name and the receiver keeps the `writer` component label in
+both, because it is the address records are written to and that should not move
+when a deployment changes shape.
 
 Three images, one per binary: `image.writer`, `image.query`, `image.cli`. The
 receiver serves `RegisterCatalogue`, so there is no fourth.
@@ -95,8 +100,11 @@ Two projections of the same records, both off, both switched on per
 installation, and neither adds anything to the request path:
 `extensions.billing.enabled` adds rollups at index time and a monthly
 statement CronJob; `extensions.quotas.enabled` adds a usage consumer, a
-counter cache and an hourly reconciler, and needs `mode: stream`. Both are
-not built yet: they arrive with the rewrite.
+counter cache and an hourly reconciler, and needs `mode: stream`. Both toggles
+exist and render nothing: what fills them is designed and not yet built, so
+the toggles are here to keep a deployment's values from changing when it
+lands. Billing refuses without a metering profile, and quotas without a
+stream, because neither could work.
 
 ## Who may write
 
@@ -140,10 +148,16 @@ binaries reject at start-up or, worse, accept and get quietly wrong, and
   so turning persistence off takes `keys.local.ephemeralIsAcceptable: true`,
   not a flag.
 
+And three more from the shapes: `mode` is `direct` or `stream` and nothing
+else; `mode: stream` needs both `stream.url` and a database, since several
+writers share one stream and deduplication in one process cannot absorb a
+redelivery that lands on another; and `stream.ackWait` must outlast
+`roll.interval`, or the stream offers records a writer is still gathering to
+a second writer and the day's objects double.
+
 There is one more, which the writer serving `RegisterCatalogue` brought with
 it: an installation that verifies callers and keeps an index must map the
-workloads that may register in `workloadIdentity.workloads`. The first two of
-the list above are not built yet and arrive with the rest of the rewrite.
+workloads that may register in `workloadIdentity.workloads`.
 
 ## Checking it
 

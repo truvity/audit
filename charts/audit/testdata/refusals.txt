@@ -34,3 +34,8 @@
 --set bucket=b --set anonymousWrites=false --set workloadIdentity.issuers[0].url=https://a --set workloadIdentity.issuers[0].audience=audit --set database.url=postgres://x	no mapping every registration would be refused
 --set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set query.database.existingSecret=q --set query.resolve.enabled=true	nothing was sealed
 --set bucket=b --set stream.url=nats://x --set stream.ackWait=10s	must be longer than
+--set bucket=b --set mode=sideways	`mode` is `direct` or `stream`
+--set bucket=b --set mode=stream	needs `stream.url`
+--set bucket=b --set mode=stream --set stream.url=nats://x	needs `database`
+--set bucket=b --set extensions.billing.enabled=true	no profile composes a metering preset
+--set bucket=b --set extensions.quotas.enabled=true	needs `mode: stream`

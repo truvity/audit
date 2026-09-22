@@ -9,9 +9,9 @@ import (
 
 // Deployment is what a deployment declares about its profiles: which presets
 // each is composed from and where its copies land. It is the document the
-// chart renders and the writer reads, and an application embedding a writer
-// reads the same one, so that its profiles are declared the way a standalone
-// deployment's are.
+// chart renders and the writer reads, and the jobs read the same one, because
+// retention is a property of the profile and every one of them has to agree
+// about it.
 type Deployment struct {
 	Profiles map[string]ProfileConfig `json:"profiles"`
 	// ExternalIdentifiersAreOpaque is the deployment saying that the

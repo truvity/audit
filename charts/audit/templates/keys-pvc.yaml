@@ -1,0 +1,20 @@
+{{- if and (eq .Values.keys.provider "local") .Values.keys.local.persistence.enabled (not .Values.keys.local.persistence.existingClaim) }}
+# Data keys are random and wrapped into this directory, so it is the only copy
+# of them. In stream mode the writers share it, which is why it needs an access
+# mode that lets more than one pod mount it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "audit.fullname" . }}-keys
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.keys.local.persistence.accessModes | nindent 4 }}
+  {{- with .Values.keys.local.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.keys.local.persistence.size }}
+{{- end }}

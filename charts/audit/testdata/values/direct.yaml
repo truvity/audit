@@ -1,6 +1,7 @@
-# The smallest install the chart will render: no stream, no database, one
-# writer, and the jobs that need neither. A trial, so the writer takes writes
-# from callers it cannot verify.
+# Direct mode: the front door and the write path in one process, no stream, one
+# writer, and the jobs that need no database. A trial install, so the writer
+# takes writes from callers it cannot verify.
+mode: direct
 bucket: audit-archive
 anonymousWrites: true
 externalIdentifiersAreOpaque: true

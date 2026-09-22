@@ -3,13 +3,39 @@
 The writer keeps {{ len .Values.profiles }} profile(s): {{ keys .Values.profiles | sortAlpha | join ", " }}.
 Records reach it at {{ include "audit.sinkURL" . }}.
 
-{{ if not .Values.stream.url -}}
-No stream is configured, so the writer takes records only from callers holding
-its address. Set `stream.url` to put it behind a durable consumer, which is what
-makes a writer that is down a backlog rather than a hole.
+{{ if eq .Values.mode "stream" -}}
+Stream mode: {{ .Values.replicas }} receiver(s) publish to {{ .Values.stream.name }},
+and {{ .Values.writer.consumers }} writer(s) consume it through the durable consumer
+{{ .Values.stream.consumer }}. The receivers hold neither the bucket nor a key.
+A writer gathers for {{ .Values.roll.interval }} or {{ .Values.roll.maxRecords }} records,
+whichever comes first, before it writes.
 {{- else -}}
-It consumes {{ .Values.stream.name }} through the durable consumer
-{{ .Values.stream.consumer }}, shared by every replica.
+Direct mode: the front door is the write path. Every batch is put before it is
+acknowledged, and how many objects a day becomes is decided by the emitter's own
+batch size and flush interval. `mode: stream` puts a receiver in front and the
+writers behind a durable consumer, which is what makes a writer that is down a
+backlog rather than a hole.
+{{- end }}
+
+{{ if .Values.prefix -}}
+The archive is {{ .Values.bucket }} under {{ .Values.prefix }}/. Four identities
+need rights beneath that prefix, and none of them may delete anything:
+
+  writer   put objects; put and get retention; put legal holds; get and list
+           under the prefix; encrypt with the bucket's key
+  digest   get and list under the prefix; put under {{ .Values.prefix }}/digest/;
+           decrypt; sign with the digest key
+  verify   get and list under the prefix; put under {{ .Values.prefix }}/verified/;
+           decrypt
+  query    get and list under the prefix; decrypt
+
+Scope each to the objects under {{ .Values.prefix }}/ in {{ .Values.bucket }}, and
+condition its s3:ListBucket on that prefix, or one application can read
+another's archive. See docs/operations/s3-guide.md for the policies.
+{{- else -}}
+No `prefix` is set, so this installation writes at the root of {{ .Values.bucket }}.
+That is only safe where the bucket is its own; in a shared one, `prefix` is what
+keeps two applications' archives apart and what their IAM is scoped to.
 {{- end }}
 
 {{ if not (include "audit.hasDatabase" .) -}}

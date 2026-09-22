@@ -43,6 +43,13 @@ the query service's and the jobs' pods into the writer's Service. */}}
 app.kubernetes.io/component: writer
 {{- end -}}
 
+{{/* The consumer's pods, in stream mode. Nothing calls them, so they are not
+in any Service; the label is what a deployment greps for. */}}
+{{- define "audit.consumerSelectorLabels" -}}
+{{ include "audit.selectorLabels" . }}
+app.kubernetes.io/component: consumer
+{{- end -}}
+
 {{- define "audit.cliImage" -}}
 {{ .Values.image.cli.repository }}:{{ .Values.image.cli.tag | default .Chart.AppVersion }}
 {{- end -}}

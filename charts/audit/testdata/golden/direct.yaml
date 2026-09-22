@@ -63,9 +63,6 @@ data:
   deployment.yaml: |
     external_identifiers_are_opaque: true
     profiles:
-      history:
-        presets:
-        - history
       security:
         presets:
         - security
@@ -121,7 +118,7 @@ spec:
       annotations:
         # A profile change must reach a running writer, which only happens if
         # the pod is replaced.
-        checksum/deployment: 776c6ef2d6419216af14159fb357e78f086792084d8b054d0f0eaefb4031a37c
+        checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
         # Likewise who may write: a changed issuer or mapping must reach it.
         checksum/workloads: b84b4ff82948eb0bf63ac4428d4927f43364293575e1ef8b0626ac8f68afa11f
     spec:
@@ -262,77 +259,6 @@ spec:
             - name: signing
               secret:
                 secretName: audit-signing-key
-
----
-# Source: audit/templates/cronjobs.yaml
-# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: audit-verify-history
-  labels:
-    helm.sh/chart: audit-0.1.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: Helm
-spec:
-  schedule: "23 3 * * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: audit
-            app.kubernetes.io/instance: audit
-        spec:
-          restartPolicy: OnFailure
-          serviceAccountName: audit-verify
-          
-          securityContext:
-            fsGroup: 65532
-            runAsNonRoot: true
-            runAsUser: 65532
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: verify
-              image: ghcr.io/truvity/audit/audit:0.1.0
-              imagePullPolicy: IfNotPresent
-              args:
-                - verify
-                - --profile=history
-                - --last=24h
-                - --public-key=/etc/audit/public/public.pem
-                - --sink=http://audit:8080
-                - --instance=$(POD_NAME)
-                - --record
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                - name: AUDIT_BUCKET
-                  value: "audit-archive"
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                  - ALL
-                readOnlyRootFilesystem: true
-              volumeMounts:
-                - name: public
-                  mountPath: /etc/audit/public
-                  readOnly: true
-          volumes:
-            - name: public
-              secret:
-                secretName: audit-signing-public
 
 ---
 # Source: audit/templates/cronjobs.yaml

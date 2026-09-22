@@ -188,9 +188,10 @@ helm upgrade --install <application> ./charts/<application> -n <app> -f values.y
 
 The chart **refuses to render** a configuration the binaries would reject, or
 accept and get quietly wrong: a digest job with no signer, a compliance preset
-with no reference clock, the writer's credentials given to the query service
-and — *not built yet: these arrive with the rewrite* — `mode: stream` with no
-`stream.url`, or an extension whose profile the deployment does not compose.
+with no reference clock, the writer's credentials given to the query service,
+`mode: stream` with no `stream.url` or no database, an ack wait that does not
+outlast the roll, or an extension whose profile the deployment does not
+compose.
 Each refusal says why, and they are listed in
 [the chart README](../../charts/audit/README.md) with
 [`values.yaml`](../../charts/audit/values.yaml) commenting every setting.

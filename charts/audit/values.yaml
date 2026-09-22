@@ -164,12 +164,29 @@ database:
   migrate: true
 
 # Pseudonymisation keys.
+# Whether the identifiers this installation receives for people outside the
+# organisation are already opaque — ones an application minted, which name
+# nobody without that application's own database. Where they are, a profile
+# asking for a pseudonym gets the identifier in clear instead, because
+# encrypting an opaque identifier a second time adds a key to lose and tells a
+# reader of the archive nothing new; and the writer refuses a record whose
+# external identifier looks direct, an address say.
+#
+# An installation with no key provider must set this or compose only profiles
+# that keep nobody: see docs/decisions/0013-no-pseudonymisation-keys-by-default.md.
+externalIdentifiersAreOpaque: false
+
 keys:
-  # `local` (a root Secret and a directory) or `transit` (OpenBAO). Transit is
-  # the one for more than one replica: the keys never leave the engine, every
-  # replica asks the same one, and there is no directory to lose. See
-  # docs/operations/openbao-keys.md for the policies the engine needs.
-  provider: local
+  # `none` (the default: no pseudonyms, no key material, no resolve), `local`
+  # (a root Secret and a directory) or `transit` (OpenBAO). Most deployments
+  # want none — staff are kept in clear because that is what accountability is
+  # for, and people outside arrive as identifiers the application already
+  # minted. Choose a provider where a contract obliges you to be able to
+  # crypto-shred. Transit is the one for more than one replica: the keys never
+  # leave the engine, every replica asks the same one, and there is no
+  # directory to lose. See docs/operations/openbao-keys.md for the policies the
+  # engine needs.
+  provider: none
   # Under `openbao` below.
   transit:
     # Every key is <prefix>.<purpose>.<tenant>; the policies glob on it.

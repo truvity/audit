@@ -46,14 +46,15 @@ func TestBuiltinPresetsAreComplete(t *testing.T) {
 
 func TestComposeTakesTheStrictestIdentityTreatment(t *testing.T) {
 	presets := builtin(t)
-	// security keeps staff identifiers in clear; history pseudonymises them.
-	// Composed, the stricter reading wins.
+	// security keeps staff identifiers in clear; history drops them, showing a
+	// staff actor by kind and role instead. Composed, the stricter reading
+	// wins, and dropping is stricter than keeping.
 	p, err := Compose(Composition{Name: "mixed", Presets: []string{"security", "history"}}, presets)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := p.Identity[Internal]; got != Pseudonym {
-		t.Fatalf("internal treatment = %q, want the stricter %q", got, Pseudonym)
+	if got := p.Identity[Internal]; got != Omit {
+		t.Fatalf("internal treatment = %q, want the stricter %q", got, Omit)
 	}
 	if got := p.Identity[External]; got != Pseudonym {
 		t.Fatalf("external treatment = %q, want %q", got, Pseudonym)

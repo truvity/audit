@@ -3,9 +3,7 @@
 # from callers it cannot verify.
 bucket: audit-archive
 anonymousWrites: true
-keys:
-  local:
-    existingSecret: audit-key-root
+externalIdentifiersAreOpaque: true
 jobs:
   digest:
     signingKey:

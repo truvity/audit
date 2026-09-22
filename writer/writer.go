@@ -189,6 +189,9 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 	if err := inner.GuardReplicas(replicas, dedupe); err != nil {
 		return nil, err
 	}
+	if err := inner.GuardKeys(c.Profiles, c.Keys != nil); err != nil {
+		return nil, err
+	}
 	if l, ok := c.Keys.(*keys.Local); ok && replicas > 1 && l.Dir == "" {
 		return nil, errors.New(
 			"writer: more than one replica with keys held only in memory: each replica would mint " +

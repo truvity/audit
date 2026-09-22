@@ -91,8 +91,8 @@ audit:
       presets: [security]
 
   keys:
-    provider: none                  # not built yet: today's default is `local`
-  externalIdentifiersAreOpaque: true  # not built yet
+    provider: none
+  externalIdentifiersAreOpaque: true
 
   database:
     existingSecret: audit-db
@@ -125,9 +125,8 @@ audit:
       ntp: ["169.254.169.123"]      # required by every compliance preset
 ```
 
-Three of those values arrive with the repository rewrite this documentation
-specifies: `mode`, `keys.provider: none` and
-`externalIdentifiersAreOpaque`. Everything else renders today.
+One of those values arrives with the rest of the repository rewrite: `mode`.
+Everything else renders today.
 
 `prefix` is what keeps two applications apart in one bucket, and the chart's
 notes print the IAM statements the four roles need underneath it: the

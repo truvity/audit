@@ -108,8 +108,8 @@ audit:
       presets: [billing-nl]
 
   keys:
-    provider: none                  # not built yet
-  externalIdentifiersAreOpaque: true  # not built yet
+    provider: none
+  externalIdentifiersAreOpaque: true
 
   database:
     existingSecret: audit-db

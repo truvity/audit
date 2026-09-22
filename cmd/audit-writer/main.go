@@ -120,7 +120,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer provider.Close() //nolint:errcheck // shutting down
+	if provider != nil {
+		defer provider.Close() //nolint:errcheck // shutting down
+	}
 
 	var found []*catalogue.Catalogue
 	if *catalogues != "" {

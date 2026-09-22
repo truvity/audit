@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -200,6 +201,12 @@ func (s *Splitter) treat(
 	if id == "" {
 		return "", nil
 	}
+	if category == preset.External && p.OpaqueExternal && looksDirect(id) {
+		return "", fmt.Errorf(
+			"the deployment declares external identifiers opaque and %q is not one: it reads as "+
+				"something that names a person by itself. Send the identifier the application "+
+				"minted, or configure a key provider and let the writer pseudonymise", id)
+	}
 	switch p.Identity[category] {
 	case preset.Omit:
 		return "", nil
@@ -306,4 +313,12 @@ func (s *Splitter) filter(
 		return nil, nil
 	}
 	return out, nil
+}
+
+// looksDirect reports whether an identifier names a person by itself rather
+// than through the application that minted it. It is deliberately crude: an
+// address and anything carrying whitespace are what actually arrive by mistake,
+// and a check that tried to be clever would refuse identifiers it should not.
+func looksDirect(id string) bool {
+	return strings.ContainsAny(id, "@ \t\n")
 }

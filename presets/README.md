@@ -34,12 +34,13 @@ catalogues do not emit a category a profile requires. `audit profile explain
 | `dora` | DORA RTS on ICT risk management, Art. 12 | entity-defined, 365 default | clear / pseudonym |
 | `nen-7513` | NEN 7513 healthcare access logging | 5 years | clear / scoped |
 
-`history`'s `internal: omit` is not in the file yet: it arrives with the code
-rewrite, and `history.yaml` still says `internal: pseudonym`. The rework is
+`history` omits internal actors rather than pseudonymising them, which is
 what lets a tenant-facing view of activity render with no key provider: a
 staff actor is shown by kind and role, never by identity, which is what a
 tenant's administrator should see anyway
 ([0013](../docs/decisions/0013-no-pseudonymisation-keys-by-default.md)).
+Composed with `security`, which keeps staff in clear, the stricter reading
+wins and the composed profile omits them.
 
 A deployment that has declared its external identifiers opaque gets `clear`
 where the table says `pseudonym`; `audit profile explain <name>` prints the

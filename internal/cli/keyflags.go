@@ -30,8 +30,9 @@ func NewKeyFlags(fs *flag.FlagSet, lookup func(name, fallback string) string) *K
 		lookup = func(_, fallback string) string { return fallback }
 	}
 	return &KeyFlags{
-		Provider: fs.String("key-provider", lookup("AUDIT_KEY_PROVIDER", "local"),
-			"where pseudonymisation keys live: local (a root and a directory) or transit (OpenBAO)"),
+		Provider: fs.String("key-provider", lookup("AUDIT_KEY_PROVIDER", "none"),
+			"where pseudonymisation keys live: none (the default: no pseudonyms, no resolve), "+
+				"local (a root and a directory) or transit (OpenBAO)"),
 		Root: fs.String("key-root", lookup("AUDIT_KEY_ROOT", ""),
 			"local: file holding the 32-byte root the data keys are wrapped under"),
 		Dir:     fs.String("key-dir", lookup("AUDIT_KEY_DIR", ""), "local: where wrapped data keys are kept"),
@@ -44,6 +45,8 @@ func NewKeyFlags(fs *flag.FlagSet, lookup func(name, fallback string) string) *K
 // service offers resolve only when they do.
 func (k *KeyFlags) Configured() bool {
 	switch *k.Provider {
+	case "none", "":
+		return false
 	case "transit":
 		return *k.OpenBAO.Address != ""
 	default:
@@ -55,9 +58,16 @@ func (k *KeyFlags) Configured() bool {
 // only copy of the keys and so carries rules the transit provider does not.
 func (k *KeyFlags) Local() bool { return *k.Provider == "local" }
 
-// Open builds the provider.
+// Open builds the provider, which is nil where a deployment runs without one.
+// A nil provider is the default: staff are kept in clear because that is what
+// accountability is for, and people outside arrive as identifiers the
+// application already minted. A profile that asks for a pseudonym anyway is
+// refused by the writer, naming the profile — see
+// docs/decisions/0013-no-pseudonymisation-keys-by-default.md.
 func (k *KeyFlags) Open(ctx context.Context) (keys.Provider, error) {
 	switch *k.Provider {
+	case "none", "":
+		return nil, nil
 	case "local":
 		if *k.Root == "" {
 			return nil, errors.New(
@@ -80,7 +90,7 @@ func (k *KeyFlags) Open(ctx context.Context) (keys.Provider, error) {
 			Prefix: *k.Prefix, Login: login, Token: token, TokenFile: tokenFile,
 		})
 	default:
-		return nil, fmt.Errorf("--key-provider is local or transit, not %q", *k.Provider)
+		return nil, fmt.Errorf("--key-provider is none, local or transit, not %q", *k.Provider)
 	}
 }
 

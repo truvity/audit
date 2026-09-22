@@ -137,6 +137,11 @@ func run() error {
 		if err != nil {
 			return err
 		}
+		if provider == nil {
+			return errors.New(
+				"resolve is enabled and no key provider is configured: there is nothing to open, " +
+					"because nothing was sealed. Turn resolve off, or name a provider")
+		}
 		defer provider.Close() //nolint:errcheck // shutting down
 		var ok bool
 		if sealer, ok = provider.(keys.Sealer); !ok {

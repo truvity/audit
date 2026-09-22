@@ -166,8 +166,7 @@ curl -s …/audit.v1.QueryService/Resolve -H "Authorization: Bearer $TOKEN" -H '
 ```
 
 **Resolve is refused as `unimplemented` where the deployment runs no key
-provider**, which is the default: with `keys.provider: none` (*not built yet:
-it arrives with the rewrite*) there are no
+provider**, which is the default: with `keys.provider: none` there are no
 pseudonyms to undo, the identifiers in a record are the ones the application
 wrote, and the service says so rather than returning nothing
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). Where keys

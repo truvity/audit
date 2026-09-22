@@ -14,6 +14,20 @@ import (
 // deployment's are.
 type Deployment struct {
 	Profiles map[string]ProfileConfig `json:"profiles"`
+	// ExternalIdentifiersAreOpaque is the deployment saying that the
+	// identifiers it receives for people outside the organisation are already
+	// pseudonyms: identifiers an application minted, which name nobody without
+	// that application's own database.
+	//
+	// Where it is true, a profile asking for `external: pseudonym` gets
+	// `clear`, because encrypting an opaque identifier a second time adds a key
+	// to lose and tells a reader of the archive nothing new. The writer holds
+	// the deployment to it, refusing a record whose external identifier looks
+	// direct.
+	//
+	// It defaults to false, so a deployment arrives at clear identifiers by
+	// saying so and not by omission.
+	ExternalIdentifiersAreOpaque bool `json:"external_identifiers_are_opaque,omitempty"`
 }
 
 // ProfileConfig is one profile's composition.
@@ -36,12 +50,21 @@ func ParseDeployment(raw []byte) (*Deployment, error) {
 }
 
 // Compose resolves every profile a deployment declares.
+//
+// This is where ExternalIdentifiersAreOpaque takes effect, so that what a
+// profile says it keeps is what it keeps: `audit profile explain` prints the
+// composed profile, and a treatment the deployment has relaxed should not be
+// something a reader has to know to subtract.
 func (d *Deployment) Compose(presets map[string]*Preset) (map[string]*Profile, error) {
 	out := make(map[string]*Profile, len(d.Profiles))
 	for name, c := range d.Profiles {
 		p, err := Compose(Composition{Name: name, Presets: c.Presets, Prefix: c.Prefix}, presets)
 		if err != nil {
 			return nil, err
+		}
+		if d.ExternalIdentifiersAreOpaque && p.Identity[External] == Pseudonym {
+			p.Identity[External] = Clear
+			p.OpaqueExternal = true
 		}
 		out[name] = p
 	}

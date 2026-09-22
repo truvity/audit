@@ -254,23 +254,25 @@ func TestSplitAppliesTheProfilesIdentityTreatment(t *testing.T) {
 	if id := got["security"].GetSubject().GetId(); !keys.IsPseudonym(id) {
 		t.Fatalf("security subject = %q, want a pseudonym", id)
 	}
-	// History pseudonymises staff too, being the stricter reading.
-	if id := got["history"].GetActor().GetId(); !keys.IsPseudonym(id) {
-		t.Fatalf("history actor = %q, want a pseudonym", id)
+	// History drops staff identifiers: a tenant's administrator sees what was
+	// done and by what kind of person, never by whom. That is also what lets
+	// the profile compose without a key provider.
+	if id := got["history"].GetActor().GetId(); id != "" {
+		t.Fatalf("history actor = %q, want it dropped", id)
 	}
 	// The same person, in two copies, under different keys.
 	if got["security"].GetSubject().GetId() == got["history"].GetSubject().GetId() {
 		t.Fatal("one person has the same pseudonym in two profiles; the copies could be joined")
 	}
 	// A session locates a person as surely as a name, so it follows the same
-	// treatment as the actor it belongs to: readable where the actor is, and a
-	// pseudonym where the actor is one. Pseudonymising one and not the other
-	// would give a reader the person without the session, or the reverse.
+	// treatment as the actor it belongs to: readable where the actor is, and
+	// gone where the actor is gone. Keeping one and not the other would give a
+	// reader the person without the session, or the reverse.
 	if sid := got["security"].GetActor().GetSessionId(); sid != "s_1" {
 		t.Fatalf("security session = %q, want it readable beside a readable actor", sid)
 	}
-	if sid := got["history"].GetActor().GetSessionId(); !keys.IsPseudonym(sid) {
-		t.Fatalf("history session = %q, want a pseudonym beside a pseudonymised actor", sid)
+	if sid := got["history"].GetActor().GetSessionId(); sid != "" {
+		t.Fatalf("history session = %q, want it dropped beside a dropped actor", sid)
 	}
 }
 
@@ -423,5 +425,51 @@ func TestCoreFieldsCoverTheRecord(t *testing.T) {
 		if !fields[want] {
 			t.Errorf("%s cannot be named by a preset", want)
 		}
+	}
+}
+
+// A deployment that declared its external identifiers opaque is held to it.
+// An address in the subject is the mistake this catches: it would otherwise be
+// written in clear, into an archive nothing can edit, because the declaration
+// turned the profile's pseudonym into clear.
+func TestSplitRefusesADirectIdentifierWhereTheyAreDeclaredOpaque(t *testing.T) {
+	builtin, err := preset.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &preset.Deployment{
+		Profiles:                     map[string]preset.ProfileConfig{"security": {Presets: []string{"security"}}},
+		ExternalIdentifiersAreOpaque: true,
+	}
+	opaque, err := d.Compose(builtin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &writer.Splitter{Profiles: opaque}
+
+	// The identifier the application minted: kept as it is. The data goes,
+	// because a property a schema marks for hashing needs a key provider too,
+	// and that is a different refusal.
+	ok := issued(t)
+	ok.Data = nil
+	ok.Subject = &record.Party{Kind: "holder", Id: "usr_7f3c1a"}
+	copies, err := s.Split(context.Background(), ok, composed(t))
+	if err != nil {
+		t.Fatalf("an opaque identifier was refused: %v", err)
+	}
+	if id := byProfile(t, copies)["security"].GetSubject().GetId(); id != "usr_7f3c1a" {
+		t.Errorf("subject = %q, want it kept as the application minted it", id)
+	}
+
+	// An address is not one.
+	direct := issued(t)
+	direct.Data = nil
+	direct.Subject = &record.Party{Kind: "holder", Id: "alice@example.com"}
+	_, err = s.Split(context.Background(), direct, composed(t))
+	if err == nil {
+		t.Fatal("an address was written although the deployment declared its identifiers opaque")
+	}
+	if !strings.Contains(err.Error(), "alice@example.com") {
+		t.Errorf("the refusal should name what it refused: %v", err)
 	}
 }

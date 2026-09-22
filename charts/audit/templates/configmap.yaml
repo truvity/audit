@@ -11,6 +11,7 @@ data:
   # because retention is a property of the profile and every one of them needs
   # to agree about it.
   deployment.yaml: |
+    external_identifiers_are_opaque: {{ .Values.externalIdentifiersAreOpaque }}
     profiles:
       {{- toYaml .Values.profiles | nindent 6 }}
   {{- if include "audit.verifiesWorkloads" . }}

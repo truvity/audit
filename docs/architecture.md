@@ -111,6 +111,7 @@ acknowledgement to act on. For `async`:
 | what happens | direct mode | stream mode |
 |---|---|---|
 | the application's pod dies with records still queued | whatever has not been acknowledged: one flush interval of records (default one second) plus the batch in flight | the same, and shorter, because a publish is quicker than a put |
+| the writer dies with records gathered from the stream | not applicable | nothing: they were never acknowledged to the stream, which redelivers them |
 | the receiver or writer crashes | nothing — it acknowledged nothing it had not stored | nothing |
 | a long receiver outage overflows the queue | the oldest are dropped and counted | the same, but a replicated stream makes the outage a rollout's seconds |
 | the application's container restarts, pod intact | the queue is gone, as in the first row | the same |
@@ -130,7 +131,10 @@ Postgres, not in a pod.
 
 Neither the receiver nor the writer ever combines two records into one.
 Every record is stored as it was emitted. What they do is **batch** — many
-records become one object per profile, tenant and day per batch taken
+records become one object per profile, tenant and day per batch taken. In
+stream mode the writer gathers across fetches first — up to a size, a count or
+a window of no more than half a minute — so that a trickle of records does not
+become a trickle of objects
 — and keep **projections beside the records**: index rows, facet counts,
 rollups, usage counters. Every projection can be recomputed from the archive
 with `audit reindex`, which is why none of them is backed up and none of

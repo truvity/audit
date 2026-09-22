@@ -256,11 +256,26 @@ stream:
   # How long the stream waits for a batch before offering it again. It must
   # exceed the longest a write can honestly take: a batch is acknowledged only
   # once its records are in the archive.
-  ackWait: 30s
+  ackWait: 2m
 
 # How often an object is rolled and put.
+# The roll: how much a writer consuming the stream gathers before it writes,
+# which is what decides how many objects a day of records becomes. Fetching
+# from a stream returns whatever is there, and writing each fetch straight
+# through would make an object of each; an archive of many tiny objects costs a
+# request to put, a line in every hour's digest and an entry in every listing,
+# forever.
+#
+# Nothing is lost by waiting: the messages stay unacknowledged until the writer
+# has taken them, so a consumer that dies mid-window leaves them on the stream.
+# `stream.ackWait` must stay longer than `interval` plus the longest a put can
+# take, and the chart refuses to render otherwise.
+#
+# In direct mode there is no stream to gather from, and `interval` is only how
+# long an object may stay open inside one write.
 roll:
-  interval: 60s
+  interval: 30s
+  maxRecords: 5000
 
 service:
   type: ClusterIP

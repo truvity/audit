@@ -33,3 +33,4 @@
 --set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set query.database.existingSecret=q --set query.resolve.enabled=true --set keys.provider=transit --set openbao.address=https://bao --set openbao.auth.mount=jwt-devel --set keys.transit.role=writer --set query.resolve.transit.role=writer	signs in as the writer
 --set bucket=b --set anonymousWrites=false --set workloadIdentity.issuers[0].url=https://a --set workloadIdentity.issuers[0].audience=audit --set database.url=postgres://x	no mapping every registration would be refused
 --set bucket=b --set query.enabled=true --set query.grants.issuers[0].url=https://id --set query.grants.issuers[0].audience=a --set query.database.existingSecret=q --set query.resolve.enabled=true	nothing was sealed
+--set bucket=b --set stream.url=nats://x --set stream.ackWait=10s	must be longer than

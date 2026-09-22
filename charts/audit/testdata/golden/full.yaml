@@ -379,7 +379,8 @@ spec:
           args:
             - --deployment=/etc/audit/deployment.yaml
             - --listen=:8080
-            - --roll-interval=60s
+            - --roll-interval=30s
+            - --roll-max-records=5000
             - --replicas=3
             - --workloads=/etc/audit/workloads.yaml
             - --kms-key=alias/audit
@@ -390,7 +391,7 @@ spec:
             - --stream=AUDIT
             - --consumer=audit-writer
             - --stream-batch=100
-            - --stream-ack-wait=30s
+            - --stream-ack-wait=2m
             - --version=0.1.0
           env:
             - name: AUDIT_BUCKET

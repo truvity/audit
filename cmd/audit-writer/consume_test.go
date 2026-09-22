@@ -24,6 +24,9 @@ func opts(url string, batch int) streamOptions {
 	return streamOptions{
 		URL: url, Stream: "AUDIT", Durable: "audit-writer",
 		Batch: batch, AckWait: time.Second,
+		// A window shorter than the tests' patience: these exercise the
+		// consumption, and the roll has its own tests in sink/natssink.
+		Window: 10 * time.Millisecond,
 	}
 }
 
@@ -188,7 +191,9 @@ func TestConsumeRefusesAStreamThatIsNotThere(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, err := consume(ctx, streamOptions{URL: url, Stream: "ABSENT", Durable: "audit-writer", Batch: 10, AckWait: time.Second}, &target{})
+	missing := opts(url, 10)
+	missing.Stream = "ABSENT"
+	_, err := consume(ctx, missing, &target{})
 	if err == nil {
 		t.Fatal("a missing stream must stop the writer, not be created by it")
 	}

@@ -247,9 +247,9 @@ func verify(args []string) error {
 		from      = flags.String("from", "", "start of the range, a date or a timestamp")
 		to        = flags.String("to", "", "end of the range, a date or a timestamp")
 		publicKey = flags.String("public-key", "", "the PEM public key the digests were signed with")
-		bucket    = flags.String("bucket", "", "the bucket the archive is in")
-		prefix    = flags.String("prefix", "", "the prefix within the bucket")
-		region    = flags.String("region", "", "the region, when it is not in the environment")
+		bucket    = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
+		prefix    = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
+		region    = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		lookback  = flags.Duration("lookback", 0,
 			"how far before the range to look for objects keyed under an older day; at least what audit digest used")
 		last = flags.Duration("last", 0,
@@ -365,9 +365,9 @@ func replay(args []string) error {
 		reason  = flags.String("reason", "", "keep only dead letters whose reason contains this text")
 		action  = flags.String("action", "", "keep only dead letters of this action")
 		sinkURL = flags.String("sink", "", "the writer's base URL; without it nothing is sent")
-		bucket  = flags.String("bucket", "", "the bucket the archive is in")
-		prefix  = flags.String("prefix", "", "the prefix within the bucket")
-		region  = flags.String("region", "", "the region, when it is not in the environment")
+		bucket  = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
+		prefix  = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
+		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		batch   = flags.Int("batch", 100, "how many records to send at a time")
 		asJSON  = flags.Bool("json", false, "print the report as JSON")
 	)
@@ -479,9 +479,9 @@ func reindex(args []string) error {
 		from      = flags.String("from", "", "start of the range, a date or a timestamp")
 		to        = flags.String("to", "", "end of the range, a date or a timestamp")
 		database  = flags.String("database", "", "the Postgres URL of the index")
-		bucket    = flags.String("bucket", "", "the bucket the archive is in")
-		prefix    = flags.String("prefix", "", "the prefix within the bucket")
-		region    = flags.String("region", "", "the region, when it is not in the environment")
+		bucket    = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
+		prefix    = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
+		region    = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		batchSize = flags.Int("batch", 0, "how many rows to index at a time")
 		asJSON    = flags.Bool("json", false, "print the report as JSON")
 	)
@@ -595,9 +595,9 @@ func digestCmd(args []string) error {
 		transit    = transitFlags(flags)
 		from       = flags.String("from", "", "first window; default the hour after the last digest")
 		to         = flags.String("to", "", "last window; default the hour that has just closed")
-		bucket     = flags.String("bucket", "", "the bucket the archive is in")
-		prefix     = flags.String("prefix", "", "the prefix within the bucket")
-		region     = flags.String("region", "", "the region, when it is not in the environment")
+		bucket     = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
+		prefix     = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
+		region     = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		lookback   = flags.Duration("lookback", 0, "how far back to look for objects keyed under an older day")
 		maxWindows = flags.Int("max-windows", 0, "how many windows one run may seal")
 		sinkURL    = flags.String("sink", "", "the writer this job records what it sealed through")
@@ -721,7 +721,7 @@ func keyPublic(args []string) error {
 	var (
 		key     = flags.String("key", "", "PEM private key file")
 		kmsKey  = flags.String("kms-key", "", "an AWS KMS signing key")
-		region  = flags.String("region", "", "the region, when it is not in the environment")
+		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		transit = transitFlags(flags)
 	)
 	if _, err := parse(flags, args); err != nil {
@@ -858,9 +858,9 @@ func holdCmd(args []string) error {
 		reason  = flags.String("reason", "", "why the hold is placed; it is recorded and cannot be blank")
 		id      = flags.String("id", "", "the hold's identifier")
 		by      = flags.String("by", "", "who is placing or releasing it, as this deployment names them")
-		bucket  = flags.String("bucket", "", "the bucket the archive is in")
-		prefix  = flags.String("prefix", "", "the prefix within the bucket")
-		region  = flags.String("region", "", "the region, when it is not in the environment")
+		bucket  = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
+		prefix  = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
+		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		sinkURL = flags.String("sink", "", "the writer this action is recorded through")
 		asJSON  = flags.Bool("json", false, "print as JSON")
 	)
@@ -903,9 +903,9 @@ func keyCmd(args []string) error {
 		purpose = flags.String("purpose", "", "the purpose the key is for")
 		by      = flags.String("by", "", "who is destroying it, as this deployment names them")
 		reason  = flags.String("reason", "", "why, recorded with the erasure")
-		bucket  = flags.String("bucket", "", "the bucket the archive is in, read to check for legal holds")
-		prefix  = flags.String("prefix", "", "the prefix within the bucket")
-		region  = flags.String("region", "", "the region, when it is not in the environment")
+		bucket  = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in, read to check for legal holds")
+		prefix  = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
+		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		sinkURL = flags.String("sink", "", "the writer the erasure is recorded through")
 	)
 	keyFlags := cli.NewKeyFlags(flags, nil)
@@ -1010,4 +1010,18 @@ func conformance(args []string) error {
 		return fmt.Errorf("%d checks failed", failed)
 	}
 	return nil
+}
+
+// env is a flag's default taken from the environment.
+//
+// The chart runs every scheduled job as this binary and gives it the archive
+// in AUDIT_BUCKET, AUDIT_PREFIX and AWS_REGION, the way audit-writer and
+// audit-query already read them. Without this the jobs got no bucket at all
+// and said so -- `name the archive's bucket with --bucket` -- which reads as
+// a deployment that forgot an argument rather than a binary that ignored one.
+func env(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
 }

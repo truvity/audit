@@ -68,6 +68,11 @@ type Registry struct {
 	// that cannot say returns "", and registration is then refused rather than
 	// taking the document's word for whose it is.
 	Identity func(ctx context.Context) string
+	// Keys says whether the deployment configured a key provider. Without one,
+	// a catalogue asking for a property to be hashed is refused here rather
+	// than dead-lettering every record that carries it: the application would
+	// otherwise start, and find out one record at a time.
+	Keys bool
 	// OnRegistered is called for a catalogue that was accepted, so that the
 	// deployment can record it.
 	OnRegistered func(ctx context.Context, e Entry)
@@ -155,6 +160,17 @@ func (r *Registry) validate(e Entry) (*catalogue.Catalogue, []string) {
 	if loaded.Version != e.Version {
 		problems = append(problems, fmt.Sprintf(
 			"the document is version %q and it was registered as %q", loaded.Version, e.Version))
+	}
+	// Hashing a property is pseudonymising it, and it needs the same keys an
+	// identifier does. Refusing here is what stops an application starting
+	// against an installation that would dead-letter every record carrying
+	// one.
+	if !r.Keys {
+		for _, h := range loaded.Hashes() {
+			problems = append(problems, fmt.Sprintf(
+				"%s asks to be hashed and this deployment runs no key provider, so every record "+
+					"carrying it would be dead-lettered", h))
+		}
 	}
 
 	return loaded, problems

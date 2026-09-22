@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/preset"
 )
 
@@ -65,4 +66,34 @@ func GuardKeys(profiles map[string]*preset.Profile, hasProvider bool) error {
 			"identifiers reaching this trail are ones an application minted. Starting without "+
 			"either would write whatever arrives into an archive nothing can edit",
 		strings.Join(names, ", "))
+}
+
+// GuardHashes refuses a deployment whose catalogues ask for a value inside a
+// record to be hashed while no key provider is configured.
+//
+// Hashing is pseudonymisation of a property, and it needs the same keys an
+// identifier does. Without them the writer refuses each such record as it
+// arrives, one dead letter at a time, which a deployment discovers on the day
+// it matters and not on the day it was configured. The catalogue says up front
+// that this will happen, so this says it up front too.
+func GuardHashes(catalogues []*catalogue.Catalogue, hasProvider bool) error {
+	if hasProvider {
+		return nil
+	}
+	var named []string
+	for _, c := range catalogues {
+		for _, p := range c.Hashes() {
+			named = append(named, c.Source+" "+p)
+		}
+	}
+	if len(named) == 0 {
+		return nil
+	}
+	sort.Strings(named)
+	return fmt.Errorf(
+		"writer: %s asks to be hashed and no key provider is configured. Hashing a property is "+
+			"pseudonymising it and needs the same keys an identifier does, so every record "+
+			"carrying one would be dead-lettered. Configure a provider, or take the "+
+			"x-audit-sensitive: hmac annotation off the property",
+		strings.Join(named, ", "))
 }

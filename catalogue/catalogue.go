@@ -44,6 +44,26 @@ type Catalogue struct {
 // Document returns the catalogue as it was registered.
 func (c *Catalogue) Document() []byte { return c.document }
 
+// Hashes reports the extension properties this catalogue asks to be hashed,
+// as the schema's id and the property's pointer within it.
+//
+// Hashing is pseudonymisation of a value inside a record's data, and it needs
+// the same keys an identifier does. A deployment running without a key
+// provider cannot write a record carrying one of these, so it is worth knowing
+// before the first such record arrives rather than one dead letter at a time.
+func (c *Catalogue) Hashes() []string {
+	var out []string
+	for id, s := range c.schemas {
+		for pointer, p := range s.Properties {
+			if p.Sensitive == "hmac" {
+				out = append(out, id+pointer)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Schemas returns every extension schema, by $id, as registered.
 func (c *Catalogue) Schemas() map[string][]byte {
 	out := make(map[string][]byte, len(c.schemas))

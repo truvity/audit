@@ -304,6 +304,7 @@ func run() error {
 			Profiles: profiles,
 			Builtin:  []*catalogue.Catalogue{common},
 			Identity: sourceOf,
+			Keys:     provider != nil,
 			// A gap in coverage is the deployment's to close, not a reason to
 			// refuse the application that registered while it was open.
 			OnUncovered: func(_ context.Context, profile string, missing []string) {

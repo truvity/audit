@@ -77,6 +77,7 @@ data:
   # because retention is a property of the profile and every one of them needs
   # to agree about it.
   deployment.yaml: |
+    external_identifiers_are_opaque: false
     profiles:
       history:
         presets:

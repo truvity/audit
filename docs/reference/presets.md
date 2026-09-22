@@ -86,12 +86,10 @@ addresses in a locked archive by omission.
 yet: they arrive with the rewrite. Nothing relaxes `internal`, `scoped` or
 `omit`.
 
-The `history` preset is being reworked for the same reason. It treats
-internal actors as `pseudonym` today, which makes a tenant-facing view need
-a key provider before it renders; it becomes `internal: omit`, so a staff
-actor is shown by kind and role and never by identity, and `external:
-scoped` stays. The file still says `internal: pseudonym`; the change arrives
-with the code rewrite.
+The `history` preset was reworked for the same reason. It treated internal
+actors as `pseudonym`, which made a tenant-facing view need a key provider
+before it would render. It now omits them, so a staff actor is shown by kind
+and role and never by identity, and `external: scoped` stays.
 
 ## Validation
 

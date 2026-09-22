@@ -39,7 +39,7 @@ forbidden_fields:
   - /unmapped
 forbidden_pii: [direct, content]
 identity:
-  internal: pseudonym
+  internal: omit
   external: scoped
   machine: clear
 retention:

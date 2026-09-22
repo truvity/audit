@@ -11,6 +11,30 @@ The documentation is rewritten around one installation per application, and
 the code is being changed to match it. The pages are the specification, and
 each still marks what does not exist yet.
 
+### Keys are off by default
+
+`keys.provider: none` is the default. Most deployments want it: staff are kept
+in clear because that is what accountability is for, and people outside arrive
+as identifiers an application already minted, which name nobody without that
+application's own database. Encrypting one of those a second time adds a key
+to lose and tells a reader of the archive nothing new. `local` and OpenBAO
+`transit` stay for a deployment obliged to be able to crypto-shred.
+
+A deployment without keys has to say which it is. New
+`external_identifiers_are_opaque` in the deployment document relaxes a
+profile's `external: pseudonym` to `clear` — applied where profiles are
+composed, so `audit profile explain` shows the treatment that will actually be
+used, and says it was relaxed. The writer then holds the deployment to it and
+refuses a record whose external identifier looks direct, an address say. A
+writer that has neither a provider nor the declaration **refuses to start**,
+naming the profile: arriving at clear identifiers in an archive nothing can
+edit should take a decision, not an omission.
+
+The `history` preset no longer needs keys either. It omits internal actors
+instead of pseudonymising them, so a tenant's administrator sees what was done
+and by what kind of person, never by whom — which is what that view should
+show anyway. Composed with `security`, the stricter reading still wins.
+
 ### Two deliveries, and no file outbox
 
 An action declares `block` or `async`. `block` is unchanged: the call returns

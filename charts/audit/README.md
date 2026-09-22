@@ -84,9 +84,10 @@ actor or subject carries something that looks like a direct identifier
 ([0013](../../docs/decisions/0013-no-pseudonymisation-keys-by-default.md)).
 
 `local` and `transit` stay, for a deployment that must be able to
-crypto-shred. Both are built; the `none` default and
-`externalIdentifiersAreOpaque` are not built yet and arrive with the
-rewrite, where today's default is `local`.
+crypto-shred. An installation that runs neither must set
+`externalIdentifiersAreOpaque`, or compose only profiles that keep nobody:
+the writer refuses to start otherwise, naming the profile, rather than
+writing whatever arrives into an archive nothing can edit.
 
 ## Extensions
 

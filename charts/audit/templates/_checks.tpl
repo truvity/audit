@@ -28,7 +28,13 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- end -}}
 {{- end -}}
 
-{{- if eq .Values.keys.provider "local" -}}
+{{- if eq .Values.keys.provider "none" -}}
+  {{- /* Nothing to check: there is no key material, no directory to share
+  between replicas, and nothing to sign in to. What a deployment without keys
+  must still decide is whether its external identifiers are opaque, which the
+  writer refuses to start without — and the chart cannot tell, because a
+  profile it composes may keep nobody at all. */ -}}
+{{- else if eq .Values.keys.provider "local" -}}
   {{- if not .Values.keys.local.existingSecret -}}
   {{- fail "audit: set `keys.local.existingSecret` to a Secret holding the 32-byte root. Without it the writer will not start, and a root generated per install would make the pseudonyms of two installs incomparable." -}}
   {{- end -}}
@@ -38,7 +44,7 @@ understand, or — worse — to a trail that looks fine and is not.
 {{- else if eq .Values.keys.provider "transit" -}}
   {{- include "audit.checkOpenBAO" (dict "root" . "creds" .Values.keys.transit "what" "the transit key provider" "at" "keys.transit") -}}
 {{- else -}}
-{{- fail (printf "audit: key provider %q is not one this chart knows: `local` or `transit`." .Values.keys.provider) -}}
+{{- fail (printf "audit: key provider %q is not one this chart knows: `none`, `local` or `transit`." .Values.keys.provider) -}}
 {{- end -}}
 
 {{- if .Values.jobs.digest.enabled -}}
@@ -91,6 +97,9 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- fail "audit: the query service records every read through the writer, which must be able to take it." -}}
   {{- end -}}
   {{- if .Values.query.resolve.enabled -}}
+    {{- if eq .Values.keys.provider "none" -}}
+    {{- fail "audit: `query.resolve.enabled` with `keys.provider: none`. Resolve opens what the writer sealed under a key, and without a provider nothing was sealed: there is nothing to open. Turn resolve off, or choose a provider." -}}
+    {{- end -}}
     {{- if eq .Values.keys.provider "local" -}}
       {{- if not (and .Values.keys.local.persistence.enabled (has "ReadWriteMany" .Values.keys.local.persistence.accessModes)) -}}
       {{- fail "audit: `query.resolve` with the local key provider mounts the writer's key directory, which needs `keys.local.persistence` with ReadWriteMany: the query service runs beside the writer, not in its place. The transit provider needs no shared volume." -}}

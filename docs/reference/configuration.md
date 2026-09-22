@@ -73,7 +73,7 @@ binary's flags with dots.
 | `roll.interval` | how long an object may stay open. It does not bound the write path: a batch the receiver takes is put before it is acknowledged, whatever the delivery |
 | `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database in the application's Postgres. Without it the writer indexes nothing and deduplicates in process |
 | `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
-| `keys.provider` | `none` (the default), `local` (a root and a directory) or `transit` (OpenBAO — see [OpenBAO keys](../operations/openbao-keys.md)). With `none` there are no pseudonyms, no key directory, no login to a secret manager and no resolve ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). `none` is not built yet: today the default is `local` |
+| `keys.provider` | `none` (the default), `local` (a root and a directory) or `transit` (OpenBAO — see [OpenBAO keys](../operations/openbao-keys.md)). With `none` there are no pseudonyms, no key directory, no login to a secret manager and no resolve ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)) |
 | `openbao.address`, `.mount`, `.namespace` | the OpenBAO the transit key provider and the transit digest signer reach: the server, where transit is mounted (`transit`), and the namespace (empty is root) |
 | `openbao.auth.mount`, `.audience`, `.expirationSeconds` | the JWT auth mount each component signs in on with its projected service-account token (e.g. `jwt-devel`), the token's audience (`openbao`) and lifetime (600) |
 | `keys.transit.prefix` | what every key name starts with (`audit`) |

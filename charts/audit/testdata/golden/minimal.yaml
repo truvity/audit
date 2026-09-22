@@ -61,6 +61,7 @@ data:
   # because retention is a property of the profile and every one of them needs
   # to agree about it.
   deployment.yaml: |
+    external_identifiers_are_opaque: true
     profiles:
       history:
         presets:
@@ -68,25 +69,6 @@ data:
       security:
         presets:
         - security
-
----
-# Source: audit/templates/writer.yaml
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: audit-keys
-  labels:
-    helm.sh/chart: audit-0.1.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.1.0"
-    app.kubernetes.io/managed-by: Helm
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
 
 ---
 # Source: audit/templates/writer.yaml
@@ -125,10 +107,6 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
-  # One writer at a time may hold a ReadWriteOnce volume, so the old pod goes
-  # before the new one arrives. A rolling update would deadlock on the claim.
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: audit
@@ -165,9 +143,7 @@ spec:
             - --roll-interval=60s
             - --replicas=1
             - --anonymous-writes
-            - --key-provider=local
-            - --key-root=/etc/audit/keys/root
-            - --key-dir=/var/lib/audit/keys
+            - --key-provider=none
             - --version=0.1.0
           env:
             - name: AUDIT_BUCKET
@@ -198,11 +174,6 @@ spec:
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
               readOnly: true
-            - name: key-root
-              mountPath: /etc/audit/keys
-              readOnly: true
-            - name: keys
-              mountPath: /var/lib/audit/keys
             
             - name: tmp
               mountPath: /tmp
@@ -210,12 +181,6 @@ spec:
         - name: deployment
           configMap:
             name: audit-deployment
-        - name: key-root
-          secret:
-            secretName: audit-key-root
-        - name: keys
-          persistentVolumeClaim:
-            claimName: audit-keys
         
         - name: tmp
           emptyDir: {}

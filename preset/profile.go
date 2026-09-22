@@ -31,11 +31,16 @@ type Profile struct {
 	ForbiddenPII       map[string]bool
 	RequiredCategories []string
 
-	Identity  map[Category]Treatment
-	Retention Retention
-	Integrity Integrity
-	Review    Review
-	Pipeline  Pipeline
+	Identity map[Category]Treatment
+	// OpaqueExternal records that the deployment relaxed this profile's
+	// external treatment from pseudonym to clear, having declared that the
+	// identifiers it receives are already opaque. It is kept so that explaining
+	// a profile can say why it keeps what it keeps.
+	OpaqueExternal bool
+	Retention      Retention
+	Integrity      Integrity
+	Review         Review
+	Pipeline       Pipeline
 }
 
 // Compose resolves a composition against the presets available.
@@ -219,7 +224,11 @@ func (p *Profile) Explain() string {
 		fmt.Fprintf(&b, "  never     %s\n", strings.Join(p.ForbiddenFields, " "))
 	}
 	for _, c := range []Category{Internal, External, Machine} {
-		fmt.Fprintf(&b, "  identity  %-8s %s\n", c, p.Identity[c])
+		note := ""
+		if c == External && p.OpaqueExternal {
+			note = "  (relaxed from pseudonym: the deployment declares external identifiers opaque)"
+		}
+		fmt.Fprintf(&b, "  identity  %-8s %s%s\n", c, p.Identity[c], note)
 	}
 	switch p.Retention.Policy {
 	case "after_expiry":

@@ -20,6 +20,7 @@ stream:
   name: AUDIT
   consumer: audit-writer
 keys:
+  provider: local
   local:
     existingSecret: audit-key-root
     persistence:

@@ -930,6 +930,11 @@ func keyCmd(args []string) error {
 	if err != nil {
 		return err
 	}
+	if provider == nil {
+		return errors.New(
+			"this needs a key provider: name one with --key-provider, since the default is none " +
+				"and a deployment without keys has nothing to destroy or resolve")
+	}
 	defer provider.Close() //nolint:errcheck // shutting down
 	common, err := catalogue.Common()
 	if err != nil {

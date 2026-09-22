@@ -75,9 +75,8 @@ Everything one installation writes, beneath its `prefix`:
 | `identity/tenant=<t>/purpose=<p>/<pseudonym>` | writer | the sealed identity behind a pseudonym, for resolve | the longest profile |
 
 The last one exists only where the deployment configured a key provider.
-`keys.provider: none` is the default — not built yet: it arrives with the
-rewrite, and the chart's default today is `local` — and an installation
-running without keys writes no `identity/` prefix at all
+`keys.provider: none` is the default, and an installation running without
+keys writes no `identity/` prefix at all
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
 
 Exports go to a **separate bucket with no Object Lock** and a lifecycle rule

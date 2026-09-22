@@ -5,7 +5,10 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
-## [Unreleased]
+## [0.2.1] - 2026-09-22
+
+One fix, found installing 0.2.0 for the first time: a release with an index
+never finished installing.
 
 ### The migration hook brings its own service account
 

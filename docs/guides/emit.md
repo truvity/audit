@@ -196,7 +196,8 @@ written, dropped and refused.
 | `audit.emit.queue.pending` | how many records are waiting. A number that climbs is the warning — the receiver is slow or gone. (Not built yet: it arrives with the rewrite.) |
 | `audit.emit.records.dropped` | how many the queue gave up. **Alert on it**: a drop is an incident, not a condition to tolerate. |
 
-Every dropped record is a log line in the application too, so the loss is
+Every dropped record is written to the application's log by the emitter
+(`Options.Logger`, or the default logger), so the loss is
 visible where its other evidence is.
 
 ## 4. Record

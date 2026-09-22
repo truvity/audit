@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -94,6 +95,9 @@ type Options struct {
 	Retry time.Duration
 
 	Hooks Hooks
+	// Logger is where a record the queue gave up is written when no OnDropped
+	// hook is wired, so that a drop is never silent. Default slog.Default().
+	Logger *slog.Logger
 }
 
 // Emitter records what an application did.
@@ -184,6 +188,19 @@ func New(o Options) (*Emitter, error) {
 	}
 	if e.retry <= 0 {
 		e.retry = time.Second
+	}
+	// A drop nobody is told about is a record that is simply gone. When the
+	// application wires no hook, the emitter says so itself, in the one place
+	// an application always has: its log.
+	if e.hooks.OnDropped == nil {
+		logger := o.Logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		e.hooks.OnDropped = func(r *record.Record, reason string) {
+			logger.Warn("audit: a record was given up and is not in the trail",
+				"id", r.GetId(), "action", r.GetAction(), "source", r.GetSource(), "reason", reason)
+		}
 	}
 	e.queue = make(chan *record.Record, queue)
 	e.wg.Add(1)

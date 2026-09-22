@@ -64,9 +64,12 @@ that costs nothing but the queue's depth.
   queue: one flush interval of records plus the batch in flight. A receiver
   or writer crash loses nothing, because it acknowledged nothing it had not
   stored.
-- **Every dropped record is still a log line.** The emitter logs what it
-  could not deliver, so the loss is visible where the application's other
-  evidence is.
+- **Every dropped record is still a log line.** The emitter itself writes
+  a record it gives up to the application's log, with its identifier, action
+  and the reason, when the application wires no hook of its own; with a hook,
+  the hook decides. A record lost with a dying pod is different: nothing can
+  log it at that moment, and what remains is whatever the application logged
+  about the action itself.
 - **Two metrics matter**: the queue's depth (`audit.emit.queue.pending`) and
   what overflowed (`audit.emit.records.dropped`). A queue that is filling is
   the alert; a drop is the incident.

@@ -115,8 +115,10 @@ acknowledgement to act on. For `async`:
 | a long receiver outage overflows the queue | the oldest are dropped and counted | the same, but a replicated stream makes the outage a rollout's seconds |
 | the application's container restarts, pod intact | the queue is gone, as in the first row | the same |
 
-Every record that is dropped or lost is still a log line in the
-application. Watch `audit.emit.queue.pending`, which tells you a queue is
+Every record the queue gives up is written to the application's log by the
+emitter, with its identifier and the reason. A record lost with a dying pod
+cannot be, and what remains of it is whatever the application logged about
+the action. Watch `audit.emit.queue.pending`, which tells you a queue is
 filling, and alert on `audit.emit.records.dropped`, which tells you one
 overflowed.
 

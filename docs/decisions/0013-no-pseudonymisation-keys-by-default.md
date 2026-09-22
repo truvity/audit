@@ -54,10 +54,14 @@ subject or person target carries something that looks like a direct
 identifier — an address, or whitespace — naming the field and why.
 
 When it is false and the provider is `none`, the writer refuses to start if
-any registered catalogue declares an external actor kind or a person target
-type. The deployment must choose: either the identifiers it receives are
-opaque, or it configures a provider. It may not arrive at clear-text
-addresses in a locked archive by omission.
+any composed profile still asks for external identifiers to be
+pseudonymised, naming the profile. The check is on the profile and not on
+the catalogues, because a catalogue can be registered after start-up and a
+check on what is registered would be walked around by arriving late. The
+deployment must choose: either the identifiers it receives are opaque, or it
+configures a provider. It may not arrive at clear-text addresses in a locked
+archive by omission. (Amended 2026-09-22: the first draft of this record
+described a check on the registered catalogues.)
 
 **The providers stay.** `local`, OpenBAO `transit` and the designed KMS
 envelope remain, for a deployment that must be able to crypto-shred — a

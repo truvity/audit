@@ -95,10 +95,17 @@ one.
 
 | role | on the archive, under its prefix | elsewhere |
 |---|---|---|
-| **writer** | `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetObjectRetention`, `s3:PutObjectLegalHold`; `s3:GetObject` and `s3:ListBucket` on `holds/`, `profile=`, and `identity/` where there are keys | `kms:GenerateDataKey`, `kms:Encrypt` on the bucket's key |
+| **writer** | `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetObjectRetention`, `s3:PutObjectLegalHold`; `s3:GetObject` and `s3:ListBucket` on `holds/`, `profile=`, `schema/`, and `identity/` where there are keys | `kms:GenerateDataKey`, `kms:Encrypt` on the bucket's key |
 | **digest job** | `s3:GetObject`, `s3:ListBucket`; `s3:PutObject` on `digest/` | `kms:Sign` if it signs with KMS |
 | **verify job** | `s3:GetObject`, `s3:ListBucket`; `s3:PutObject` on `verified/` | `kms:Decrypt` on the bucket's key |
 | **query service** | `s3:GetObject`, `s3:ListBucket` | `s3:PutObject`, `s3:GetObject` on the exports bucket; `kms:Decrypt` |
+
+`schema/` is easy to miss and the writer does not start without it. It records
+each profile's composition there, and reads the last one back on **every
+start** to decide whether the profile has changed since it last wrote. A policy
+that lets it put that object and not get it produces a writer that writes one
+object, takes a 403 and dies, on a loop -- which reads as a broken archive
+rather than a missing verb.
 
 The separations inside that table are the point of it. The writer may put
 objects and may lengthen a lock, and may not sign; the digest job may sign

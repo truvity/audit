@@ -5,6 +5,18 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [Unreleased]
+
+### The S3 guide names `schema/` among the writer's reads
+
+Documentation only, and the reason a real installation's writer crash-looped
+on a 403. The guide's IAM table listed `holds/`, `profile=` and `identity/`
+as what the writer reads, and left out `schema/` -- where it records each
+profile's composition and from which it reads the last one back on every
+start. A policy written from that table lets the writer put the composition
+and not get it, so it writes one object, takes an AccessDenied and dies, on a
+loop, which reads as a broken archive rather than a missing verb.
+
 ## [0.2.2] - 2026-09-22
 
 One fix, found the moment the first installation's writer started.

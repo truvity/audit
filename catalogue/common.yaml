@@ -35,7 +35,7 @@ actions:
     categories: [log_access]
     profiles: [security]
     target_types: [profile, tenant]
-    delivery: best_effort
+    delivery: async
     message: { en: "{actor} searched the {profile} profile" }
   audit.facets:
     summary: Facet counts were read for a profile.

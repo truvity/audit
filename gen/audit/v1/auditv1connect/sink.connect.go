@@ -45,11 +45,12 @@ const (
 
 // SinkServiceClient is a client for the audit.v1.SinkService service.
 type SinkServiceClient interface {
-	// Write accepts a batch. With DELIVERY_BLOCK the call returns only after
-	// the records are durable at the next hop; the emitter then completes
-	// the business request. With DELIVERY_BEST_EFFORT the call may return
-	// before durability. DELIVERY_OUTBOX is an emitter-side mode and never
-	// reaches the wire.
+	// Write accepts a batch. The acknowledgement always means durable: the
+	// object is in the archive, or the stream has replicated it. What the
+	// delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
+	// caller waits, and the business request does not complete until the
+	// record is kept. With DELIVERY_ASYNC the emitter's own queue waits,
+	// retrying until this call is acknowledged.
 	Write(context.Context, *connect.Request[v1.WriteRequest]) (*connect.Response[v1.WriteResponse], error)
 }
 
@@ -85,11 +86,12 @@ func (c *sinkServiceClient) Write(ctx context.Context, req *connect.Request[v1.W
 
 // SinkServiceHandler is an implementation of the audit.v1.SinkService service.
 type SinkServiceHandler interface {
-	// Write accepts a batch. With DELIVERY_BLOCK the call returns only after
-	// the records are durable at the next hop; the emitter then completes
-	// the business request. With DELIVERY_BEST_EFFORT the call may return
-	// before durability. DELIVERY_OUTBOX is an emitter-side mode and never
-	// reaches the wire.
+	// Write accepts a batch. The acknowledgement always means durable: the
+	// object is in the archive, or the stream has replicated it. What the
+	// delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
+	// caller waits, and the business request does not complete until the
+	// record is kept. With DELIVERY_ASYNC the emitter's own queue waits,
+	// retrying until this call is acknowledged.
 	Write(context.Context, *connect.Request[v1.WriteRequest]) (*connect.Response[v1.WriteResponse], error)
 }
 

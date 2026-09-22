@@ -14,14 +14,17 @@ import (
 // Instrument returns hooks that count what an emitter does into OpenTelemetry
 // metrics, and then call the given hooks.
 //
-// best_effort delivery is the one that needs it most: the design's answer to
-// "may drop under pressure" is "and alerts", and until something counts the
-// drops nothing can alert. So the instruments are:
+// Async delivery is the one that needs it most: it gives a record up only when
+// its queue overflows, and until something counts that nothing can alert on
+// it. So the instruments are:
 //
 //	audit.emit.records.written   records a sink accepted, by delivery
-//	audit.emit.records.dropped   records best-effort delivery gave up — alert on this
+//	audit.emit.records.dropped   records the queue gave up — alert on this
 //	audit.emit.records.refused   records that do not satisfy their catalogue: a bug in the emitting code
-//	audit.emit.batches.failed    batches a sink refused or failed, by delivery
+//	audit.emit.batches.failed    batches a sink refused or could not take, by delivery
+//
+// With InstrumentQueue below, audit.emit.queue.pending is the one to watch:
+// drops are what happens after it has been climbing.
 //
 // The emitter itself stays free of OpenTelemetry: this wraps its hooks, so an
 // application that wants neither pays for neither.
@@ -33,7 +36,7 @@ func Instrument(h Hooks, provider metric.MeterProvider) (Hooks, error) {
 		return h, fmt.Errorf("emit: %w", err)
 	}
 	dropped, err := m.Int64Counter("audit.emit.records.dropped", metric.WithUnit("{record}"), // audit:not-an-action — a metric name
-		metric.WithDescription("Records best-effort delivery gave up."))
+		metric.WithDescription("Records the async queue gave up."))
 	if err != nil {
 		return h, fmt.Errorf("emit: %w", err)
 	}
@@ -77,20 +80,17 @@ func Instrument(h Hooks, provider metric.MeterProvider) (Hooks, error) {
 	}, nil
 }
 
-// InstrumentOutbox publishes how many records an outbox holds as
-// audit.emit.outbox.pending. A number that only grows is a sink that has been
-// gone too long — the delay an outbox is for, turning into a backlog.
-func InstrumentOutbox(box Outbox, provider metric.MeterProvider) error {
+// InstrumentQueue publishes how many records are waiting to be acknowledged as
+// audit.emit.queue.pending. It is the number that says how much this process
+// would lose if it died now, and a number that only climbs is a sink that has
+// been away longer than the queue is deep — drops follow.
+func InstrumentQueue(e *Emitter, provider metric.MeterProvider) error {
 	m := provider.Meter("github.com/truvity/audit/emit")
-	_, err := m.Int64ObservableGauge("audit.emit.outbox.pending", // audit:not-an-action — a metric name
+	_, err := m.Int64ObservableGauge("audit.emit.queue.pending", // audit:not-an-action — a metric name
 		metric.WithUnit("{record}"),
-		metric.WithDescription("Records waiting in the outbox."),
+		metric.WithDescription("Records queued for async delivery and not yet acknowledged."),
 		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
-			n, err := box.Pending()
-			if err != nil {
-				return err
-			}
-			o.Observe(int64(n))
+			o.Observe(int64(e.Pending()))
 			return nil
 		}))
 	if err != nil {

@@ -25,7 +25,7 @@ import (
 //
 // Two rules keep the loop from turning on itself.
 //
-// Delivery is best-effort whatever the catalogue declares, because a blocking
+// Delivery is async whatever the catalogue declares, because a blocking
 // write from inside the writer's own batch would wait on its own flush, and
 // because failing to record that a record was dead-lettered must not also fail
 // the dead-lettering. The emitter is marked SelfReporting, which says this in

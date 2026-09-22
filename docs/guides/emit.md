@@ -95,14 +95,14 @@ action name in code exactly once — a constructor per action
 
 **The acknowledgement always means durable.** In stream mode it is the
 stream's replicated publish acknowledgement; in direct mode it is the object
-in the bucket, so an `async` batch is acknowledged after the roll holding it
-has been put and indexed. Nobody is waiting on that batch, so the delay costs
-queue depth and nothing else.
+in the bucket: the receiver puts every batch it takes before answering.
+Nobody is waiting on an `async` batch, so that costs queue depth and nothing
+else.
 
 An `async` record is lost only if the application's pod dies with the record
-still queued — up to one roll interval in direct mode, milliseconds in stream
-mode — or if a long outage overflows the queue, in which case the oldest are
-dropped, counted and logged.
+still queued — one flush interval of records plus the batch in flight — or if
+an outage long enough to overflow the queue drops the oldest, which are
+counted and logged.
 
 `outbox` and `best_effort` are **retired**
 ([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)). The catalogue

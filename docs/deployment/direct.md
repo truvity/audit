@@ -67,9 +67,11 @@ sequenceDiagram
 ```
 
 An `async` record takes the same path, except that the application does not
-wait: it is queued, batched into the next roll, and acknowledged after that
-roll's put. The application's queue therefore holds a record for up to
-`roll.interval`, which is the loss window if its pod dies.
+wait: it is queued, batched with whatever else is queued, and the batch is put
+and acknowledged as one. The application's queue holds a record from the
+moment it is recorded until that acknowledgement — one flush interval plus a
+round trip, and that is the loss window if the pod dies. The emitter's `Flush`
+and `Batch` are the knobs.
 
 ## Values
 

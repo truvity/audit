@@ -34,11 +34,11 @@ means durable
 | `block` | `DELIVERY_BLOCK` | when the records are durable at the next hop |
 | `async` (the default) | `DELIVERY_ASYNC` | at once; the record waits in the emitter's bounded queue |
 
-`DELIVERY_ASYNC` is not built yet: it arrives with the rewrite, as the rename
-of `DELIVERY_BEST_EFFORT`, which is what the enum spells today.
-`DELIVERY_OUTBOX` is retired and leaves the enum with the same change; it
-never reached the wire, because it named a mode of the emitter, and the file
-outbox is gone.
+`DELIVERY_OUTBOX` and `DELIVERY_BEST_EFFORT` stay in the enum, deprecated. A
+value removed is a record nobody can read, and this package is `v1`, so they
+remain decodable and nothing produces them: the catalogue loader refuses both
+spellings by name. `DELIVERY_OUTBOX` never reached the wire in any case — it
+named a mode of the emitter, and the file it named is gone.
 
 ## Catalogue registration
 

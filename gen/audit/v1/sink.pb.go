@@ -32,8 +32,19 @@ type Delivery int32
 const (
 	Delivery_DELIVERY_UNSPECIFIED Delivery = 0
 	Delivery_DELIVERY_BLOCK       Delivery = 1
-	Delivery_DELIVERY_OUTBOX      Delivery = 2
+	// Retired on 2026-09-22 by
+	// docs/decisions/0012-two-deliveries-and-a-durable-ack.md. They stay in the
+	// enum so that a record written under them still decodes — this package is
+	// v1 and a value removed is a record nobody can read — and the catalogue
+	// loader refuses both by name, saying what to write instead.
+	//
+	// Deprecated: Marked as deprecated in audit/v1/sink.proto.
+	Delivery_DELIVERY_OUTBOX Delivery = 2
+	// Deprecated: Marked as deprecated in audit/v1/sink.proto.
 	Delivery_DELIVERY_BEST_EFFORT Delivery = 3
+	// The default. The call returns at once and the emitter keeps the record in
+	// a bounded queue, retrying until it is acknowledged.
+	Delivery_DELIVERY_ASYNC Delivery = 4
 )
 
 // Enum value maps for Delivery.
@@ -43,12 +54,14 @@ var (
 		1: "DELIVERY_BLOCK",
 		2: "DELIVERY_OUTBOX",
 		3: "DELIVERY_BEST_EFFORT",
+		4: "DELIVERY_ASYNC",
 	}
 	Delivery_value = map[string]int32{
 		"DELIVERY_UNSPECIFIED": 0,
 		"DELIVERY_BLOCK":       1,
 		"DELIVERY_OUTBOX":      2,
 		"DELIVERY_BEST_EFFORT": 3,
+		"DELIVERY_ASYNC":       4,
 	}
 )
 
@@ -251,12 +264,13 @@ const file_audit_v1_sink_proto_rawDesc = "" +
 	"\brejected\x18\x02 \x03(\v2\x13.audit.v1.RejectionR\brejected\"3\n" +
 	"\tRejection\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason*g\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason*\x83\x01\n" +
 	"\bDelivery\x12\x18\n" +
 	"\x14DELIVERY_UNSPECIFIED\x10\x00\x12\x12\n" +
-	"\x0eDELIVERY_BLOCK\x10\x01\x12\x13\n" +
-	"\x0fDELIVERY_OUTBOX\x10\x02\x12\x18\n" +
-	"\x14DELIVERY_BEST_EFFORT\x10\x032G\n" +
+	"\x0eDELIVERY_BLOCK\x10\x01\x12\x17\n" +
+	"\x0fDELIVERY_OUTBOX\x10\x02\x1a\x02\b\x01\x12\x1c\n" +
+	"\x14DELIVERY_BEST_EFFORT\x10\x03\x1a\x02\b\x01\x12\x12\n" +
+	"\x0eDELIVERY_ASYNC\x10\x042G\n" +
 	"\vSinkService\x128\n" +
 	"\x05Write\x12\x16.audit.v1.WriteRequest\x1a\x17.audit.v1.WriteResponseB\x89\x01\n" +
 	"\fcom.audit.v1B\tSinkProtoP\x01Z-github.com/truvity/audit/gen/audit/v1;auditv1\xa2\x02\x03AXX\xaa\x02\bAudit.V1\xca\x02\bAudit\\V1\xe2\x02\x14Audit\\V1\\GPBMetadata\xea\x02\tAudit::V1b\x06proto3"

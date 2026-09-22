@@ -65,7 +65,7 @@ type Builder struct {
 	Signer keys.Signer
 	// Lookback is how far back the builder looks for objects written in its
 	// window. An object is keyed by when its records happened, not by when it
-	// was written, so a record delayed by an outbox lands under an older day.
+	// was written, so a record delayed by a retrying queue lands under an older day.
 	// Default 7 days.
 	Lookback time.Duration
 }
@@ -74,7 +74,7 @@ type Builder struct {
 //
 // The window is by *write* time, not by the time the records happened: what a
 // chain accounts for is objects appearing in the archive, and a record that
-// waited a day in an outbox appears when it appears.
+// waited a day in a queue appears when it appears.
 func (b *Builder) Build(ctx context.Context, profile, prefix string, start, end time.Time) (*Digest, error) {
 	covered, err := b.covered(ctx, prefix, start, end)
 	if err != nil {

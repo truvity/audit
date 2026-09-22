@@ -10,7 +10,7 @@ between the two:
 |---|---|---|
 | receiver | is the writer: one process validates, puts the object and indexes it | publishes to the stream and acknowledges when it is replicated |
 | writer | the receiver's own pods | `audit-writer` in consumer mode, N pods, scaled apart |
-| "behind" looks like | a roll interval of queued records in the application | the stream consumer's pending count |
+| "behind" looks like | `audit.emit.queue.pending` climbing in the application | the stream consumer's pending count |
 | a writer rollout is | a pause | a backlog |
 
 ## The receiver is down
@@ -26,10 +26,9 @@ acknowledges nothing it has not stored
 ([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
 
 There is no file outbox and no volume on the emitting pod. What a pod holds
-is the queue, and the queue dies with the pod: up to one roll interval of
-`async` records in direct mode, milliseconds' worth in stream mode. A
-`block` record is never lost, because the application had no acknowledgement
-to act on.
+is the queue, and the queue dies with the pod: one flush interval of `async`
+records plus the batch in flight. A `block` record is never lost, because the
+application had no acknowledgement to act on.
 
 ## The emitter's queue is filling
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -62,7 +63,7 @@ func TestInstrumentCountsAndStillCallsTheHooksItWraps(t *testing.T) {
 	}
 }
 
-// A best-effort drop is counted: it is the number to alert on, since the design
+// A drop is counted: it is the number to alert on, since the design
 // allows the drop only on condition that somebody hears about it.
 func TestABestEffortDropIsCounted(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
@@ -71,28 +72,42 @@ func TestABestEffortDropIsCounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := emitter(t, &sink.Memory{Fail: errors.New("the store is unreachable")}, hooks)
-	_ = e.Record(context.Background(), viewed()) // best effort
+	_ = e.Record(context.Background(), viewed()) // async
 	if err := e.Close(); err != nil {
 		t.Log(err)
 	}
 	if got := counted(t, reader, "audit.emit.records.dropped"); got == 0 {
-		t.Fatal("a record best-effort delivery gave up was not counted")
+		t.Fatal("a record the queue gave up was not counted")
 	}
 }
 
-func TestTheOutboxDepthIsObservable(t *testing.T) {
+// The queue's depth is how much this process would lose if it stopped now, so
+// it is the number a deployment watches. Records pile up here exactly while the
+// sink will not take them.
+func TestTheQueueDepthIsObservable(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
-	down := &sink.Memory{Fail: errors.New("the store is unreachable")}
-	e, box := outboxEmitter(t, t.TempDir(), down, emit.Hooks{})
+	held := make(chan struct{})
+	defer close(held)
+	stuck := sink.Func(func(_ context.Context, _ *sink.Request) (*sink.Result, error) {
+		<-held
+		return &sink.Result{}, nil
+	})
+	e, err := emit.New(emit.Options{
+		Source: "shop", Catalogue: shop(t), Sink: stuck,
+		Queue: 16, Batch: 100, Flush: time.Hour, // nothing leaves the queue
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 3; i++ {
-		if err := e.Record(context.Background(), shipped()); err != nil {
+		if err := e.Record(context.Background(), viewed()); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := emit.InstrumentOutbox(box, sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))); err != nil {
+	if err := emit.InstrumentQueue(e, sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))); err != nil {
 		t.Fatal(err)
 	}
-	if got := counted(t, reader, "audit.emit.outbox.pending"); got != 3 {
-		t.Fatalf("outbox pending %d, want 3", got)
+	if got := counted(t, reader, "audit.emit.queue.pending"); got != 3 {
+		t.Fatalf("queue pending %d, want 3", got)
 	}
 }

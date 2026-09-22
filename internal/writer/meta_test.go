@@ -75,7 +75,7 @@ func buildReporting(t *testing.T) *reporting {
 	return b
 }
 
-// settle waits for the writer's own best-effort records to come round the loop.
+// settle waits for the writer's own async records to come round the loop.
 // Closing the emitter is what drains them, and Close does that before flushing.
 func (b *reporting) settle(t *testing.T) {
 	t.Helper()

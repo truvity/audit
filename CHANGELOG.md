@@ -11,6 +11,39 @@ The documentation is rewritten around one installation per application, and
 the code is being changed to match it. The pages are the specification, and
 each still marks what does not exist yet.
 
+### Two deliveries, and no file outbox
+
+An action declares `block` or `async`. `block` is unchanged: the call returns
+when the receiver has acknowledged durability, and the action fails when it
+cannot. `async` is the default, and now keeps what it is given: a bounded
+in-memory queue, retried with backoff until the sink acknowledges the batch. A
+batch the sink *answers* is never retried — a refusal is recorded where it
+happened and repeating it would only repeat the refusal — and a queue that
+overflows drops its **oldest** record, counts it and reports it, on the
+reasoning that the newest is the one somebody can still act on.
+
+`outbox` and `best_effort` are retired, and refused by name where a catalogue
+is loaded, with the replacement in the message. `emit.FileOutbox` and the file
+itself are gone, with `Options.Outbox`, `Options.Publish` and the volume that
+carried them. New `Options.Retry` paces the retries.
+`audit.emit.queue.pending` replaces `audit.emit.outbox.pending`: it counts
+everything not yet acknowledged, which is exactly what a process would lose if
+it stopped now.
+
+On the wire, `DELIVERY_ASYNC` joins the enum. `DELIVERY_OUTBOX` and
+`DELIVERY_BEST_EFFORT` stay in it, deprecated: this package is `v1`, a value
+removed is a record nobody can read, and nothing produces them any more.
+
+Two statements are now tested by killing a process outright: a record the
+application was told was kept survives, and what was still queued is what is
+lost.
+
+**Corrected while doing it.** The documentation said an `async` batch was
+acknowledged after "the roll that holds it" and that `roll.interval` was the
+loss window. It never was: the receiver puts every batch it takes before it
+answers, whatever the delivery. The loss window is one flush interval of
+records plus the batch in flight, and the pages now say so.
+
 ### The registry service is gone
 
 The writer serves `RegisterCatalogue` beside the sink, so an installation is

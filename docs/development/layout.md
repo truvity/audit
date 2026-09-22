@@ -76,10 +76,9 @@ them, not because a deployment should run a writer inside an application: there
 is no such shape
 ([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 
-**The tree above is the one this documentation specifies.** Two parts of it
-arrive with the rest of the code rewrite: `examples/embed` is still in the
-checkout and is being deleted, and `emit/` still carries the file outbox that
-[0012](../decisions/0012-two-deliveries-and-a-durable-ack.md) retires.
+**The tree above is the one this documentation specifies.** One part of it
+arrives with the rest of the code rewrite: `examples/embed` is still in the
+checkout and is being deleted.
 
 ## Tests, by what they need
 

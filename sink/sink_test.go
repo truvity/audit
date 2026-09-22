@@ -29,11 +29,15 @@ func TestParseDelivery(t *testing.T) {
 		ok   bool
 	}{
 		{"block", sink.Block, true},
-		{"outbox", sink.Outbox, true},
-		{"best_effort", sink.BestEffort, true},
-		{"best-effort", sink.BestEffort, true},
-		{"", sink.BestEffort, true},
+		{"async", sink.Async, true},
+		{"", sink.Async, true},
 		{" BLOCK ", sink.Block, true},
+		// Retired, and refused by name rather than mapped: an action declared
+		// under a promise this component no longer makes wants its author to
+		// choose again.
+		{"outbox", 0, false},
+		{"best_effort", 0, false},
+		{"best-effort", 0, false},
 		{"eventually", 0, false},
 	} {
 		got, err := sink.ParseDelivery(tc.in)

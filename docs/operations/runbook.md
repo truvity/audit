@@ -164,7 +164,50 @@ and it seals at most a week of windows per run, reporting how many are left. To
 backfill a specific range, name it with `--from` and `--to`; a window already
 sealed is left alone.
 
+**Catching up only works once something has been sealed.** With no digest at
+all, a run has nothing to resume from and seals the hour that just closed,
+rather than every hour since the archive began. That is right for a new
+installation, whose first run comes within the hour — but if the job was
+broken over its own first runs, the hours before it finally worked are outside
+the chain and stay there. Nothing reports this: the chain is whole from where
+it starts. After an outage that spans the first seal, list what is there,
+compare it with the earliest object, and backfill the difference by range:
+
+```
+aws s3 ls s3://<bucket>/<prefix>/digest/ --recursive
+audit digest --deployment <file> --kms-key <key> --bucket <b> --sink <writer> \
+    --from 2026-09-22T17:00:00Z --to 2026-09-22T18:00:00Z
+```
+
 An unsigned chain proves nothing, so the command refuses without `--key`.
+
+## A scheduled job is not running
+
+Every job here is a CronJob, and a CronJob that fails says nothing. Its pods
+are deleted with the Job, so by the time anybody looks there is no log left.
+The tell is `lastSuccessfulTime`:
+
+```
+kubectl -n <ns> get cronjobs -o custom-columns=\
+NAME:.metadata.name,LAST:.status.lastScheduleTime,SUCCESS:.status.lastSuccessfulTime
+```
+
+A `lastScheduleTime` with no `lastSuccessfulTime` is a job that has been
+failing on every run. To get the error back, run it again and keep the pod:
+
+```
+kubectl -n <ns> create job --from=cronjob/<name> <name>-probe
+kubectl -n <ns> logs job/<name>-probe
+```
+
+These jobs are configuration-shaped, so the causes are too: a bucket or a
+prefix the process never received, a role missing one verb, a signing key it
+may not use. Each says so in one line and then exits, which is why the
+re-run is worth more than any amount of staring at the Job's events. Delete
+the probe afterwards — it is not in anybody's git, and a sync will report it.
+
+Alert on the CronJob rather than on the archive. An hour with no digest is
+only visible from the chain, and by then the gap is a day old.
 
 ## The index is behind
 

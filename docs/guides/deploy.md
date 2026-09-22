@@ -157,9 +157,14 @@ The application's chart takes this one as a dependency:
 # the application's Chart.yaml
 dependencies:
   - name: audit
-    version: 0.1.0
-    repository: file://./vendor/audit   # no release yet: vendor the chart until one is published
+    version: 0.2.4
+    repository: oci://ghcr.io/truvity/charts
 ```
+
+One tag stamps the chart and all three images, so the version above is the
+whole of what a deployment pins. The images default to the chart's
+`appVersion`; naming a tag under `image.*` pins one of them somewhere else,
+which is a lag to close rather than a thing to configure.
 
 and its values file carries an `audit:` block. Take the body of that block
 from the shape you picked — [direct](../deployment/direct.md#values) or

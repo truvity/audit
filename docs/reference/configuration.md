@@ -70,7 +70,7 @@ binary's flags with dots.
 | `profiles` | composition of presets and prefixes, the document `audit-writer --deployment` reads |
 | `externalIdentifiersAreOpaque` | the deployment declares that the identifiers it receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](presets.md#what-a-deployment-can-relax)) |
 | `replicas` | receiver pods |
-| `writer.consumers` | writer pods consuming the stream, in stream mode. Not built yet: today `replicas` is both |
+| `writer.consumers` | writer pods consuming the stream, in stream mode. Default 3 |
 | `stream.url`, `stream.name`, `stream.consumer` | JetStream, in stream mode. The chart refuses `mode: stream` without a URL |
 | `stream.batch` | how many records are taken at once. Default 100 |
 | `stream.ackWait` | how long the stream waits for a batch to be taken before offering it again. Default 2m, and it must exceed `roll.interval` plus the longest a put can take: records are acknowledged only once they are in the archive, and a stream that gives up waiting sooner offers them to a second writer. The chart refuses to render otherwise |
@@ -86,7 +86,7 @@ binary's flags with dots.
 | `keys.local.existingSecret` | the 32-byte root the data keys are wrapped under |
 | `keys.local.persistence` | where the wrapped keys live. They are random, not derived, so this is the only copy: back it up, and use ReadWriteMany for more than one replica |
 | `catalogues` | catalogue documents mounted at start-up, by name. An application that registers its own over `RegisterCatalogue` needs none |
-| `extensions.billing.enabled`, `extensions.quotas.enabled` | the two projections, both off. Not built yet: they arrive with the rewrite, and the chart refuses either without the profile it reads |
+| `extensions.billing.enabled`, `extensions.quotas.enabled` | the two projections, both off. The toggles are here so that a deployment's values need not change when the work behind them lands; today each renders nothing |
 
 The receiver verifies who writes with `--workloads`/`AUDIT_WORKLOADS`, a file
 naming the issuers trusted to name a workload (see "Workload identity"

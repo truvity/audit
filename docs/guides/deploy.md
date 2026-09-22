@@ -132,17 +132,17 @@ egress to the reference.
 One image per binary, built by ko from `.goreleaser.yaml` under
 `ghcr.io/truvity/audit/`: `audit-writer` (the receiver and the writer),
 `audit` (the toolchain the jobs run) and `audit-query`. Three, because the
-receiver serves `RegisterCatalogue` itself. No release has been published yet;
-until one is, build them with `just snapshot`, push them to a registry the
-cluster can pull from, and set `image.*.repository` and `image.*.tag`.
+receiver serves `RegisterCatalogue` itself. A release publishes all three
+under the tag that also stamps the chart, so a deployment pins one version.
+`just snapshot` builds them for a development cluster that cannot pull from
+the registry; then set `image.*.repository` and `image.*.tag`.
 
 All of them are distroless and have no shell, which is why every job in the
 chart is a command with arguments.
 
 ### What you do not have to prepare
 
-**Pseudonymisation keys.** `keys.provider: none` is the default — *not built
-yet: it arrives with the rewrite, and today's default is `local`* — so there
+**Pseudonymisation keys.** `keys.provider: none` is the default, so there
 is no key directory, no secret manager to log in to, no `identity/` prefix,
 and resolve is refused as unimplemented. The deployment declares instead that the external
 identifiers it receives are opaque. A deployment that must be able to

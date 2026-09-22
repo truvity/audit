@@ -2,8 +2,8 @@ apiVersion: v2
 name: audit
 description: The audit trail's write path — the split writer, and the jobs that seal, verify and prune what it writes.
 type: application
-version: 0.2.4
-appVersion: "0.2.4"
+version: 0.2.5
+appVersion: "0.2.5"
 home: https://github.com/truvity/audit
 sources:
   - https://github.com/truvity/audit

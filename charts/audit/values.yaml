@@ -20,14 +20,16 @@ nameOverride: ""
 fullnameOverride: ""
 
 # The writers that consume the stream, in `mode: stream`. They scale with the
-# record rate; the receivers above scale with the application's request rate.
+# record rate; the receivers (`replicas`, below) scale with the application's
+# request rate.
 writer:
   consumers: 3
 
 # How many front-door pods there are. More than one needs a shared deduplication
-# table (`database`) and a key provider every replica sees the same keys
-# through; the chart refuses to render otherwise, because the binary refuses to
-# start and a manifest it will reject is worse than an error here.
+# table (`database`) and, with the `local` key provider, a directory every
+# replica can write; the chart refuses to render either without, because the
+# binary refuses to start and a manifest it will reject is worse than an error
+# here. With no key provider, or transit, replicas need only the table.
 replicas: 1
 
 # How the write path is arranged.
@@ -288,7 +290,7 @@ trust:
   key: ca.crt
 
 # The wide stream. Without a URL the writer only serves its own sink, which is
-# what an application that publishes straight to it wants.
+# direct mode.
 stream:
   url: ""
   name: AUDIT

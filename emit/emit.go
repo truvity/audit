@@ -193,19 +193,26 @@ func New(o Options) (*Emitter, error) {
 	// application wires no hook, the emitter says so itself, in the one place
 	// an application always has: its log.
 	if e.hooks.OnDropped == nil {
-		logger := o.Logger
-		if logger == nil {
-			logger = slog.Default()
-		}
-		e.hooks.OnDropped = func(r *record.Record, reason string) {
-			logger.Warn("audit: a record was given up and is not in the trail",
-				"id", r.GetId(), "action", r.GetAction(), "source", r.GetSource(), "reason", reason)
-		}
+		e.hooks.OnDropped = logDrop(o.Logger)
 	}
 	e.queue = make(chan *record.Record, queue)
 	e.wg.Add(1)
 	go e.run()
 	return e, nil
+}
+
+// logDrop is the hook a drop gets when the application wired none: the
+// line that says which record is gone, and why. Instrument installs the
+// same one behind its counter, so wrapping the hooks for metrics never
+// turns a drop silent.
+func logDrop(logger *slog.Logger) func(*record.Record, string) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(r *record.Record, reason string) {
+		logger.Warn("audit: a record was given up and is not in the trail",
+			"id", r.GetId(), "action", r.GetAction(), "source", r.GetSource(), "reason", reason)
+	}
 }
 
 // Record records one thing that happened.

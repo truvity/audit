@@ -193,7 +193,7 @@ written, dropped and refused.
 
 | metric | what it says |
 |---|---|
-| `audit.emit.queue.pending` | how many records are waiting. A number that climbs is the warning — the receiver is slow or gone. (Not built yet: it arrives with the rewrite.) |
+| `audit.emit.queue.pending` | how many records are waiting. A number that climbs is the warning — the receiver is slow or gone |
 | `audit.emit.records.dropped` | how many the queue gave up. **Alert on it**: a drop is an incident, not a condition to tolerate. |
 
 Every dropped record is written to the application's log by the emitter

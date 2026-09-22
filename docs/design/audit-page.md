@@ -37,10 +37,12 @@ flowchart LR
 **A console whose session is a cookie of its own** cannot hand the page a
 bearer, because it has none. Such a console proxies the query service and
 mints a short-lived token per person from the claims of its own session,
-with an audience the query service trusts. It is the older pattern and it
-still works; it costs the console a signing key, a mint path and a proxy
-route, which is why a gateway-issued token is preferred where there is one.
-Either way the grants are the query service's, not the console's.
+with an audience the query service trusts. A console that is itself an
+issuer, or sits beside one, mints such a token cheaply, and the token never
+reaches the browser; a cookie console with no issuer is the one for which
+this costs a signing key, a mint path and a proxy route, and where a
+gateway-issued token is preferred if there is one. Either way the grants are
+the query service's, not the console's.
 
 Both are described from the application's side in
 [integrating](../guides/integrate.md#the-audit-page), and the cookie case in

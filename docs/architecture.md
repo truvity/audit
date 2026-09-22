@@ -217,8 +217,8 @@ neither puts anything new in the request path.
 | searchers: Postgres, archive scan, memory | built |
 | signers: key file, AWS KMS, OpenBAO transit | built |
 | key providers `local` and OpenBAO `transit`; AWS KMS envelope designed | built, and off by default |
-| the chart, instantiated per application | built; `mode`, the extension toggles and the per-shape goldens arrive with the rewrite |
-| `@truvity/audit`: query client, sentences, React hooks and view | built, published with the first release |
+| the chart, instantiated per application: `mode`, receiver, writer, query service, the four jobs, the extension toggles | built; a golden per shape, and every documented example rendered |
+| `@truvity/audit`: query client, sentences, React hooks and view | built; consumed from a release tag (`github:truvity/audit#vX.Y.Z`), not from a registry |
 | TypeScript emitter | designed, not built |
 | billing statement, usage consumer, reconciler | designed, not built |
 | exporters (OCSF, ECS, Parquet), adapters | designed, not built |

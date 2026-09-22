@@ -193,7 +193,8 @@ it to the end, and reads one record with its provenance.
 `@truvity/audit` is the client, the typed contract, the qualifier box compiled
 to the typed filter, and records rendered as their catalogues' sentences.
 `@truvity/audit/react` adds hooks and a default MUI view. The package is built
-from `ts/`, and the first release publishes it to GitHub Packages.
+from `ts/` and consumed from a release tag — `github:truvity/audit#vX.Y.Z` in
+a `package.json` — not from a registry.
 
 ```ts
 import { createConnectTransport } from "@connectrpc/connect-web";

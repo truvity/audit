@@ -66,8 +66,8 @@ no shape that puts the writer inside the application
 | Query service: search, facets, get, export, tail; JWT with declarative grants | built |
 | Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
 | Pseudonymisation keys: `local` and OpenBAO transit, **off by default** ([0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md)) | built |
-| Helm chart: receiver, writer, query service, the four jobs | built; `mode`, the extension toggles and per-shape goldens arrive with the rewrite |
-| `@truvity/audit`: query client, sentences, React hooks and view | built, published with the first release |
+| Helm chart: `mode`, receiver, writer, query service, the four jobs, the extension toggles | built; a golden per shape, and every documented example rendered |
+| `@truvity/audit`: query client, sentences, React hooks and view | built; consumed from a release tag (`github:truvity/audit#vX.Y.Z`), not from a registry |
 | TypeScript emitter | designed, not built |
 | Billing statement, usage consumer, reconciler | designed, not built |
 | Exporters (OCSF, ECS, Parquet), adapters | designed, not built |

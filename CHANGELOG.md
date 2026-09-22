@@ -5,6 +5,29 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [Unreleased]
+
+### Documentation, from commissioning the first installation
+
+- The deploy guide told an adopter to vendor the chart at 0.1.0 because there
+  was no release. There are releases, and no document named where the chart
+  actually lives; it now points at `oci://ghcr.io/truvity/charts` and says
+  that one tag stamps the chart and all three images.
+- The runbook gains **a scheduled job is not running**. A failing CronJob says
+  nothing, and its pods are deleted with the Job, so there is no log by the
+  time anybody looks. The tell is a `lastScheduleTime` with no
+  `lastSuccessfulTime`, and the way to get the error back is to re-run the job
+  from the CronJob and read that pod. Alert on the CronJob, not on the
+  archive: an hour with no digest is only visible from the chain, a day late.
+- The runbook's **digest chain has a gap** says that catching up works only
+  once something has been sealed. With no digest at all a run seals the hour
+  that just closed, not every hour since the archive began — right for a new
+  installation, and a silent gap if the job was broken over its own first
+  runs. What to compare, and how to backfill by range, are spelled out.
+- The status table claimed the chart's modes and goldens were still to come,
+  and that `@truvity/audit` is published with a release. The first is done;
+  the second is not true — it is consumed from a release tag, not a registry.
+
 ## [0.2.4] - 2026-09-22
 
 ### A put carries the legal-hold header only when it places a hold

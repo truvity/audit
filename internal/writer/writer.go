@@ -111,6 +111,12 @@ type Writer struct {
 	// writer stamps on the record. A transport that cannot say returns "", and
 	// the record then carries no observer identity rather than a claimed one.
 	Identity func(ctx context.Context) string
+	// KeepUpstreamStamp keeps the observer and recorded_at a record already
+	// carries, when its origin hash still verifies over them. It is for the
+	// writer that consumes a stream its own installation's receivers publish
+	// to, and for nothing else: on the sink's own port it would let a caller
+	// choose the identity it is recorded under.
+	KeepUpstreamStamp bool
 
 	// Version names this writer in the records it stamps.
 	Version string
@@ -258,7 +264,16 @@ func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension
 		Version:  r.GetObserver().GetVersion(),
 		Instance: r.GetObserver().GetInstance(),
 	}
-	if err := record.Stamp(r, observer, w.now()); err != nil {
+	at := w.now()
+	if w.KeepUpstreamStamp && stampedUpstream(r) {
+		// A receiver verified the caller and stamped this record before it
+		// went on the stream. Re-stamping here would replace a verified
+		// identity with nothing, because a consumer reading messages has no
+		// caller to verify, and would move recorded_at from when the trail
+		// took responsibility to whenever the backlog happened to be read.
+		observer, at = r.GetObserver(), r.GetRecordedAt().AsTime()
+	}
+	if err := record.Stamp(r, observer, at); err != nil {
 		return w.deadLetter(ctx, r, err.Error())
 	}
 
@@ -381,4 +396,20 @@ func (w *Writer) Close(ctx context.Context) error {
 		return err
 	}
 	return w.Roller.Close()
+}
+
+// stampedUpstream reports whether a record already carries a stamp that still
+// describes it: an observer, a time it was recorded, and an origin hash that
+// recomputes to the same value.
+//
+// The hash says the record has not changed since it was stamped. It does not
+// say who stamped it, and cannot: that is what the stream's own credentials
+// are for. A writer only keeps an upstream stamp when it was told the records
+// come from its own installation's receivers.
+func stampedUpstream(r *record.Record) bool {
+	if r.GetOriginHash() == "" || r.GetObserver().GetId() == "" || r.GetRecordedAt() == nil {
+		return false
+	}
+	h, err := record.OriginHash(r)
+	return err == nil && h == r.GetOriginHash()
 }

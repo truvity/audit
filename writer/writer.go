@@ -92,6 +92,12 @@ type Config struct {
 	RollInterval time.Duration
 	// Version names this build in the writer's own records.
 	Version string
+	// FromStream says this writer consumes a stream its own installation's
+	// receivers publish to, so a record arriving already stamped keeps that
+	// stamp. A consumer reading messages has no caller to verify, and
+	// re-stamping would replace the identity the receiver checked with
+	// nothing. It has no effect on records reaching the sink's own port.
+	FromStream bool
 
 	// Logger, default slog.Default().
 	Logger *slog.Logger
@@ -232,6 +238,7 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 
 	self := c.Self
 	w, err := inner.New(&inner.Writer{
+		KeepUpstreamStamp: c.FromStream,
 		Identity: func(ctx context.Context) string {
 			if subject := auth.SubjectFrom(ctx); subject != "" {
 				return subject

@@ -48,8 +48,12 @@ anything was lost:
 
 ## Receiver and writer
 
-One binary, `audit-writer`, in two roles. In direct mode the receiver is the
-writer: it validates, splits, rolls and puts, then acknowledges. In stream
+One binary, `audit-writer`, in two roles, chosen with `--mode` (env
+`AUDIT_MODE`). With `--mode writer`, the default, it serves the sink, writes
+the archive and consumes a stream when `--stream-url` is set. With
+`--mode receiver` it serves the sink and publishes to the stream, and takes
+no `--bucket` and no key provider: a receiver holding either would be a
+writer. In direct mode one process in `writer` mode is both. In stream
 mode it publishes to JetStream and acknowledges the replicated publish, and
 the same image runs again in consumer mode as the writer. In both it serves
 `RegistryService`, so the application registers its catalogue with the
@@ -60,11 +64,11 @@ binary's flags with dots.
 
 | setting | meaning |
 |---|---|
-| `mode` | `direct` or `stream`. Not built yet: it arrives with the rewrite, and replaces inferring the shape from whether `stream.url` is set |
+| `mode` | `direct` or `stream`, as the chart value. Not built yet: it arrives with the chart work, and renders the binaries' `--mode` below |
 | `bucket`, `prefix`, `region`, `kmsKey` | the archive. `prefix` is required in a bucket shared with other applications: it is what keeps two installations apart |
 | `governance` | lets a privileged role shorten a retention. Off, and the chart refuses it on: a deployment that wants it says so in a values file of its own |
 | `profiles` | composition of presets and prefixes, the document `audit-writer --deployment` reads |
-| `externalIdentifiersAreOpaque` | the deployment declares that the identifiers it receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](presets.md#what-a-deployment-can-relax)). Not built yet |
+| `externalIdentifiersAreOpaque` | the deployment declares that the identifiers it receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](presets.md#what-a-deployment-can-relax)) |
 | `replicas` | receiver pods |
 | `writer.consumers` | writer pods consuming the stream, in stream mode. Not built yet: today `replicas` is both |
 | `stream.url`, `stream.name`, `stream.consumer` | JetStream, in stream mode. The chart refuses `mode: stream` without a URL |

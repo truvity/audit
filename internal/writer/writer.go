@@ -234,6 +234,12 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 
 // one processes a single record: resolve, validate, stamp, split, gather.
 func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension) error {
+	// The writer takes no caller's word for the shape of a record, its own
+	// included. The one that reached here without a time was keyed under
+	// the epoch, outside every digest window, and the lock keeps it there.
+	if err := record.Check(r, record.Default); err != nil {
+		return w.deadLetter(ctx, r, err.Error())
+	}
 	c, err := w.Catalogues.Get(ctx, r.GetSource(), r.GetCatalogueVersion())
 	if err != nil {
 		return w.deadLetter(ctx, r, err.Error())

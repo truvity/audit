@@ -34,6 +34,8 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
@@ -357,21 +359,7 @@ func recorder(to sink.Sink, version string) func(context.Context, registry.Entry
 	return func(ctx context.Context, e registry.Entry) {
 		_, err := to.Write(ctx, &sink.Request{
 			Delivery: auditv1.Delivery_DELIVERY_BLOCK,
-			Records: []*record.Record{{
-				Action:           "audit.catalogue.registered",
-				Operation:        auditv1.Operation_OPERATION_CREATE,
-				TenantId:         record.TenantPlatform,
-				Source:           "audit",
-				CatalogueVersion: catalogueVersion(),
-				SchemaVersion:    record.SchemaVersion,
-				Id:               record.NewID(),
-				Actor:            &record.Actor{Kind: "service", Id: e.RegisteredBy},
-				Observer:         &record.Observer{Version: version, Instance: record.InstanceName()},
-				Outcome:          &record.Outcome{Result: auditv1.Outcome_RESULT_SUCCESS},
-				Targets: []*record.Target{
-					{Type: "catalogue", Id: e.Source + "@" + e.Version},
-				},
-			}},
+			Records:  []*record.Record{registrationRecord(e, version)},
 		})
 		if err != nil {
 			// The catalogue is registered and the trail does not say so. A
@@ -380,6 +368,30 @@ func recorder(to sink.Sink, version string) func(context.Context, registry.Entry
 			slog.Error("a catalogue was registered and could not be recorded",
 				"source", e.Source, "version", e.Version, "error", err)
 		}
+	}
+}
+
+// registrationRecord is the writer's own record of a catalogue arriving. It
+// carries the time it happened, which every emitter's record carries and
+// this one, being built by hand, once did not: without a time the archive
+// keyed it under the epoch, outside every digest window, for as long as the
+// lock lasts.
+func registrationRecord(e registry.Entry, version string) *record.Record {
+	return &record.Record{
+		Action:           "audit.catalogue.registered",
+		Operation:        auditv1.Operation_OPERATION_CREATE,
+		TenantId:         record.TenantPlatform,
+		Source:           "audit",
+		CatalogueVersion: catalogueVersion(),
+		SchemaVersion:    record.SchemaVersion,
+		Id:               record.NewID(),
+		OccurredAt:       timestamppb.Now(),
+		Actor:            &record.Actor{Kind: "service", Id: e.RegisteredBy},
+		Observer:         &record.Observer{Version: version, Instance: record.InstanceName()},
+		Outcome:          &record.Outcome{Result: auditv1.Outcome_RESULT_SUCCESS},
+		Targets: []*record.Target{
+			{Type: "catalogue", Id: e.Source + "@" + e.Version},
+		},
 	}
 }
 

@@ -276,6 +276,13 @@ func TestWriteDeadLettersRatherThanDropping(t *testing.T) {
 		{"a record that does not satisfy its schema", func(r *record.Record) {
 			r.Actor.Kind = "ghost"
 		}, "not declared"},
+		// A record with no time has no place in the archive: keyed under the
+		// epoch it sits outside every digest window for the life of its lock.
+		// The writer takes no caller's word for the shape of a record, its own
+		// included; this one is dead-lettered, never keyed.
+		{"a record with no time", func(r *record.Record) {
+			r.OccurredAt = nil
+		}, "occurred_at is required"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := build(t)

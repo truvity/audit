@@ -19,7 +19,7 @@ An action declared `block` fails, and the application's request fails with
 it: that is what `block` is for. An action declared `async` waits in the
 emitter's bounded in-memory queue and is retried with backoff until the
 receiver acknowledges it. It is dropped only if that queue overflows, and
-every drop is a log line in the application as well as a count.
+every drop is written to the application's log by the emitter as well as counted.
 
 Restore the receiver. Nothing it acknowledged was lost, because it
 acknowledges nothing it has not stored

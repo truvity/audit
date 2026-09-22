@@ -44,7 +44,7 @@ anything was lost:
 | metric | means |
 |---|---|
 | `audit.emit.queue.pending` | how many records are waiting to be acknowledged, and so what this process would lose if it stopped now. A number that only climbs is a receiver that has stopped acknowledging; drops follow. Published by `emit.InstrumentQueue` |
-| `audit.emit.records.dropped` | records the queue overflowed and gave up on. Every one of them is also a log line. This is the incident; the one above is the alert |
+| `audit.emit.records.dropped` | records the queue overflowed and gave up on. Every one of them is also written to the application's log by the emitter (`Options.Logger`). This is the incident; the one above is the alert |
 
 ## Receiver and writer
 

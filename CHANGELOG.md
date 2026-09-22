@@ -62,6 +62,12 @@ Two statements are now tested by killing a process outright: a record the
 application was told was kept survives, and what was still queued is what is
 lost.
 
+A record the queue gives up is written to the application's log by the
+emitter itself, with its identifier, action and the reason, when the
+application wires no `OnDropped` hook (`Options.Logger`, default
+`slog.Default()`). Until now "every dropped record is still a log line" was a
+promise the emitter made on the application's behalf.
+
 **Corrected while doing it.** The documentation said an `async` batch was
 acknowledged after "the roll that holds it" and that `roll.interval` was the
 loss window. It never was: the receiver puts every batch it takes before it

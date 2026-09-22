@@ -5,6 +5,31 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [0.2.2] - 2026-09-22
+
+One fix, found the moment the first installation's writer started.
+
+### A writer that pseudonymises nobody needs no keys
+
+`keys.provider: none` is the chart's default and the shape
+[decision 0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md)
+recommends, and the writer refused to start in it: `a key provider is
+required`. A leftover unconditional check sat in front of `GuardKeys`, the
+guard that decides this properly, so the guard was unreachable and every
+deployment without keys crash-looped whatever its profiles did.
+
+The check is gone. Whether a provider is needed is `GuardKeys` and
+`GuardHashes`' decision, from what the composed profiles actually ask for:
+a deployment that pseudonymises is still refused by name, and one that
+keeps everyone in clear now opens. Both call sites that would use a
+provider already refused a nil one with their own message, so nothing
+downstream changes.
+
+The test that covered this asserted only the refusal, and passed for the
+wrong reason -- its profile pseudonymises, so the message it wanted came
+from either check. It now says which, and there is a second test for the
+deployment that needs no keys at all.
+
 ## [0.2.1] - 2026-09-22
 
 One fix, found installing 0.2.0 for the first time: a release with an index

@@ -51,7 +51,7 @@ import (
 	"github.com/truvity/audit/store"
 )
 
-// Config is what a writer needs. Archive, Profiles and Keys are required;
+// Config is what a writer needs. Archive and Profiles are required;
 // everything else has a default that is safe for one instance.
 type Config struct {
 	// Archive is where the copies go: the Object-Locked bucket.
@@ -63,6 +63,12 @@ type Config struct {
 	// Keys pseudonymise identifiers. With a provider that can also seal
 	// (keys.Transit, keys.Local), the identity behind each pseudonym is kept
 	// sealed under the same key, for resolve; see ForgetIdentities.
+	//
+	// Optional, and nil is the default a deployment should have to argue
+	// itself out of rather than into: most trails are of an organisation's
+	// own staff, who are kept in clear because that is what accountability
+	// is for. Open refuses nil only when a composed profile would actually
+	// pseudonymise, which is what GuardKeys decides.
 	Keys keys.Provider
 	// Catalogues are the application's own. The common catalogue, which
 	// describes the writer's own actions, is always registered.
@@ -129,11 +135,11 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		return nil, errors.New("writer: an archive is required")
 	case len(c.Profiles) == 0:
 		return nil, errors.New("writer: at least one profile is required: a writer with none keeps nothing")
-	case c.Keys == nil:
-		return nil, errors.New(
-			"writer: a key provider is required: without keys a profile that pseudonymises " +
-				"would write identifiers in clear")
 	}
+	// No check for a key provider here. Whether one is needed depends on what
+	// the composed profiles actually do, which GuardKeys and GuardHashes
+	// decide below; a deployment whose profiles keep everyone in clear needs
+	// no keys and must not be asked for any.
 	log := c.Logger
 	if log == nil {
 		log = slog.Default()

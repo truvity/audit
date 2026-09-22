@@ -29,7 +29,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -61,11 +60,9 @@ func main() {
 
 func run() error {
 	var (
-		bucket     = flag.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
-		prefix     = flag.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
 		kmsKey     = flag.String("kms-key", env("AUDIT_KMS_KEY", ""), "the key objects are encrypted with")
 		governance = flag.Bool("governance", false,
-			"write the weaker lock mode; for a non-production bucket where a mistake has to be undoable")
+			"deprecated: the same as --lock-mode governance")
 		deployment = flag.String("deployment", env("AUDIT_DEPLOYMENT", ""), "the profile configuration")
 		catalogues = flag.String("catalogues", env("AUDIT_CATALOGUES", ""), "a directory of catalogues to register")
 		replicas   = flag.Int("replicas", envInt("AUDIT_REPLICAS", 1), "how many writers share this stream")
@@ -104,7 +101,14 @@ func run() error {
 				"receiver (serve the sink and publish to the stream, nothing else)")
 	)
 	keyFlags := cli.NewKeyFlags(flag.CommandLine, env)
+	archiveFlags := cli.NewArchiveFlags(flag.CommandLine, env, cli.Writes)
 	flag.Parse()
+	bucket := archiveFlags.Bucket
+	if *governance {
+		if err := archiveFlags.SetLock(s3store.Governance); err != nil {
+			return err
+		}
+	}
 
 	switch *mode {
 	case "writer":
@@ -150,13 +154,18 @@ func run() error {
 	var archive store.Store
 	var provider keys.Provider
 	if *mode == "writer" {
-		cfg, err := config.LoadDefaultConfig(ctx)
+		options, err := archiveFlags.Options()
 		if err != nil {
 			return err
 		}
-		if archive, err = s3store.FromConfig(cfg, s3store.Options{
-			Bucket: *bucket, Prefix: *prefix, KMSKeyID: *kmsKey, Governance: *governance,
-		}); err != nil {
+		options.KMSKeyID = *kmsKey
+		// A profile whose frameworks demand a lock this store does not
+		// write is refused here, before a single copy lands where it could
+		// be deleted: docs/decisions/0014-lock-modes-and-store-tiers.md.
+		if err := preset.CheckLockMode(profiles, string(options.Lock)); err != nil {
+			return err
+		}
+		if archive, err = cli.OpenStore(ctx, *archiveFlags.Region, options); err != nil {
 			return err
 		}
 		if provider, err = keyFlags.Open(ctx); err != nil {

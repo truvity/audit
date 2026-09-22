@@ -42,17 +42,12 @@ func run() error {
 		searcher = flag.String("searcher", env("AUDIT_SEARCHER", "postgres"),
 			"where answers come from: postgres, or s3scan for a deployment with no database")
 		database = flag.String("database", env("AUDIT_DATABASE", ""), "the Postgres URL of the index")
-		bucket   = flag.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
-		prefix   = flag.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
-		region   = flag.String("region", env("AUDIT_REGION", ""), "the region, when it is not in the environment")
 		grants   = flag.String("grants", env("AUDIT_GRANTS", ""),
 			"the file naming the trusted issuers and mapping their claims to grants")
 		deployment = flag.String("deployment", env("AUDIT_DEPLOYMENT", ""),
 			"the profile configuration, which a grant preset turns roles into profiles with")
 		sinkURL = flag.String("sink", env("AUDIT_SINK", ""),
 			"the writer reads are recorded through")
-		exports = flag.String("exports", env("AUDIT_EXPORTS", ""),
-			"the bucket exports are written to; without it the export operation is refused")
 		exportExpiry = flag.Duration("export-expiry", 7*24*time.Hour,
 			"how long an export is kept before the bucket clears it")
 		linkValid = flag.Duration("export-link-valid", time.Hour,
@@ -61,7 +56,18 @@ func run() error {
 		version = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
 	)
 	keyFlags := cli.NewKeyFlags(flag.CommandLine, env)
+	// The query service reads the archive and writes nothing into it, so it
+	// takes no lock mode. AUDIT_REGION is honoured as it always was, beside
+	// the AWS_REGION every other command reads.
+	archiveFlags := cli.NewArchiveFlags(flag.CommandLine, func(name, fallback string) string {
+		if name == "AWS_REGION" {
+			return env("AUDIT_REGION", env(name, fallback))
+		}
+		return env(name, fallback)
+	}, cli.Reads)
+	exportFlags := cli.NewExportFlags(flag.CommandLine, env)
 	flag.Parse()
+	bucket, exports := archiveFlags.Bucket, exportFlags.Bucket
 
 	if *sinkURL == "" {
 		return errors.New(
@@ -99,7 +105,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	found, err := searcherFor(ctx, *searcher, *database, *bucket, *prefix, *region)
+	found, err := searcherFor(ctx, *searcher, *database, archiveFlags)
 	if err != nil {
 		return err
 	}
@@ -108,7 +114,7 @@ func run() error {
 			"--exports must not be the archive bucket: an export is an unlocked copy meant to be " +
 				"cleared, and the archive's policy denies every delete, so it would stay forever")
 	}
-	exportTo, err := exportsFor(ctx, *exports, *region, *exportExpiry, *linkValid)
+	exportTo, err := exportsFor(ctx, exportFlags, archiveFlags, *exportExpiry, *linkValid)
 	if err != nil {
 		return err
 	}
@@ -118,7 +124,7 @@ func run() error {
 	// is and nothing about whether it has been verified.
 	var archive store.Store
 	if *bucket != "" {
-		if archive, err = cli.Archive(ctx, *bucket, *prefix, *region); err != nil {
+		if archive, err = archiveFlags.Open(ctx); err != nil {
 			return err
 		}
 	}
@@ -192,27 +198,23 @@ func run() error {
 // forever, and the bucket needs a lifecycle rule on the export prefix, which
 // is a rule nobody should ever write against the archive.
 func exportsFor(
-	ctx context.Context, bucket, region string, expiry, linkValid time.Duration,
+	ctx context.Context, exports *cli.ExportFlags, archive *cli.ArchiveFlags, expiry, linkValid time.Duration,
 ) (*query.Exports, error) {
-	if bucket == "" {
+	if *exports.Bucket == "" {
 		return nil, nil
 	}
-	files, err := cli.ExportStore(ctx, bucket, region)
+	files, err := exports.Open(ctx, *archive.Region, archive)
 	if err != nil {
 		return nil, err
 	}
-	presigner, ok := files.(store.Presigner)
-	if !ok {
-		return nil, errors.New("the export bucket cannot sign links")
-	}
 	return &query.Exports{
-		Store: files, Presigner: presigner,
+		Store: files, Presigner: files,
 		Expiry: expiry, LinkValid: linkValid,
 	}, nil
 }
 
 // searcherFor builds the searcher a deployment asked for.
-func searcherFor(ctx context.Context, kind, database, bucket, prefix, region string) (index.Searcher, error) {
+func searcherFor(ctx context.Context, kind, database string, archive *cli.ArchiveFlags) (index.Searcher, error) {
 	switch kind {
 	case "postgres":
 		if database == "" {
@@ -227,14 +229,14 @@ func searcherFor(ctx context.Context, kind, database, bucket, prefix, region str
 		}
 		return postgres.NewReader(pool)
 	case "s3scan":
-		if bucket == "" {
+		if *archive.Bucket == "" {
 			return nil, errors.New("the s3scan searcher needs --bucket")
 		}
-		archive, err := cli.Archive(ctx, bucket, prefix, region)
+		scanned, err := archive.Open(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return &s3scan.Scanner{Store: archive}, nil
+		return &s3scan.Scanner{Store: scanned}, nil
 	default:
 		return nil, errors.New("--searcher is postgres or s3scan")
 	}

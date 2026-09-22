@@ -57,6 +57,14 @@ var ErrExists = errors.New("store: the key already exists")
 // ErrNotFound is returned for a key that was never written.
 var ErrNotFound = errors.New("store: no such object")
 
+// ErrNotLockable is returned by SetLegalHold and ExtendRetention on a store
+// that holds no lock: one configured with no Object Lock mode, or a store
+// whose API has no Object Lock at all. It is a sentinel rather than a plain
+// error so that a caller can tell "this store cannot" from "this call
+// failed": the writer records the first in the trail and moves on, where the
+// second is worth retrying.
+var ErrNotLockable = errors.New("store: the store holds no lock")
+
 // Store is an object store.
 type Store interface {
 	// Put writes an object. It fails with ErrExists rather than overwriting.

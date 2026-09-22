@@ -15,7 +15,13 @@ A deployment composes presets into **profiles**. Composition is a union:
 - `forbidden_fields`, `forbidden_pii`: union; forbidden beats optional.
 - `identity`: the stricter treatment wins (`omit` > `pseudonym` > `scoped` > `clear`).
 - `retention`: the longest wins, and `minimum_days` can only be raised.
-- `integrity`: `required` wins over `recommended`, `compliance` over `governance`.
+- `integrity`: `required` wins over `recommended`; for `object_lock_mode`,
+  `compliance` over `governance` over `none`. The mode is the least lock the
+  store must run: `pci-dss`, `nen-7513`, `dora` and `evidence-etsi` demand
+  `compliance`, `security`, `history` and `billing-nl` demand `none`, and
+  each says why in a one-line `note`. The writer refuses to start on a store
+  written in a weaker mode than a composed profile demands
+  ([0014](../docs/decisions/0014-lock-modes-and-store-tiers.md)).
 - `review`: the most frequent cadence wins.
 
 The validator (`schemas/preset.schema.json` plus the composition rules in

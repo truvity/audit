@@ -66,7 +66,10 @@ binary's flags with dots.
 |---|---|
 | `mode` | `direct` (one process: the front door and the write path) or `stream` (a receiver in front, `writer.consumers` writers behind). It renders the binaries' `--mode` |
 | `bucket`, `prefix`, `region`, `kmsKey` | the archive. `prefix` is required in a bucket shared with other applications: it is what keeps two installations apart |
-| `governance` | lets a privileged role shorten a retention. Off, and the chart refuses it on: a deployment that wants it says so in a values file of its own |
+| `lockMode` | the Object Lock mode every object is written in: `compliance` (the default), `governance`, or `none` for a store without Object Lock or profiles that demand none ([0014](../decisions/0014-lock-modes-and-store-tiers.md)). It renders `AUDIT_LOCK_MODE` for every component that writes the archive, and each refuses to start when a profile demands a stricter mode |
+| `governance` | deprecated: the same as `lockMode: governance` |
+| `endpoint`, `pathStyle`, `existingSecret` | an S3-compatible store that is not AWS: its URL (`--endpoint`, `AUDIT_S3_ENDPOINT`; the SDK's `AWS_ENDPOINT_URL_S3` works too), path-style addressing (`--path-style`, `AUDIT_S3_PATH_STYLE`) for a certificate that does not cover a bucket subdomain, and a Secret with `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` given to every archive container through `envFrom`. All empty by default, which is AWS with the pod's own identity |
+| `query.exports.endpoint`, `.pathStyle`, `.existingSecret` | the same three for the exports bucket, when it is on a store of its own; empty inherits the archive's endpoint and path style. The Secret's keys reach the one query process as `AUDIT_EXPORTS_ACCESS_KEY_ID` and `AUDIT_EXPORTS_SECRET_ACCESS_KEY`, a second identity beside the archive's |
 | `profiles` | composition of presets and prefixes, the document `audit-writer --deployment` reads |
 | `externalIdentifiersAreOpaque` | the deployment declares that the identifiers it receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](presets.md#what-a-deployment-can-relax)) |
 | `replicas` | receiver pods |

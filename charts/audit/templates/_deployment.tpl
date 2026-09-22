@@ -85,9 +85,6 @@ spec:
             {{- if $.Values.kmsKey }}
             - --kms-key={{ $.Values.kmsKey }}
             {{- end }}
-            {{- if $.Values.governance }}
-            - --governance
-            {{- end }}
             {{- end }}
             {{- if $.Values.catalogues }}
             - --catalogues=/etc/audit/catalogues
@@ -121,6 +118,9 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ . | quote }}
             {{- end }}
+          {{- if and $archive $.Values.existingSecret }}
+          {{- include "audit.archiveEnvFrom" $ | nindent 10 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ $.Values.service.port }}

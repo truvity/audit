@@ -53,8 +53,44 @@ bucket: ""
 prefix: ""
 region: ""
 kmsKey: ""
-# Governance mode lets a privileged role shorten a retention. It is off, and a
-# deployment that turns it on should be able to say why in writing.
+# S3-COMPATIBLE STORES. Empty keeps the AWS endpoint, so nothing changes for
+# an AWS deployment. The binaries have understood --endpoint all along
+# (AUDIT_S3_ENDPOINT, or the SDK's own AWS_ENDPOINT_URL_S3); this is where
+# the chart passes it. Any store that speaks the S3 API takes the archive --
+# which of its calls the store must answer depends on `lockMode` below, and
+# docs/decisions/0014-lock-modes-and-store-tiers.md lists them per tier.
+endpoint: ""
+# Address the bucket as endpoint/bucket/key rather than bucket.endpoint/key.
+# A property of the store's certificate -- does its wildcard cover a bucket
+# subdomain? -- not of the endpoint, so it is its own switch.
+pathStyle: false
+# Static credentials for a store with no pod identity, as AWS_ACCESS_KEY_ID /
+# AWS_SECRET_ACCESS_KEY (and optionally AWS_SESSION_TOKEN) in an existing
+# Secret, given to every container that touches the archive through envFrom.
+# Empty keeps the pod's ambient identity, which is the right default on AWS:
+# asking for keys there would be asking for the thing IRSA exists to remove.
+existingSecret: ""
+# The Object Lock mode every object is written in: `compliance`, `governance`
+# or `none`.
+#
+#   compliance  the record tier: nobody, the account's root included, can
+#               shorten a retention or delete a version. What a profile
+#               composed from pci-dss, nen-7513, dora or evidence-etsi
+#               demands, and the default.
+#   governance  a lock a privileged role can shorten. For a non-production
+#               bucket where a mistake has to be undoable.
+#   none        the attested tier: no lock, and the signed digest chain under
+#               a managed key is the integrity control. For a store without
+#               the Object Lock API, and for profiles whose frameworks do
+#               not mandate WORM storage (security, history, billing-nl).
+#
+# A profile's presets say the least mode they accept, and the writer and the
+# jobs REFUSE TO START when this is weaker than any profile demands, naming
+# the profile and both modes. The chart cannot check that here -- the
+# presets' readings live in the binaries -- so a mismatch is caught at the
+# first rollout, not at render time.
+lockMode: compliance
+# Deprecated: the same as `lockMode: governance`.
 governance: false
 
 # The profiles this deployment keeps, as `audit-writer --deployment` reads them.
@@ -110,6 +146,16 @@ query:
     bucket: ""
     expiry: 168h
     linkValid: 1h
+    # The store the exports bucket is on, when it is not the archive's:
+    # the same three as the archive's `endpoint`, `pathStyle` and
+    # `existingSecret` above. Empty inherits the archive's endpoint and path
+    # style. The Secret, when named, carries a second identity for the one
+    # query process -- its AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (and
+    # optionally AWS_SESSION_TOKEN) reach the binary as AUDIT_EXPORTS_* --
+    # for an exports bucket the archive's credentials do not reach.
+    endpoint: ""
+    pathStyle: false
+    existingSecret: ""
   # Resolving a pseudonym back to a person. Off unless this service is to do
   # it: a query service without the keys cannot undo a pseudonym whatever a
   # grant says. It uses the writer's key provider (`keys.provider`):

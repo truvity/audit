@@ -59,6 +59,9 @@ spec:
                       fieldPath: metadata.name
                 {{- include "audit.archiveEnv" . | nindent 16 }}
                 {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 16 }}{{- end }}
+              {{- if .Values.existingSecret }}
+              {{- include "audit.archiveEnvFrom" . | nindent 14 }}
+              {{- end }}
               securityContext:
                 {{- toYaml .Values.securityContext | nindent 16 }}
               volumeMounts:
@@ -127,6 +130,10 @@ spec:
                 - --profile={{ $name }}
                 - --last={{ $.Values.jobs.verify.window }}
                 - --public-key=/etc/audit/public/{{ $.Values.jobs.verify.publicKey.secretKey }}
+                # With the deployment the check knows what lock the profile
+                # demands: an object with none is INVALID under a profile
+                # that demands one, and `unlocked` under one that does not.
+                - --deployment=/etc/audit/deployment.yaml
                 {{- with $.Values.jobs.digest.lookback }}
                 - --lookback={{ . }}
                 {{- end }}
@@ -142,17 +149,27 @@ spec:
                       fieldPath: metadata.name
                 {{- include "audit.archiveEnv" $ | nindent 16 }}
                 {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenEnv" $ | nindent 16 }}{{- end }}
+              {{- if $.Values.existingSecret }}
+              {{- include "audit.archiveEnvFrom" $ | nindent 14 }}
+              {{- end }}
               securityContext:
                 {{- toYaml $.Values.securityContext | nindent 16 }}
               volumeMounts:
                 - name: public
                   mountPath: /etc/audit/public
                   readOnly: true
+                - name: deployment
+                  mountPath: /etc/audit/deployment.yaml
+                  subPath: deployment.yaml
+                  readOnly: true
                 {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenMount" $ | nindent 16 }}{{- end }}
           volumes:
             - name: public
               secret:
                 secretName: {{ $.Values.jobs.verify.publicKey.existingSecret }}
+            - name: deployment
+              configMap:
+                name: {{ $full }}-deployment
             {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenVolume" $ | nindent 12 }}{{- end }}
 {{- end }}
 {{- end }}

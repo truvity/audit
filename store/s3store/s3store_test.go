@@ -197,7 +197,7 @@ func TestPutSetsRetentionPerObject(t *testing.T) {
 // it, and the console sends that header by default. Compliance is the default
 // here, and the weaker mode has to be asked for.
 func TestComplianceIsTheDefaultLockMode(t *testing.T) {
-	s, f := newStore(t, s3store.Options{Governance: true})
+	s, f := newStore(t, s3store.Options{Lock: s3store.Governance})
 	if err := s.Put(context.Background(), object()); err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +442,7 @@ func TestSetLegalHoldAddressesThePrefixedKey(t *testing.T) {
 // headers — and no retention either, because a retention on a file meant to be
 // cleared would keep it.
 func TestAnUnlockedStoreSendsNoLockHeaders(t *testing.T) {
-	s, f := newStore(t, s3store.Options{Unlocked: true})
+	s, f := newStore(t, s3store.Options{Lock: s3store.None})
 	o := object()
 	o.LegalHold = true
 	if err := s.Put(context.Background(), o); err != nil {
@@ -476,14 +476,65 @@ func TestExtendRetentionAsksForTheStoresMode(t *testing.T) {
 	}
 }
 
-// An unlocked bucket has no retention to lengthen, and says so rather than
-// sending a request the bucket would refuse less clearly.
-func TestAnUnlockedStoreHasNoRetentionToExtend(t *testing.T) {
-	s, f := newStore(t, s3store.Options{Unlocked: true})
-	if err := s.ExtendRetention(context.Background(), "x", time.Now()); err == nil {
-		t.Fatal("an unlocked store extended a retention")
+// An unlocked bucket has no retention to lengthen and nothing to hold with,
+// and says so -- as the sentinel a caller can test for -- rather than sending
+// a request the bucket would refuse less clearly. The writer records the
+// sentinel in the trail and moves on; a plain error would look like a call
+// worth retrying.
+func TestAnUnlockedStoreHasNoRetentionToExtendAndNoHoldToPlace(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Lock: s3store.None})
+	err := s.ExtendRetention(context.Background(), "x", time.Now())
+	if !errors.Is(err, store.ErrNotLockable) {
+		t.Fatalf("want store.ErrNotLockable, got %v", err)
 	}
 	if len(f.retentions) != 0 {
 		t.Fatal("an unlocked store sent the request anyway")
+	}
+	err = s.SetLegalHold(context.Background(), "x", true)
+	if !errors.Is(err, store.ErrNotLockable) {
+		t.Fatalf("want store.ErrNotLockable, got %v", err)
+	}
+	if len(f.holds) != 0 {
+		t.Fatal("an unlocked store sent the hold anyway")
+	}
+	if s.Lock() != s3store.None {
+		t.Fatalf("lock = %q", s.Lock())
+	}
+}
+
+// The lock mode is spelled as a flag spells it, and empty means what an
+// archive means: compliance.
+func TestParseLockMode(t *testing.T) {
+	for in, want := range map[string]s3store.LockMode{
+		"": s3store.Compliance, "compliance": s3store.Compliance,
+		"governance": s3store.Governance, "none": s3store.None,
+	} {
+		got, err := s3store.ParseLockMode(in)
+		if err != nil || got != want {
+			t.Errorf("ParseLockMode(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	if _, err := s3store.ParseLockMode("unlocked"); err == nil {
+		t.Error("an unknown mode was accepted")
+	}
+	if _, err := s3store.New(&fake{}, s3store.Options{Bucket: "b", Lock: "sideways"}); err == nil {
+		t.Error("New accepted a lock mode that is not one")
+	}
+}
+
+// A store with no lock still refuses to reuse a key: the digest cannot
+// account for a second version whichever bucket it is in.
+func TestAnUnlockedStoreStillWritesEachKeyOnce(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Lock: s3store.None})
+	o := object()
+	o.RetainUntil = time.Time{}
+	if err := s.Put(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	if got := aws.ToString(f.puts[0].IfNoneMatch); got != "*" {
+		t.Fatalf("IfNoneMatch = %q, want *", got)
+	}
+	if f.puts[0].ChecksumAlgorithm != types.ChecksumAlgorithmSha256 {
+		t.Fatal("the SHA-256 the archive names on every put was dropped with the lock")
 	}
 }

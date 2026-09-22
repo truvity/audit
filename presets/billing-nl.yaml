@@ -62,11 +62,12 @@ retention:
   note: "7 years from the moment the data lose their current value; the invoice period is the practical start. Immutable monthly statements naming their digest are the condensed figures; these copies are the detail behind them."
 integrity:
   digest: required
-  object_lock_mode: compliance
+  object_lock_mode: none
   timestamp_anchor: none
   legal_hold: available
   clock_sync_event: none
   log_access_logged: true
+  note: "AWR art. 52 asks for the authenticity and integrity of the administration over the retention period, which the signed digest chain provides; it does not mandate WORM storage. A lock is optional."
 review:
   automated_alerting: true
   cadence: monthly

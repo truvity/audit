@@ -118,12 +118,80 @@ type Retention struct {
 
 // Integrity is what must be true of the store a copy lands in.
 type Integrity struct {
-	Digest          string `json:"digest,omitempty"`           // required | recommended
-	ObjectLockMode  string `json:"object_lock_mode,omitempty"` // compliance | governance
+	Digest string `json:"digest,omitempty"` // required | recommended
+	// ObjectLockMode is the LEAST Object Lock the framework demands of the
+	// store: none, governance or compliance. A deployment may run a stricter
+	// mode than a profile asks, and the writer refuses to start on a weaker
+	// one (CheckLockMode). `none` means the framework does not mandate WORM
+	// storage and the digest chain under a managed key is the control; a
+	// deployment may still lock.
+	ObjectLockMode  string `json:"object_lock_mode,omitempty"`
 	TimestampAnchor string `json:"timestamp_anchor,omitempty"` // none | recommended | required
 	LegalHold       string `json:"legal_hold,omitempty"`       // available | recommended
 	ClockSyncEvent  string `json:"clock_sync_event,omitempty"` // none | daily
 	LogAccessLogged bool   `json:"log_access_logged,omitempty"`
+	// Note says why the preset reads its framework as it does on the lock,
+	// for the reviewer of a composed profile.
+	Note string `json:"note,omitempty"`
+}
+
+// The lock modes a preset may demand, weakest first. The names are the
+// store's own (s3store.LockMode spells them the same way), kept as strings
+// here because a preset knows what a framework demands and nothing about
+// where the copies land.
+const (
+	LockNone       = "none"
+	LockGovernance = "governance"
+	LockCompliance = "compliance"
+)
+
+// lockOrder is the order stricterIntegrity composes lock modes in.
+var lockOrder = []string{LockNone, LockGovernance, LockCompliance}
+
+// LockRank orders lock modes from none through governance to compliance. An
+// unknown mode ranks below every known one.
+func LockRank(mode string) int {
+	for i, m := range lockOrder {
+		if m == mode {
+			return i
+		}
+	}
+	return -1
+}
+
+// CheckLockMode holds a deployment's lock mode to what its profiles demand.
+//
+// A profile's composed object_lock_mode is the least the store must run. A
+// deployment writing in a weaker mode -- a compliance profile on a governance
+// or unlocked store, a governance profile on an unlocked store -- would put
+// copies that the framework says must be undeletable where they can be
+// deleted, and every copy written before anyone noticed would already be the
+// evidence the framework asked for. So the writer refuses to start instead,
+// naming the profile and both modes. A stricter deployment is fine: a lock
+// nobody asked for costs nothing the archive minds.
+func CheckLockMode(profiles map[string]*Profile, deployment string) error {
+	if LockRank(deployment) < 0 {
+		return fmt.Errorf("lock mode %q is not one of none, governance or compliance", deployment)
+	}
+	names := make([]string, 0, len(profiles))
+	for name := range profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var problems []error
+	for _, name := range names {
+		want := profiles[name].Integrity.ObjectLockMode
+		if want == "" || LockRank(want) <= LockRank(deployment) {
+			continue
+		}
+		problems = append(problems, fmt.Errorf(
+			"profile %s is composed from presets that demand Object Lock in %s mode, and this deployment "+
+				"writes with lock mode %s: its copies could be deleted before their retention ends, "+
+				"which is what the framework forbids. Run it on a store locked in %s mode, or compose "+
+				"the profile from presets whose frameworks do not demand the lock",
+			name, want, deployment, want))
+	}
+	return errors.Join(problems...)
 }
 
 // Review is how often the trail is read by a person and what is kept to show

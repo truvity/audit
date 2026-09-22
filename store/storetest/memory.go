@@ -36,6 +36,10 @@ type Memory struct {
 	// Now is the clock that stamps write times, for tests that care when an
 	// object appeared.
 	Now func() time.Time
+	// Unlocked makes the store one with no lock, as an S3 store with lock
+	// mode none is: a put keeps no retention and no hold, and extending or
+	// holding answers store.ErrNotLockable.
+	Unlocked bool
 
 	mu      sync.RWMutex
 	objects map[string]store.Object
@@ -66,6 +70,9 @@ func (m *Memory) Put(_ context.Context, o store.Object) error {
 	body := make([]byte, len(o.Body))
 	copy(body, o.Body)
 	o.Body = body
+	if m.Unlocked {
+		o.RetainUntil, o.LegalHold = time.Time{}, false
+	}
 	m.objects[o.Key] = o
 	m.written[o.Key] = m.now()
 	return nil
@@ -221,6 +228,9 @@ func (m *Memory) Prefixes(_ context.Context, prefix, delimiter string) ([]string
 
 // SetLegalHold implements store.Store.
 func (m *Memory) SetLegalHold(_ context.Context, key string, on bool) error {
+	if m.Unlocked {
+		return fmt.Errorf("%w: a legal hold cannot be placed on %s", store.ErrNotLockable, key)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	o, ok := m.objects[key]
@@ -236,6 +246,9 @@ func (m *Memory) SetLegalHold(_ context.Context, key string, on bool) error {
 // in compliance mode does. A memory store that let a test shorten a retention
 // would be standing in for a bucket nobody could deploy.
 func (m *Memory) ExtendRetention(_ context.Context, key string, until time.Time) error {
+	if m.Unlocked {
+		return fmt.Errorf("%w: %s has no retention to extend", store.ErrNotLockable, key)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	o, ok := m.objects[key]

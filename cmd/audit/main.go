@@ -32,7 +32,6 @@ import (
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/store/s3store"
 )
 
 const usage = `audit — the audit trail toolchain
@@ -61,7 +60,9 @@ usage:
 
   audit verify --profile <name> --from <date> --to <date> [flags]
         Walk a profile's digest chain and report what it finds. Needs the
-        archive and a public key, and nothing that has to be trusted.
+        archive and a public key, and nothing that has to be trusted. With
+        --deployment it also holds each object's lock to what the profile
+        demands.
 
   audit replay --dlq --from <date> --to <date> [flags]
         Send dead letters back to a writer once the cause is fixed. Without
@@ -243,14 +244,13 @@ func checkEmitters(args []string) error {
 func verify(args []string) error {
 	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 	var (
-		profile   = flags.String("profile", "", "the profile whose chain to walk")
-		from      = flags.String("from", "", "start of the range, a date or a timestamp")
-		to        = flags.String("to", "", "end of the range, a date or a timestamp")
-		publicKey = flags.String("public-key", "", "the PEM public key the digests were signed with")
-		bucket    = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
-		prefix    = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
-		region    = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
-		lookback  = flags.Duration("lookback", 0,
+		profile    = flags.String("profile", "", "the profile whose chain to walk")
+		from       = flags.String("from", "", "start of the range, a date or a timestamp")
+		to         = flags.String("to", "", "end of the range, a date or a timestamp")
+		publicKey  = flags.String("public-key", "", "the PEM public key the digests were signed with")
+		deployment = flags.String("deployment", "",
+			"the profile configuration; with it, each object's lock is held to what the profile demands")
+		lookback = flags.Duration("lookback", 0,
 			"how far before the range to look for objects keyed under an older day; at least what audit digest used")
 		last = flags.Duration("last", 0,
 			"check the windows of the last this long, ending at the hour that has closed; instead of --from and --to")
@@ -260,6 +260,7 @@ func verify(args []string) error {
 			"write a verification per window into the archive, which a record's provenance reads; needs write access to verified/")
 		asJSON = flags.Bool("json", false, "print the report as JSON")
 	)
+	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
@@ -268,7 +269,7 @@ func verify(args []string) error {
 		return errors.New("name a profile with --profile")
 	case *publicKey == "":
 		return errors.New("give the signing key's public half with --public-key")
-	case *bucket == "":
+	case *archiveFlags.Bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
 	}
 	// A scheduled run says "the last day"; an auditor names the range. The
@@ -295,14 +296,7 @@ func verify(args []string) error {
 	}
 
 	ctx := context.Background()
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return err
-	}
-	if *region != "" {
-		cfg.Region = *region
-	}
-	archive, err := s3store.FromConfig(cfg, s3store.Options{Bucket: *bucket, Prefix: *prefix})
+	archive, err := archiveFlags.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -311,6 +305,23 @@ func verify(args []string) error {
 		Store: archive, PublicKeyPEM: pem, Profile: *profile,
 		From: start, To: end, Lookback: *lookback, JSON: *asJSON,
 		Instance: *instance, Record: *record,
+	}
+	// With the deployment, the check knows what lock each profile demands:
+	// an object with none is then INVALID under a profile that demands one
+	// and `unlocked` under one that does not. And a job that writes its
+	// results into the archive is held to the same refusal as the writer.
+	if *deployment != "" {
+		profiles, err := profilesFor(*deployment)
+		if err != nil {
+			return err
+		}
+		if _, ok := profiles[*profile]; !ok {
+			return fmt.Errorf("the deployment has no profile %q", *profile)
+		}
+		if err := preset.CheckLockMode(profiles, string(archive.Lock())); err != nil {
+			return err
+		}
+		run.RequiredLock = requiredLocks(profiles)
 	}
 	if *sinkURL != "" {
 		if run.Catalogue, err = catalogue.Common(); err != nil {
@@ -365,19 +376,17 @@ func replay(args []string) error {
 		reason  = flags.String("reason", "", "keep only dead letters whose reason contains this text")
 		action  = flags.String("action", "", "keep only dead letters of this action")
 		sinkURL = flags.String("sink", "", "the writer's base URL; without it nothing is sent")
-		bucket  = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
-		prefix  = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
-		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		batch   = flags.Int("batch", 100, "how many records to send at a time")
 		asJSON  = flags.Bool("json", false, "print the report as JSON")
 	)
+	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
 	switch {
 	case !*dlq:
 		return errors.New("name the source with --dlq")
-	case *bucket == "":
+	case *archiveFlags.Bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
 	}
 	start, err := cli.ParseDay(*from)
@@ -390,14 +399,7 @@ func replay(args []string) error {
 	}
 
 	ctx := context.Background()
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return err
-	}
-	if *region != "" {
-		cfg.Region = *region
-	}
-	archive, err := s3store.FromConfig(cfg, s3store.Options{Bucket: *bucket, Prefix: *prefix})
+	archive, err := archiveFlags.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -479,12 +481,10 @@ func reindex(args []string) error {
 		from      = flags.String("from", "", "start of the range, a date or a timestamp")
 		to        = flags.String("to", "", "end of the range, a date or a timestamp")
 		database  = flags.String("database", "", "the Postgres URL of the index")
-		bucket    = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
-		prefix    = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
-		region    = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		batchSize = flags.Int("batch", 0, "how many rows to index at a time")
 		asJSON    = flags.Bool("json", false, "print the report as JSON")
 	)
+	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Reads)
 	var catalogueFiles repeated
 	flags.Var(&catalogueFiles, "catalogue",
 		"a catalogue document, repeatable; the index takes its indexed properties from these")
@@ -496,7 +496,7 @@ func reindex(args []string) error {
 		return errors.New("name a profile with --profile")
 	case *database == "":
 		return errors.New("give the index's Postgres URL with --database")
-	case *bucket == "":
+	case *archiveFlags.Bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
 	case len(catalogueFiles) == 0:
 		return errors.New(
@@ -517,14 +517,7 @@ func reindex(args []string) error {
 	}
 
 	ctx := context.Background()
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return err
-	}
-	if *region != "" {
-		cfg.Region = *region
-	}
-	archive, err := s3store.FromConfig(cfg, s3store.Options{Bucket: *bucket, Prefix: *prefix})
+	archive, err := archiveFlags.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -557,16 +550,16 @@ type repeated []string
 func (r *repeated) String() string     { return strings.Join(*r, ", ") }
 func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
 
-// archiveFor opens the archive a command reads or writes.
-func archiveFor(ctx context.Context, bucket, prefix, region string) (*s3store.Store, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
+// requiredLocks is what each composed profile demands of the store's lock,
+// which verify holds every object to.
+func requiredLocks(profiles map[string]*preset.Profile) map[string]string {
+	out := make(map[string]string, len(profiles))
+	for name, p := range profiles {
+		if p.Integrity.ObjectLockMode != "" {
+			out[name] = p.Integrity.ObjectLockMode
+		}
 	}
-	if region != "" {
-		cfg.Region = region
-	}
-	return s3store.FromConfig(cfg, s3store.Options{Bucket: bucket, Prefix: prefix})
+	return out
 }
 
 // profilesFor composes the deployment's profiles, which is what says how long
@@ -595,22 +588,20 @@ func digestCmd(args []string) error {
 		transit    = transitFlags(flags)
 		from       = flags.String("from", "", "first window; default the hour after the last digest")
 		to         = flags.String("to", "", "last window; default the hour that has just closed")
-		bucket     = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
-		prefix     = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
-		region     = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		lookback   = flags.Duration("lookback", 0, "how far back to look for objects keyed under an older day")
 		maxWindows = flags.Int("max-windows", 0, "how many windows one run may seal")
 		sinkURL    = flags.String("sink", "", "the writer this job records what it sealed through")
 		instance   = flags.String("instance", "", "the name this job records itself under")
 		asJSON     = flags.Bool("json", false, "print the report as JSON")
 	)
+	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
 	switch {
 	case *deployment == "":
 		return errors.New("give the profile configuration with --deployment")
-	case *bucket == "":
+	case *archiveFlags.Bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
 	}
 	if n := given(*key, *kmsKey, *transit.key); n != 1 {
@@ -622,6 +613,16 @@ func digestCmd(args []string) error {
 	if err != nil {
 		return err
 	}
+	// The digests land in the same store as the copies they cover, so the
+	// job is held to the same refusal as the writer -- before a signer is
+	// opened, since a KMS or transit signer is a round trip of its own.
+	lock, err := archiveFlags.Lock()
+	if err != nil {
+		return err
+	}
+	if err := preset.CheckLockMode(profiles, string(lock)); err != nil {
+		return err
+	}
 	if *only != "" {
 		p, ok := profiles[*only]
 		if !ok {
@@ -629,7 +630,7 @@ func digestCmd(args []string) error {
 		}
 		profiles = map[string]*preset.Profile{*only: p}
 	}
-	signer, err := signerFor(context.Background(), *key, *keyID, *kmsKey, *region, transit)
+	signer, err := signerFor(context.Background(), *key, *keyID, *kmsKey, *archiveFlags.Region, transit)
 	if err != nil {
 		return err
 	}
@@ -657,7 +658,7 @@ func digestCmd(args []string) error {
 	}
 
 	ctx := context.Background()
-	if run.Store, err = archiveFor(ctx, *bucket, *prefix, *region); err != nil {
+	if run.Store, err = archiveFlags.Open(ctx); err != nil {
 		return err
 	}
 	_, err = run.Run(ctx)
@@ -858,21 +859,19 @@ func holdCmd(args []string) error {
 		reason  = flags.String("reason", "", "why the hold is placed; it is recorded and cannot be blank")
 		id      = flags.String("id", "", "the hold's identifier")
 		by      = flags.String("by", "", "who is placing or releasing it, as this deployment names them")
-		bucket  = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in")
-		prefix  = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
-		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		sinkURL = flags.String("sink", "", "the writer this action is recorded through")
 		asJSON  = flags.Bool("json", false, "print as JSON")
 	)
+	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
 	if _, err := parse(flags, args[1:]); err != nil {
 		return err
 	}
-	if *bucket == "" {
+	if *archiveFlags.Bucket == "" {
 		return errors.New("name the archive's bucket with --bucket")
 	}
 
 	ctx := context.Background()
-	archive, err := archiveFor(ctx, *bucket, *prefix, *region)
+	archive, err := archiveFlags.Open(ctx)
 	if err != nil {
 		return err
 	}
@@ -903,17 +902,15 @@ func keyCmd(args []string) error {
 		purpose = flags.String("purpose", "", "the purpose the key is for")
 		by      = flags.String("by", "", "who is destroying it, as this deployment names them")
 		reason  = flags.String("reason", "", "why, recorded with the erasure")
-		bucket  = flags.String("bucket", env("AUDIT_BUCKET", ""), "the bucket the archive is in, read to check for legal holds")
-		prefix  = flags.String("prefix", env("AUDIT_PREFIX", ""), "the prefix within the bucket")
-		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		sinkURL = flags.String("sink", "", "the writer the erasure is recorded through")
 	)
 	keyFlags := cli.NewKeyFlags(flags, nil)
+	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Reads)
 	if _, err := parse(flags, args[1:]); err != nil {
 		return err
 	}
 	switch {
-	case *bucket == "":
+	case *archiveFlags.Bucket == "":
 		return errors.New("name the archive's bucket with --bucket: the holds are read from it")
 	case *sinkURL == "":
 		return errors.New("give the writer with --sink: an erasure nobody recorded is one nobody can prove was lawful")
@@ -922,7 +919,7 @@ func keyCmd(args []string) error {
 	}
 
 	ctx := context.Background()
-	archive, err := archiveFor(ctx, *bucket, *prefix, *region)
+	archive, err := archiveFlags.Open(ctx)
 	if err != nil {
 		return err
 	}

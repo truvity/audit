@@ -108,7 +108,15 @@ app.kubernetes.io/component: consumer
 {{- if or .Values.database.url .Values.database.existingSecret -}}true{{- end -}}
 {{- end -}}
 
-{{/* The environment every command shares: where the archive is. */}}
+{{/* The lock mode, with the deprecated `governance` folded in. */}}
+{{- define "audit.lockMode" -}}
+{{- if .Values.governance -}}governance{{- else -}}{{ .Values.lockMode }}{{- end -}}
+{{- end -}}
+
+{{/* The environment every command shares: where the archive is, which store
+it is on, and which lock it is written with. Each is set only when it differs
+from what the binaries assume, so an AWS deployment in compliance mode gets
+the environment it always had. */}}
 {{- define "audit.archiveEnv" -}}
 - name: AUDIT_BUCKET
   value: {{ .Values.bucket | quote }}
@@ -119,6 +127,32 @@ app.kubernetes.io/component: consumer
 {{- if .Values.region }}
 - name: AWS_REGION
   value: {{ .Values.region | quote }}
+{{- end }}
+{{- with .Values.endpoint }}
+# Only when set: an empty endpoint would be taken literally by the SDK
+# rather than falling back to the AWS default.
+- name: AUDIT_S3_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- if .Values.pathStyle }}
+- name: AUDIT_S3_PATH_STYLE
+  value: "true"
+{{- end }}
+{{- if ne (include "audit.lockMode" .) "compliance" }}
+- name: AUDIT_LOCK_MODE
+  value: {{ include "audit.lockMode" . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/* Static credentials for the archive's store, on every container that
+touches it. envFrom rather than named env so a session token is carried too,
+without the chart having to name every variable the SDK may read. Empty
+renders nothing: the pod's own identity is the credential. */}}
+{{- define "audit.archiveEnvFrom" -}}
+{{- with .Values.existingSecret }}
+envFrom:
+  - secretRef:
+      name: {{ . }}
 {{- end }}
 {{- end -}}
 

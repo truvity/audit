@@ -62,7 +62,8 @@ no shape that puts the writer inside the application
 |---|---|
 | Record, catalogues, presets, `audit validate` / `check-emitters` | built |
 | Go emitter: `block` and `async`; Connect and JetStream sinks | built |
-| Writer: split per profile, Object Lock, index, dead letters, legal holds, retention addenda | built |
+| Writer: split per profile, Object Lock where a profile demands it, index, dead letters, legal holds, retention addenda | built |
+| Two store tiers on any S3-compatible store: `record` (Object Lock in compliance mode) and `attested` (chain under a managed key, no lock) ([0014](docs/decisions/0014-lock-modes-and-store-tiers.md)) | built |
 | Query service: search, facets, get, export, tail; JWT with declarative grants | built |
 | Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
 | Pseudonymisation keys: `local` and OpenBAO transit, **off by default** ([0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md)) | built |

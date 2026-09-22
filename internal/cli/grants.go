@@ -1,18 +1,14 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"sigs.k8s.io/yaml"
 
 	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/store"
-	"github.com/truvity/audit/store/s3store"
 )
 
 // GrantsFile is what a deployment writes to say who may read what.
@@ -204,33 +200,4 @@ func (file GrantsFile) rules(path string) (auth.Declarative, error) {
 		})
 	}
 	return out, nil
-}
-
-// Archive opens the archive for a command that only reads it.
-func Archive(ctx context.Context, bucket, prefix, region string) (store.Store, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if region != "" {
-		cfg.Region = region
-	}
-	return s3store.FromConfig(cfg, s3store.Options{Bucket: bucket, Prefix: prefix})
-}
-
-// ExportStore opens the bucket exports are written to, without Object Lock.
-//
-// It is a different function from Archive on purpose: an export is a copy of
-// records made to be taken away and then cleared, and a lock would keep it. A
-// bucket without Object Lock refuses a put that names a lock mode, so this is
-// also the only way to write to one.
-func ExportStore(ctx context.Context, bucket, region string) (store.Store, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if region != "" {
-		cfg.Region = region
-	}
-	return s3store.FromConfig(cfg, s3store.Options{Bucket: bucket, Unlocked: true})
 }

@@ -19,6 +19,11 @@ type Finding struct {
 	Object string `json:"object,omitempty"`
 	OK     bool   `json:"ok"`
 	Reason string `json:"reason,omitempty"`
+	// Unlocked is an object that is right by the chain and carries no
+	// retention, under a profile that demands no lock: information, not a
+	// problem. The chain is the integrity control on such a store, and this
+	// says so per object rather than pretending the lock was checked.
+	Unlocked bool `json:"unlocked,omitempty"`
 }
 
 // Report is what a verification found.
@@ -64,14 +69,32 @@ func (r *Report) String() string {
 		if f.Object != "" {
 			where = f.Object
 		}
-		if f.OK {
+		switch {
+		case f.OK && f.Unlocked:
+			fmt.Fprintf(&b, "unlocked %s\n", where)
+		case f.OK:
 			fmt.Fprintf(&b, "valid    %s\n", where)
-			continue
+		default:
+			fmt.Fprintf(&b, "INVALID  %s: %s\n", where, f.Reason)
 		}
-		fmt.Fprintf(&b, "INVALID  %s: %s\n", where, f.Reason)
 	}
-	fmt.Fprintf(&b, "%d digests, %d objects, %d problems\n", r.Digests, r.Objects, len(r.Problems()))
+	fmt.Fprintf(&b, "%d digests, %d objects", r.Digests, r.Objects)
+	if n := r.Unlocked(); n > 0 {
+		fmt.Fprintf(&b, ", %d unlocked", n)
+	}
+	fmt.Fprintf(&b, ", %d problems\n", len(r.Problems()))
 	return b.String()
+}
+
+// Unlocked counts the objects that are right by the chain and carry no lock.
+func (r *Report) Unlocked() int {
+	n := 0
+	for _, f := range r.Findings {
+		if f.OK && f.Unlocked {
+			n++
+		}
+	}
+	return n
 }
 
 // Verifier checks a chain. It needs the store and a public key and nothing
@@ -80,9 +103,18 @@ func (r *Report) String() string {
 type Verifier struct {
 	Store        store.Store
 	PublicKeyPEM []byte
-	// Profiles is the retention each profile requires, so that an object whose
-	// lock is shorter than its profile asks can be reported. Optional.
+	// MinimumRetention is the retention each profile requires, so that an
+	// object whose lock is shorter than its profile asks can be reported.
+	// Optional.
 	MinimumRetention map[string]time.Duration
+	// RequiredLock is the Object Lock mode each profile demands -- none,
+	// governance or compliance, as the composed profile's integrity says.
+	// With it, an object that carries no retention is a problem under a
+	// profile that demands a lock, and information (`unlocked`) under one
+	// that does not. Without it nothing is said about locks at all: an
+	// auditor with read-only credentials and no deployment file still gets
+	// the chain checked. Optional.
+	RequiredLock map[string]string
 	// Lookback is how far before the range to look for objects written in it
 	// but keyed under an older day, which an outbox delay produces. It wants to
 	// be at least the builder's, or an object the builder covered from further
@@ -197,18 +229,43 @@ func (v *Verifier) checkObject(ctx context.Context, digestKey, profile string, o
 	if got := hex.EncodeToString(sum[:]); got != o.SHA256 {
 		return Finding{Digest: digestKey, Object: o.Key, Reason: "the object has changed since it was signed"}
 	}
-	if want, ok := v.MinimumRetention[profile]; ok {
-		entry, err := v.Store.Head(ctx, o.Key)
-		if err == nil && !entry.RetainUntil.IsZero() {
-			if entry.RetainUntil.Before(entry.Modified.Add(want)) {
-				return Finding{
-					Digest: digestKey, Object: o.Key,
-					Reason: fmt.Sprintf("the lock ends %s, sooner than profile %s requires", entry.RetainUntil, profile),
-				}
+	return v.checkLock(ctx, profile, digestKey, o.Key)
+}
+
+// checkLock reads the object's lock, when the verifier knows what the profile
+// requires of it, and says what it found.
+func (v *Verifier) checkLock(ctx context.Context, profile, digestKey, key string) Finding {
+	want, wantRetention := v.MinimumRetention[profile]
+	lock, wantLock := v.RequiredLock[profile]
+	if !wantRetention && !wantLock {
+		return Finding{Digest: digestKey, Object: key, OK: true}
+	}
+	entry, err := v.Store.Head(ctx, key)
+	if err != nil {
+		// The object was just read in full; a head that fails now is a
+		// permission on the lock, not a missing object, and it is not the
+		// chain's business to fail on it.
+		return Finding{Digest: digestKey, Object: key, OK: true}
+	}
+	if entry.RetainUntil.IsZero() {
+		// No retention. A profile that demands a lock has an object that is
+		// deletable, which is the one thing it forbids; one that demands
+		// none has an object the chain alone vouches for, and says so.
+		if wantLock && lock != "none" {
+			return Finding{
+				Digest: digestKey, Object: key,
+				Reason: fmt.Sprintf("the object carries no retention, and profile %s demands Object Lock in %s mode", profile, lock),
 			}
 		}
+		return Finding{Digest: digestKey, Object: key, OK: true, Unlocked: wantLock}
 	}
-	return Finding{Digest: digestKey, Object: o.Key, OK: true}
+	if wantRetention && entry.RetainUntil.Before(entry.Modified.Add(want)) {
+		return Finding{
+			Digest: digestKey, Object: key,
+			Reason: fmt.Sprintf("the lock ends %s, sooner than profile %s requires", entry.RetainUntil, profile),
+		}
+	}
+	return Finding{Digest: digestKey, Object: key, OK: true}
 }
 
 // checkUncovered looks for objects in the range that no digest names.

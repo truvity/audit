@@ -28,6 +28,70 @@ deployment's, and the stream page says what it must accept. The chart's
 network policy is ingress-only and is unchanged: it never governed what
 the writer may reach.
 
+### The archive runs on any S3-compatible store
+
+The store was AWS by omission: the binaries built an S3 client with no
+endpoint, and the chart had no way to hand one credentials that were not
+the pod's own identity. Every command that opens the archive now takes
+`--endpoint` (`AUDIT_S3_ENDPOINT`; the SDK's `AWS_ENDPOINT_URL_S3` works
+too) and `--path-style` (`AUDIT_S3_PATH_STYLE`), and with an endpoint set
+the SDK's default CRC32 request checksum -- which AWS answers and other
+stores may refuse -- is sent only where an operation requires one. The
+SHA-256 the archive names on every put is unchanged. With no endpoint the
+client is exactly what it was.
+
+The chart gains `endpoint`, `pathStyle` and `existingSecret` beside
+`bucket`, all inert by default, and the same three under `query.exports`
+for an exports bucket on a store of its own. `existingSecret` reaches every
+container that touches the archive through `envFrom`; the exports' Secret
+reaches the one query process as `AUDIT_EXPORTS_*`, a second identity
+beside the archive's. With the defaults the chart renders what it rendered
+before, apart from what the next section adds.
+
+### The lock is demanded where a framework demands it
+
+[0014](docs/decisions/0014-lock-modes-and-store-tiers.md). Object Lock was
+mandatory, which made two things one: the Object Lock API, which most
+S3-compatible stores lack, and the reading that every framework demands
+WORM storage, which the presets' own citations do not support. Now:
+
+- A preset's `object_lock_mode` is the LEAST lock its framework demands,
+  and may be `none`. `pci-dss`, `nen-7513`, `dora` and `evidence-etsi`
+  demand `compliance`; `security`, `history` and `billing-nl` demand
+  `none`, and each carries a one-line `note` saying why. Composition takes
+  the strictest: none < governance < compliance.
+- The writer's `--governance` is deprecated in favour of `--lock-mode
+  compliance|governance|none` (`AUDIT_LOCK_MODE`), which every command that
+  writes the archive takes: the digest and verify jobs write into the same
+  store. The chart's `governance` is deprecated in favour of `lockMode`.
+- The writer, the digest job and the verify job REFUSE TO START when a
+  composed profile demands a stricter lock than the deployment writes with,
+  naming the profile and both modes. The chart cannot make that refusal --
+  the presets' readings live in the binaries -- and says so.
+- On a store with no lock, `ExtendRetention` and `SetLegalHold` answer
+  `store.ErrNotLockable`. An addendum that could not lengthen a lock is
+  recorded in the trail as before; `audit hold place` is refused and records
+  the attempt.
+- `audit verify --deployment <file>` reports an object with no lock as
+  `unlocked` under a profile that demands none, and `INVALID` under one
+  that does. The chart's verify job now passes the deployment. Without it,
+  nothing is said about locks.
+- The exports store and the S3 harness use the same lock-mode option, and
+  the harness runs the archive round trip on a locked and an unlocked
+  bucket.
+
+The `record` tier of [0003](docs/decisions/0003-s3-object-lock-as-the-record.md)
+is unchanged. The `attested` tier -- the chain under a managed key, no lock --
+lists its compensating controls in the decision and the
+[S3 guide](docs/operations/s3-guide.md#the-attested-tier): a managed
+signing key required rather than recommended, a shorter digest interval, no
+delete permission anywhere, and an administrative no-delete rule where the
+store has one.
+
+`s3store.Options` loses `Governance` and `Unlocked` for `Lock`, and gains
+`Endpoint` and `PathStyle`; `cli.Archive` and `cli.ExportStore` are replaced
+by `cli.ArchiveFlags` and `cli.ExportFlags`.
+
 ## [0.2.6] - 2026-09-22
 
 ### The writer takes no caller's word for the shape of a record, its own included

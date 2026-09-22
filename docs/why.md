@@ -16,7 +16,8 @@ This component exists so that there is one answer.
   billable actions do not complete until the record is durable, and an
   action that is not worth keeping does not belong in the catalogue.
 - **Immutable and provable.** Copies live under S3 Object Lock in
-  compliance mode. An hourly signed digest chains every object to the
+  compliance mode where a framework demands it, and under the chain alone
+  where none does. An hourly signed digest chains every object to the
   previous digest. A `verify` command lets an auditor check the chain
   without trusting the operator.
 - **Purpose-bound.** The same event is kept once per purpose, each copy with

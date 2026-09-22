@@ -176,9 +176,11 @@
         },
         "object_lock_mode": {
           "enum": [
-            "compliance",
-            "governance"
-          ]
+            "none",
+            "governance",
+            "compliance"
+          ],
+          "description": "The least Object Lock the framework demands of the store a copy lands in. A deployment may run a stricter mode than a preset asks; the writer refuses to start on a weaker one. `none` means the framework does not mandate WORM storage: the digest chain under a managed key is the integrity control, and a lock is optional."
         },
         "timestamp_anchor": {
           "enum": [
@@ -205,6 +207,10 @@
         "log_access_logged": {
           "type": "boolean",
           "default": true
+        },
+        "note": {
+          "type": "string",
+          "description": "Why the preset reads the framework as it does on object_lock_mode: one line, so that a reviewer of the composed profile need not open the framework to know which reading the deployment inherits."
         }
       }
     },

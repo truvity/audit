@@ -63,6 +63,7 @@ integrity:
   legal_hold: available
   clock_sync_event: daily
   log_access_logged: true
+  note: "The RTS on ICT risk management (Art. 12) requires logs to be protected against tampering and deletion, in front of the competent authority: a store nobody can delete from is the reading."
 review:
   automated_alerting: true
   cadence: monthly

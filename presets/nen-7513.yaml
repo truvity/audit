@@ -62,6 +62,7 @@ integrity:
   legal_hold: recommended
   clock_sync_event: daily
   log_access_logged: true
+  note: "NEN 7513 requires the integrity of access logs to be guaranteed for the whole retention period, in front of a named assessor: a store nobody can delete from is the reading."
 review:
   automated_alerting: true
   cadence: monthly

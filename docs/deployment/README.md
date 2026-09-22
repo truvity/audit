@@ -39,7 +39,7 @@ Switched on per installation, and neither adds anything to the request path.
 
 | storage | direct | stream | what it holds |
 |---|---|---|---|
-| S3, Object Lock | the environment's bucket, under the application's prefix | the same | **the record**; nothing else is |
+| S3, with Object Lock where a profile demands it | the environment's bucket, under the application's prefix | the same | **the record**; nothing else is |
 | Postgres | one database, in a cluster of its own if the application has none | one database in the application's existing cluster | index, dedupe table, rollups — rebuildable, not backed up |
 | JetStream | not used | one stream on the application's own account | records not yet archived |
 | Valkey or another cache | not used | the application's existing one, with the quotas extension | counters, corrected hourly |
@@ -56,8 +56,10 @@ its own prefix.
 
 ## Before either shape
 
-- A bucket with **Object Lock in compliance mode** and versioning, a policy
-  that denies deletes to everyone, and a prefix for this application. The
+- A bucket with versioning, a policy that denies deletes to everyone, and a
+  prefix for this application — with **Object Lock in compliance mode** for a
+  profile that demands it, on any S3-compatible store without one where none
+  does ([0014](../decisions/0014-lock-modes-and-store-tiers.md)). The
   [S3 guide](../operations/s3-guide.md) has the policy.
 - A **Postgres database** the writer owns, and a **read-only role** for the
   query service. See [one more database](#one-more-database-in-a-cluster-you-already-run).

@@ -280,12 +280,23 @@ func longerRetention(a, b Retention) Retention {
 func stricterIntegrity(a, b Integrity) Integrity {
 	return Integrity{
 		Digest:          stricter(a.Digest, b.Digest, "recommended", "required"),
-		ObjectLockMode:  stricter(a.ObjectLockMode, b.ObjectLockMode, "governance", "compliance"),
+		ObjectLockMode:  stricter(a.ObjectLockMode, b.ObjectLockMode, lockOrder...),
 		TimestampAnchor: stricter(a.TimestampAnchor, b.TimestampAnchor, "none", "recommended", "required"),
 		LegalHold:       stricter(a.LegalHold, b.LegalHold, "available", "recommended"),
 		ClockSyncEvent:  stricter(a.ClockSyncEvent, b.ClockSyncEvent, "none", "daily"),
 		LogAccessLogged: a.LogAccessLogged || b.LogAccessLogged,
+		Note:            lockNote(a, b),
 	}
+}
+
+// lockNote keeps the note of whichever preset's lock reading won, so that the
+// composed profile explains the mode it ended up with and not the one it
+// discarded. Equal readings keep the first, as the retention note does.
+func lockNote(a, b Integrity) string {
+	if LockRank(b.ObjectLockMode) > LockRank(a.ObjectLockMode) {
+		return b.Note
+	}
+	return firstNonEmpty(a.Note, b.Note)
 }
 
 func moreFrequentReview(a, b Review) Review {

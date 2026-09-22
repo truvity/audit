@@ -5,11 +5,119 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
-## [Unreleased]
+## [0.2.0] - 2026-09-22
 
-The documentation is rewritten around one installation per application, and
-the code is being changed to match it. The pages are the specification, and
-each still marks what does not exist yet.
+One installation per application, and the code to match. The documentation was
+rewritten first and is the specification the rest of this version was built
+against: what each part holds and never holds, a page per deployment shape with
+its diagrams, the decisions behind them, and which framework presets a
+deployment actually composes.
+
+Nothing outside this repository pins 0.1.x, which is why the shape could change
+this much in one version. Adopters pin this one.
+
+### The chart is instantiated per application
+
+`mode` chooses the shape. In `direct` the chart renders one Deployment that
+serves the sink and writes the archive. In `stream` it renders two: a receiver
+that serves the sink and publishes, holding neither the bucket nor a key, and
+`writer.consumers` writers that read the stream and put the objects. Both come
+from one template parameterised by role, so the shapes cannot drift apart. The
+Service keeps its name and the receiver keeps the `writer` component label in
+both, because it is the address records are written to and that should not move
+when a deployment changes shape.
+
+New refusals, each for something the binaries reject or quietly get wrong:
+`mode` that is neither shape, `mode: stream` without a stream or without a
+database, `extensions.billing.enabled` with no metering profile, and
+`extensions.quotas.enabled` without a stream. Both extension toggles exist and
+render nothing: what fills them is designed and not yet built, and the toggles
+are here so a deployment's values do not change when it lands.
+
+The goldens are now `direct.yaml` and `stream.yaml` rather than `minimal` and
+`full`, and `charts/audit/examples/` holds the values an application's chart
+sets under its `audit:` key, one file per shape, rendered by the chart's own
+tests. The NOTES print the four identities that need rights under the
+installation's prefix and what each needs, since that is the part a deployer
+has to build outside the chart.
+
+**`profiles` defaults to `security` alone.** It defaulted to `security` and
+`history`, and because Helm merges maps a values file naming one profile got
+the other as well — a surprise in the setting that decides retention.
+
+`examples/embed` is deleted, and the last comments describing a writer inside
+an application are gone. `writer.Open` and `query.New` stay exported, because
+the binaries are built on them, and say plainly that they are not a way to
+deploy.
+
+### The writer gathers from the stream before it writes
+
+Fetching from a stream returns whatever is there, which under a light load is a
+handful of records at a time. Writing each fetch straight through made an
+object of each, and an archive of many small objects costs a request to put, a
+line in every hour's digest and an entry in every listing, forever.
+
+So a writer consuming a stream accumulates across fetches and writes once a
+roll condition is reached: `roll.maxRecords` (5000), the roller's byte limit
+(8 MiB), or `roll.interval` (30 seconds). Nothing waits on this but the object.
+The records are already durable on the stream, and they stay unacknowledged
+until the put, so a writer that dies mid-window leaves them for the next one.
+
+`stream.ackWait` must now exceed `roll.interval` plus the longest a put can
+take, and both the chart and the consumer refuse otherwise: a stream that gives
+up waiting sooner offers the same records to a second writer, and the day's
+objects quietly double. The default rises to two minutes.
+
+Direct mode is unchanged. There is no stream to gather from, every batch is put
+before it is acknowledged, and the emitter's own batch size and flush interval
+are what decide object count there.
+
+### A keyless deployment is refused a catalogue that hashes
+
+A property a schema annotates for hashing is a pseudonymised property, and it
+needs the same keys an identifier does. Until now a deployment running without
+a key provider took such a record, failed to hash it and dead-lettered it, one
+record at a time, which is something a deployment discovers on the day it
+matters rather than the day it was configured.
+
+The writer refuses to start when the catalogues it holds ask for hashing and
+no provider is configured, naming the property. The receiver refuses a
+registration that arrives later with the same problem, as a validation
+problem, so the application does not start against an installation that would
+dead-letter its records. `audit validate` lists the hashed properties, so the
+application's own CI says it first.
+
+### The tail is asked the case it exists for
+
+The conformance suite indexes a record that happened on an earlier day than
+anything already there, and was recorded after the last page was taken, and
+requires the tail cursor to deliver it. That is what a tail is for: what
+arrives next need not have happened next, and a searcher that ordered the tail
+by when things happened would hand a reader a cursor already past the record,
+with an empty page and no sign of the gap. Memory and Postgres answer it; the
+archive scan refuses `recorded_at` ordering and is held to the refusal.
+
+`indextest.Run` takes the indexer as an explicit argument now rather than
+type-asserting the searcher. The read-only Postgres role is an `index.Indexer`
+by type and cannot write, so the assertion asked it to index and the suite
+failed where nothing was wrong.
+
+Written down with it: a deployment on `query.searcher: s3scan` can search the
+trail but cannot follow it, because the archive is laid out by the day things
+happened.
+
+### A record the emitter gives up is a log line
+
+Decision 0012 said every dropped record is still a log line. The emitter never
+logged anything: it called `OnDropped`, and an application that wired no hook
+lost the record silently. A drop with no hook is now written to the
+application's log by the emitter itself, with the identifier, action and
+reason, through `Options.Logger`.
+
+Decision 0013 described a start-up refusal keyed on the registered catalogues.
+What was built refuses on the composed profile instead, because a catalogue can
+be registered after start-up and a check on what is registered would be walked
+around by arriving late. The record now says so.
 
 ### A receiver mode, so stream mode has a front door
 

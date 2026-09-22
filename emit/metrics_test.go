@@ -1,8 +1,11 @@
 package emit_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,6 +81,35 @@ func TestABestEffortDropIsCounted(t *testing.T) {
 	}
 	if got := counted(t, reader, "audit.emit.records.dropped"); got == 0 {
 		t.Fatal("a record the queue gave up was not counted")
+	}
+}
+
+// An instrumented emitter with no drop hook of its own still says, in the
+// log, which record it gave up. Instrument's wrapper is never nil, so New's
+// own logger is never installed behind it; the wrapper has to carry it.
+// Without that, every deployment that follows the guide -- which is to call
+// Instrument -- drops in silence, and the metric is the only witness.
+func TestAnInstrumentedDropIsStillLogged(t *testing.T) {
+	var lines bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&lines, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	reader := sdkmetric.NewManualReader()
+	hooks, err := emit.Instrument(emit.Hooks{}, sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := emitter(t, &sink.Memory{Fail: errors.New("the store is unreachable")}, hooks)
+	_ = e.Record(context.Background(), viewed()) // async
+	if err := e.Close(); err != nil {
+		t.Log(err)
+	}
+	if got := counted(t, reader, "audit.emit.records.dropped"); got == 0 {
+		t.Fatal("a record the queue gave up was not counted")
+	}
+	if !strings.Contains(lines.String(), "given up and is not in the trail") {
+		t.Fatalf("the drop was counted and not logged:\n%s", lines.String())
 	}
 }
 

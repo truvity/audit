@@ -36,7 +36,7 @@ Two numbers say it, both from the application's own process:
 
 | metric | what it means |
 |---|---|
-| `audit.emit.queue.pending` | records waiting to be delivered. Rising means the receiver is slow or down. **Not built yet: arrives with the rewrite**, replacing `audit.emit.outbox.pending` |
+| `audit.emit.queue.pending` | records waiting to be delivered. Rising means the receiver is slow or down |
 | `audit.emit.records.dropped` | records the queue gave up on. This is the incident |
 
 Alert on the second and watch the first: a queue that is filling is the

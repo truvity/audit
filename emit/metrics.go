@@ -59,11 +59,17 @@ func Instrument(h Hooks, provider metric.MeterProvider) (Hooks, error) {
 				inner.OnWritten(n, delivery)
 			}
 		},
+		// Counted, then told. With no hook of the application's own the
+		// drop is still logged: New installs its logger only when the hook
+		// is nil, and this wrapper is never nil, so it has to carry the
+		// default itself or every instrumented emitter drops in silence.
 		OnDropped: func(r *record.Record, reason string) {
 			dropped.Add(context.Background(), 1, metric.WithAttributes(attribute.String("action", r.GetAction())))
 			if inner.OnDropped != nil {
 				inner.OnDropped(r, reason)
+				return
 			}
+			logDrop(nil)(r, reason)
 		},
 		OnRefused: func(r *record.Record, err error) {
 			refused.Add(context.Background(), 1, metric.WithAttributes(attribute.String("action", r.GetAction())))

@@ -39,12 +39,12 @@ about a person. It is not a security profile and does not replace one — a
 metering installation composes both, and the same record lands in two copies
 with two retentions.
 
-**`history` is not ready.** It asks for staff to be pseudonymised, which
-means a tenant-facing view needs a key provider before it renders, and
-[0013](../decisions/0013-no-pseudonymisation-keys-by-default.md) made
-`keys.provider: none` the default. It is being reworked so that staff appear
-by kind and role and never by identity, which is what a tenant's
-administrator should see anyway. Compose it after that lands.
+**`history` omits staff.** A tenant's administrator sees what happened to
+their tenant, and who of their own did it; the operator's staff appear by
+kind and role and never by identity, which is what
+[0013](../decisions/0013-no-pseudonymisation-keys-by-default.md) decided so
+that a tenant-facing profile needs no key provider. Compose it where a
+tenant reads their own history, and nowhere else.
 
 **The other four stay as files.** `evidence-etsi`, `pci-dss`, `dora` and
 `nen-7513` each exist for a deployment whose contract or regulator demands

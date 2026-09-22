@@ -5,7 +5,36 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
-## [Unreleased]
+## [0.2.5] - 2026-09-22
+
+### An instrumented emitter no longer drops in silence
+
+`emit.Instrument` always returned a non-nil drop hook -- it counts, then
+calls the application's hook if there is one. `emit.New` installs its own
+"a drop is never silent" logger only when the hook is nil, so the wrapper
+defeated it: every deployment that followed the guide and called
+`Instrument` without a hook of its own dropped records with nothing but a
+metric to show for it. Found reviewing the first adopter, which wires no
+hook and whose runbook promised a log line.
+
+The wrapper now carries the default itself: counted, then told, on
+`slog.Default()` when the application wired nothing. A test provokes a drop
+through an instrumented emitter with no hook and reads the line back; it
+fails on 0.2.4.
+
+### Documentation that still said built things were not built
+
+The deploy guide said `keys.provider: none` was not built and today's
+default was `local`; the emit guide and the runbook said
+`audit.emit.queue.pending` was not built, on the same page the runbook
+relies on it; the configuration reference said `writer.consumers` and the
+extension toggles arrive with the rewrite; the architecture page's status
+table said the chart's modes and goldens were still to come and the
+TypeScript package is on a registry; the read guide said the same; the
+presets policy said `history` was not ready. All of it predates 0.2.0.
+Corrected against the code. Two chart comments and the audit-page design
+note said things the chart does not enforce or the first adopter
+contradicts; reworded.
 
 ### Documentation, from commissioning the first installation
 

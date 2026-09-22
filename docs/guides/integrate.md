@@ -156,7 +156,7 @@ emitter, err := emit.New(emit.Options{
 	Sink:      sink.NewClient(client, receiverURL),
 	Version:   build.Version,
 	Instance:  os.Getenv("HOSTNAME"),
-	Hooks:     hooks, // OnDropped is the one a deployment must not leave empty
+	Hooks:     hooks, // without OnDropped the emitter logs each drop itself
 })
 
 // Wherever the action happens:

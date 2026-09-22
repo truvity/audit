@@ -5,10 +5,10 @@ kind: ServiceAccount
 metadata:
   name: audit
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 
 ---
@@ -21,10 +21,10 @@ kind: ServiceAccount
 metadata:
   name: audit-query
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 
 ---
@@ -37,10 +37,10 @@ kind: ServiceAccount
 metadata:
   name: audit-digest
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 
 ---
@@ -53,10 +53,10 @@ kind: ServiceAccount
 metadata:
   name: audit-verify
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 
 ---
@@ -66,10 +66,10 @@ kind: ConfigMap
 metadata:
   name: audit-deployment
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 data:
   # What `audit-writer --deployment` reads: which presets each profile is
@@ -92,10 +92,10 @@ kind: ConfigMap
 metadata:
   name: audit-grants
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: query
 data:
@@ -111,10 +111,10 @@ kind: Service
 metadata:
   name: audit-query
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: query
 spec:
@@ -135,10 +135,10 @@ kind: Service
 metadata:
   name: audit
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 spec:
   type: ClusterIP
@@ -162,10 +162,10 @@ kind: Deployment
 metadata:
   name: audit-query
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: query
 spec:
@@ -197,7 +197,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query
-          image: ghcr.io/truvity/audit/audit-query:0.2.2
+          image: ghcr.io/truvity/audit/audit-query:0.2.3
           imagePullPolicy: IfNotPresent
           args:
             - --searcher=postgres
@@ -214,7 +214,7 @@ spec:
             - --transit-auth-mount=jwt-devel
             - --transit-auth-role=audit-resolve
             - --transit-jwt-file=/var/run/openbao/token
-            - --version=0.2.2
+            - --version=0.2.3
           env:
             - name: AUDIT_BUCKET
               value: "audit-archive"
@@ -293,10 +293,10 @@ kind: Deployment
 metadata:
   name: audit
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 3
@@ -328,7 +328,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: writer
-          image: ghcr.io/truvity/audit/audit-writer:0.2.2
+          image: ghcr.io/truvity/audit/audit-writer:0.2.3
           imagePullPolicy: IfNotPresent
           args:
             - --deployment=/etc/audit/deployment.yaml
@@ -346,7 +346,7 @@ spec:
             - --transit-auth-mount=jwt-devel
             - --transit-auth-role=audit-writer
             - --transit-jwt-file=/var/run/openbao/token
-            - --version=0.2.2
+            - --version=0.2.3
           env:
             - name: AUDIT_BUCKET
               value: "audit-archive"
@@ -422,10 +422,10 @@ kind: CronJob
 metadata:
   name: audit-digest
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "7 * * * *"
@@ -452,7 +452,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: digest
-              image: ghcr.io/truvity/audit/audit:0.2.2
+              image: ghcr.io/truvity/audit/audit:0.2.3
               imagePullPolicy: IfNotPresent
               args:
                 - digest
@@ -520,10 +520,10 @@ kind: CronJob
 metadata:
   name: audit-verify-security
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "23 3 * * *"
@@ -549,7 +549,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: verify
-              image: ghcr.io/truvity/audit/audit:0.2.2
+              image: ghcr.io/truvity/audit/audit:0.2.3
               imagePullPolicy: IfNotPresent
               args:
                 - verify
@@ -591,10 +591,10 @@ kind: CronJob
 metadata:
   name: audit-clock-sync
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "13 2 * * *"
@@ -620,7 +620,7 @@ spec:
               type: RuntimeDefault
           containers:
             - name: clock-sync
-              image: ghcr.io/truvity/audit/audit:0.2.2
+              image: ghcr.io/truvity/audit/audit:0.2.3
               imagePullPolicy: IfNotPresent
               args:
                 - clock-sync
@@ -657,10 +657,10 @@ kind: ServiceAccount
 metadata:
   name: audit-migrate
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
@@ -680,10 +680,10 @@ kind: Job
 metadata:
   name: audit-migrate
   labels:
-    helm.sh/chart: audit-0.2.2
+    helm.sh/chart: audit-0.2.3
     app.kubernetes.io/name: audit
     app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.2"
+    app.kubernetes.io/version: "0.2.3"
     app.kubernetes.io/managed-by: Helm
   annotations:
     "helm.sh/hook": pre-install,pre-upgrade
@@ -708,7 +708,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: ghcr.io/truvity/audit/audit:0.2.2
+          image: ghcr.io/truvity/audit/audit:0.2.3
           imagePullPolicy: IfNotPresent
           args:
             - migrate

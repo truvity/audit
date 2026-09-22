@@ -5,7 +5,24 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
-## [Unreleased]
+## [0.2.3] - 2026-09-22
+
+Two fixes and a correction, all found by running a real installation.
+
+### The scheduled jobs read the archive from the environment
+
+Every CronJob failed, hourly and silently: `audit: name the archive's bucket
+with --bucket`. The chart gives each job the archive in `AUDIT_BUCKET`,
+`AUDIT_PREFIX` and `AWS_REGION`, which `audit-writer` and `audit-query`
+already read as flag defaults and which `audit` did not read at all. So the
+jobs ran with no bucket, said an argument was missing, and looked like a
+deployment that forgot one rather than a binary that ignored one.
+
+All three flags now default from the environment in every subcommand that
+takes them -- `verify`, `replay`, `reindex`, `digest`, `hold` and `key` --
+and a flag given explicitly still wins. `cmd/audit` had no tests at all; it
+now has one that sets `AUDIT_BUCKET` and asserts that each of those six gets
+past the check, verified to fail on all six without the fix.
 
 ### The S3 guide names `schema/` among the writer's reads
 

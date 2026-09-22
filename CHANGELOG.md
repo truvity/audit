@@ -5,6 +5,24 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [0.2.4] - 2026-09-22
+
+### A put carries the legal-hold header only when it places a hold
+
+The digest job could not write its own digest: `AccessDenied ...
+s3:PutObjectLegalHold`. Every put into a locked archive sent the header,
+as OFF when there was no hold, and S3 charges the permission for the
+header's presence whatever its value. So writing the archive at all
+required the right to place a legal hold -- which the digest and verify
+jobs, whose policies follow the guide's least privilege, do not have and
+should not.
+
+The header is now sent only to place a hold. An absent header and OFF
+leave the object in the same state, because a bucket has no default legal
+hold the way it has a default retention, so nothing about an object
+changes. The guide says so too, with what the refusal looks like for
+anyone who meets it on an older version.
+
 ## [0.2.3] - 2026-09-22
 
 Two fixes and a correction, all found by running a real installation.

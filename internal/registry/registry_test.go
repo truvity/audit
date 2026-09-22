@@ -252,3 +252,69 @@ func TestRegisteringIsReportedOnce(t *testing.T) {
 		t.Fatalf("the report does not say who and when: %+v", seen[0])
 	}
 }
+
+// A catalogue asking for a property to be hashed is refused where a deployment
+// runs no key provider. Accepting it would let the application start against an
+// installation that dead-letters every record carrying that property.
+func TestRegisterRefusesHashingWithNoKeys(t *testing.T) {
+	r := registryFor(t, nil, "wallet")
+	e := registry.Entry{
+		Source: "wallet", Version: "1.0.0",
+		Document: []byte(hashingDoc),
+		Schemas:  map[string][]byte{hashingSchemaID: []byte(hashingSchema)},
+	}
+
+	problems, err := r.Register(context.Background(), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) == 0 {
+		t.Fatal("a hashing catalogue was accepted by a deployment with no keys")
+	}
+	if !strings.Contains(strings.Join(problems, " "), "hashed") {
+		t.Errorf("the problem should say what is wrong: %v", problems)
+	}
+
+	// With a provider there is nothing to warn about.
+	with := registryFor(t, nil, "wallet")
+	with.Keys = true
+	problems, err = with.Register(context.Background(), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range problems {
+		if strings.Contains(p, "hashed") {
+			t.Errorf("a deployment with keys was told about hashing: %v", problems)
+		}
+	}
+}
+
+const hashingSchemaID = "https://schemas.example/wallet/credential-issued/v1.json"
+
+const hashingDoc = `
+source: wallet
+version: "1.0.0"
+locales: [en]
+actions:
+  wallet.credential.issued:
+    summary: A credential was issued.
+    operation: create
+    categories: [data_change]
+    profiles: [security]
+    data_schema: ` + hashingSchemaID + `
+    message: { en: "{actor} issued a credential" }
+`
+
+const hashingSchema = `{
+  "$id": "` + hashingSchemaID + `",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "device_id": {
+      "type": "string",
+      "x-audit-class": "audit",
+      "x-audit-pii": "identifier",
+      "x-audit-sensitive": "hmac"
+    }
+  }
+}`

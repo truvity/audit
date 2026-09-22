@@ -95,6 +95,19 @@ func (v Validate) Run() (problems int) {
 		printf(out, "profile %s: nothing emits these categories it requires: %s\n",
 			name, strings.Join(missing, ", "))
 	}
+
+	// What the deployment will refuse to start with, said here instead: an
+	// application's CI is where this costs nothing to fix.
+	var hashed []string
+	for _, c := range catalogues {
+		for _, h := range c.Hashes() {
+			hashed = append(hashed, c.Source+" "+h)
+		}
+	}
+	if len(hashed) > 0 {
+		sort.Strings(hashed)
+		printf(out, "hashed properties, which need a key provider: %s\n", strings.Join(hashed, ", "))
+	}
 	return problems
 }
 

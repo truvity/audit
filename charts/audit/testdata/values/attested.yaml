@@ -1,0 +1,45 @@
+# The attested tier on an S3-compatible store that is not AWS: no Object
+# Lock, so the signed digest chain under a managed key is the integrity
+# control; an endpoint and path-style addressing; static credentials, since
+# the store has no pod identity; and the query service with an exports bucket
+# on a store of its own. The profile composes only presets whose frameworks
+# do not demand the lock, or the writer would refuse to start.
+mode: direct
+bucket: audit-archive
+prefix: audit/app
+region: auto
+endpoint: https://s3.example.test
+pathStyle: true
+existingSecret: audit-store-credentials
+lockMode: none
+anonymousWrites: true
+externalIdentifiersAreOpaque: true
+profiles:
+  security:
+    presets: [security]
+  history:
+    presets: [history]
+query:
+  enabled: true
+  replicas: 1
+  searcher: s3scan
+  grants:
+    issuers:
+      - url: https://id.example.test
+        audience: audit
+  exports:
+    bucket: audit-exports
+    endpoint: https://files.example.test
+    pathStyle: true
+    existingSecret: audit-exports-credentials
+jobs:
+  digest:
+    signingKey:
+      existingSecret: audit-signing-key
+  verify:
+    publicKey:
+      existingSecret: audit-signing-public
+  purge:
+    enabled: false
+  clockSync:
+    ntp: [time.example.test]

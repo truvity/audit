@@ -35,7 +35,7 @@ Composition rules:
 | `forbidden_fields`, `forbidden_pii` | union; forbidden beats optional |
 | `identity.<category>` | strictest: omit > pseudonym > scoped > clear |
 | `retention` | longest; `minimum_days` may only be raised; `after_expiry` beats `fixed` |
-| `integrity` | required > recommended; compliance > governance; daily > none |
+| `integrity` | required > recommended; compliance > governance > none for `object_lock_mode`, which is the least lock the store must run ([0014](../decisions/0014-lock-modes-and-store-tiers.md)); daily > none. The `note` kept is the one behind the lock mode that won |
 | `review.cadence` | most frequent |
 | `pipeline` | longest windows; shortest `close_after_hours` |
 

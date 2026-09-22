@@ -306,6 +306,10 @@ spec:
                 - --profile=security
                 - --last=24h
                 - --public-key=/etc/audit/public/public.pem
+                # With the deployment the check knows what lock the profile
+                # demands: an object with none is INVALID under a profile
+                # that demands one, and `unlocked` under one that does not.
+                - --deployment=/etc/audit/deployment.yaml
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
                 - --record
@@ -326,10 +330,17 @@ spec:
                 - name: public
                   mountPath: /etc/audit/public
                   readOnly: true
+                - name: deployment
+                  mountPath: /etc/audit/deployment.yaml
+                  subPath: deployment.yaml
+                  readOnly: true
           volumes:
             - name: public
               secret:
                 secretName: audit-signing-public
+            - name: deployment
+              configMap:
+                name: audit-deployment
 
 ---
 # Source: audit/templates/cronjobs.yaml

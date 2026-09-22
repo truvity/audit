@@ -32,6 +32,11 @@ type Verify struct {
 	// MinimumRetention lets the check also say whether an object's lock is
 	// shorter than its profile requires.
 	MinimumRetention map[string]time.Duration
+	// RequiredLock is the lock mode each profile demands, from the composed
+	// deployment when the command was given one. With it an object with no
+	// lock is INVALID under a profile that demands one and `unlocked` under
+	// one that does not; without it locks are not spoken of.
+	RequiredLock map[string]string
 	// Lookback is how far before the range to look for objects written in it
 	// but keyed under an older day. It wants to be at least what the digest job
 	// used, or an object the job covered from further back is not looked at.
@@ -63,6 +68,7 @@ func (v Verify) Run(ctx context.Context) (int, error) {
 		Store:            v.Store,
 		PublicKeyPEM:     v.PublicKeyPEM,
 		MinimumRetention: v.MinimumRetention,
+		RequiredLock:     v.RequiredLock,
 		Lookback:         v.Lookback,
 	}
 	report, err := verifier.Verify(ctx, v.Profile, v.From, v.To)

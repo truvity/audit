@@ -29,21 +29,37 @@ so a first installation that is unsure should start direct.
 Five things, none of which the chart creates. It takes references to all of
 them and refuses to render when one is missing.
 
-### A bucket with Object Lock, and a prefix
+### A bucket, with or without Object Lock, and a prefix
 
-The bucket belongs to the **environment**, not to the installation: Object
-Lock in compliance mode, versioning, a policy that denies deletes to everyone,
-replication and lifecycle, configured once. Object Lock can only be turned on
-when a bucket is created:
+The bucket belongs to the **environment**, not to the installation:
+versioning, a policy that denies deletes to everyone, replication and
+lifecycle, configured once. Which of two tiers it is
+([0014](../decisions/0014-lock-modes-and-store-tiers.md)) depends on the
+profiles the installation composes:
 
-```sh
-aws s3api create-bucket --bucket example-audit \
-  --create-bucket-configuration LocationConstraint=eu-central-1 \
-  --object-lock-enabled-for-bucket
-```
+- **record** — Object Lock in compliance mode. Required by a profile
+  composed from `pci-dss`, `nen-7513`, `dora` or `evidence-etsi`. Object
+  Lock can only be turned on when a bucket is created:
 
-The bucket needs no default retention: the writer sets each object's from its
-profile. Each application then writes under a **prefix of its own**
+  ```sh
+  aws s3api create-bucket --bucket example-audit \
+    --create-bucket-configuration LocationConstraint=eu-central-1 \
+    --object-lock-enabled-for-bucket
+  ```
+
+- **attested** — no lock; the signed digest chain under a managed key is the
+  integrity control. Enough for `security`, `history` and `billing-nl`, and
+  the only tier a store without the Object Lock API can offer. The same
+  command without `--object-lock-enabled-for-bucket`, and `lockMode: none`
+  in the values. On any S3-compatible store that is not AWS — a service from
+  another provider, MinIO, Ceph — add `endpoint`, `pathStyle` if its
+  certificate does not cover a bucket subdomain, and `existingSecret` with
+  static keys if it has no pod identity; the
+  [S3 guide](../operations/s3-guide.md#s3-compatible-stores) has the recipe.
+
+The bucket needs no default retention: on the record tier the writer sets
+each object's from its profile, and on the attested tier retention is the
+bucket's lifecycle rule. Each application then writes under a **prefix of its own**
 (`audit/<application>/…`), which is what keeps two installations apart in one
 bucket. [Sharing a bucket](../operations/s3-guide.md#sharing-a-bucket) has the
 policy, and [IAM per component](../operations/s3-guide.md#iam-per-component)
@@ -174,6 +190,8 @@ reason lives. What every installation sets, whichever shape:
 | value | what it is |
 |---|---|
 | `bucket`, `prefix`, `region`, `kmsKey` | the archive, and this application's part of it |
+| `lockMode` | `compliance` (the default), `governance` or `none`: which tier the bucket is. The writer refuses to start if a profile demands more |
+| `endpoint`, `pathStyle`, `existingSecret` | only on an S3-compatible store that is not AWS: where it is, how the bucket is addressed, and static keys if it has no pod identity |
 | `profiles` | what copies are kept, each composed from presets |
 | `database` | the index, as a Secret holding the URL |
 | `query.enabled`, `query.database`, `query.grants` | the read path, its own role, and who may read what |
@@ -201,13 +219,19 @@ Each refusal says why, and they are listed in
 [the chart README](../../charts/audit/README.md) with
 [`values.yaml`](../../charts/audit/values.yaml) commenting every setting.
 
+One refusal the chart cannot make is the binaries': a profile whose presets
+demand a lock stricter than `lockMode` — `pci-dss` on `lockMode: none`, say.
+The presets' readings live in the binaries, not the chart, so the writer, the
+digest job and the verify job refuse to **start** instead, naming the profile
+and both modes, and the first rollout is where it shows.
+
 ## 4. Check that it works
 
 1. **The receiver is up.** The chart names its Deployment after the release
    and the dependency — `kubectl -n <app> rollout status deploy/<release>-audit`.
    It refuses to start, with the reason in its log, if the database is at a
-   schema version it does not know, the stream is missing, or the holds cannot
-   be read.
+   schema version it does not know, the stream is missing, the holds cannot
+   be read, or a profile demands a lock the store is not written with.
 2. **The application registered its catalogue.** It logs the registration at
    start-up, and refuses to start if the receiver refused the catalogue.
 3. **A record goes through.** Perform an action the catalogue declares, or run

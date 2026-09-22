@@ -395,3 +395,76 @@ func TestVerifyFindsAnUncoveredObjectUnderAnyTenant(t *testing.T) {
 		t.Fatalf("an object under a second tenant that no digest accounts for was not reported: %v", report.Problems())
 	}
 }
+
+// A store with no lock -- one without the Object Lock API, or the archive of
+// a deployment whose profiles demand none -- holds objects with no retention.
+// Told what the profile demands, the verifier reports such an object as
+// `unlocked` under a profile that demands no lock: information, since the
+// chain is the control there. Under a profile that demands one, an object
+// with none is deletable, which is the one thing that profile forbids, and
+// that is INVALID. Told nothing, it says nothing about locks: an auditor with
+// the public key and read access still gets the chain checked.
+func TestVerifyReportsUnlockedObjectsByWhatTheProfileDemands(t *testing.T) {
+	b := setup(t)
+	b.store.Unlocked = true
+	day := at(t, "2026-09-17T00:00:00Z")
+	window := at(t, "2026-09-17T10:00:00Z")
+	key := put(t, b, day, "one.ndjson.zst", "one")
+	seal(t, b, window)
+
+	report, err := b.verifier.Verify(context.Background(), "security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK() || report.Unlocked() != 0 || strings.Contains(report.String(), "unlocked") {
+		t.Fatalf("with no deployment nothing should be said about locks:\n%s", report.String())
+	}
+
+	b.verifier.RequiredLock = map[string]string{"security": "none"}
+	report, err = b.verifier.Verify(context.Background(), "security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK() {
+		t.Fatalf("an unlocked object under a profile that demands no lock is not a problem:\n%s", report.String())
+	}
+	if report.Unlocked() != 1 || !strings.Contains(report.String(), "unlocked "+key) {
+		t.Fatalf("the object should be reported as unlocked:\n%s", report.String())
+	}
+	if !strings.Contains(report.String(), "1 unlocked, 0 problems") {
+		t.Fatalf("the summary should count it:\n%s", report.String())
+	}
+
+	b.verifier.RequiredLock = map[string]string{"security": "compliance"}
+	report, err = b.verifier.Verify(context.Background(), "security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.OK() {
+		t.Fatalf("an unlocked object under a compliance profile is deletable, and was not caught:\n%s", report.String())
+	}
+	if !strings.Contains(report.String(), "INVALID  "+key+": the object carries no retention, and profile security demands Object Lock in compliance mode") {
+		t.Fatalf("the finding should name the object, the profile and the mode:\n%s", report.String())
+	}
+	if report.Unlocked() != 0 {
+		t.Fatal("a problem is not also information")
+	}
+}
+
+// A locked object under a profile told what it demands is simply valid: the
+// unlocked line is for the store that has no lock, never for one that does.
+func TestVerifyDoesNotCallALockedObjectUnlocked(t *testing.T) {
+	b := setup(t)
+	b.verifier.RequiredLock = map[string]string{"security": "none"}
+	day := at(t, "2026-09-17T00:00:00Z")
+	window := at(t, "2026-09-17T10:00:00Z")
+	put(t, b, day, "one.ndjson.zst", "one")
+	seal(t, b, window)
+	report, err := b.verifier.Verify(context.Background(), "security", window, window.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK() || report.Unlocked() != 0 {
+		t.Fatalf("a locked object was called unlocked:\n%s", report.String())
+	}
+}

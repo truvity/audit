@@ -75,6 +75,12 @@ spec:
             - --exports={{ . }}
             - --export-expiry={{ $.Values.query.exports.expiry }}
             - --export-link-valid={{ $.Values.query.exports.linkValid }}
+            {{- with $.Values.query.exports.endpoint }}
+            - --exports-endpoint={{ . }}
+            {{- end }}
+            {{- if $.Values.query.exports.pathStyle }}
+            - --exports-path-style
+            {{- end }}
             {{- end }}
             {{- if $resolveLocal }}
             - --key-provider=local
@@ -97,6 +103,31 @@ spec:
             {{- end }}
             {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 12 }}{{- end }}
             {{- include "audit.trustEnv" . | nindent 12 }}
+            {{- with .Values.query.exports.existingSecret }}
+            # A second identity for the exports bucket, when the archive's
+            # credentials do not reach it. Named variables rather than
+            # envFrom: one process reads one AWS_ACCESS_KEY_ID, so the
+            # exports' arrive under their own names.
+            - name: AUDIT_EXPORTS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: AWS_ACCESS_KEY_ID
+            - name: AUDIT_EXPORTS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AUDIT_EXPORTS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: AWS_SESSION_TOKEN
+                  optional: true
+            {{- end }}
+          {{- if .Values.existingSecret }}
+          {{- include "audit.archiveEnvFrom" . | nindent 10 }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.query.service.port }}

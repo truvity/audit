@@ -52,11 +52,12 @@ retention:
   note: "A product decision. Contracts may set it per tenant; the writer sets Object Lock per copy, so a longer tenant term is a per-tenant profile."
 integrity:
   digest: recommended
-  object_lock_mode: compliance
+  object_lock_mode: none
   timestamp_anchor: none
   legal_hold: available
   clock_sync_event: none
   log_access_logged: true
+  note: "A product decision, not a regulatory one: tenant-facing activity is kept for the tenant, and the digest chain shows it was not altered. A lock is optional."
 pipeline:
   dedupe_window_days: 14
   stream_horizon_days: 7

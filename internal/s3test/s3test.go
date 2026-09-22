@@ -52,8 +52,11 @@ const region = "eu-central-1"
 // Open returns a store over a bucket of this test's own.
 //
 // Object Lock has to be asked for when a bucket is created and cannot be added
-// afterwards, so the bucket is made with it: what these tests exercise is the
-// writer's real path, which always names a lock mode.
+// afterwards, so with lock the bucket is made with it and the store writes in
+// compliance mode: the writer's path on the record tier. Without, the bucket
+// has no Object Lock and the store writes with lock mode none: the writer's
+// path on the attested tier, and the exports bucket's shape. Both are real
+// paths, and the harness serves both so that neither is the kinder double.
 //
 // The bucket's name ends in a random suffix, because a locked bucket cannot be
 // taken away afterwards and so the same name cannot be asked for twice. See
@@ -116,7 +119,11 @@ func OpenRaw(t *testing.T, lock bool) Raw {
 	}
 	t.Cleanup(func() { release(client, bucket, lock) })
 
-	built, err := s3store.New(client, s3store.Options{Bucket: bucket, Unlocked: !lock})
+	mode := s3store.Compliance
+	if !lock {
+		mode = s3store.None
+	}
+	built, err := s3store.New(client, s3store.Options{Bucket: bucket, Lock: mode})
 	if err != nil {
 		t.Fatal(err)
 	}

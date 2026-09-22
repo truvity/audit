@@ -58,6 +58,30 @@ account's root included, can overwrite or delete them before their retention
 ends — and not yet by the chain. A deployment that needs a shorter window runs
 the job more often.
 
+## Two tiers
+
+That paragraph describes the **record** tier, which is
+[0003](../decisions/0003-s3-object-lock-as-the-record.md): a store with the
+Object Lock API, written in compliance mode. There is a second,
+[0014](../decisions/0014-lock-modes-and-store-tiers.md): the **attested**
+tier, the same archive and the same chain on a store with no lock — one
+without the Object Lock API, such as an S3-compatible service from another
+provider, MinIO or Ceph, or a locked-capable bucket a deployment chooses not
+to lock. On it the chain is the whole of the integrity story: it still proves
+nothing was changed or removed since it was sealed, and the gap the lock
+alone covered — the unsealed hour, and the operator's own ability to delete
+— is covered by compensating controls instead: a managed signing key, which
+is required rather than recommended there; a shorter digest interval; no
+delete permission on any component; and an administrative no-delete rule
+where the store offers one.
+
+Which tier a deployment may run on is the profiles' decision. Every preset
+says the least lock its framework demands — `compliance` for `pci-dss`,
+`nen-7513`, `dora` and `evidence-etsi`, `none` for `security`, `history` and
+`billing-nl` — and the writer, the digest job and the verify job refuse to
+start when the deployment's `--lock-mode` is weaker than any composed profile
+demands.
+
 ## Who holds the key
 
 With a signing key the writer holds itself, the chain proves that objects have
@@ -65,7 +89,9 @@ not changed since signing, by a party who could also have chosen what to sign.
 A managed key, in KMS or a transit engine, never leaves its provider, so the
 chain also proves the operator did not choose what to sign. A deployment that
 must answer an assessor uses a managed key; the local signer is for tests and
-for a deployment that accepts the weaker claim knowingly.
+for a deployment that accepts the weaker claim knowingly. On the attested tier
+there is no lock to make the second claim for the current hour, so a managed
+key is the only signer that proves anything there.
 
 ## Verify
 
@@ -74,6 +100,14 @@ walks the chain newest-first and prints per digest and per object `valid`,
 `INVALID: hash mismatch`, `INVALID: signature`, `INVALID: missing`,
 `INVALID: retention shorter than profile`, and a summary. Exit code is
 non-zero on any invalid entry. Auditors run it with read-only credentials.
+
+Given the deployment (`--deployment`), it also knows what lock each profile
+demands. An object that carries no retention is then `unlocked` — printed
+and counted, not a problem — under a profile that demands no lock, and
+`INVALID: the object carries no retention` under a profile that demands one:
+that object is deletable, which is the one thing the profile forbids.
+Without the deployment nothing is said about locks, so an auditor with the
+public key and read access still gets the chain checked.
 
 ## Nightly
 

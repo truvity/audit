@@ -170,8 +170,16 @@ understand, or — worse — to a trail that looks fine and is not.
 {{- fail "audit: `jobs.clockSync.ntp` must name at least one time reference while `jobs.clockSync.enabled`. A clock check with nothing to check against would report that the clock was not checked, every night." -}}
 {{- end -}}
 
-{{- if and .Values.governance (not .Values.kmsKey) -}}
-{{- fail "audit: `governance` is on. Governance mode lets a privileged role shorten a retention, which is the property the archive exists to deny. Turn it off, or say so deliberately in a values file of your own." -}}
+{{- if not (has .Values.lockMode (list "compliance" "governance" "none")) -}}
+{{- fail (printf "audit: `lockMode` is `compliance`, `governance` or `none`, not %q. The binaries refuse any other word." .Values.lockMode) -}}
+{{- end -}}
+
+{{- if and .Values.governance (ne .Values.lockMode "compliance") (ne .Values.lockMode "governance") -}}
+{{- fail (printf "audit: `governance: true` and `lockMode: %s` are two answers to one question. `governance` is the deprecated spelling of `lockMode: governance`; say one thing." .Values.lockMode) -}}
+{{- end -}}
+
+{{- if and .Values.query.enabled .Values.query.exports.existingSecret (not .Values.query.exports.bucket) -}}
+{{- fail "audit: `query.exports.existingSecret` names credentials for an exports bucket that `query.exports.bucket` does not name. Name the bucket, or drop the Secret." -}}
 {{- end -}}
 
 {{- end -}}

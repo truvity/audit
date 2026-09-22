@@ -71,6 +71,7 @@ integrity:
   legal_hold: recommended
   clock_sync_event: daily
   log_access_logged: true
+  note: "ETSI EN 319 401 7.10 requires the integrity of evidence records kept for a conformity assessment body, and the assessment expects storage the operator cannot alter: WORM storage is the reading."
 review:
   automated_alerting: true
   cadence: quarterly

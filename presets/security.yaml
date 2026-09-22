@@ -70,11 +70,12 @@ retention:
   note: "PCI DSS fixes 12 months with 3 hot; NIS2, ISO 27001 and DORA leave the number to the entity; French CNIL guidance suggests 6 months extendable to 12 for logs with personal data. 365 is the defended default; deployments in PCI scope compose the pci-dss preset which raises the minimum."
 integrity:
   digest: required
-  object_lock_mode: compliance
+  object_lock_mode: none
   timestamp_anchor: none
   legal_hold: available
   clock_sync_event: daily
   log_access_logged: true
+  note: "NIS2 and ISO/IEC 27001 are management-system standards: the entity picks the control that protects logs from alteration, and a signed digest chain under a managed key with no delete permission is a valid control. A lock is optional."
 review:
   automated_alerting: true
   cadence: weekly

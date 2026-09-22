@@ -5,6 +5,15 @@
 // writer may use and nobody may destroy. This package sets a retention on every
 // object it writes and refuses to reuse a key, and it does nothing else that
 // the bucket's own configuration should be doing. See docs/operations/s3-guide.md.
+//
+// The bucket need not be on AWS. Any store that speaks the S3 API takes the
+// same calls, at an endpoint of its own (Options.Endpoint); which of the
+// calls it needs to answer depends on the lock mode. A store written in
+// compliance or governance mode needs PutObjectRetention, PutObjectLegalHold
+// and the lock headers on PutObject, which is the Object Lock API and which
+// not every store has. A store written with no lock (Options.Lock = None)
+// needs PutObject, GetObject, HeadObject, ListObjectsV2 and presigning, which
+// every one of them has. See docs/decisions/0014-lock-modes-and-store-tiers.md.
 package s3store
 
 import (
@@ -35,18 +44,51 @@ type API interface {
 	PutObjectRetention(ctx context.Context, in *s3.PutObjectRetentionInput, opts ...func(*s3.Options)) (*s3.PutObjectRetentionOutput, error)
 }
 
+// LockMode is the Object Lock mode a store writes every object in.
+type LockMode string
+
+// The three lock modes, from the strongest to none.
+const (
+	// Compliance is the only mode that means what this system says it means:
+	// nobody, the account's root included, can shorten a retention or delete
+	// a version under it. It is the default.
+	Compliance LockMode = "compliance"
+	// Governance can be bypassed by anyone holding the permission to bypass
+	// it, and the console sends that header by default. It exists for a
+	// non-production bucket where a mistake has to be undoable.
+	Governance LockMode = "governance"
+	// None writes no lock at all. It is the export bucket's shape, and the
+	// archive's on a store that has no Object Lock API, or under profiles
+	// whose frameworks do not demand one: the digest chain and a managed
+	// signing key are then the whole of the integrity story. A bucket
+	// without Object Lock refuses a put that names a lock mode, so this is
+	// also the only way to write to such a bucket.
+	None LockMode = "none"
+)
+
+// ParseLockMode reads a lock mode as a flag or an environment variable spells
+// it. Empty is compliance: the mode an archive uses unless told otherwise.
+func ParseLockMode(s string) (LockMode, error) {
+	switch LockMode(s) {
+	case "", Compliance:
+		return Compliance, nil
+	case Governance:
+		return Governance, nil
+	case None:
+		return None, nil
+	}
+	return "", fmt.Errorf("s3store: lock mode %q is not one of compliance, governance or none", s)
+}
+
 // Store is an object store backed by a bucket.
 type Store struct {
 	api    API
 	bucket string
 	prefix string
 	kmsKey string
-	// lock is the Object Lock mode written on every object. Compliance is the
-	// only mode that means what this system says it means: governance can be
-	// bypassed by anyone holding the permission to bypass it, and the console
-	// sends that header by default.
+	// lock is the Object Lock mode written on every object; see LockMode.
 	lock types.ObjectLockMode
-	// unlocked is the export bucket's shape; see Options.Unlocked.
+	// unlocked is a store with no lock at all; see Options.Lock.
 	unlocked bool
 	// presign is set when the store was built from a config, which is what a
 	// presigner needs. A store built from a bare API — the tests — has none,
@@ -63,16 +105,27 @@ type Options struct {
 	// KMSKeyID encrypts objects. Empty uses whatever the bucket's default
 	// encryption is, which a deployment should still be setting.
 	KMSKeyID string
-	// Governance writes the weaker lock mode. It exists for a non-production
-	// bucket where a mistake has to be undoable, and it is not what a real
-	// archive uses.
-	Governance bool
-	// Unlocked writes no lock at all, and is for the one bucket that must not
-	// have one: exports. An export is a copy of records made to be taken away
-	// and then cleared, and a lock would keep it instead. A bucket without
-	// Object Lock refuses a put that names a lock mode, so this is also the
-	// only way to write to such a bucket.
-	Unlocked bool
+	// Lock is the Object Lock mode written on every object. Empty is
+	// Compliance. None writes no lock and sends no lock header, and is what
+	// an exports bucket takes, and what the archive takes on a store with no
+	// Object Lock API; SetLegalHold and ExtendRetention then answer
+	// store.ErrNotLockable rather than sending a request the store would
+	// refuse less clearly.
+	Lock LockMode
+	// Endpoint is the store's URL, for a store that is not AWS S3. Empty keeps
+	// the SDK's own resolution, which is AWS unless the environment says
+	// otherwise (AWS_ENDPOINT_URL_S3 is read by the SDK's configuration
+	// loader, so it works with this empty). With an endpoint set, the SDK's
+	// default request checksum -- a CRC32 it adds to every put, which stores
+	// other than AWS reject or ignore -- is sent only where the API requires
+	// one; the SHA-256 this package asks for on every put is still sent, as
+	// a checksum the object carries.
+	Endpoint string
+	// PathStyle addresses the bucket as endpoint/bucket/key rather than
+	// bucket.endpoint/key. It is a property of the store's certificate --
+	// does its wildcard cover a bucket subdomain? -- rather than of the
+	// endpoint, which is why it is its own switch.
+	PathStyle bool
 }
 
 // New returns a store.
@@ -83,20 +136,28 @@ func New(api API, o Options) (*Store, error) {
 	if o.Bucket == "" {
 		return nil, errors.New("s3store: a bucket is required")
 	}
-	lock := types.ObjectLockModeCompliance
-	if o.Governance {
-		lock = types.ObjectLockModeGovernance
+	mode, err := ParseLockMode(string(o.Lock))
+	if err != nil {
+		return nil, err
 	}
-	return &Store{
-		api: api, bucket: o.Bucket, prefix: o.Prefix, kmsKey: o.KMSKeyID,
-		lock: lock, unlocked: o.Unlocked,
-	}, nil
+	s := &Store{api: api, bucket: o.Bucket, prefix: o.Prefix, kmsKey: o.KMSKeyID}
+	switch mode {
+	case Compliance:
+		s.lock = types.ObjectLockModeCompliance
+	case Governance:
+		s.lock = types.ObjectLockModeGovernance
+	case None:
+		s.unlocked = true
+	}
+	return s, nil
 }
 
 // FromConfig returns a store using the ambient AWS configuration, which in a
-// cluster is the workload's own identity.
+// cluster is the workload's own identity, or -- on a store with no such
+// mechanism -- the static credentials the environment carries
+// (AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, which the SDK reads itself).
 func FromConfig(cfg aws.Config, o Options) (*Store, error) {
-	client := s3.NewFromConfig(cfg)
+	client := s3.NewFromConfig(cfg, configure(o))
 	built, err := New(client, o)
 	if err != nil {
 		return nil, err
@@ -105,6 +166,39 @@ func FromConfig(cfg aws.Config, o Options) (*Store, error) {
 	// carries, which a bare API value does not have.
 	built.presign = s3.NewPresignClient(client)
 	return built, nil
+}
+
+// Lock is the mode this store writes in.
+func (s *Store) Lock() LockMode {
+	switch {
+	case s.unlocked:
+		return None
+	case s.lock == types.ObjectLockModeGovernance:
+		return Governance
+	}
+	return Compliance
+}
+
+// configure is what the options change about the client. With no endpoint
+// and no path style it changes nothing, so an AWS deployment gets the client
+// it always had.
+func configure(o Options) func(*s3.Options) {
+	return func(c *s3.Options) {
+		if o.Endpoint != "" {
+			c.BaseEndpoint = aws.String(o.Endpoint)
+			// The SDK adds a CRC32 to every put and expects one on every get
+			// unless told to do so only where the operation requires it.
+			// AWS answers both; a store that is not AWS may reject the
+			// request or answer without the checksum, and either way the
+			// put fails for a reason that has nothing to do with the
+			// archive. The SHA-256 the put names explicitly is unaffected.
+			c.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			c.ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired
+		}
+		if o.PathStyle {
+			c.UsePathStyle = true
+		}
+	}
 }
 
 // Put implements store.Store.
@@ -238,8 +332,13 @@ func (s *Store) List(ctx context.Context, prefix, after string, limit int) ([]st
 	}
 }
 
-// SetLegalHold implements store.Store.
+// SetLegalHold implements store.Store. A store with no lock has nothing to
+// hold with, and says so as store.ErrNotLockable rather than sending a
+// request the bucket would refuse less clearly.
 func (s *Store) SetLegalHold(ctx context.Context, key string, on bool) error {
+	if s.unlocked {
+		return fmt.Errorf("%w: a legal hold cannot be placed on %s", store.ErrNotLockable, key)
+	}
 	_, err := s.api.PutObjectLegalHold(ctx, &s3.PutObjectLegalHoldInput{
 		Bucket:    aws.String(s.bucket),
 		Key:       aws.String(s.key(key)),
@@ -255,7 +354,7 @@ func (s *Store) SetLegalHold(ctx context.Context, key string, on bool) error {
 // date under compliance mode; this does not try to be cleverer than that.
 func (s *Store) ExtendRetention(ctx context.Context, key string, until time.Time) error {
 	if s.unlocked {
-		return fmt.Errorf("s3store: %s is in an unlocked bucket and has no retention to extend", key)
+		return fmt.Errorf("%w: %s has no retention to extend", store.ErrNotLockable, key)
 	}
 	_, err := s.api.PutObjectRetention(ctx, &s3.PutObjectRetentionInput{
 		Bucket: aws.String(s.bucket),

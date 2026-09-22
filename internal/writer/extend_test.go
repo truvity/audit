@@ -19,6 +19,7 @@ import (
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
 )
 
@@ -331,5 +332,38 @@ func TestAnExtensionThatCannotBeMadeIsRecordedNotFatal(t *testing.T) {
 	reasons := failed[0].GetOutcome().GetReason() + " | " + failed[1].GetOutcome().GetReason()
 	if !strings.Contains(reasons, "another tenant") || !strings.Contains(reasons, "no-such-record") {
 		t.Fatalf("reasons: %s", reasons)
+	}
+}
+
+// On a store with no lock -- one without the Object Lock API, or a
+// deployment whose profiles demand none -- there is no retention to lengthen.
+// The store says so as store.ErrNotLockable, and the writer treats it as it
+// treats any extension it cannot make: the addendum is written, the failure
+// is in the trail with the reason, the hook fires, and nothing is fatal. A
+// deployment that composes an after_expiry profile on such a store learns it
+// from the trail rather than from a writer that stopped.
+func TestAnExtensionOnAnUnlockedStoreIsRecordedAsNotLockable(t *testing.T) {
+	b := buildExtending(t)
+	b.store.Unlocked = true
+	issuance := credential(t, "issuer.credential.issued", "acme", "2031-09-17T00:00:00Z")
+	b.feed(t, issuance)
+	if got := b.lockOf(t, issuance.GetId()); !got.IsZero() {
+		t.Fatalf("an unlocked store kept a retention %s", got)
+	}
+
+	b.setNow(day(t, "2027-09-17T10:30:00Z"))
+	renewal := credential(t, "issuer.credential.renewed", "acme", "2034-09-17T00:00:00Z", issuance.GetId())
+	renewal.OccurredAt = timestamppb.New(day(t, "2027-09-17T10:30:00Z"))
+	b.feed(t, renewal)
+
+	ok, failed := b.extensions(t)
+	if len(ok) != 0 || len(failed) != 1 || len(b.failed) != 1 {
+		t.Fatalf("%d extended, %d failures recorded, %d reported", len(ok), len(failed), len(b.failed))
+	}
+	if reason := failed[0].GetOutcome().GetReason(); !strings.Contains(reason, store.ErrNotLockable.Error()) {
+		t.Fatalf("the trail should say the store holds no lock, said: %s", reason)
+	}
+	if failed[0].GetOutcome().GetCode() != "not_extended" {
+		t.Fatalf("code = %q", failed[0].GetOutcome().GetCode())
 	}
 }

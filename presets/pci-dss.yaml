@@ -63,6 +63,7 @@ integrity:
   legal_hold: available
   clock_sync_event: daily
   log_access_logged: true
+  note: "PCI DSS 10.3.2 and 10.3.3 require audit logs to be protected from modification and promptly backed up to a store that is hard to alter, in front of a qualified assessor: WORM storage is the reading."
 review:
   automated_alerting: true
   cadence: daily

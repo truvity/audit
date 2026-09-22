@@ -208,6 +208,10 @@ chart:
         > charts/audit/testdata/golden/stream.yaml
     helm template audit charts/audit -f charts/audit/testdata/values/transit.yaml \
         > charts/audit/testdata/golden/transit.yaml
+    # The attested tier on an S3-compatible store: no lock, an endpoint, path
+    # style, static credentials, and an exports bucket on a store of its own.
+    helm template audit charts/audit -f charts/audit/testdata/values/attested.yaml \
+        > charts/audit/testdata/golden/attested.yaml
     # The two shapes the deployment pages document, rendered from the very
     # files those pages show. The values above are trial installs with no
     # index, so without these the migration hook -- which only exists when
@@ -218,7 +222,7 @@ chart:
         > charts/audit/testdata/golden/example-stream.yaml
     # A hook Pod whose service account the chart creates normally is admitted
     # and then never scheduled: only an install finds that, so assert it here.
-    for shape in direct stream transit example-direct example-stream; do \
+    for shape in direct stream transit attested example-direct example-stream; do \
         python3 charts/audit/testdata/hook-order.py \
             < charts/audit/testdata/golden/$shape.yaml; \
     done

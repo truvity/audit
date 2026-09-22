@@ -60,7 +60,8 @@ The chart takes references; it creates none of these.
 
 | thing | value |
 |---|---|
-| a bucket with Object Lock in compliance mode, belonging to the environment | `bucket` |
+| a bucket belonging to the environment: with Object Lock in compliance mode for a profile that demands it, or without a lock where none does ([0014](../../docs/decisions/0014-lock-modes-and-store-tiers.md)) | `bucket`, `lockMode` |
+| **only on an S3-compatible store that is not AWS**: its endpoint, whether its certificate covers a bucket subdomain, and a Secret with static keys if it has no pod identity | `endpoint`, `pathStyle`, `existingSecret` |
 | **a prefix of its own within it**, required wherever the bucket is shared: it is what keeps two applications' archives apart, and what each role's IAM is scoped to | `prefix` |
 | a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `holds/` | the writer's ServiceAccount annotation |
 | the digest signing key: a Secret (PEM, ed25519), an AWS KMS ECC_NIST_P256 key, or an OpenBAO transit ed25519 key | `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` or `jobs.digest.transit` |
@@ -71,7 +72,7 @@ The chart takes references; it creates none of these.
 | the JetStream stream, already created, with `mode: stream` | `stream.url`, `stream.name` |
 | **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.token.enabled`, `stream.token.audience` |
 | the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
-| an exports bucket with no Object Lock, if exports are wanted | `query.exports.bucket` |
+| an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.exports.bucket`, and its own `endpoint`, `pathStyle`, `existingSecret` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
 | the images | `image.writer`, `image.query`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
 | a role per component — writer, query, digest, verify — bound through its ServiceAccount's annotations | `serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
@@ -167,6 +168,13 @@ a second writer and the day's objects double.
 There is one more, which the writer serving `RegisterCatalogue` brought with
 it: an installation that verifies callers and keeps an index must map the
 workloads that may register in `workloadIdentity.workloads`.
+
+And one the chart cannot make, which the binaries make instead: a profile
+whose presets demand a stricter lock than `lockMode` — `pci-dss` composed on
+`lockMode: none` — is refused by the writer, the digest job and the verify
+job at start-up, naming the profile and both modes. The presets' readings
+live in the binaries, so the chart only holds `lockMode` to its three words
+and refuses `governance: true` beside a `lockMode` that says otherwise.
 
 ## Checking it
 

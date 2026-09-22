@@ -36,7 +36,7 @@ flowchart LR
 | **receiver** | `audit-writer`, one or two pods, the application's front door over Connect | the stream's credentials in stream mode, and it serves `RegisterCatalogue` | — |
 | **writer** | the same image in consumer mode, N pods (stream mode); the receiver itself (direct mode) | write rights on its prefix, the index owner's credentials | the signing key, any way to hand a record back to a caller |
 | **stream** | one JetStream stream on the application's own account (stream mode only) | records not yet archived, replicated | — |
-| **bucket** | one per environment, Object Lock in compliance mode | every record, one copy per profile, locked | — |
+| **bucket** | one per environment, Object Lock in compliance mode where a profile demands it | every record, one copy per profile, locked or chained | — |
 | **index** | one database in the application's existing Postgres | rows, facet counts, the dedupe table, rollups | anything that is not rebuildable |
 | **digest / verify** | two CronJobs | the signing key (digest), the public key (verify) | write rights outside `digest/` and `verified/` |
 | **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive, the signing key |

@@ -46,7 +46,7 @@ func newReporter(c *catalogue.Catalogue, to sink.Sink, version, instance string)
 		Source:    c.Source,
 		Catalogue: c,
 		Sink:      to,
-		// The job's account of itself is delivered best-effort whatever the
+		// The job's account of itself is delivered async whatever the
 		// catalogue declares, because a job that blocked on recording that it
 		// had worked could not report that it had not. See
 		// emit.Options.SelfReporting.
@@ -118,7 +118,7 @@ func with(rec *record.Record, data map[string]any) (*record.Record, error) {
 // confirm records an operator's act and waits until the writer has taken it.
 //
 // It is the opposite of a reporter. A reporter is a job's account of itself and
-// is best-effort on purpose, because a job that blocked on saying it had worked
+// is async on purpose, because a job that blocked on saying it had worked
 // could not say that it had not. An operator's act on the archive — destroying a
 // key, placing or releasing a legal hold — is not an account of anything: it is
 // the record the catalogue declares `block` for, and it is confirmed or it is an

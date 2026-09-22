@@ -10,11 +10,12 @@ package audit.v1;
 import "audit/v1/record.proto";
 
 service SinkService {
-  // Write accepts a batch. With DELIVERY_BLOCK the call returns only after
-  // the records are durable at the next hop; the emitter then completes
-  // the business request. With DELIVERY_BEST_EFFORT the call may return
-  // before durability. DELIVERY_OUTBOX is an emitter-side mode and never
-  // reaches the wire.
+  // Write accepts a batch. The acknowledgement always means durable: the
+  // object is in the archive, or the stream has replicated it. What the
+  // delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
+  // caller waits, and the business request does not complete until the
+  // record is kept. With DELIVERY_ASYNC the emitter's own queue waits,
+  // retrying until this call is acknowledged.
   rpc Write(WriteRequest) returns (WriteResponse);
 }
 
@@ -26,8 +27,16 @@ message WriteRequest {
 enum Delivery {
   DELIVERY_UNSPECIFIED = 0;
   DELIVERY_BLOCK = 1;
-  DELIVERY_OUTBOX = 2;
-  DELIVERY_BEST_EFFORT = 3;
+  // Retired on 2026-09-22 by
+  // docs/decisions/0012-two-deliveries-and-a-durable-ack.md. They stay in the
+  // enum so that a record written under them still decodes — this package is
+  // v1 and a value removed is a record nobody can read — and the catalogue
+  // loader refuses both by name, saying what to write instead.
+  DELIVERY_OUTBOX = 2 [deprecated = true];
+  DELIVERY_BEST_EFFORT = 3 [deprecated = true];
+  // The default. The call returns at once and the emitter keeps the record in
+  // a bounded queue, retrying until it is acknowledged.
+  DELIVERY_ASYNC = 4;
 }
 
 message WriteResponse {

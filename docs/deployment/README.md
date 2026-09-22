@@ -12,7 +12,7 @@ bucket.
 
 | shape | for | the receiver | writers | `async` loss window |
 |---|---|---|---|---|
-| [direct](direct.md) | an internal service, or any cluster without a stream | is the writer, and puts to the bucket | the receiver's own pods | one roll interval |
+| [direct](direct.md) | an internal service, or any cluster without a stream | is the writer, and puts to the bucket | the receiver's own pods | one flush interval, plus the batch in flight |
 | [stream](stream.md) | a product: many pods, metering, quotas | publishes to JetStream | N consumers, scaled apart | milliseconds |
 
 Switching between them is a change to the receiver's configuration, not to

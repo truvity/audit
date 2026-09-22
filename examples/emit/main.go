@@ -89,7 +89,7 @@ func run() error {
 		Version:   "1.0.0",
 		Instance:  os.Getenv("HOSTNAME"),
 		Hooks: emit.Hooks{
-			// best_effort actions may drop under pressure; a deployment that
+			// async actions are given up only when the queue overflows; a deployment that
 			// does not hear about it has no idea what it is missing.
 			OnDropped: func(r *record.Record, reason string) {
 				slog.Error("audit record dropped", "action", r.GetAction(), "reason", reason)

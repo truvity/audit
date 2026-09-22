@@ -46,7 +46,7 @@ actions:
     categories: [data_access]
     profiles: [security]
     target_types: [order]
-    delivery: best_effort
+    delivery: async
     message:
       en: "{actor} read order {targets_0_id}"
 `
@@ -201,8 +201,8 @@ func TestBlockDeliverySurvivesACancelledCaller(t *testing.T) {
 	}
 }
 
-// Best-effort records are batched, and the caller does not wait for them.
-func TestBestEffortDeliveryIsBatched(t *testing.T) {
+// Async records are batched, and the caller does not wait for them.
+func TestAsyncDeliveryIsBatched(t *testing.T) {
 	store := &sink.Memory{}
 	var written int
 	var mu sync.Mutex
@@ -229,9 +229,9 @@ func TestBestEffortDeliveryIsBatched(t *testing.T) {
 	}
 }
 
-// What is given up is given up loudly: a deployment that does not alert on this
-// has no idea what it is missing.
-func TestBestEffortDropsLoudly(t *testing.T) {
+// A queue that overflows gives up the oldest, loudly: a deployment that does
+// not alert on this has no idea what it is missing.
+func TestAFullQueueDropsTheOldestLoudly(t *testing.T) {
 	var dropped []string
 	var mu sync.Mutex
 	blocked := make(chan struct{})
@@ -313,13 +313,40 @@ func TestRecordRefusesWhatTheCatalogueDoesNotDescribe(t *testing.T) {
 
 // An emitter that quietly downgrades a delivery mode is worse than one that
 // will not start.
+// A catalogue written when there were four deliveries is refused where it is
+// loaded, and told what to write instead. Reaching an emitter at all would mean
+// the document had already passed its own schema.
+func TestARetiredDeliveryIsRefusedByName(t *testing.T) {
+	for _, tc := range []struct{ was, want string }{
+		{"outbox", `"block"`},
+		{"best_effort", `"async"`},
+	} {
+		_, err := catalogue.Load([]byte(strings.Replace(doc, "delivery: block", "delivery: "+tc.was, 1)), nil)
+		if err == nil {
+			t.Fatalf("%s was accepted", tc.was)
+		}
+		if !strings.Contains(err.Error(), tc.was) || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("the refusal of %s should name it and what to write instead: %v", tc.was, err)
+		}
+	}
+}
+
+// What the emitter itself refuses is a delivery it cannot make sense of, before
+// the record that needs it exists.
 func TestNewRefusesADeliveryItCannotProvide(t *testing.T) {
-	c, err := catalogue.Load([]byte(strings.Replace(doc, "delivery: block", "delivery: outbox", 1)), nil)
+	c, err := catalogue.Load([]byte(strings.Replace(doc, "delivery: block", "delivery: async", 1)), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Reach past the loader: a catalogue can also be built in memory.
+	c.Actions["shop.order.placed"] = catalogue.Action{
+		Summary:   c.Actions["shop.order.placed"].Summary,
+		Operation: c.Actions["shop.order.placed"].Operation,
+		Profiles:  c.Actions["shop.order.placed"].Profiles,
+		Delivery:  "eventually",
+	}
 	_, err = emit.New(emit.Options{Source: "shop", Catalogue: c, Sink: &sink.Memory{}})
-	if err == nil || !strings.Contains(err.Error(), "outbox") {
+	if err == nil || !strings.Contains(err.Error(), "eventually") {
 		t.Fatalf("want a refusal naming the delivery it cannot provide, got %v", err)
 	}
 }

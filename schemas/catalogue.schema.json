@@ -176,10 +176,9 @@
           "delivery": {
             "enum": [
               "block",
-              "outbox",
-              "best_effort"
+              "async"
             ],
-            "default": "best_effort"
+            "default": "async"
           },
           "target_types": {
             "type": "array",

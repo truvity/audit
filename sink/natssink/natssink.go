@@ -54,12 +54,12 @@ func NewPublisher(js jetstream.JetStream, o Options) (*Publisher, error) {
 //
 // Every record is published under its own identifier as the message id, so the
 // stream's own duplicate window absorbs a retry: a publisher that did not see
-// an acknowledgement may safely send again, which is what makes the outbox and
+// an acknowledgement may safely send again, which is what makes the queue's retries and
 // the emitter's retries harmless.
 //
 // It waits for every acknowledgement before returning, whatever the delivery
 // mode. Reporting success for a record the stream has not taken would break the
-// one guarantee the caller has, and best-effort records reach here in batches
+// one guarantee the caller has, and async records reach here in batches
 // already, so there is nothing to gain by not waiting.
 func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
 	if len(req.Records) == 0 {

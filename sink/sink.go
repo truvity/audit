@@ -9,6 +9,7 @@ package sink
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -26,24 +27,31 @@ const (
 	// what makes a privileged or billable action fail rather than go
 	// unrecorded.
 	Block = auditv1.Delivery_DELIVERY_BLOCK
-	// Outbox writes to a durable local store and publishes later. The request
-	// completes at once and nothing is lost to a restart, at the cost of the
-	// record arriving late.
-	Outbox = auditv1.Delivery_DELIVERY_OUTBOX
-	// BestEffort may drop under pressure, loudly. It is for records whose loss
-	// is an operational problem rather than a compliance one.
-	BestEffort = auditv1.Delivery_DELIVERY_BEST_EFFORT
+	// Async returns at once and leaves the waiting to the emitter, which keeps
+	// the record in a bounded queue and retries until this hop acknowledges
+	// it. The acknowledgement means the same thing either way: durable.
+	Async = auditv1.Delivery_DELIVERY_ASYNC
 )
 
-// ParseDelivery reads the spelling a catalogue uses.
+// ParseDelivery reads the spelling a catalogue uses. There are two, and the
+// two it replaced are refused by name rather than quietly mapped: an action
+// declared `outbox` was written expecting a promise this component no longer
+// makes, and its author should say which of the two it wants.
 func ParseDelivery(s string) (Delivery, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "block":
 		return Block, nil
+	case "async", "":
+		return Async, nil
 	case "outbox":
-		return Outbox, nil
-	case "best_effort", "best-effort", "":
-		return BestEffort, nil
+		return auditv1.Delivery_DELIVERY_UNSPECIFIED, errors.New(
+			`sink: "outbox" is retired. Declare "block" where the action may not go unrecorded, ` +
+				`and "async" otherwise: there is no file on the pod any more, and an async record ` +
+				`is retried from memory until it is acknowledged`)
+	case "best_effort", "best-effort":
+		return auditv1.Delivery_DELIVERY_UNSPECIFIED, errors.New(
+			`sink: "best_effort" is retired. Declare "async", which keeps the record and retries ` +
+				`until it is acknowledged instead of giving it up under pressure`)
 	default:
 		return auditv1.Delivery_DELIVERY_UNSPECIFIED, fmt.Errorf("sink: %q is not a delivery mode", s)
 	}

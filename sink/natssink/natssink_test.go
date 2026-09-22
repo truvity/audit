@@ -108,7 +108,7 @@ func TestPublishWaitsForTheStream(t *testing.T) {
 }
 
 // A publisher that did not see an acknowledgement may send again. The stream's
-// duplicate window absorbs it, which is what makes the outbox's repeats and the
+// duplicate window absorbs it, which is what makes the queue's repeats and the
 // emitter's retries harmless.
 func TestRepublishingARecordIsHarmless(t *testing.T) {
 	js, s, _ := stream(t)

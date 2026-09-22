@@ -162,7 +162,7 @@ func (c ClockSync) emit(ctx context.Context, reading clock.Reading) error {
 		Source:    c.Catalogue.Source,
 		Catalogue: c.Catalogue,
 		Sink:      c.Sink,
-		// This is the job's account of itself, so it is delivered best-effort
+		// This is the job's account of itself, so it is delivered async
 		// whatever the catalogue declares. See emit.Options.SelfReporting.
 		SelfReporting: true,
 		Version:       c.Version,

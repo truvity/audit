@@ -97,9 +97,9 @@ Delivery is chosen per action in the catalogue, not per installation.
 
 **The acknowledgement always means durable.** In stream mode that is the
 stream's replicated publish acknowledgement. In direct mode it is the object
-in the bucket: an `async` batch is acknowledged only after the roll holding
-it has been put and indexed. Nobody is waiting on an `async` batch, so that
-delay costs only queue depth, and `roll.interval` is the knob.
+in the bucket: the receiver puts every batch it takes before answering, under
+either delivery. The difference is only who waits — the application under
+`block`, its own queue under `async`.
 [0012](decisions/0012-two-deliveries-and-a-durable-ack.md) has the
 reasoning.
 
@@ -110,7 +110,7 @@ acknowledgement to act on. For `async`:
 
 | what happens | direct mode | stream mode |
 |---|---|---|
-| the application's pod dies with records still queued | up to one roll interval (default 60 s) | milliseconds' worth |
+| the application's pod dies with records still queued | whatever has not been acknowledged: one flush interval of records (default one second) plus the batch in flight | the same, and shorter, because a publish is quicker than a put |
 | the receiver or writer crashes | nothing — it acknowledged nothing it had not stored | nothing |
 | a long receiver outage overflows the queue | the oldest are dropped and counted | the same, but a replicated stream makes the outage a rollout's seconds |
 | the application's container restarts, pod intact | the queue is gone, as in the first row | the same |
@@ -128,7 +128,7 @@ Postgres, not in a pod.
 
 Neither the receiver nor the writer ever combines two records into one.
 Every record is stored as it was emitted. What they do is **batch** — many
-records become one object per profile, tenant and day within a roll interval
+records become one object per profile, tenant and day per batch taken
 — and keep **projections beside the records**: index rows, facet counts,
 rollups, usage counters. Every projection can be recomputed from the archive
 with `audit reindex`, which is why none of them is backed up and none of
@@ -182,7 +182,7 @@ being kept.
 | for | an internal service, low volume, or a cluster with no stream | a product: many pods, metering, quotas |
 | the receiver | is the writer: it puts to the bucket | publishes to JetStream |
 | writers | the receiver's own pods | N consumers, scaled apart |
-| `async` loss window | one roll interval | milliseconds |
+| `async` loss window | one flush interval, plus the batch in flight | the same, and shorter |
 | needs | a bucket, a database | a bucket, a database, a NATS account |
 
 Switching an installation from direct to stream is a change to the

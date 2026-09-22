@@ -52,10 +52,9 @@ the replacement**: `outbox` is `block` where the action may not go
 unrecorded, and `async` otherwise; `best_effort` is `async`. There is no
 file outbox and no volume on the emitting pod.
 
-The two-value enum, the `async` default and the refusal are not built yet:
-they arrive with the rewrite.
-[catalogue.schema.json](../../schemas/catalogue.schema.json) today still
-lists four values and defaults to `best_effort`.
+[catalogue.schema.json](../../schemas/catalogue.schema.json) lists the two
+and defaults to `async`. A document declaring one of the retired spellings is
+refused where it is loaded, before any emitter sees it.
 
 ## Categories
 

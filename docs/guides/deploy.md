@@ -209,7 +209,7 @@ Each refusal says why, and they are listed in
    receiver's Service.
 4. **It is in the archive.**
    `aws s3 ls s3://example-audit/audit/app/profile=security/ --recursive`
-   lists an object per profile, tenant and roll interval.
+   lists an object per profile, tenant and batch.
 5. **The chain seals and verifies.** After the next hour the digest job writes
    under `digest/`, and the following night the verify job records a result
    under `verified/`. An auditor checks the same thing with read access and

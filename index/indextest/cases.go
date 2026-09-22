@@ -156,7 +156,7 @@ func Cases() []Case {
 			return q
 		}(),
 		// Deliberately not the occurred_at order: the corpus records arrive out
-		// of the order they happened in, as an outbox that waited would deliver
+		// of the order they happened in, as a queue that retried for a while would deliver
 		// them, so a searcher that sorts by the wrong column is caught here
 		// rather than flattered by a fixture where the two agree.
 		Want: []int{6, 7, 4, 8, 5, 2, 3, 0, 1},

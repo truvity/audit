@@ -8,7 +8,7 @@ import (
 
 // Dedupe remembers which records have been written.
 //
-// Every hop below the writer is at-least-once on purpose: the outbox repeats
+// Every hop below the writer is at-least-once on purpose: the emitter's queue repeats
 // what it could not confirm, the stream redelivers what was not acknowledged,
 // and a retry after a timeout is the safe thing for a caller to do. This is
 // where those repeats stop, and it is why none of them has to be careful.
@@ -37,7 +37,7 @@ type Dedupe interface {
 // MemoryDedupe remembers within one process.
 //
 // It is enough for the writer embedded in an application, where there is one
-// writer and the outbox covers restarts, and it is not enough for a deployment
+// writer and the queue covers a sink that was away, and it is not enough for a deployment
 // with several writers, where a shared table is the only thing that makes two
 // replicas agree. A deployment gets what it configures, and the difference is
 // documented rather than hidden behind an interface that pretends they are the

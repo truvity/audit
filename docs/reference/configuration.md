@@ -32,8 +32,10 @@ address. `emit.Register(ctx, emit.Registration{…})` registers the catalogue
 with the **receiver** at start-up — the same address the sink writes to,
 because the receiver serves `RegistryService`.
 
-`Options.Outbox` and `Options.Publish` are still in the code and are removed
-with the rewrite: there are two deliveries and no file outbox
+`Options.Queue`, `Options.Batch` and `Options.Flush` size the async queue, and
+`Options.Retry` is how long the emitter waits before trying a batch the sink
+could not take, doubling up to a minute. There is no outbox option, and no
+file: there are two deliveries
 ([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
 
 Two metrics are worth alerting on, and they are the pair that says whether
@@ -41,7 +43,7 @@ anything was lost:
 
 | metric | means |
 |---|---|
-| `audit.emit.queue.pending` | how many records are waiting. A number that only grows is a receiver that has stopped acknowledging. Not built yet: today the emitter publishes `audit.emit.outbox.pending`, which this replaces |
+| `audit.emit.queue.pending` | how many records are waiting to be acknowledged, and so what this process would lose if it stopped now. A number that only climbs is a receiver that has stopped acknowledging; drops follow. Published by `emit.InstrumentQueue` |
 | `audit.emit.records.dropped` | records the queue overflowed and gave up on. Every one of them is also a log line. This is the incident; the one above is the alert |
 
 ## Receiver and writer
@@ -68,7 +70,7 @@ binary's flags with dots.
 | `stream.url`, `stream.name`, `stream.consumer` | JetStream, in stream mode. The chart refuses `mode: stream` without a URL |
 | `stream.batch` | how many records are taken at once. Default 100 |
 | `stream.ackWait` | how long the stream waits for a batch to be taken before offering it again. Default 30s, and it must exceed the longest a write can honestly take: a batch is acknowledged only once its records are in the archive |
-| `roll.interval` | how often an object is rolled and put. In direct mode this is also the `async` loss window, because an `async` batch is acknowledged only after its roll is stored |
+| `roll.interval` | how long an object may stay open. It does not bound the write path: a batch the receiver takes is put before it is acknowledged, whatever the delivery |
 | `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database in the application's Postgres. Without it the writer indexes nothing and deduplicates in process |
 | `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
 | `keys.provider` | `none` (the default), `local` (a root and a directory) or `transit` (OpenBAO — see [OpenBAO keys](../operations/openbao-keys.md)). With `none` there are no pseudonyms, no key directory, no login to a secret manager and no resolve ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). `none` is not built yet: today the default is `local` |

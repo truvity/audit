@@ -134,6 +134,12 @@ func (m *ActionMeter) Counts(outcome string) bool {
 // references, keyed by their $id.
 func Load(doc []byte, schemas [][]byte) (*Catalogue, error) {
 	if err := validateAgainst("catalogue.schema.json", doc); err != nil {
+		// "value must be one of block, async" is true and unhelpful to somebody
+		// whose catalogue was written when there were four. Say what to write
+		// instead, and why the old one is not there.
+		if retired := retiredDelivery(doc); retired != nil {
+			return nil, retired
+		}
 		return nil, err
 	}
 	var c Catalogue
@@ -457,4 +463,39 @@ func contains(ss []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// retiredDelivery reports the first action declaring a delivery this component
+// retired on 2026-09-22, and what to declare instead. It returns nil for a
+// document that fails validation for any other reason.
+func retiredDelivery(doc []byte) error {
+	var probe struct {
+		Actions map[string]struct {
+			Delivery string `json:"delivery"`
+		} `json:"actions"`
+	}
+	if err := yaml.Unmarshal(doc, &probe); err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(probe.Actions))
+	for name := range probe.Actions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		switch strings.ToLower(strings.TrimSpace(probe.Actions[name].Delivery)) {
+		case "outbox":
+			return fmt.Errorf(
+				`catalogue: action %s declares "outbox", which is retired. Declare "block" if the `+
+					`action may not go unrecorded, and "async" otherwise: there is no file on the `+
+					`pod any more, and an async record is retried from memory until it is `+
+					`acknowledged`, name)
+		case "best_effort", "best-effort":
+			return fmt.Errorf(
+				`catalogue: action %s declares "best_effort", which is retired. Declare "async", `+
+					`which keeps the record and retries until it is acknowledged instead of giving `+
+					`it up under pressure`, name)
+		}
+	}
+	return nil
 }

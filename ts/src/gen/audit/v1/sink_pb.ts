@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file audit/v1/sink.proto.
  */
 export const file_audit_v1_sink: GenFile = /*@__PURE__*/
-  fileDesc("ChNhdWRpdC92MS9zaW5rLnByb3RvEghhdWRpdC52MSJXCgxXcml0ZVJlcXVlc3QSIQoHcmVjb3JkcxgBIAMoCzIQLmF1ZGl0LnYxLlJlY29yZBIkCghkZWxpdmVyeRgCIAEoDjISLmF1ZGl0LnYxLkRlbGl2ZXJ5IkgKDVdyaXRlUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAUSJQoIcmVqZWN0ZWQYAiADKAsyEy5hdWRpdC52MS5SZWplY3Rpb24iJwoJUmVqZWN0aW9uEgoKAmlkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSpnCghEZWxpdmVyeRIYChRERUxJVkVSWV9VTlNQRUNJRklFRBAAEhIKDkRFTElWRVJZX0JMT0NLEAESEwoPREVMSVZFUllfT1VUQk9YEAISGAoUREVMSVZFUllfQkVTVF9FRkZPUlQQAzJHCgtTaW5rU2VydmljZRI4CgVXcml0ZRIWLmF1ZGl0LnYxLldyaXRlUmVxdWVzdBoXLmF1ZGl0LnYxLldyaXRlUmVzcG9uc2VCiQEKDGNvbS5hdWRpdC52MUIJU2lua1Byb3RvUAFaLWdpdGh1Yi5jb20vdHJ1dml0eS9hdWRpdC9nZW4vYXVkaXQvdjE7YXVkaXR2MaICA0FYWKoCCEF1ZGl0LlYxygIIQXVkaXRcVjHiAhRBdWRpdFxWMVxHUEJNZXRhZGF0YeoCCUF1ZGl0OjpWMWIGcHJvdG8z", [file_audit_v1_record]);
+  fileDesc("ChNhdWRpdC92MS9zaW5rLnByb3RvEghhdWRpdC52MSJXCgxXcml0ZVJlcXVlc3QSIQoHcmVjb3JkcxgBIAMoCzIQLmF1ZGl0LnYxLlJlY29yZBIkCghkZWxpdmVyeRgCIAEoDjISLmF1ZGl0LnYxLkRlbGl2ZXJ5IkgKDVdyaXRlUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAUSJQoIcmVqZWN0ZWQYAiADKAsyEy5hdWRpdC52MS5SZWplY3Rpb24iJwoJUmVqZWN0aW9uEgoKAmlkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSqDAQoIRGVsaXZlcnkSGAoUREVMSVZFUllfVU5TUEVDSUZJRUQQABISCg5ERUxJVkVSWV9CTE9DSxABEhcKD0RFTElWRVJZX09VVEJPWBACGgIIARIcChRERUxJVkVSWV9CRVNUX0VGRk9SVBADGgIIARISCg5ERUxJVkVSWV9BU1lOQxAEMkcKC1NpbmtTZXJ2aWNlEjgKBVdyaXRlEhYuYXVkaXQudjEuV3JpdGVSZXF1ZXN0GhcuYXVkaXQudjEuV3JpdGVSZXNwb25zZUKJAQoMY29tLmF1ZGl0LnYxQglTaW5rUHJvdG9QAVotZ2l0aHViLmNvbS90cnV2aXR5L2F1ZGl0L2dlbi9hdWRpdC92MTthdWRpdHYxogIDQVhYqgIIQXVkaXQuVjHKAghBdWRpdFxWMeICFEF1ZGl0XFYxXEdQQk1ldGFkYXRh6gIJQXVkaXQ6OlYxYgZwcm90bzM", [file_audit_v1_record]);
 
 /**
  * @generated from message audit.v1.WriteRequest
@@ -105,14 +105,30 @@ export enum Delivery {
   BLOCK = 1,
 
   /**
-   * @generated from enum value: DELIVERY_OUTBOX = 2;
+   * Retired on 2026-09-22 by
+   * docs/decisions/0012-two-deliveries-and-a-durable-ack.md. They stay in the
+   * enum so that a record written under them still decodes — this package is
+   * v1 and a value removed is a record nobody can read — and the catalogue
+   * loader refuses both by name, saying what to write instead.
+   *
+   * @generated from enum value: DELIVERY_OUTBOX = 2 [deprecated = true];
+   * @deprecated
    */
   OUTBOX = 2,
 
   /**
-   * @generated from enum value: DELIVERY_BEST_EFFORT = 3;
+   * @generated from enum value: DELIVERY_BEST_EFFORT = 3 [deprecated = true];
+   * @deprecated
    */
   BEST_EFFORT = 3,
+
+  /**
+   * The default. The call returns at once and the emitter keeps the record in
+   * a bounded queue, retrying until it is acknowledged.
+   *
+   * @generated from enum value: DELIVERY_ASYNC = 4;
+   */
+  ASYNC = 4,
 }
 
 /**
@@ -126,11 +142,12 @@ export const DeliverySchema: GenEnum<Delivery> = /*@__PURE__*/
  */
 export const SinkService: GenService<{
   /**
-   * Write accepts a batch. With DELIVERY_BLOCK the call returns only after
-   * the records are durable at the next hop; the emitter then completes
-   * the business request. With DELIVERY_BEST_EFFORT the call may return
-   * before durability. DELIVERY_OUTBOX is an emitter-side mode and never
-   * reaches the wire.
+   * Write accepts a batch. The acknowledgement always means durable: the
+   * object is in the archive, or the stream has replicated it. What the
+   * delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
+   * caller waits, and the business request does not complete until the
+   * record is kept. With DELIVERY_ASYNC the emitter's own queue waits,
+   * retrying until this call is acknowledged.
    *
    * @generated from rpc audit.v1.SinkService.Write
    */

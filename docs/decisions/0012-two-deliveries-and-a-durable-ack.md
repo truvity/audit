@@ -52,19 +52,18 @@ message naming the replacement. The file outbox is removed.
 
 **The receiver's acknowledgement always means durable.** In stream mode that
 is the stream's replicated publish acknowledgement. In direct mode it is the
-object in the bucket: the receiver acknowledges an `async` batch only after
-the roll that holds it has been put and indexed. Nobody is waiting on an
-`async` batch, so the delay costs nothing but the queue's depth, and
-`roll.interval` is the knob.
+object in the bucket: the receiver puts every batch it takes before it
+answers, whatever the delivery. Nobody is waiting on an `async` batch, so
+that costs nothing but the queue's depth.
 
 ## Consequences
 
 - **What can be lost is stated, and small.** A `block` record is never lost:
   the application had no acknowledgement to act on. An `async` record is
   lost only if the application's pod dies with the record still in its
-  queue — up to one roll interval in direct mode, milliseconds in stream
-  mode. A receiver or writer crash loses nothing, because it acknowledged
-  nothing it had not stored.
+  queue: one flush interval of records plus the batch in flight. A receiver
+  or writer crash loses nothing, because it acknowledged nothing it had not
+  stored.
 - **Every dropped record is still a log line.** The emitter logs what it
   could not deliver, so the loss is visible where the application's other
   evidence is.

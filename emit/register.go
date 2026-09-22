@@ -43,7 +43,7 @@ var ErrCatalogueRefused = errors.New("emit: the deployment refused the catalogue
 // the caller does not own — describes records the application is about to
 // write, and writing them against a description nothing accepted is how an
 // archive ends up holding records nobody can read. A registry that cannot be
-// reached is different: an application whose records wait in an outbox may
+// reached is different: an application whose records wait in its queue may
 // start and register again later.
 //
 // Registering the same catalogue again is not an error. Every replica does it

@@ -48,6 +48,9 @@ type parts struct {
 	keepIdentities bool
 	// provider replaces the local key provider.
 	provider keys.Provider
+	// fromStream makes the writer keep a stamp a receiver already made, as a
+	// writer consuming its own installation's stream does.
+	fromStream bool
 }
 
 func build(t *testing.T) *built {
@@ -113,8 +116,9 @@ func buildWith(t *testing.T, p parts) *built {
 		splitter.Identities = b.identities
 	}
 	w, err := writer.New(&writer.Writer{
-		Catalogues: registry,
-		Splitter:   splitter,
+		KeepUpstreamStamp: p.fromStream,
+		Catalogues:        registry,
+		Splitter:          splitter,
 		Roller: &writer.Roller{
 			Store: s, Instance: instance, Indexer: indexer,
 			Now: func() time.Time { return at },

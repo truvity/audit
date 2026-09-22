@@ -143,10 +143,12 @@ them is the record.
    validates the record against the catalogue — the action exists, the data
    matches its schema, nothing on the negative list is present — and
    delivers it as the catalogue declares.
-2. **The receiver checks it again** against the registered catalogue and
-   stamps what it verified itself: `recorded_at`, the observer taken from
-   the caller's verified token, and the `origin_hash` over the canonical
-   form. A caller never says who it is.
+2. **The receiver stamps what it verified itself**: `recorded_at`, the
+   observer taken from the caller's verified token, and the `origin_hash` over
+   the canonical form. A caller never says who it is. In stream mode the
+   stamping has to happen here, because the writers on the other side read
+   messages and have no caller to verify; they keep a stamp whose hash still
+   describes its record, and stamp afresh one that does not.
 3. **The writer splits the record** into one copy per profile the action
    names. Each copy keeps only the fields that profile's presets allow
    (default-deny), and each identity is treated by its category: kept in

@@ -11,6 +11,29 @@ The documentation is rewritten around one installation per application, and
 the code is being changed to match it. The pages are the specification, and
 each still marks what does not exist yet.
 
+### A receiver mode, so stream mode has a front door
+
+`audit-writer --mode receiver` (env `AUDIT_MODE`) serves the sink and
+publishes to JetStream, and holds no bucket and no key provider: it refuses
+`--bucket` and a key provider rather than quietly being a writer. `--mode
+writer` stays the default and is what every installation ran until now.
+
+Until this, nothing published to a stream but a test. An installation that
+wanted one had to let the **application** publish, which meant the
+application holding the stream's credentials — the thing
+[0011](docs/decisions/0011-one-installation-per-service-or-product.md) exists
+to prevent.
+
+The receiver stamps each record with the caller its authenticator verified,
+and with the moment it took responsibility, before publishing. It has to: a
+writer consuming a stream is reading messages, not serving a request, so it
+has no caller to verify, and an identity not attached at the front door is one
+nothing downstream can recover. A writer told it consumes its own
+installation's stream (`writer.Config.FromStream`) therefore keeps a stamp
+whose origin hash still describes its record, and stamps afresh one that does
+not. On the sink's own port it always stamps, because there a caller that
+could keep its own stamp would be choosing the identity it is recorded under.
+
 ### Keys are off by default
 
 `keys.provider: none` is the default. Most deployments want it: staff are kept

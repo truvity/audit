@@ -1,4 +1,12 @@
-// Command audit-writer is an installation's front door and its write path.
+// Command audit-writer is an installation's front door and its write path,
+// which are one process in a small installation and two in a busy one.
+//
+// With --mode writer, the default, it does both: it serves the sink, puts the
+// copies their profiles keep, and consumes a stream when one is configured.
+// With --mode receiver it only takes records and publishes them to the stream,
+// holding no bucket and no keys; the writers consume the other end. That split
+// is what lets the write path scale away from the front door, and what keeps
+// the stream's credentials out of the application entirely.
 //
 // It takes records and puts the copies their profiles keep, and it accepts the
 // application's catalogue at start-up (RegisterCatalogue) — an installation
@@ -32,6 +40,7 @@ import (
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/internal/telemetry"
+	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
@@ -78,14 +87,35 @@ func run() error {
 			"how long the stream waits for the writer to take a batch before offering it again")
 		rollEvery = flag.Duration("roll-interval", 5*time.Minute, "how long an object stays open")
 		version   = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
+		mode      = flag.String("mode", env("AUDIT_MODE", "writer"),
+			"writer (serve the sink, write the archive, consume the stream) or "+
+				"receiver (serve the sink and publish to the stream, nothing else)")
 	)
 	keyFlags := cli.NewKeyFlags(flag.CommandLine, env)
 	flag.Parse()
 
-	switch {
-	case *bucket == "":
-		return errors.New("name the archive's bucket with --bucket")
-	case *deployment == "":
+	switch *mode {
+	case "writer":
+		if *bucket == "" {
+			return errors.New("name the archive's bucket with --bucket")
+		}
+	case "receiver":
+		// A receiver is the front door and nothing else. Letting it hold the
+		// archive's credentials or a key would make it a writer that happens
+		// to publish, and the separation is the point: see
+		// docs/decisions/0011-one-installation-per-service-or-product.md.
+		switch {
+		case *streamURL == "":
+			return errors.New("--mode receiver needs --stream-url: a receiver publishes, and without a stream there is nowhere to publish to")
+		case *bucket != "":
+			return errors.New("--mode receiver takes no --bucket: the writers on the other side of the stream hold the archive")
+		case keyFlags.Configured():
+			return errors.New("--mode receiver takes no key provider: pseudonyms are the writer's, and a receiver that held the keys would be one")
+		}
+	default:
+		return fmt.Errorf("--mode is writer or receiver, not %q", *mode)
+	}
+	if *deployment == "" {
 		return errors.New("give the profile configuration with --deployment")
 	}
 
@@ -105,20 +135,21 @@ func run() error {
 		return err
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx)
-	if err != nil {
-		return err
-	}
-	archive, err := s3store.FromConfig(cfg, s3store.Options{
-		Bucket: *bucket, Prefix: *prefix, KMSKeyID: *kmsKey, Governance: *governance,
-	})
-	if err != nil {
-		return err
-	}
-
-	provider, err := keyFlags.Open(ctx)
-	if err != nil {
-		return err
+	var archive store.Store
+	var provider keys.Provider
+	if *mode == "writer" {
+		cfg, err := config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return err
+		}
+		if archive, err = s3store.FromConfig(cfg, s3store.Options{
+			Bucket: *bucket, Prefix: *prefix, KMSKeyID: *kmsKey, Governance: *governance,
+		}); err != nil {
+			return err
+		}
+		if provider, err = keyFlags.Open(ctx); err != nil {
+			return err
+		}
 	}
 	if provider != nil {
 		defer provider.Close() //nolint:errcheck // shutting down
@@ -189,38 +220,71 @@ func run() error {
 	}
 	defer stopTelemetry(context.Background()) //nolint:errcheck // shutting down
 
-	w, err := writer.Open(ctx, writer.Config{
-		Archive:          archive,
-		Profiles:         profiles,
-		Keys:             provider,
-		Catalogues:       found,
-		Database:         pool,
-		Replicas:         *replicas,
-		ForgetIdentities: !*keepIdentities,
-		RollInterval:     *rollEvery,
-		Version:          *version,
-	})
-	if err != nil {
-		return err
-	}
-	defer w.Close(context.Background()) //nolint:errcheck // shutting down
-
-	// The stream, when there is one. An application that publishes straight to
-	// the writer needs none; a deployment with a stream wants the writer behind
-	// a durable consumer, so that a writer that is down is a backlog rather
-	// than a hole.
-	if *streamURL != "" {
-		stop, err := consume(ctx, streamOptions{
+	// What this process is: the write path, or the front door in front of a
+	// stream. Both serve the same sink on the same port, so an application is
+	// configured the same way either side of the choice.
+	var (
+		front    sink.Sink
+		shutdown func(context.Context) error
+	)
+	if *mode == "receiver" {
+		publisher, stop, err := publisherFor(ctx, streamOptions{
 			URL: *streamURL, Stream: *streamName, Durable: *consumerName,
 			Batch: *streamBatch, AckWait: *streamAckWait,
-		}, w)
+		})
 		if err != nil {
 			return err
 		}
 		defer stop()
+		// The receiver stamps before it publishes. The writers on the other
+		// side are reading messages and have no caller to verify, so an
+		// identity not attached here is an identity lost.
+		front = &sink.Receiver{
+			To: publisher, Version: *version, Instance: record.InstanceName(),
+		}
+		shutdown = func(context.Context) error { return nil }
+	} else {
+		w, err := writer.Open(ctx, writer.Config{
+			Archive:          archive,
+			Profiles:         profiles,
+			Keys:             provider,
+			Catalogues:       found,
+			Database:         pool,
+			Replicas:         *replicas,
+			ForgetIdentities: !*keepIdentities,
+			RollInterval:     *rollEvery,
+			Version:          *version,
+			// Records reaching this writer over the stream were stamped by a
+			// receiver of this installation, which is the only thing that may
+			// publish to it.
+			FromStream: *streamURL != "",
+		})
+		if err != nil {
+			return err
+		}
+		defer w.Close(context.Background()) //nolint:errcheck // shutting down
+		front, shutdown = w, w.Close
+
+		// The stream, when there is one. An application that publishes straight
+		// to the writer needs none; a deployment with a stream wants the writer
+		// behind a durable consumer, so that a writer that is down is a backlog
+		// rather than a hole.
+		if *streamURL != "" {
+			stop, err := consume(ctx, streamOptions{
+				URL: *streamURL, Stream: *streamName, Durable: *consumerName,
+				Batch: *streamBatch, AckWait: *streamAckWait,
+			}, w)
+			if err != nil {
+				return err
+			}
+			defer stop()
+		}
 	}
 
-	path, handler := w.Handler(authenticated)
+	path, handler := sink.NewHandler(front)
+	if authenticated != nil {
+		handler = auth.Middleware(authenticated, handler)
+	}
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 
@@ -248,7 +312,7 @@ func run() error {
 			},
 			// Recorded through this writer itself: a catalogue arriving changes
 			// what the archive's records mean, so the archive should say when.
-			OnRegistered: recorder(w, *version),
+			OnRegistered: recorder(front, *version),
 		}
 		regPath, regHandler := registry.NewHandler(reg)
 		mux.Handle(regPath, auth.Middleware(authenticated, regHandler))
@@ -264,15 +328,15 @@ func run() error {
 		<-ctx.Done()
 		// The records still gathered are written before the process goes, and
 		// the server stops taking new ones first so nothing arrives meanwhile.
-		shutdown, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		stopping, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		_ = server.Shutdown(shutdown)
-		if err := w.Close(shutdown); err != nil {
+		_ = server.Shutdown(stopping)
+		if err := shutdown(stopping); err != nil {
 			slog.Error("flushing on shutdown", "error", err)
 		}
 	}()
 
-	slog.Info("audit-writer", "listen", *listen, "bucket", *bucket, "profiles", len(profiles))
+	slog.Info("audit-writer", "mode", *mode, "listen", *listen, "bucket", *bucket, "profiles", len(profiles))
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -383,6 +447,59 @@ type streamOptions struct {
 	// the same records to a second replica while the first is still writing
 	// them, and the deduplication table will earn its keep for no reason.
 	AckWait time.Duration
+}
+
+// publisherFor connects a receiver to the stream it publishes to.
+//
+// It asks for the stream by name and fails when it is not there, for the same
+// reason the consumer does: the stream is the deployment's to create, because
+// its retention and its discard policy decide whether a full stream refuses
+// publishers or drops records, and neither is this process's to choose.
+func publisherFor(ctx context.Context, o streamOptions) (sink.Sink, func(), error) {
+	conn, err := nats.Connect(o.URL,
+		nats.Name("audit-receiver"),
+		nats.MaxReconnects(-1),
+		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
+			if err != nil {
+				slog.Error("disconnected from the stream", "error", err)
+			}
+		}),
+		nats.ReconnectHandler(func(c *nats.Conn) {
+			slog.Info("reconnected to the stream", "url", c.ConnectedUrl())
+		}),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("receiver: connecting to %s: %w", o.URL, err)
+	}
+	js, err := jetstream.New(conn)
+	if err != nil {
+		conn.Close()
+		return nil, nil, fmt.Errorf("receiver: %w", err)
+	}
+	found, err := js.Stream(ctx, o.Stream)
+	if err != nil {
+		conn.Close()
+		return nil, nil, fmt.Errorf(
+			"receiver: stream %q: %w; the stream is the deployment's to create, not this "+
+				"receiver's, because its retention and its discard policy decide whether a full "+
+				"stream refuses publishers or drops records", o.Stream, err)
+	}
+	info, err := found.Info(ctx)
+	if err != nil {
+		conn.Close()
+		return nil, nil, fmt.Errorf("receiver: stream %q: %w", o.Stream, err)
+	}
+	if len(info.Config.Subjects) == 0 {
+		conn.Close()
+		return nil, nil, fmt.Errorf("receiver: stream %q listens on no subject", o.Stream)
+	}
+	p, err := natssink.NewPublisher(js, natssink.Options{Subject: info.Config.Subjects[0]})
+	if err != nil {
+		conn.Close()
+		return nil, nil, err
+	}
+	slog.Info("publishing to the stream", "stream", o.Stream, "subject", info.Config.Subjects[0])
+	return p, conn.Close, nil
 }
 
 // consume binds a durable pull consumer to the writer and runs it until the

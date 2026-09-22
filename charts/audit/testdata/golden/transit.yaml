@@ -641,6 +641,33 @@ spec:
                 readOnlyRootFilesystem: true
 ---
 # Source: audit/templates/migrate.yaml
+# The identity this Job runs as, created as a hook of its own so that it
+# exists before the Job that names it. A pre-install hook runs BEFORE the
+# release's ordinary resources, so a hook Pod cannot name a ServiceAccount
+# the release has not created yet: the Job would be admitted and then never
+# get a Pod, with "serviceaccount not found" on the Job and a release that
+# waits for a hook that can never run.
+#
+# It is the migration's own, not the writer's, and it carries no cloud
+# annotations. This Job reads a database URL from a Secret and talks to
+# Postgres; it has no business holding the credentials that write the
+# archive. A lower weight than the Job so it is applied first.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-migrate
+  labels:
+    helm.sh/chart: audit-0.2.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.2.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+
+---
+# Source: audit/templates/migrate.yaml
 # The index schema, applied before the writer rolls.
 #
 # A hook rather than something the writer does at start-up: several replicas
@@ -671,7 +698,7 @@ spec:
         app.kubernetes.io/instance: audit
     spec:
       restartPolicy: Never
-      serviceAccountName: audit
+      serviceAccountName: audit-migrate
       
       securityContext:
         fsGroup: 65532

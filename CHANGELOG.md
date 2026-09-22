@@ -5,6 +5,30 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [Unreleased]
+
+### The migration hook brings its own service account
+
+`helm install` of a release with an index never completed. The migration Job
+is a `pre-install` hook, and it ran as the writer's service account -- which
+the chart creates as an ordinary resource, so it does not exist yet when the
+hook runs. The Job was admitted and then never got a Pod (`serviceaccount
+"audit" not found`), and the install waited for a hook that could not run.
+
+The Job now has a service account of its own, created as a hook one weight
+earlier. It is also the right identity: the migration reads a database URL
+from a Secret and talks to Postgres, so it has no business holding the
+credentials that write the archive. Nothing a deployment sets changes.
+
+Two things were missing that would have caught it. `charts/audit/examples/`
+showed the two shapes a deployment actually installs and nothing rendered
+them, while the shapes that were rendered are trial installs with no index --
+so the migration hook was never in a golden at all. Both examples are now
+rendered into `testdata/golden/`, which also proves the documented files
+work. And `testdata/hook-order.py` asserts that every hook that runs a Pod
+brings its own account, applied at a lower weight: an ordering fault is not a
+render error, so only an install finds it otherwise.
+
 ## [0.2.0] - 2026-09-22
 
 One installation per application, and the code to match. The documentation was

@@ -26,8 +26,6 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.2.0"
     app.kubernetes.io/managed-by: Helm
-  annotations:
-    iam.example.com/role: audit-query
 
 ---
 # Source: audit/templates/serviceaccount.yaml
@@ -79,14 +77,11 @@ data:
   # because retention is a property of the profile and every one of them needs
   # to agree about it.
   deployment.yaml: |
-    external_identifiers_are_opaque: false
+    external_identifiers_are_opaque: true
     profiles:
-      billing-nl:
+      billing:
         presets:
         - billing-nl
-      history:
-        presets:
-        - history
       security:
         presets:
         - security
@@ -97,8 +92,8 @@ data:
       - url: "https://oidc.example.com/id/CLUSTER"
         audience: "audit"
     workloads:
-      - networkPolicy: null
-        subject: system:serviceaccount:wallet:wallet-api
+      - source: app
+        subject: system:serviceaccount:app:api
 
 ---
 # Source: audit/templates/query.yaml
@@ -119,33 +114,7 @@ data:
   grants.yaml: |
     issuers:
     - audience: audit
-      url: https://id.example.com
-    presets:
-    - issuer: https://id.example.com
-      name: access-roster
-
----
-# Source: audit/templates/keys-pvc.yaml
-# Data keys are random and wrapped into this directory, so it is the only copy
-# of them. In stream mode the writers share it, which is why it needs an access
-# mode that lets more than one pod mount it.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: audit-keys
-  labels:
-    helm.sh/chart: audit-0.2.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.0"
-    app.kubernetes.io/managed-by: Helm
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: "efs"
-  resources:
-    requests:
-      storage: 1Gi
+      url: https://gateway.example.com
 
 ---
 # Source: audit/templates/query.yaml
@@ -225,10 +194,10 @@ spec:
         app.kubernetes.io/instance: audit
         app.kubernetes.io/component: query
       annotations:
-        checksum/grants: 64a2af7a257e3558f4c717cd5961046d26a7a78787c31965c503d3e1aa5589a9
+        checksum/grants: e03b3dce56c32adc0160430a0d5b208943ddf4cdcd353d3ae69cb9bf517ba9d3
         # A grant preset turns roles into profiles, so the profiles are part
         # of what a grant means.
-        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        checksum/deployment: ec0b415169388bf2335b6196243c4e2c8160cb59a526ab34e0ee75ff7bc79516
     spec:
       serviceAccountName: audit-query
       
@@ -248,24 +217,18 @@ spec:
             - --deployment=/etc/audit/deployment.yaml
             - --sink=http://audit:8080
             - --listen=:8080
-            - --exports=audit-exports
-            - --export-expiry=168h
-            - --export-link-valid=1h
-            - --key-provider=local
-            - --key-root=/etc/audit/keys/root
-            - --key-dir=/var/lib/audit/keys
             - --version=0.2.0
           env:
             - name: AUDIT_BUCKET
-              value: "audit-archive"
+              value: "audit-eu-central-1"
             - name: AUDIT_PREFIX
-              value: "prod"
+              value: "audit/app"
             - name: AWS_REGION
               value: "eu-central-1"
             - name: AUDIT_DATABASE
               valueFrom:
                 secretKeyRef:
-                  name: audit-query-database
+                  name: audit-db-reader
                   key: url
             - name: AUDIT_TOKEN_FILE
               value: /var/run/audit/token
@@ -301,12 +264,6 @@ spec:
             - name: audit-token
               mountPath: /var/run/audit
               readOnly: true
-            - name: key-root
-              mountPath: /etc/audit/keys
-              readOnly: true
-            - name: keys
-              mountPath: /var/lib/audit/keys
-              readOnly: true
             
             - name: tmp
               mountPath: /tmp
@@ -324,13 +281,6 @@ spec:
                   path: token
                   audience: "audit"
                   expirationSeconds: 3600
-        - name: key-root
-          secret:
-            secretName: audit-key-root
-        - name: keys
-          persistentVolumeClaim:
-            claimName: audit-keys
-            readOnly: true
         
         - name: tmp
           emptyDir: {}
@@ -363,9 +313,9 @@ spec:
       annotations:
         # A profile change must reach a running writer, which only happens if
         # the pod is replaced.
-        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        checksum/deployment: ec0b415169388bf2335b6196243c4e2c8160cb59a526ab34e0ee75ff7bc79516
         # Likewise who may write: a changed issuer or mapping must reach it.
-        checksum/workloads: 78b5486552a8baba45f03f809c516dfacfa90276ebbf045cfa2bfc36eed1fa17
+        checksum/workloads: 204ac89ea8b6ccb8c8a3caf25f8b40e3b59349e9ab9740ddb921c7d3d040bfc9
     spec:
       serviceAccountName: audit
       
@@ -384,7 +334,7 @@ spec:
             - --listen=:8080
             - --mode=receiver
             - --workloads=/etc/audit/workloads.yaml
-            - --stream-url=nats://nats.audit.svc:4222
+            - --stream-url=nats://nats.app.svc:4222
             - --stream=AUDIT
             - --consumer=audit-writer
             - --stream-batch=100
@@ -395,11 +345,9 @@ spec:
             - name: AUDIT_DATABASE
               valueFrom:
                 secretKeyRef:
-                  name: audit-database
+                  name: audit-db
                   key: url
             
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.observability.svc:4318"
           ports:
             - name: http
               containerPort: 8080
@@ -467,9 +415,9 @@ spec:
       annotations:
         # A profile change must reach a running writer, which only happens if
         # the pod is replaced.
-        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        checksum/deployment: ec0b415169388bf2335b6196243c4e2c8160cb59a526ab34e0ee75ff7bc79516
         # Likewise who may write: a changed issuer or mapping must reach it.
-        checksum/workloads: 78b5486552a8baba45f03f809c516dfacfa90276ebbf045cfa2bfc36eed1fa17
+        checksum/workloads: 204ac89ea8b6ccb8c8a3caf25f8b40e3b59349e9ab9740ddb921c7d3d040bfc9
     spec:
       serviceAccountName: audit
       
@@ -490,11 +438,9 @@ spec:
             - --roll-max-records=5000
             - --replicas=3
             - --workloads=/etc/audit/workloads.yaml
-            - --kms-key=alias/audit
-            - --key-provider=local
-            - --key-root=/etc/audit/keys/root
-            - --key-dir=/var/lib/audit/keys
-            - --stream-url=nats://nats.audit.svc:4222
+            - --kms-key=alias/audit-archive
+            - --key-provider=none
+            - --stream-url=nats://nats.app.svc:4222
             - --stream=AUDIT
             - --consumer=audit-writer
             - --stream-batch=100
@@ -502,20 +448,18 @@ spec:
             - --version=0.2.0
           env:
             - name: AUDIT_BUCKET
-              value: "audit-archive"
+              value: "audit-eu-central-1"
             - name: AUDIT_PREFIX
-              value: "prod"
+              value: "audit/app"
             - name: AWS_REGION
               value: "eu-central-1"
             
             - name: AUDIT_DATABASE
               valueFrom:
                 secretKeyRef:
-                  name: audit-database
+                  name: audit-db
                   key: url
             
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.observability.svc:4318"
           ports:
             - name: http
               containerPort: 8080
@@ -544,11 +488,6 @@ spec:
               mountPath: /etc/audit/workloads.yaml
               subPath: workloads.yaml
               readOnly: true
-            - name: key-root
-              mountPath: /etc/audit/keys
-              readOnly: true
-            - name: keys
-              mountPath: /var/lib/audit/keys
             
             - name: tmp
               mountPath: /tmp
@@ -556,12 +495,6 @@ spec:
         - name: deployment
           configMap:
             name: audit-deployment
-        - name: key-root
-          secret:
-            secretName: audit-key-root
-        - name: keys
-          persistentVolumeClaim:
-            claimName: audit-keys
         
         - name: tmp
           emptyDir: {}
@@ -611,20 +544,18 @@ spec:
               args:
                 - digest
                 - --deployment=/etc/audit/deployment.yaml
-                - --key=/etc/audit/signing/key.pem
-                - --key-id=audit-digest-2026
+                - --kms-key=alias/audit-digest
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
-                - --lookback=168h
               env:
                 - name: POD_NAME
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.name
                 - name: AUDIT_BUCKET
-                  value: "audit-archive"
+                  value: "audit-eu-central-1"
                 - name: AUDIT_PREFIX
-                  value: "prod"
+                  value: "audit/app"
                 - name: AWS_REGION
                   value: "eu-central-1"
                 - name: AUDIT_TOKEN_FILE
@@ -640,9 +571,6 @@ spec:
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
-                - name: signing
-                  mountPath: /etc/audit/signing
-                  readOnly: true
                 - name: audit-token
                   mountPath: /var/run/audit
                   readOnly: true
@@ -650,9 +578,6 @@ spec:
             - name: deployment
               configMap:
                 name: audit-deployment
-            - name: signing
-              secret:
-                secretName: audit-signing-key
             - name: audit-token
               projected:
                 sources:
@@ -669,7 +594,7 @@ spec:
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: audit-verify-billing-nl
+  name: audit-verify-billing
   labels:
     helm.sh/chart: audit-0.2.0
     app.kubernetes.io/name: audit
@@ -704,10 +629,9 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - verify
-                - --profile=billing-nl
+                - --profile=billing
                 - --last=24h
                 - --public-key=/etc/audit/public/public.pem
-                - --lookback=168h
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
                 - --record
@@ -717,9 +641,9 @@ spec:
                     fieldRef:
                       fieldPath: metadata.name
                 - name: AUDIT_BUCKET
-                  value: "audit-archive"
+                  value: "audit-eu-central-1"
                 - name: AUDIT_PREFIX
-                  value: "prod"
+                  value: "audit/app"
                 - name: AWS_REGION
                   value: "eu-central-1"
                 - name: AUDIT_TOKEN_FILE
@@ -740,95 +664,7 @@ spec:
           volumes:
             - name: public
               secret:
-                secretName: audit-signing-public
-            - name: audit-token
-              projected:
-                sources:
-                  - serviceAccountToken:
-                      path: token
-                      audience: "audit"
-                      expirationSeconds: 3600
-
----
-# Source: audit/templates/cronjobs.yaml
-# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: audit-verify-history
-  labels:
-    helm.sh/chart: audit-0.2.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.2.0"
-    app.kubernetes.io/managed-by: Helm
-spec:
-  schedule: "23 3 * * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: audit
-            app.kubernetes.io/instance: audit
-        spec:
-          restartPolicy: OnFailure
-          serviceAccountName: audit-verify
-          
-          securityContext:
-            fsGroup: 65532
-            runAsNonRoot: true
-            runAsUser: 65532
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: verify
-              image: ghcr.io/truvity/audit/audit:0.2.0
-              imagePullPolicy: IfNotPresent
-              args:
-                - verify
-                - --profile=history
-                - --last=24h
-                - --public-key=/etc/audit/public/public.pem
-                - --lookback=168h
-                - --sink=http://audit:8080
-                - --instance=$(POD_NAME)
-                - --record
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                - name: AUDIT_BUCKET
-                  value: "audit-archive"
-                - name: AUDIT_PREFIX
-                  value: "prod"
-                - name: AWS_REGION
-                  value: "eu-central-1"
-                - name: AUDIT_TOKEN_FILE
-                  value: /var/run/audit/token
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                  - ALL
-                readOnlyRootFilesystem: true
-              volumeMounts:
-                - name: public
-                  mountPath: /etc/audit/public
-                  readOnly: true
-                - name: audit-token
-                  mountPath: /var/run/audit
-                  readOnly: true
-          volumes:
-            - name: public
-              secret:
-                secretName: audit-signing-public
+                secretName: audit-digest-public
             - name: audit-token
               projected:
                 sources:
@@ -883,7 +719,6 @@ spec:
                 - --profile=security
                 - --last=24h
                 - --public-key=/etc/audit/public/public.pem
-                - --lookback=168h
                 - --sink=http://audit:8080
                 - --instance=$(POD_NAME)
                 - --record
@@ -893,9 +728,9 @@ spec:
                     fieldRef:
                       fieldPath: metadata.name
                 - name: AUDIT_BUCKET
-                  value: "audit-archive"
+                  value: "audit-eu-central-1"
                 - name: AUDIT_PREFIX
-                  value: "prod"
+                  value: "audit/app"
                 - name: AWS_REGION
                   value: "eu-central-1"
                 - name: AUDIT_TOKEN_FILE
@@ -916,7 +751,7 @@ spec:
           volumes:
             - name: public
               secret:
-                secretName: audit-signing-public
+                secretName: audit-digest-public
             - name: audit-token
               projected:
                 sources:
@@ -970,13 +805,12 @@ spec:
                 - purge
                 - --deployment=/etc/audit/deployment.yaml
                 - --database=$(AUDIT_DATABASE)
-                - --dedupe-window=336h
               env:
                 
                 - name: AUDIT_DATABASE
                   valueFrom:
                     secretKeyRef:
-                      name: audit-database
+                      name: audit-db
                       key: url
                 
               securityContext:
@@ -1040,8 +874,7 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - clock-sync
-                - --ntp=time.cloudflare.com
-                - --ntp=time.google.com
+                - --ntp=169.254.169.123
                 - --sink=http://audit:8080
                 - --max-offset=1s
                 - --instance=$(POD_NAME)
@@ -1150,7 +983,7 @@ spec:
             - name: AUDIT_DATABASE
               valueFrom:
                 secretKeyRef:
-                  name: audit-database
+                  name: audit-db
                   key: url
             
           securityContext:

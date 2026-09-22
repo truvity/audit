@@ -208,6 +208,20 @@ chart:
         > charts/audit/testdata/golden/stream.yaml
     helm template audit charts/audit -f charts/audit/testdata/values/transit.yaml \
         > charts/audit/testdata/golden/transit.yaml
+    # The two shapes the deployment pages document, rendered from the very
+    # files those pages show. The values above are trial installs with no
+    # index, so without these the migration hook -- which only exists when
+    # there is a database -- is never rendered at all.
+    helm template audit charts/audit -f charts/audit/examples/direct.yaml \
+        > charts/audit/testdata/golden/example-direct.yaml
+    helm template audit charts/audit -f charts/audit/examples/stream.yaml \
+        > charts/audit/testdata/golden/example-stream.yaml
+    # A hook Pod whose service account the chart creates normally is admitted
+    # and then never scheduled: only an install finds that, so assert it here.
+    for shape in direct stream transit example-direct example-stream; do \
+        python3 charts/audit/testdata/hook-order.py \
+            < charts/audit/testdata/golden/$shape.yaml; \
+    done
     git diff --exit-code -- charts/audit/testdata/golden
 
 # The TypeScript package: install, typecheck, test, build, and check what a

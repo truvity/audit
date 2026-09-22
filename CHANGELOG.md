@@ -5,6 +5,22 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [0.2.6] - 2026-09-22
+
+### The writer takes no caller's word for the shape of a record, its own included
+
+The first adopter's registration produced an object keyed under
+`year=1970`: the writer's own `audit.catalogue.registered` record, built
+by hand, carried no `occurred_at`, and the write path never ran
+`record.Check` -- only emitters did. The object is locked under its
+profile's retention like any other, outside every digest window, and stays.
+
+The registration record now carries the time it happened, and `Write`
+checks every record it takes and dead-letters one that fails, before it
+is keyed. A test holds the writer's own record to the check every
+emitter's record passes, and a record with no time is dead-lettered with
+the reason, never written.
+
 ## [0.2.5] - 2026-09-22
 
 ### An instrumented emitter no longer drops in silence

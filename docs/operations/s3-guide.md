@@ -100,6 +100,14 @@ one.
 | **verify job** | `s3:GetObject`, `s3:ListBucket`; `s3:PutObject` on `verified/` | `kms:Decrypt` on the bucket's key |
 | **query service** | `s3:GetObject`, `s3:ListBucket` | `s3:PutObject`, `s3:GetObject` on the exports bucket; `kms:Decrypt` |
 
+Only the **writer** holds `s3:PutObjectLegalHold`, and only because it places
+holds. A put carries the legal-hold header solely when it is placing one, so
+the digest and verify jobs — which write their own results into a locked
+bucket — need `s3:PutObject` and `s3:PutObjectRetention` and nothing more. If
+a component that places no holds is refused `s3:PutObjectLegalHold` on a plain
+put, it is running a version that sent the header as OFF on every put; upgrade
+it rather than granting the right.
+
 `schema/` is easy to miss and the writer does not start without it. It records
 each profile's composition there, and reads the last one back on **every
 start** to decide whether the profile has changed since it last wrote. A policy

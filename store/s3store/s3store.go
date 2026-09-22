@@ -290,11 +290,19 @@ func (s *Store) retainUntil(o store.Object) *time.Time {
 	return aws.Time(o.RetainUntil.UTC())
 }
 
+// legalHoldStatus is sent only to PLACE a hold, never to say there is none.
+//
+// S3 charges `s3:PutObjectLegalHold` for the header's presence, whatever its
+// value, so sending OFF on every put would oblige every component that writes
+// the archive to hold the right to place holds -- including the digest and
+// verify jobs, which write their own results and have no business placing one.
+// An absent header and OFF leave the object in the same state, because a
+// bucket has no default legal hold the way it has a default retention.
 func (s *Store) legalHoldStatus(o store.Object) types.ObjectLockLegalHoldStatus {
-	if s.unlocked {
+	if s.unlocked || !o.LegalHold {
 		return ""
 	}
-	return legalHold(o.LegalHold)
+	return legalHold(true)
 }
 
 func legalHold(on bool) types.ObjectLockLegalHoldStatus {

@@ -392,6 +392,7 @@ func TestPrefixesListsEveryGroupAcrossPages(t *testing.T) {
 // A hold placed on a prefix covers what is there; an object written afterwards
 // carries it from the start, because one held only by a later sweep was
 // deletable in between.
+// A hold is carried on the put that places it, and only then.
 func TestPutCarriesTheLegalHold(t *testing.T) {
 	s, f := newStore(t, s3store.Options{})
 	o := object()
@@ -403,13 +404,18 @@ func TestPutCarriesTheLegalHold(t *testing.T) {
 		t.Fatalf("legal hold status %q, want ON", got)
 	}
 
+	// An object with no hold sends no header at all, rather than OFF. S3
+	// charges s3:PutObjectLegalHold for the header's presence whatever its
+	// value, so OFF on every put would oblige the digest and verify jobs --
+	// which write their own results and place no holds -- to hold the right
+	// to place one. Absent and OFF leave the object in the same state.
 	plain := object()
 	plain.Key += ".2"
 	if err := s.Put(context.Background(), plain); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.puts[1].ObjectLockLegalHoldStatus; got != types.ObjectLockLegalHoldStatusOff {
-		t.Fatalf("legal hold status %q, want OFF", got)
+	if got := f.puts[1].ObjectLockLegalHoldStatus; got != "" {
+		t.Fatalf("legal hold status %q, want no header", got)
 	}
 }
 

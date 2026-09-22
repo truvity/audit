@@ -170,6 +170,23 @@ writer sequence, so late events are never missed by a poller. The index orders
 rows that way for the same reason. An empty page keeps the boundary it was
 asked from, so a tail polling a quiet profile does not lose its place.
 
+**Recorded, not occurred, and the difference is the whole point.** What
+arrives next need not have happened next. A record delayed anywhere — an
+emitter's queue retrying through an outage, a stream redelivering, a backlog
+being worked off — reaches the index long after it happened. A tail ordered by
+when things happened would hand the reader a cursor already past it, and
+nobody would see the gap: the page is empty either way and the record sits
+unread. The conformance suite asks every searcher that offers this ordering
+for exactly that case, a record of an earlier day indexed after the last page
+was taken.
+
+**A deployment with no database has no live tail.** The archive scan orders by
+`occurred_at` only, and refuses `recorded_at`, because the archive is laid out
+by the day things happened: following the order things were recorded in would
+mean reading far more of it than a poll can justify. The suite requires that
+refusal rather than allowing a narrower answer. So `query.searcher: s3scan` is
+for a deployment that searches the trail, not one that follows it.
+
 ## Reading is recorded
 
 Every answer produces a record: `audit.search`, `audit.facets`, `audit.get`,

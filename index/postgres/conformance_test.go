@@ -22,5 +22,5 @@ func TestPostgresConforms(t *testing.T) {
 		t.Fatal(err)
 	}
 	indextest.Index(t, idx, indextest.Corpus(t))
-	indextest.Run(t, "postgres", idx)
+	indextest.Run(t, "postgres", idx, idx)
 }

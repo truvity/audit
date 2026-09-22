@@ -104,8 +104,8 @@ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UV
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
-github.com/truvity/access-roster v1.16.0 h1:D8JU1dI1zK4DhAgC9jZYIfqeelfdkKJd6sTpJz5ADtk=
-github.com/truvity/access-roster v1.16.0/go.mod h1:8vs0dVukzwBUqFTn86i0ilqe1M5GCSgCEDfSMIaU5Eo=
+github.com/truvity/access-roster v1.27.1 h1:92AJcaG5Vl+55tY7lbY+KvmSTsb1s7acpdGOjFLaZVQ=
+github.com/truvity/access-roster v1.27.1/go.mod h1:lOK1TimFr6PxEFvvtVX7vY3/FuiRXltfD5lfVqDnl/o=
 github.com/truvity/gateway-auth v0.7.1 h1:jSoeB+u9aergNMeNHW3c7g291RxdCED6TaOflwJNSak=
 github.com/truvity/gateway-auth v0.7.1/go.mod h1:5ZrYGw0qmVo+Xgpa/Au5BiDVkxSKcz+ZUil4JlQo+eU=
 github.com/valyala/fastjson v1.6.10 h1:/yjJg8jaVQdYR3arGxPE2X5z89xrlhS0eGXdv+ADTh4=

@@ -5,6 +5,29 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [Unreleased]
+
+### The receiver and the writers identify themselves to the stream
+
+`audit-writer` connected to the broker with no credentials and had no way
+to carry any, so a deployment whose broker verifies who connects could not
+run stream mode at all. It now takes `--stream-token-file`
+(`AUDIT_STREAM_TOKEN_FILE`): a file whose contents both ends of the stream
+present as their NATS token, read afresh on every connect because a
+projected service-account token rotates, and a refusal no longer ends the
+client's reconnecting -- the next attempt reads the file again. The option
+list is one helper shared by the receiver and the writer, so the two cannot
+drift. Empty, the flag changes nothing.
+
+The chart projects that token under `stream.token`: `enabled` (off, so an
+existing values file renders exactly as it did), `audience` (`nats`) and
+`expirationSeconds` (3600), mounted into every pod that reaches the stream
+and only when one is configured. The broker's auth callout -- the thing
+that reviews the token and maps the namespace to an account -- is the
+deployment's, and the stream page says what it must accept. The chart's
+network policy is ingress-only and is unchanged: it never governed what
+the writer may reach.
+
 ## [0.2.6] - 2026-09-22
 
 ### The writer takes no caller's word for the shape of a record, its own included

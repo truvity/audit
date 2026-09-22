@@ -190,6 +190,37 @@ for it.
           expirationSeconds: {{ .Values.workloadIdentity.expirationSeconds }}
 {{- end -}}
 
+{{/*
+The projected service-account token the receiver and the writers present to
+the stream's broker, where it verifies who connects. Rendered only with a
+stream and `stream.token.enabled`; a broker that verifies nobody gets nothing,
+and a values file from before this existed renders as it did.
+*/}}
+{{- define "audit.streamToken" -}}
+{{- if and .Values.stream.url .Values.stream.token.enabled }}true{{ end -}}
+{{- end -}}
+
+{{- define "audit.streamTokenEnv" -}}
+- name: AUDIT_STREAM_TOKEN_FILE
+  value: /var/run/audit/stream/token
+{{- end -}}
+
+{{- define "audit.streamTokenMount" -}}
+- name: stream-token
+  mountPath: /var/run/audit/stream
+  readOnly: true
+{{- end -}}
+
+{{- define "audit.streamTokenVolume" -}}
+- name: stream-token
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: token
+          audience: {{ .Values.stream.token.audience | quote }}
+          expirationSeconds: {{ .Values.stream.token.expirationSeconds }}
+{{- end -}}
+
 {{/* The workloads file mount, for the writer. */}}
 {{- define "audit.workloadsMount" -}}
 - name: deployment

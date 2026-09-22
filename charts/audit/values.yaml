@@ -300,6 +300,19 @@ stream:
   # exceed the longest a write can honestly take: a batch is acknowledged only
   # once its records are in the archive.
   ackWait: 2m
+  # How the receiver and the writers identify themselves to the broker, where
+  # it verifies who connects. On, each pod that reaches the stream mounts a
+  # projected service-account token of this audience and presents it as its
+  # NATS token, read afresh on every connect because the kubelet replaces it
+  # before it expires. The broker's side -- an auth callout that reviews the
+  # token and maps the namespace to an account -- is the deployment's. Off,
+  # the pods connect with no credentials, for a broker that verifies nobody.
+  # Off by default, and explicit, so that a values file written before this
+  # existed renders exactly as it did.
+  token:
+    enabled: false
+    audience: nats
+    expirationSeconds: 3600
 
 # How often an object is rolled and put.
 # The roll: how much a writer consuming the stream gathers before it writes,

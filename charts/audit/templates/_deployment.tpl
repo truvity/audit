@@ -116,6 +116,7 @@ spec:
             {{- end }}
             {{- include "audit.databaseEnv" $ | nindent 12 }}
             {{- include "audit.trustEnv" $ | nindent 12 }}
+            {{- if include "audit.streamToken" $ }}{{ include "audit.streamTokenEnv" $ | nindent 12 }}{{- end }}
             {{- with $.Values.telemetry.otlpEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ . | quote }}
@@ -158,6 +159,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- include "audit.trustMount" $ | nindent 12 }}
+            {{- if include "audit.streamToken" $ }}{{ include "audit.streamTokenMount" $ | nindent 12 }}{{- end }}
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -187,6 +189,7 @@ spec:
         {{- end }}
         {{- end }}
         {{- include "audit.trustVolume" $ | nindent 8 }}
+        {{- if include "audit.streamToken" $ }}{{ include "audit.streamTokenVolume" $ | nindent 8 }}{{- end }}
         - name: tmp
           emptyDir: {}
 {{- end -}}

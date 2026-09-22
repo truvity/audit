@@ -80,7 +80,11 @@ func run() error {
 			"accept writes over HTTP from callers nobody verified; for a trial install only")
 		streamURL = flag.String("stream-url", env("AUDIT_STREAM_URL", ""),
 			"the NATS server holding the wide stream; without it the writer only serves the sink")
-		streamName   = flag.String("stream", env("AUDIT_STREAM", "AUDIT"), "the stream to consume")
+		streamName  = flag.String("stream", env("AUDIT_STREAM", "AUDIT"), "the stream to consume")
+		streamToken = flag.String("stream-token-file", env("AUDIT_STREAM_TOKEN_FILE", ""),
+			"a file holding the token presented to the stream's broker, read afresh on every "+
+				"connect; a projected service-account token where the broker verifies workloads. "+
+				"Empty connects with no credentials")
 		consumerName = flag.String("consumer", env("AUDIT_CONSUMER", "audit-writer"),
 			"the durable consumer this deployment's writers share")
 		streamBatch = flag.Int("stream-batch", envInt("AUDIT_STREAM_BATCH", 100),
@@ -237,7 +241,7 @@ func run() error {
 	)
 	if *mode == "receiver" {
 		publisher, stop, err := publisherFor(ctx, streamOptions{
-			URL: *streamURL, Stream: *streamName, Durable: *consumerName,
+			URL: *streamURL, TokenFile: *streamToken, Stream: *streamName, Durable: *consumerName,
 			Batch: *streamBatch, AckWait: *streamAckWait,
 		})
 		if err != nil {
@@ -279,7 +283,7 @@ func run() error {
 		// rather than a hole.
 		if *streamURL != "" {
 			stop, err := consume(ctx, streamOptions{
-				URL: *streamURL, Stream: *streamName, Durable: *consumerName,
+				URL: *streamURL, TokenFile: *streamToken, Stream: *streamName, Durable: *consumerName,
 				Batch: *streamBatch, AckWait: *streamAckWait,
 				Window: *rollEvery, MaxRecords: *rollRecords,
 			}, w)
@@ -459,7 +463,10 @@ var _ store.Store = (*s3store.Store)(nil)
 // streamOptions are how this writer reads the wide stream.
 type streamOptions struct {
 	URL, Stream, Durable string
-	Batch                int
+	// TokenFile holds the token presented to the broker, when it verifies who
+	// connects; empty connects with no credentials. See connectOptions.
+	TokenFile string
+	Batch     int
 	// AckWait is how long the stream waits for a batch to be taken before
 	// offering it again. It has to be longer than the longest a write can
 	// honestly take — a batch is acknowledged only once its records are in the
@@ -480,18 +487,7 @@ type streamOptions struct {
 // its retention and its discard policy decide whether a full stream refuses
 // publishers or drops records, and neither is this process's to choose.
 func publisherFor(ctx context.Context, o streamOptions) (sink.Sink, func(), error) {
-	conn, err := nats.Connect(o.URL,
-		nats.Name("audit-receiver"),
-		nats.MaxReconnects(-1),
-		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
-			if err != nil {
-				slog.Error("disconnected from the stream", "error", err)
-			}
-		}),
-		nats.ReconnectHandler(func(c *nats.Conn) {
-			slog.Info("reconnected to the stream", "url", c.ConnectedUrl())
-		}),
-	)
+	conn, err := nats.Connect(o.URL, connectOptions("audit-receiver", o)...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("receiver: connecting to %s: %w", o.URL, err)
 	}
@@ -535,21 +531,7 @@ func publisherFor(ctx context.Context, o streamOptions) (sink.Sink, func(), erro
 // writer that cannot write leaves its messages for the redelivery rather than
 // losing them, which is the whole reason the stream is there.
 func consume(ctx context.Context, o streamOptions, target sink.Sink) (func(), error) {
-	conn, err := nats.Connect(o.URL,
-		nats.Name("audit-writer"),
-		// Reconnect for as long as the process lives. A writer that gave up on
-		// the stream would go on answering its own health check while the
-		// backlog grew behind it.
-		nats.MaxReconnects(-1),
-		nats.DisconnectErrHandler(func(_ *nats.Conn, err error) {
-			if err != nil {
-				slog.Error("disconnected from the stream", "error", err)
-			}
-		}),
-		nats.ReconnectHandler(func(c *nats.Conn) {
-			slog.Info("reconnected to the stream", "url", c.ConnectedUrl())
-		}),
-	)
+	conn, err := nats.Connect(o.URL, connectOptions("audit-writer", o)...)
 	if err != nil {
 		return nil, fmt.Errorf("writer: connecting to %s: %w", o.URL, err)
 	}

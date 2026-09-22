@@ -113,6 +113,10 @@ audit:
     consumer: audit-writer
     batch: 100
     ackWait: 2m
+    token:                            # the broker verifies who connects
+      enabled: true
+      audience: nats
+      expirationSeconds: 3600
 
   roll:
     interval: 30s
@@ -162,6 +166,40 @@ audit:
 The chart refuses `mode: stream` without `stream.url`, and refuses an
 extension whose profile the deployment does not compose — `billing` with no
 metering profile is a values mistake worth catching at render time.
+
+## Authenticating to the stream
+
+The receiver and the writers are workloads, and they identify themselves to
+the broker the way the application identifies itself to the receiver: with
+the projected service-account token the kubelet gives them, never with a
+credential somebody stored. Set `stream.token.enabled`, and each pod that
+reaches the stream mounts a token of `stream.token.audience` (`nats`) and
+presents it as its NATS token, read afresh on every connect because the
+kubelet replaces it before it expires and the broker drops a connection whose
+token has.
+
+```yaml
+audit:
+  stream:
+    url: nats://nats.app.svc:4222
+    token:
+      enabled: true
+      audience: nats
+      expirationSeconds: 3600
+```
+
+The broker's side is the deployment's: an auth callout that takes the token
+from the connect request, reviews it with the cluster (a `TokenReview`), and
+answers with a user in the account that namespace maps to. The responder must
+accept the audience the chart projects, and the mapping decides which account
+the installation publishes into; neither is this chart's to configure. A
+broker that verifies nobody needs nothing here: the toggle is off by default,
+and off the pods connect as they always did, with no credentials.
+
+A token the broker refuses at start-up stops the pod with the reason in its
+log, as a missing stream does. A refusal later — a token that was stale for a
+moment, or a file that could not be read — is retried on the next reconnect
+with the file read again, and is logged; the token itself never is.
 
 ## Who the query service trusts
 

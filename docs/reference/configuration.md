@@ -74,6 +74,7 @@ binary's flags with dots.
 | `stream.url`, `stream.name`, `stream.consumer` | JetStream, in stream mode. The chart refuses `mode: stream` without a URL |
 | `stream.batch` | how many records are taken at once. Default 100 |
 | `stream.ackWait` | how long the stream waits for a batch to be taken before offering it again. Default 2m, and it must exceed `roll.interval` plus the longest a put can take: records are acknowledged only once they are in the archive, and a stream that gives up waiting sooner offers them to a second writer. The chart refuses to render otherwise |
+| `stream.token.enabled`, `.audience`, `.expirationSeconds` | how the receiver and the writers identify themselves to a broker that verifies who connects: a projected service-account token of that audience (`nats`) and lifetime (3600), presented as the NATS token and read afresh on every connect. It renders the binary's `--stream-token-file`. Off by default: the pods then connect with no credentials ([stream](../deployment/stream.md#authenticating-to-the-stream)) |
 | `roll.interval`, `roll.maxRecords` | the roll: how much a writer gathers from the stream before it writes, and so how many objects a day of records becomes. Whichever of the two is reached first, or the roller's byte limit. In direct mode there is no stream to gather from, and `interval` is only how long an object may stay open inside one write |
 | `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database in the application's Postgres. Without it the writer indexes nothing and deduplicates in process |
 | `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
@@ -97,9 +98,10 @@ observer: the stream's own authentication is what admits a publisher there.
 
 The built `audit-writer` takes these as flags or environment variables:
 `--database`/`AUDIT_DATABASE` is the index, `--replicas`/`AUDIT_REPLICAS` is how
-many writers share the stream. A writer whose database is at a schema version
-this build does not know refuses to start; run `audit migrate --database <url>`
-first, from one place.
+many writers share the stream, `--stream-token-file`/`AUDIT_STREAM_TOKEN_FILE`
+is the token both ends present to a broker that verifies who connects. A
+writer whose database is at a schema version this build does not know refuses
+to start; run `audit migrate --database <url>` first, from one place.
 
 ## Query service
 

@@ -15,5 +15,5 @@ import (
 func TestMemoryConforms(t *testing.T) {
 	m := index.NewMemory()
 	indextest.Index(t, m, indextest.Corpus(t))
-	indextest.Run(t, "memory", m)
+	indextest.Run(t, "memory", m, m)
 }

@@ -9,7 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/record"
 )
 
 // Need is a capability a case depends on.
@@ -199,13 +203,17 @@ type Capabilities = index.Capabilities
 
 // Run asks every case of one searcher.
 //
+// Pass an indexer as the optional argument where records can be added to what
+// this searcher reads: that is what lets the suite ask about the tail, which
+// only means anything when something arrives after a page was taken.
+//
 // A searcher must answer exactly, in order, the cases its capabilities cover,
 // and must return an error for the ones they do not. The second half is the
 // point: it is what stops an implementation passing by declaring nothing, and
 // it catches the opposite fault too — a searcher that quietly answers a query
 // it told the caller it could not, which is how a caller ends up trusting a
 // narrower answer than it asked for.
-func Run(t *testing.T, name string, searcher index.Searcher) {
+func Run(t *testing.T, name string, searcher index.Searcher, into ...index.Indexer) {
 	t.Helper()
 	caps := searcher.Capabilities()
 	ctx := context.Background()
@@ -251,6 +259,19 @@ func Run(t *testing.T, name string, searcher index.Searcher) {
 	t.Run(name+"/paging reaches every record exactly once", func(t *testing.T) {
 		paging(ctx, t, searcher)
 	})
+
+	// A tail is asked only where the caller passed something that can add to
+	// what this searcher reads, and where recorded_at ordering is offered. The
+	// archive scan is neither: nothing is added to an archive except by writing
+	// an object, and it refuses that ordering, which the case above holds it
+	// to. A read-only database role is an index.Indexer by type and cannot
+	// write either, which is why this is the caller's to say and not a type
+	// assertion's to guess.
+	if len(into) > 0 && into[0] != nil && offers(caps, SortRecordedAt) {
+		t.Run(name+"/the tail delivers an event that happened before it", func(t *testing.T) {
+			tail(ctx, t, searcher, into[0])
+		})
+	}
 
 	// A searcher that refused everything would have reached here with a clean
 	// run and proved nothing at all.
@@ -303,6 +324,96 @@ func paging(ctx context.Context, t *testing.T, searcher index.Searcher) {
 		q.After = out.Next
 	}
 	t.Fatalf("paging did not finish: %d rows and still more", len(got))
+}
+
+// tail follows the trail to its end, adds a record that happened earlier than
+// everything already there, and requires the cursor to deliver it.
+//
+// This is the case a tail exists for and the one that is easy to get wrong. A
+// reader following the trail has paged to the end and holds a cursor; what
+// arrives next need not have happened next. A record delayed anywhere — an
+// emitter queue retrying through an outage, a stream redelivering, a backlog
+// being worked off — reaches the index long after it happened, and a tail that
+// ordered by when things happened would hand the reader a cursor already past
+// it. Nobody would see the gap: the page is empty either way, and the record
+// sits in the archive unread.
+//
+// So the order is recorded_at, and this asks for a record whose occurred_at is
+// on the corpus's earlier day while its recorded_at is later than anything in
+// it. A searcher that confuses the two fails here and nowhere else.
+func tail(ctx context.Context, t *testing.T, searcher index.Searcher, into index.Indexer) {
+	t.Helper()
+	q := index.Query{
+		Profile: Profile,
+		Sort:    []index.SortBy{{Field: index.SortRecordedAt}},
+		Limit:   100,
+	}
+	page, err := searcher.Search(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Next == nil {
+		t.Fatal("the last page carries no cursor, so a reader has no way to ask for what comes next")
+	}
+	// An empty page must keep the reader's place. A tail that forgot it here
+	// would start again from the beginning on the next poll.
+	q.After = page.Next
+	empty, err := searcher.Search(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(empty.Rows) != 0 {
+		t.Fatalf("the trail grew on its own: %d rows after the last page", len(empty.Rows))
+	}
+	if empty.Next == nil {
+		t.Fatal("an empty page lost the reader's place")
+	}
+
+	late := latecomer(t)
+	if err := into.Index(ctx, Profile, []index.Row{late}); err != nil {
+		t.Fatal(err)
+	}
+	q.After = empty.Next
+	caught, err := searcher.Search(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(caught.Rows) != 1 || caught.Rows[0].ID != late.ID {
+		t.Fatalf("the tail missed a record that happened on %s and was recorded after the last page: %v",
+			Early.Format("2006-01-02"), positions(idsOf(caught.Rows)))
+	}
+}
+
+// latecomer is a record of the corpus's earlier day, recorded after everything
+// in it: what a delayed delivery looks like by the time it is indexed.
+func latecomer(t *testing.T) index.Row {
+	t.Helper()
+	r := &record.Record{
+		Id:            "018f0000-0000-7000-8000-00000000fffa",
+		SchemaVersion: record.SchemaVersion,
+		Source:        "wallet",
+		Action:        "wallet.credential.issued",
+		Operation:     auditv1.Operation_OPERATION_CREATE,
+		TenantId:      "acme",
+		OccurredAt:    timestamppb.New(Early.Add(30 * time.Minute)),
+		RecordedAt:    timestamppb.New(Late.Add(24 * time.Hour)),
+		Actor:         &record.Actor{Kind: "service", Id: "wallet-api"},
+		Outcome:       &record.Outcome{Result: auditv1.Outcome_RESULT_SUCCESS},
+	}
+	row := index.RowOf(r, index.ObjectAt{Key: "late", Line: 1}, Fields)
+	// RowOf takes the times from the record; this says plainly what the case
+	// turns on, so a reader of a failure does not have to work it out.
+	row.OccurredAt = r.GetOccurredAt().AsTime()
+	row.RecordedAt = r.GetRecordedAt().AsTime()
+	return row
+}
+
+func idsOf(rows []index.Row) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.ID)
+	}
+	return out
 }
 
 func runFacets(ctx context.Context, t *testing.T, searcher index.Searcher, c Case, can bool) {

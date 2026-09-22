@@ -125,7 +125,10 @@ data:
       name: access-roster
 
 ---
-# Source: audit/templates/writer.yaml
+# Source: audit/templates/keys-pvc.yaml
+# Data keys are random and wrapped into this directory, so it is the only copy
+# of them. In stream mode the writers share it, which is why it needs an access
+# mode that lets more than one pod mount it.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -345,7 +348,7 @@ metadata:
     app.kubernetes.io/version: "0.1.0"
     app.kubernetes.io/managed-by: Helm
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: audit
@@ -373,7 +376,111 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: writer
+        - name: receiver
+          image: ghcr.io/truvity/audit/audit-writer:0.1.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --deployment=/etc/audit/deployment.yaml
+            - --listen=:8080
+            - --mode=receiver
+            - --workloads=/etc/audit/workloads.yaml
+            - --stream-url=nats://nats.audit.svc:4222
+            - --stream=AUDIT
+            - --consumer=audit-writer
+            - --stream-batch=100
+            - --stream-ack-wait=2m
+            - --version=0.1.0
+          env:
+            
+            - name: AUDIT_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: audit-database
+                  key: url
+            
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.observability.svc:4318"
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/workloads.yaml
+              subPath: workloads.yaml
+              readOnly: true
+            
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: deployment
+          configMap:
+            name: audit-deployment
+        
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/writer.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-consumer
+  labels:
+    helm.sh/chart: audit-0.1.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.1.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: consumer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: consumer
+      annotations:
+        # A profile change must reach a running writer, which only happens if
+        # the pod is replaced.
+        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        # Likewise who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: 78b5486552a8baba45f03f809c516dfacfa90276ebbf045cfa2bfc36eed1fa17
+    spec:
+      serviceAccountName: audit
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: consumer
           image: ghcr.io/truvity/audit/audit-writer:0.1.0
           imagePullPolicy: IfNotPresent
           args:

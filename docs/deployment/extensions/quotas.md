@@ -65,7 +65,7 @@ audit:
   mode: stream
   extensions:
     quotas:
-      enabled: true               # not built yet: the consumer and the reconciler
+      enabled: true               # renders nothing yet: the consumer and the reconciler are designed, not built
       cache:
         url: redis://valkey.app.svc:6379
       period: month

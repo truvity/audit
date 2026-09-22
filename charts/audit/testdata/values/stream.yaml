@@ -1,11 +1,14 @@
-# A deployment as the design intends it: behind a stream, with an index, three
-# writers sharing one durable consumer and one key directory, and the query
-# service beside them, resolving through the same directory.
+# Stream mode: a receiver in front, writers consuming behind, an index, one key
+# directory the writers share, and the query service beside them resolving
+# through the same directory. A product's shape.
+mode: stream
 bucket: audit-archive
 prefix: prod
 region: eu-central-1
 kmsKey: alias/audit
-replicas: 3
+replicas: 2
+writer:
+  consumers: 3
 profiles:
   security:
     presets: [security]

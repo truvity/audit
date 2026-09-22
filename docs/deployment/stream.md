@@ -97,7 +97,7 @@ quietly double.
 
 ```yaml
 audit:
-  mode: stream                      # not built yet: arrives with the rewrite
+  mode: stream
   bucket: audit-eu-central-1
   prefix: audit/app
   region: eu-central-1
@@ -105,7 +105,7 @@ audit:
 
   replicas: 2                       # receivers
   writer:
-    consumers: 3                    # not built yet: writer pods consuming the stream
+    consumers: 3
 
   stream:
     url: nats://nats.app.svc:4222
@@ -150,7 +150,9 @@ audit:
       enabled: true
       ntp: ["169.254.169.123"]
 
-  extensions:                       # not built yet
+  # Both render nothing yet; the toggles are here so that a deployment's
+  # values do not change when the work that fills them lands.
+  extensions:
     billing:
       enabled: true
     quotas:
@@ -184,6 +186,10 @@ mints a short token per person. Both are described in
 - **The stream** is sized for the longest writer outage you want to survive.
   `DiscardNew` is the right policy: when it is full, refuse a publish rather
   than silently drop the oldest evidence.
+
+The same values are kept beside the chart as
+[`charts/audit/examples/stream.yaml`](../../charts/audit/examples/stream.yaml),
+where the chart's own tests render them.
 
 ## Checking it works
 

@@ -1,9 +1,9 @@
 # Configuration reference
 
 The Go emitter's options, and the chart's values for each component. Every
-name here exists in the code or in `charts/audit/values.yaml`, except the
-handful marked *not built yet*, which arrive with the rewrite this
-documentation specifies. The chart's file has a comment on each value.
+name here exists in the code or in `charts/audit/values.yaml`, and the chart's
+file has a comment on each value. Where something is designed and not built,
+it says so.
 
 One installation serves one application, in that application's namespace,
 rendered by the application's own chart with this one as a dependency
@@ -64,7 +64,7 @@ binary's flags with dots.
 
 | setting | meaning |
 |---|---|
-| `mode` | `direct` or `stream`, as the chart value. Not built yet: it arrives with the chart work, and renders the binaries' `--mode` below |
+| `mode` | `direct` (one process: the front door and the write path) or `stream` (a receiver in front, `writer.consumers` writers behind). It renders the binaries' `--mode` |
 | `bucket`, `prefix`, `region`, `kmsKey` | the archive. `prefix` is required in a bucket shared with other applications: it is what keeps two installations apart |
 | `governance` | lets a privileged role shorten a retention. Off, and the chart refuses it on: a deployment that wants it says so in a values file of its own |
 | `profiles` | composition of presets and prefixes, the document `audit-writer --deployment` reads |

@@ -1,0 +1,62 @@
+# An internal service's installation: the front door and the write path in one
+# process, no stream, and an index in a small Postgres of its own.
+#
+# This is what an application's chart sets under the `audit:` key when it takes
+# this chart as a dependency. Everything not named here has a default.
+mode: direct
+
+bucket: audit-eu-central-1
+# Required wherever the bucket is shared: it is what keeps two applications'
+# archives apart, and what each role's IAM is scoped to.
+prefix: audit/app
+region: eu-central-1
+kmsKey: alias/audit-archive
+replicas: 2
+
+profiles:
+  security:
+    presets: [security]
+
+# No pseudonymisation keys: staff are kept in clear, and people outside arrive
+# as identifiers this application minted.
+keys:
+  provider: none
+externalIdentifiersAreOpaque: true
+
+database:
+  existingSecret: audit-db
+
+# Who may register a catalogue, and as what. A workload not listed here cannot.
+workloadIdentity:
+  issuers:
+    - url: https://oidc.example.com/id/CLUSTER
+  workloads:
+    - subject: system:serviceaccount:app:api
+      source: app
+
+query:
+  enabled: true
+  replicas: 1
+  database:
+    existingSecret: audit-db-reader
+    role: audit_query
+  grants:
+    issuers:
+      - url: https://console.example.com
+        audience: audit
+
+jobs:
+  digest:
+    enabled: true
+    kmsKey: alias/audit-digest
+  verify:
+    enabled: true
+    publicKey:
+      existingSecret: audit-digest-public
+  purge:
+    enabled: true
+  clockSync:
+    enabled: true
+    # Required by every preset with a compliance obligation. On AWS this is the
+    # instance's own time service.
+    ntp: ["169.254.169.123"]

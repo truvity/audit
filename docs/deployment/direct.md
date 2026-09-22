@@ -79,7 +79,7 @@ The application's chart takes this one as a dependency and sets:
 
 ```yaml
 audit:
-  mode: direct                      # not built yet: arrives with the rewrite
+  mode: direct
   bucket: audit-eu-central-1
   prefix: audit/app                 # required in a shared bucket
   region: eu-central-1
@@ -125,8 +125,8 @@ audit:
       ntp: ["169.254.169.123"]      # required by every compliance preset
 ```
 
-One of those values arrives with the rest of the repository rewrite: `mode`.
-Everything else renders today.
+Every value here renders today. `charts/audit/examples/direct.yaml` is the
+same thing as a file, kept beside the chart and rendered by its tests.
 
 `prefix` is what keeps two applications apart in one bucket, and the chart's
 notes print the IAM statements the four roles need underneath it: the
@@ -146,6 +146,10 @@ $ audit migrate --database "$OWNER_URL" --reader audit_query
 If the application already runs a Postgres cluster, this is one more
 database in it. If it does not, a single-instance cluster is enough: the
 index is rebuildable from the archive, so it needs no backup and no replica.
+
+The same values are kept beside the chart as
+[`charts/audit/examples/direct.yaml`](../../charts/audit/examples/direct.yaml),
+where the chart's own tests render them.
 
 ## Checking it works
 

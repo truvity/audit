@@ -2,22 +2,23 @@
 // splits them into the copies their profiles keep, pseudonymises, and puts them
 // into the locked archive.
 //
-// An application embeds it when it has no stream and no central writer to hand
-// records to: its own emitter writes straight into the writer in process, and
-// the writer writes straight to the bucket. It is the same writer the
-// audit-writer binary runs — that binary is built on this package — so an
-// embedded one keeps the same promises: nothing is acknowledged before it is in
-// the archive, a record the writer cannot take is dead-lettered and never
-// dropped, and the writer keeps an account of itself in the archive it writes.
+// This is what the audit-writer binary runs: that binary is built on this
+// package, and the promises are the writer's rather than the binary's. Nothing
+// is acknowledged before it is in the archive, a record the writer cannot take
+// is dead-lettered and never dropped, and the writer keeps an account of
+// itself in the archive it writes.
+//
+// It is exported because the binary needs it and a test may. It is not a way
+// to deploy: a writer inside an application puts the archive's credentials in
+// the application's pods and makes every fix an application release, which
+// docs/decisions/0011-one-installation-per-service-or-product.md rules out.
 //
 //	w, err := writer.Open(ctx, writer.Config{
 //		Archive:  archive,  // an s3store.Store on the Object-Locked bucket
 //		Profiles: profiles, // preset.ParseDeployment(doc) then Compose
 //		Keys:     provider, // keys.NewTransit or keys.NewLocal
-//		Self:     "workload:my-app",
 //	})
 //	defer w.Close(ctx)
-//	emitter, err := emit.New(emit.Options{Source: "my-app", Catalogue: c, Sink: w})
 package writer
 
 import (

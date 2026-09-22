@@ -60,7 +60,7 @@ its own prefix.
   that denies deletes to everyone, and a prefix for this application. The
   [S3 guide](../operations/s3-guide.md) has the policy.
 - A **Postgres database** the writer owns, and a **read-only role** for the
-  query service.
+  query service. See [one more database](#one-more-database-in-a-cluster-you-already-run).
 - A **signing key** for the digest chain — a KMS key is the usual choice, so
   that writing the archive and vouching for it stay separate privileges.
 - A **reference clock** for the clock-synchronisation job. Every preset with
@@ -68,3 +68,38 @@ its own prefix.
   the chart refuses to render without one.
 - Somewhere for the **Audit page** to live: the application's console, which
   calls the query service with the console's own token.
+
+## One more database in a cluster you already run
+
+The index is a projection: `audit reindex` rebuilds it from the archive, so it
+needs no backup and no replica. That makes it cheap to put in a Postgres the
+application already has, rather than running one for it.
+
+Make a database and two roles in that cluster: an owner the writer migrates and
+writes as, and a reader the query service uses. They must be different roles.
+The tenant row-level policies bind the reader; an owner bypasses them, so a
+query service connecting as the owner would have every tenant's isolation rest
+on the service alone. The chart refuses to render when both name the same
+credentials.
+
+```sql
+create database audit;
+create role audit_owner login password :'owner';
+create role audit_query login password :'reader';
+grant all privileges on database audit to audit_owner;
+```
+
+Then apply the schema and grant the reader what it needs, in one step:
+
+```console
+$ audit migrate --database "$OWNER_URL" --reader audit_query
+```
+
+`--reader` grants usage and select and nothing else. The writer refuses to
+start against a schema version it does not know and never migrates itself:
+several replicas would race.
+
+With an operator that manages clusters declaratively, the same thing is a
+database and two users in the cluster's own manifest, and the migration is the
+chart's pre-install hook. Point `database.existingSecret` at the owner's
+connection string and `query.database.existingSecret` at the reader's.

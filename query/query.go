@@ -2,17 +2,17 @@
 // tail and resolve over what the writer wrote, behind the grants a caller holds,
 // with every read recorded in the trail it reads.
 //
-// An application mounts it behind its own sign-in — an Authenticator that
-// turns the application's session into a Principal — so that its console can
-// read its audit trail with the same viewer as a standalone deployment's. The
-// audit-query binary is built on this package.
+// This is what the audit-query binary runs: that binary is built on this
+// package. It is exported because the binary needs it and a test may, not as a
+// way to deploy — the query service of an installation is its own Deployment,
+// beside the writer.
 //
 //	q, err := query.New(query.Config{
 //		Searcher:      postgres.NewReader(pool), // or &s3scan.Scanner{Store: archive}
 //		Archive:       archive,
 //		Authenticator: session,   // the application's own sign-in
 //		Authorizer:    grants,    // e.g. auth.AccessRoster, or auth.Declarative
-//		Sink:          w,         // the embedded writer: reads are recorded
+//		Sink:          w,         // the writer: every read is recorded
 //	})
 //	path, handler := q.Handler()
 //	mux.Handle(path, handler)
@@ -45,7 +45,7 @@ type Config struct {
 	// Authorizer says what they may read. There is no default: a service that
 	// answered without one would answer everything.
 	Authorizer auth.Authorizer
-	// Sink is where every read is recorded: the writer, embedded or remote.
+	// Sink is where every read is recorded: the installation's writer.
 	// Reading an audit trail is itself an auditable event, and a service that
 	// records none is half a service.
 	Sink sink.Sink

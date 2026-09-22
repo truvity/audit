@@ -1,0 +1,87 @@
+# A product's installation: a receiver in front, writers consuming behind, and
+# the index as one more database in the product's existing Postgres.
+#
+# This is what an application's chart sets under the `audit:` key when it takes
+# this chart as a dependency. Everything not named here has a default.
+mode: stream
+
+bucket: audit-eu-central-1
+prefix: audit/app
+region: eu-central-1
+kmsKey: alias/audit-archive
+
+# Receivers scale with the application's request rate; they validate, publish
+# and answer. Writers scale with the record rate, because they are the ones
+# that touch S3 and Postgres.
+replicas: 2
+writer:
+  consumers: 3
+
+stream:
+  url: nats://nats.app.svc:4222
+  name: AUDIT
+  consumer: audit-writer
+  batch: 100
+  # Must exceed roll.interval plus the longest a put can take, or the stream
+  # offers records a writer is still gathering to a second writer.
+  ackWait: 2m
+
+# How much a writer gathers from the stream before it writes, which is what
+# decides how many objects a day of records becomes.
+roll:
+  interval: 30s
+  maxRecords: 5000
+
+profiles:
+  security:
+    presets: [security]
+  billing:
+    presets: [billing-nl]
+
+keys:
+  provider: none
+externalIdentifiersAreOpaque: true
+
+database:
+  existingSecret: audit-db
+
+workloadIdentity:
+  issuers:
+    - url: https://oidc.example.com/id/CLUSTER
+  workloads:
+    - subject: system:serviceaccount:app:api
+      source: app
+
+query:
+  enabled: true
+  replicas: 2
+  database:
+    existingSecret: audit-db-reader
+    role: audit_query
+  grants:
+    issuers:
+      # The gateway in front of the console issues the token the page carries.
+      - url: https://gateway.example.com
+        audience: audit
+
+jobs:
+  digest:
+    enabled: true
+    kmsKey: alias/audit-digest
+  verify:
+    enabled: true
+    publicKey:
+      existingSecret: audit-digest-public
+  purge:
+    enabled: true
+  clockSync:
+    enabled: true
+    ntp: ["169.254.169.123"]
+
+# Both render nothing yet. They are here so that a deployment's values do not
+# change when the work that fills them lands.
+extensions:
+  billing:
+    enabled: false
+  quotas:
+    enabled: false

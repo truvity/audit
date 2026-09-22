@@ -36,7 +36,7 @@ type Dedupe interface {
 
 // MemoryDedupe remembers within one process.
 //
-// It is enough for the writer embedded in an application, where there is one
+// It is enough for a single writer, where there is one
 // writer and the queue covers a sink that was away, and it is not enough for a deployment
 // with several writers, where a shared table is the only thing that makes two
 // replicas agree. A deployment gets what it configures, and the difference is

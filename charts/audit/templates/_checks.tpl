@@ -72,6 +72,35 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- end -}}
 {{- end -}}
 
+{{- if .Values.extensions.billing.enabled -}}
+  {{- $metering := false -}}
+  {{- range $name, $profile := .Values.profiles -}}
+    {{- range $profile.presets -}}
+      {{- if hasPrefix "billing" . -}}{{- $metering = true -}}{{- end -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if not $metering -}}
+  {{- fail "audit: `extensions.billing.enabled` and no profile composes a metering preset. The statement is computed from the billing copy of each record, and without a profile that keeps one there is nothing to compute from." -}}
+  {{- end -}}
+{{- end -}}
+
+{{- if and .Values.extensions.quotas.enabled (ne .Values.mode "stream") -}}
+{{- fail "audit: `extensions.quotas.enabled` needs `mode: stream`. Quotas are counted by a second consumer of the same stream, and in direct mode there is no stream to consume." -}}
+{{- end -}}
+
+{{- if not (has .Values.mode (list "direct" "stream")) -}}
+{{- fail (printf "audit: `mode` is `direct` or `stream`, not %q." .Values.mode) -}}
+{{- end -}}
+
+{{- if eq .Values.mode "stream" -}}
+  {{- if not .Values.stream.url -}}
+  {{- fail "audit: `mode: stream` needs `stream.url`. A receiver publishes, and without a stream there is nowhere to publish to." -}}
+  {{- end -}}
+  {{- if not (include "audit.hasDatabase" .) -}}
+  {{- fail "audit: `mode: stream` needs `database`. Several writers share one stream, and deduplication in one process only absorbs a repeat on the writer that saw the original; a redelivery landing on another would be written twice." -}}
+  {{- end -}}
+{{- end -}}
+
 {{- if .Values.stream.url -}}
   {{- if not (gt (include "audit.seconds" .Values.stream.ackWait | int) (include "audit.seconds" .Values.roll.interval | int)) -}}
   {{- fail "audit: `stream.ackWait` must be longer than `roll.interval`. A writer gathers records from the stream for one interval before it writes them, and leaves them unacknowledged meanwhile; a stream that gives up waiting sooner offers the same records to another writer, which writes them twice." -}}

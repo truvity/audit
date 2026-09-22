@@ -75,10 +75,23 @@ sequenceDiagram
   W-->>N: acknowledge the batch
 ```
 
-The writer acknowledges the batch to the stream only after the objects are
-in the bucket, so a writer that dies mid-batch causes a redelivery, and the
-dedupe table absorbs it. `ackWait` must exceed the longest honest write; the
-default is 30 seconds.
+The writer acknowledges to the stream only after the objects are in the
+bucket, so a writer that dies mid-batch causes a redelivery and the dedupe
+table absorbs it.
+
+It also gathers before it writes. Fetching from a stream returns whatever is
+there, and writing each fetch straight through would make an object of each; an
+archive of many small objects costs a request to put, a line in every hour's
+digest and an entry in every listing, forever. So the writer accumulates until
+one of three is reached — `roll.maxRecords`, the roller's byte limit, or
+`roll.interval` — and writes once. Nothing waits on this but the object:
+the records are already durable on the stream, and they stay unacknowledged
+until the put, so a writer that dies mid-window leaves them for the next one.
+
+`stream.ackWait` must therefore exceed `roll.interval` plus the longest a put
+can take. The chart refuses to render otherwise, because a stream that gives up
+waiting sooner offers the same records to a second writer and the day's objects
+quietly double.
 
 ## Values
 
@@ -99,7 +112,11 @@ audit:
     name: AUDIT
     consumer: audit-writer
     batch: 100
-    ackWait: 30s
+    ackWait: 2m
+
+  roll:
+    interval: 30s
+    maxRecords: 5000
 
   profiles:
     security:

@@ -78,7 +78,12 @@ func TestTheWritePathEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	consumer, err := natssink.NewConsumer(jc, b.writer, natssink.ConsumerOptions{
-		Batch: 10, OnError: func(err error) { t.Errorf("the writer refused a batch: %v", err) },
+		Batch: 10,
+		// This test is about what reaches the archive, not about how much a
+		// consumer gathers first, so the window is short enough not to be the
+		// thing being waited for.
+		Window:  10 * time.Millisecond,
+		OnError: func(err error) { t.Errorf("the writer refused a batch: %v", err) },
 	})
 	if err != nil {
 		t.Fatal(err)

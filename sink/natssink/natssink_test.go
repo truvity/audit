@@ -269,7 +269,7 @@ func run(t *testing.T, s jetstream.Stream, target sink.Sink, onError func(error)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := natssink.NewConsumer(jc, target, natssink.ConsumerOptions{Batch: 10, OnError: onError})
+	c, err := natssink.NewConsumer(jc, target, natssink.ConsumerOptions{Batch: 10, Window: 10 * time.Millisecond, OnError: onError})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -73,8 +73,8 @@ binary's flags with dots.
 | `writer.consumers` | writer pods consuming the stream, in stream mode. Not built yet: today `replicas` is both |
 | `stream.url`, `stream.name`, `stream.consumer` | JetStream, in stream mode. The chart refuses `mode: stream` without a URL |
 | `stream.batch` | how many records are taken at once. Default 100 |
-| `stream.ackWait` | how long the stream waits for a batch to be taken before offering it again. Default 30s, and it must exceed the longest a write can honestly take: a batch is acknowledged only once its records are in the archive |
-| `roll.interval` | how long an object may stay open. It does not bound the write path: a batch the receiver takes is put before it is acknowledged, whatever the delivery |
+| `stream.ackWait` | how long the stream waits for a batch to be taken before offering it again. Default 2m, and it must exceed `roll.interval` plus the longest a put can take: records are acknowledged only once they are in the archive, and a stream that gives up waiting sooner offers them to a second writer. The chart refuses to render otherwise |
+| `roll.interval`, `roll.maxRecords` | the roll: how much a writer gathers from the stream before it writes, and so how many objects a day of records becomes. Whichever of the two is reached first, or the roller's byte limit. In direct mode there is no stream to gather from, and `interval` is only how long an object may stay open inside one write |
 | `database.url` or `database.existingSecret` | the index and the shared deduplication table, one database in the application's Postgres. Without it the writer indexes nothing and deduplicates in process |
 | `database.migrate` | apply the schema from a pre-upgrade hook Job. The writer refuses to start on a version it does not know and never migrates itself |
 | `keys.provider` | `none` (the default), `local` (a root and a directory) or `transit` (OpenBAO — see [OpenBAO keys](../operations/openbao-keys.md)). With `none` there are no pseudonyms, no key directory, no login to a secret manager and no resolve ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)) |

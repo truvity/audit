@@ -83,11 +83,17 @@ func run() error {
 			"the durable consumer this deployment's writers share")
 		streamBatch = flag.Int("stream-batch", envInt("AUDIT_STREAM_BATCH", 100),
 			"how many records are taken from the stream at once")
-		streamAckWait = flag.Duration("stream-ack-wait", 30*time.Second,
-			"how long the stream waits for the writer to take a batch before offering it again")
-		rollEvery = flag.Duration("roll-interval", 5*time.Minute, "how long an object stays open")
-		version   = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
-		mode      = flag.String("mode", env("AUDIT_MODE", "writer"),
+		streamAckWait = flag.Duration("stream-ack-wait", 2*time.Minute,
+			"how long the stream waits for the writer to take a batch before offering it again. It "+
+				"must exceed --roll-interval plus the longest a put can take, or the stream will "+
+				"offer records the consumer is still gathering")
+		rollEvery = flag.Duration("roll-interval", 30*time.Second,
+			"how long records gathered from the stream wait before they are written, and how long "+
+				"an object stays open within one write")
+		rollRecords = flag.Int("roll-max-records", envInt("AUDIT_ROLL_MAX_RECORDS", 5000),
+			"how many records gathered from the stream are written at once")
+		version = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
+		mode    = flag.String("mode", env("AUDIT_MODE", "writer"),
 			"writer (serve the sink, write the archive, consume the stream) or "+
 				"receiver (serve the sink and publish to the stream, nothing else)")
 	)
@@ -273,6 +279,7 @@ func run() error {
 			stop, err := consume(ctx, streamOptions{
 				URL: *streamURL, Stream: *streamName, Durable: *consumerName,
 				Batch: *streamBatch, AckWait: *streamAckWait,
+				Window: *rollEvery, MaxRecords: *rollRecords,
 			}, w)
 			if err != nil {
 				return err
@@ -448,6 +455,10 @@ type streamOptions struct {
 	// the same records to a second replica while the first is still writing
 	// them, and the deduplication table will earn its keep for no reason.
 	AckWait time.Duration
+	// Window and MaxRecords are the roll: how much a consumer gathers from the
+	// stream before writing it. See natssink.ConsumerOptions.
+	Window     time.Duration
+	MaxRecords int
 }
 
 // publisherFor connects a receiver to the stream it publishes to.
@@ -565,7 +576,10 @@ func consume(ctx context.Context, o streamOptions, target sink.Sink) (func(), er
 	}
 
 	consumer, err := natssink.NewConsumer(jc, target, natssink.ConsumerOptions{
-		Batch: o.Batch,
+		Batch:      o.Batch,
+		Window:     o.Window,
+		MaxRecords: o.MaxRecords,
+		AckWait:    o.AckWait,
 		OnError: func(err error) {
 			// The batch is not acknowledged, so the stream brings it back after
 			// AckWait. Saying so is the only way a deployment learns that

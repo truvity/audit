@@ -281,3 +281,18 @@ token Secret, or a token file. Called with (dict "root" $ "creds" <values>).
   value: /etc/audit/trust/{{ .Values.trust.key }}
 {{- end }}
 {{- end -}}
+
+{{/* Seconds from a Go duration the chart accepts: 30s, 2m, 1h. Helm has no
+duration type, and comparing "2m" with "30s" as strings would pass silently. */}}
+{{- define "audit.seconds" -}}
+{{- $d := . | toString -}}
+{{- if hasSuffix "h" $d -}}
+{{- mul (trimSuffix "h" $d | float64 | int) 3600 -}}
+{{- else if hasSuffix "ms" $d -}}
+{{- div (trimSuffix "ms" $d | float64 | int) 1000 -}}
+{{- else if hasSuffix "m" $d -}}
+{{- mul (trimSuffix "m" $d | float64 | int) 60 -}}
+{{- else -}}
+{{- trimSuffix "s" $d | float64 | int -}}
+{{- end -}}
+{{- end -}}

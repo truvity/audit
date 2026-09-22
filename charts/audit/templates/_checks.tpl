@@ -72,6 +72,12 @@ understand, or — worse — to a trail that looks fine and is not.
   {{- end -}}
 {{- end -}}
 
+{{- if .Values.stream.url -}}
+  {{- if not (gt (include "audit.seconds" .Values.stream.ackWait | int) (include "audit.seconds" .Values.roll.interval | int)) -}}
+  {{- fail "audit: `stream.ackWait` must be longer than `roll.interval`. A writer gathers records from the stream for one interval before it writes them, and leaves them unacknowledged meanwhile; a stream that gives up waiting sooner offers the same records to another writer, which writes them twice." -}}
+  {{- end -}}
+{{- end -}}
+
 {{- if and .Values.workloadIdentity.issuers (include "audit.hasDatabase" .) -}}
   {{- if not .Values.workloadIdentity.workloads -}}
   {{- fail "audit: map every workload that registers a catalogue in `workloadIdentity.workloads`. The writer serves RegisterCatalogue beside the sink, and takes whose catalogue a document is from the caller's verified service account and never from the document, so with no mapping every registration would be refused." -}}

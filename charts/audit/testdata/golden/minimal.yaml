@@ -140,7 +140,8 @@ spec:
           args:
             - --deployment=/etc/audit/deployment.yaml
             - --listen=:8080
-            - --roll-interval=60s
+            - --roll-interval=30s
+            - --roll-max-records=5000
             - --replicas=1
             - --anonymous-writes
             - --key-provider=none

@@ -58,6 +58,7 @@ spec:
             - --deployment=/etc/audit/deployment.yaml
             - --listen=:{{ .Values.service.port }}
             - --roll-interval={{ .Values.roll.interval }}
+            - --roll-max-records={{ .Values.roll.maxRecords }}
             - --replicas={{ .Values.replicas }}
             {{- if include "audit.verifiesWorkloads" . }}
             - --workloads=/etc/audit/workloads.yaml

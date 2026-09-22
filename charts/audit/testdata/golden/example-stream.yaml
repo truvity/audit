@@ -348,6 +348,8 @@ spec:
                   name: audit-db
                   key: url
             
+            - name: AUDIT_STREAM_TOKEN_FILE
+              value: /var/run/audit/stream/token
           ports:
             - name: http
               containerPort: 8080
@@ -377,6 +379,9 @@ spec:
               subPath: workloads.yaml
               readOnly: true
             
+            - name: stream-token
+              mountPath: /var/run/audit/stream
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -384,6 +389,13 @@ spec:
           configMap:
             name: audit-deployment
         
+        - name: stream-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "nats"
+                  expirationSeconds: 3600
         - name: tmp
           emptyDir: {}
 
@@ -460,6 +472,8 @@ spec:
                   name: audit-db
                   key: url
             
+            - name: AUDIT_STREAM_TOKEN_FILE
+              value: /var/run/audit/stream/token
           ports:
             - name: http
               containerPort: 8080
@@ -489,6 +503,9 @@ spec:
               subPath: workloads.yaml
               readOnly: true
             
+            - name: stream-token
+              mountPath: /var/run/audit/stream
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -496,6 +513,13 @@ spec:
           configMap:
             name: audit-deployment
         
+        - name: stream-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "nats"
+                  expirationSeconds: 3600
         - name: tmp
           emptyDir: {}
 

@@ -69,6 +69,7 @@ The chart takes references; it creates none of these.
 | **a database in the application's existing Postgres**, owned by the writer, in a Secret. It holds the index, the dedupe table and the rollups, all rebuildable with `audit reindex`, so it needs no backup | `database.existingSecret` |
 | **a separate read-only role** for the query service: `usage` on the schema, `select` on its tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.database.existingSecret`, `query.database.role` |
 | the JetStream stream, already created, with `mode: stream` | `stream.url`, `stream.name` |
+| **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.token.enabled`, `stream.token.audience` |
 | the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
 | an exports bucket with no Object Lock, if exports are wanted | `query.exports.bucket` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
@@ -119,6 +120,14 @@ The application's pods mount a projected token with the same audience and
 point `AUDIT_TOKEN_FILE` at it, or set the bearer themselves.
 `anonymousWrites: true` turns verification off, for a trial install only. The
 chart refuses to render with neither issuers nor that flag set.
+
+The stream is reached the same way. With `stream.token.enabled`, the receiver
+and the writers mount a projected token of `stream.token.audience` and present
+it to the broker as their NATS token, read afresh on every connect; the
+broker's auth callout, which is the deployment's, reviews it and maps the
+namespace to an account. Off, which is the default, they connect with no
+credentials, for a broker that verifies nobody
+([stream](../../docs/deployment/stream.md#authenticating-to-the-stream)).
 
 ## What it refuses to render
 

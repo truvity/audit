@@ -25,6 +25,13 @@ stream:
   # Must exceed roll.interval plus the longest a put can take, or the stream
   # offers records a writer is still gathering to a second writer.
   ackWait: 2m
+  # The broker verifies who connects: the receiver and the writers present a
+  # projected service-account token of this audience, and the broker's auth
+  # callout reviews it and maps this namespace to the application's account.
+  token:
+    enabled: true
+    audience: nats
+    expirationSeconds: 3600
 
 # How much a writer gathers from the stream before it writes, which is what
 # decides how many objects a day of records becomes.

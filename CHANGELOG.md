@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
-## [Unreleased]
+## [0.3.1] - 2026-09-23
 
 ### The archive writes to a store that is not AWS, whatever the object carries
 

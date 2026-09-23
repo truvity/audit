@@ -19,6 +19,8 @@ package s3store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -118,8 +120,9 @@ type Options struct {
 	// loader, so it works with this empty). With an endpoint set, the SDK's
 	// default request checksum -- a CRC32 it adds to every put, which stores
 	// other than AWS reject or ignore -- is sent only where the API requires
-	// one; the SHA-256 this package asks for on every put is still sent, as
-	// a checksum the object carries.
+	// one. The SHA-256 every put carries is unaffected: this package computes
+	// it and sends the value, never the algorithm, which is what keeps it off
+	// the SDK's aws-chunked path (see checksum).
 	Endpoint string
 	// PathStyle addresses the bucket as endpoint/bucket/key rather than
 	// bucket.endpoint/key. It is a property of the store's certificate --
@@ -226,7 +229,7 @@ func (s *Store) Put(ctx context.Context, o store.Object) error {
 		Key:                       aws.String(s.key(o.Key)),
 		Body:                      bytes.NewReader(o.Body),
 		ContentLength:             aws.Int64(int64(len(o.Body))),
-		ChecksumAlgorithm:         types.ChecksumAlgorithmSha256,
+		ChecksumSHA256:            aws.String(checksum(o.Body)),
 		ObjectLockMode:            s.lockMode(),
 		ObjectLockRetainUntilDate: s.retainUntil(o),
 		ObjectLockLegalHoldStatus: s.legalHoldStatus(o),
@@ -250,6 +253,25 @@ func (s *Store) Put(ctx context.Context, o store.Object) error {
 		return fmt.Errorf("s3store: put %s: %w", o.Key, err)
 	}
 	return nil
+}
+
+// checksum is the value sent as x-amz-checksum-sha256.
+//
+// IT IS COMPUTED HERE, AND THAT IS THE POINT. Asking the SDK for one instead
+// -- PutObjectInput.ChecksumAlgorithm -- makes it choose how to send the
+// checksum, and when the object also carries a Content-Encoding it chooses
+// the aws-chunked trailer. AWS accepts that; Cloudflare R2 signs it
+// differently and answers 403 SignatureDoesNotMatch, so an archive whose
+// records are compressed -- every record object is zstd -- could not write a
+// single one while its uncompressed schema objects wrote fine. Measured
+// against a real bucket 2026-09-23: algorithm+encoding fails, either alone
+// succeeds, and the precomputed value succeeds with both.
+//
+// The body is already whole in memory, so this costs one pass and removes a
+// choice the SDK would otherwise make differently per store.
+func checksum(body []byte) string {
+	sum := sha256.Sum256(body)
+	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
 // Get implements store.Store.

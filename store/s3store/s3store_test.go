@@ -2,6 +2,8 @@ package s3store_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
@@ -182,8 +184,8 @@ func TestPutSetsRetentionPerObject(t *testing.T) {
 	if got := aws.ToTime(in.ObjectLockRetainUntilDate); !got.Equal(want) {
 		t.Fatalf("retain until %s, want %s", got, want)
 	}
-	if in.ChecksumAlgorithm != types.ChecksumAlgorithmSha256 {
-		t.Fatalf("checksum = %q, want sha256", in.ChecksumAlgorithm)
+	if got := aws.ToString(in.ChecksumSHA256); got != checksumOf(object().Body) {
+		t.Fatalf("checksum = %q, want %q", got, checksumOf(object().Body))
 	}
 	if aws.ToString(in.ContentEncoding) != "zstd" {
 		t.Fatalf("encoding = %q", aws.ToString(in.ContentEncoding))
@@ -534,7 +536,42 @@ func TestAnUnlockedStoreStillWritesEachKeyOnce(t *testing.T) {
 	if got := aws.ToString(f.puts[0].IfNoneMatch); got != "*" {
 		t.Fatalf("IfNoneMatch = %q, want *", got)
 	}
-	if f.puts[0].ChecksumAlgorithm != types.ChecksumAlgorithmSha256 {
+	if aws.ToString(f.puts[0].ChecksumSHA256) != checksumOf(o.Body) {
 		t.Fatal("the SHA-256 the archive names on every put was dropped with the lock")
+	}
+}
+
+// checksumOf is what the store must send as the object's checksum.
+func checksumOf(b []byte) string {
+	sum := sha256.Sum256(b)
+	return base64.StdEncoding.EncodeToString(sum[:])
+}
+
+// ASKING THE SDK FOR A CHECKSUM IS WHAT BREAKS A NON-AWS STORE, so the store
+// must never do it. With ChecksumAlgorithm set the SDK decides how to send the
+// checksum, and for an object carrying a Content-Encoding it chooses the
+// aws-chunked trailer, which Cloudflare R2 answers with 403
+// SignatureDoesNotMatch. Every record object is zstd-encoded, so that is every
+// record. This is the regression test for a bucket nobody can reach from here.
+func TestPutSendsTheChecksumValueAndNotTheAlgorithm(t *testing.T) {
+	s, f := newStore(t, s3store.Options{Lock: s3store.None})
+	o := store.Object{
+		Key:         "profile=security/tenant=@platform/x.ndjson.zst",
+		Body:        []byte("compressed bytes"),
+		ContentType: "application/x-ndjson",
+		Encoding:    "zstd",
+	}
+	if err := s.Put(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	in := f.puts[0]
+	if in.ChecksumAlgorithm != "" {
+		t.Fatalf("checksum algorithm = %q, want none", in.ChecksumAlgorithm)
+	}
+	if got := aws.ToString(in.ChecksumSHA256); got != checksumOf(o.Body) {
+		t.Fatalf("checksum = %q, want %q", got, checksumOf(o.Body))
+	}
+	if got := aws.ToString(in.ContentEncoding); got != "zstd" {
+		t.Fatalf("encoding = %q, want zstd", got)
 	}
 }

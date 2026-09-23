@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format follows
 describes the state of the repository at that version, not the history of
 edits that got there.
 
+## [Unreleased]
+
+### The archive writes to a store that is not AWS, whatever the object carries
+
+Every record object is zstd-encoded, and on Cloudflare R2 not one of them
+could be written: `403 SignatureDoesNotMatch`, while the uncompressed
+schema and profile objects beside them wrote fine, which made it look like
+anything but a signing problem. The cause is that the store asked the SDK
+for a checksum ALGORITHM, leaving the SDK to choose how to send it, and for
+an object that also carries a Content-Encoding it chooses the aws-chunked
+trailer -- which AWS accepts and R2 signs differently. The store now
+computes the SHA-256 itself and sends the VALUE, so the choice is no longer
+the SDK's to make per store. The object carries the same checksum it always
+did, and nothing changes on AWS.
+
+Measured against a real bucket: algorithm plus encoding fails, either alone
+succeeds, the precomputed value succeeds with both.
+`internal/s3test` gains the check, against a bucket the environment names
+(`AUDIT_S3_COMPATIBLE_BUCKET`, `AUDIT_S3_COMPATIBLE_ENDPOINT`) because no
+emulator reproduces it -- an emulator accepts what the SDK sends.
+
 ## [0.3.0] - 2026-09-23
 
 ### The receiver and the writers identify themselves to the stream

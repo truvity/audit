@@ -66,9 +66,14 @@ step "the images, built and pushed to ${SNAPSHOT_REGISTRY}"
 goreleaser release --config "$scratch/goreleaser.yaml" --clean --skip=validate,announce
 
 step "the chart, packaged from what was just pushed"
+# `go run`, not a committed `bin/helmctl` wrapper (truvity/policy keeps
+# one): this repository's .gitignore keeps `bin/` out of every commit on
+# purpose ("nothing built is committed"), and one call site does not earn
+# an exception to that. Version-pinned by go.mod's own
+# `tool github.com/truvity/ocictl/cmd/helmctl`.
 rm -rf dist/charts
-bin/helmctl goreleaser-manifest --goreleaser-dist dist -o dist/goreleaser-manifest.json
-bin/helmctl package \
+go run github.com/truvity/ocictl/cmd/helmctl goreleaser-manifest --goreleaser-dist dist -o dist/goreleaser-manifest.json
+go run github.com/truvity/ocictl/cmd/helmctl package \
     --chart charts/audit \
     --manifest dist/goreleaser-manifest.json \
     --require-image-digests \

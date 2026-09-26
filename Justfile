@@ -259,5 +259,60 @@ leak-canary:
 vuln:
     govulncheck ./...
 
+# The kind tier: this repository owns no cluster of its own — it installs
+# onto truvity/policy's box (see that repository's hack/kind/), the second
+# public repository to (docs/guides/testing.md has the full case). In CI the
+# shared integration workflow stands the box up itself, via truvity/ci-actions'
+# `cluster` action; on a laptop, stand truvity/policy's own box up first
+# (`just cluster` there) and point KCTX/E2E_KCTX at it if it is not
+# `kind-policy`.
+
+# Build this repository's images and package its chart exactly as a release
+# does, one architecture, into the box's own registry.
+[doc("Build the images and chart exactly as a release does, into the local registry")]
+e2e-snapshot:
+    bash hack/e2e-snapshot.sh
+
+# Stand in for the platform: the database and its two roles, the stream, the
+# archive bucket and the digest chain's signing key, under the exact names
+# charts/audit/testdata/values/e2e.yaml gives the chart. Must run before
+# `e2e-install`.
+[doc("Provision what a platform would, by name")]
+e2e-fixture:
+    bash e2e/fixture/apply.sh
+
+# Install the PACKAGED chart `e2e-snapshot` produced — never the source
+# directory — on top of what `e2e-fixture` provisioned.
+[doc("Install the chart into the local cluster")]
+e2e-install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    KCTX=${KCTX:-kind-policy}
+    NS=${NS:-audit-e2e}
+    RELEASE=${RELEASE:-audit-e2e}
+    CHART_TGZ=${CHART_TGZ:-$(find dist/charts -name 'audit-*.tgz' 2>/dev/null | sort -V | tail -1)}
+    if [ -z "$CHART_TGZ" ]; then
+        echo "no packaged chart under dist/charts — run 'just e2e-snapshot' first" >&2
+        exit 1
+    fi
+    kubectl --context "$KCTX" get namespace "$NS" >/dev/null 2>&1 || kubectl --context "$KCTX" create namespace "$NS"
+    helm --kube-context "$KCTX" upgrade --install "$RELEASE" "$CHART_TGZ" -n "$NS" \
+        -f charts/audit/testdata/values/e2e.yaml \
+        --wait --timeout 8m
+    kubectl --context "$KCTX" -n "$NS" get pods
+
+# Prove the chart works end to end — a Go suite
+# (e2e/suite), reaching every Service through
+# github.com/truvity/gemaal/pkg/harness. E2E_NAMESPACE turns it on;
+# `go test ./...` (`just test`) stays hermetic without it.
+[doc("Prove the chart works end to end")]
+e2e-smoke:
+    E2E_NAMESPACE="${NS:-audit-e2e}" E2E_RELEASE="${RELEASE:-audit-e2e}" \
+        go test ./e2e/suite/... -count=1 -v
+
+# The whole kind tier, from a snapshot build to the suite.
+[doc("The whole kind tier, from a snapshot build to the suite")]
+e2e-all: e2e-snapshot e2e-fixture e2e-install e2e-smoke
+
 # Everything CI runs
 check: build test lint proto drift schemas chart leak-canary vuln

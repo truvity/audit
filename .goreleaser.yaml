@@ -3,6 +3,12 @@
 # image per binary, built by ko without a container runtime. The images are
 # distroless and have no shell, which is why every job in the chart is a
 # command with arguments and never a script.
+#
+# hack/e2e-snapshot.sh runs this SAME file, unmodified but for
+# GITHUB_RELEASE_DISABLED and KO_DOCKER_REPO (both read below): the local
+# and CI kind tier gets the exact release a tag builds, pointed at the
+# box's own registry instead of ghcr.io, with no GitHub release cut —
+# ported from truvity/policy's identical local loop.
 version: 2
 project_name: audit
 
@@ -111,6 +117,11 @@ release:
   github:
     owner: truvity
     name: audit
+  # Set by hack/e2e-snapshot.sh only: a commit that is not a tag has
+  # nothing to attach a GitHub release to, and the kind tier's snapshot
+  # build needs none. Empty (the default, every real release) leaves this
+  # exactly as it always was.
+  disable: "{{ .Env.GITHUB_RELEASE_DISABLED }}"
 
 checksum:
   name_template: checksums.txt

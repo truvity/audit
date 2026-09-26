@@ -1,0 +1,78 @@
+# The kind tier's own install: what e2e/fixture/apply.sh provisions to stand
+# in for a real platform, by the EXACT names this file gives the chart.
+#
+# This is the ONE file both sides read — e2e/fixture (which provisions the
+# database, the two roles, the stream and the bucket under these names) and
+# `helm upgrade --install` (which renders this chart against them) — so
+# there is nothing for the two to agree about by convention alone. See
+# e2e/fixture/names.go and e2e/fixture/drift_test.go, which renders THIS
+# file and fails if the chart stops honouring a name it names.
+#
+# `mode: stream` — a product's shape, and the one with the most to prove: a
+# receiver publishes to JetStream, a pool of writers consumes it, and the
+# query role is separate from the writer's. See docs/decisions/0011 and
+# 0014 for why direct mode and stream mode are otherwise configured alike.
+mode: stream
+
+anonymousWrites: true
+
+bucket: audit-e2e-archive
+region: us-east-1
+# The box's S3 stand-in (see truvity/policy's hack/kind/localstack.yaml) has
+# no Object Lock support worth proving against — LocalStack Community's is
+# partial — so this tier writes with no lock at all. `security` (composed
+# below) is one of the presets whose framework does not demand one
+# (presets/security.yaml: integrity.object_lock_mode: none); a profile that
+# demanded compliance or governance could not run here, and docs/guides/testing.md
+# says so.
+lockMode: none
+endpoint: http://s3.object-store.svc:4566
+pathStyle: true
+existingSecret: audit-e2e-s3-credentials
+
+profiles:
+  security:
+    presets: [security]
+
+database:
+  existingSecret: audit-e2e-database
+
+stream:
+  url: nats://nats.nats.svc:4222
+  name: AUDIT
+  consumer: audit-writer
+
+keys:
+  provider: none
+
+# `security` pseudonymises identifiers from outside the organisation, and
+# with no key provider the writer refuses to start rather than write one in
+# clear. This tier's own emitted identifiers (e2e/suite's actor id) are ones
+# THIS suite minted, not a real external party's — the same shape
+# docs/decisions/0013 describes.
+externalIdentifiersAreOpaque: true
+
+query:
+  enabled: false
+  database:
+    existingSecret: audit-e2e-query-database
+    role: audit_e2e_query
+
+jobs:
+  digest:
+    signingKey:
+      existingSecret: audit-e2e-digest-key
+      keyID: audit-e2e-digest-1
+  verify:
+    publicKey:
+      existingSecret: audit-e2e-digest-public
+  purge:
+    enabled: false
+  clockSync:
+    # The box has no route to a real NTP server, and the schedule matters
+    # nothing to this tier — nothing here waits for a CronJob to fire on its
+    # own clock. Off rather than left to fail on egress it does not have.
+    enabled: false
+
+telemetry:
+  otlpEndpoint: ""

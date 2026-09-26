@@ -16,7 +16,10 @@
     "protoc-gen-go":         "latest",
     "nodejs":                "latest",
     "yarn":                  "latest",
-    "postgresql":            "17"
+    "postgresql":            "17",
+
+    "kubectl": "latest",
+    "openssl": "3.6.0"
   },
   "env": {
     "CGO_ENABLED":  "0",

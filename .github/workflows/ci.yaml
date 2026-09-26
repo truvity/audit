@@ -176,6 +176,36 @@ jobs:
     with:
       recipes: '["ts"]'
 
+  # The local cluster, stood up from nothing: this repository is public, so
+  # the shared workflow's kind tier applies automatically (truvity/ci-actions'
+  # `cluster` action, mode: kind, fetching truvity/policy's own hack/kind/ at
+  # a pinned release tag — see that repository's docs/decisions/0005 and
+  # this repository's e2e/fixture, which stands in for the platform on it by
+  # the exact names charts/audit/testdata/values/e2e.yaml gives the chart).
+  #
+  # NOT yet in `check`'s needs below: it lands here first, on its own, so a
+  # flake in a brand-new lane cannot wedge every pull request the day it is
+  # added. It becomes required in a follow-up commit once it has been green
+  # twice running.
+  cluster:
+    uses: truvity/ci-workflows/.github/workflows/integration.yaml@1deba8589700d0d5ba433f4790cdacc208f166c5 # v3.13.0
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      policy-version: v0.8.1
+      gemaal-namespace: audit-e2e
+      timeout-minutes: 30
+      lanes: |
+        [
+          {
+            "name": "audit",
+            "build": "devbox run -- just e2e-snapshot",
+            "install": "devbox run -- just e2e-fixture && devbox run -- just e2e-install",
+            "test": "devbox run -- just e2e-smoke"
+          }
+        ]
+
   # Stable name for branch protection: the matrix reports as
   # "recipes / lint" and so on, so a required context called "check"
   # would never arrive and every PR would hang waiting for it.

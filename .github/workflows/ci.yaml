@@ -183,10 +183,11 @@ jobs:
   # this repository's e2e/fixture, which stands in for the platform on it by
   # the exact names charts/audit/testdata/values/e2e.yaml gives the chart).
   #
-  # NOT yet in `check`'s needs below: it lands here first, on its own, so a
-  # flake in a brand-new lane cannot wedge every pull request the day it is
-  # added. It becomes required in a follow-up commit once it has been green
-  # twice running.
+  # Required as of this commit: green twice running on the pull request
+  # that added it (https://github.com/truvity/audit/pull/42) — once after
+  # a genuine fix (the first run failed on `bin/helmctl`, a wrapper this
+  # repository's own .gitignore silently kept out of the commit), once on
+  # a clean rerun of the same code.
   cluster:
     uses: truvity/ci-workflows/.github/workflows/integration.yaml@1deba8589700d0d5ba433f4790cdacc208f166c5 # v3.13.0
     permissions:
@@ -210,7 +211,7 @@ jobs:
   # "recipes / lint" and so on, so a required context called "check"
   # would never arrive and every PR would hang waiting for it.
   check:
-    needs: [recipes, race, drift-ts, postgres, s3, openbao, ts]
+    needs: [recipes, race, drift-ts, postgres, s3, openbao, ts, cluster]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -222,4 +223,5 @@ jobs:
           [ "${{ needs.postgres.result }}" = "success" ] &&
           [ "${{ needs.s3.result }}" = "success" ] &&
           [ "${{ needs.openbao.result }}" = "success" ] &&
+          [ "${{ needs.cluster.result }}" = "success" ] &&
           [ "${{ needs.ts.result }}" = "success" ]

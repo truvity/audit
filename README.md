@@ -61,7 +61,7 @@ no shape that puts the writer inside the application
 | repo | surface |
 |---|---|
 | truvity/gitops | chart `audit` |
-| opwerm/nexus | chart `audit` |
+| A second, non-AWS estate | chart `audit` |
 | truvity/cloudflare | Go, from `r2broker` |
 
 ## Neighbours

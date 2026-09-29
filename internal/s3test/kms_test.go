@@ -29,7 +29,7 @@ func kmsClient(t *testing.T) *kms.Client {
 		t.Skip("set " + s3test.URLEnv + " to run the KMS tests (a LocalStack endpoint)")
 	}
 	cfg, err := config.LoadDefaultConfig(context.Background(),
-		config.WithRegion("eu-example-1"),
+		config.WithRegion("eu-central-1"),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "")))
 	if err != nil {
 		t.Fatal(err)

@@ -120,8 +120,9 @@ against the real service it wraps. Add it to `cli.KeyFlags` and the chart's
 verifier can pick the public half after a change.
 
 **A chart value.** Add it to `values.yaml` with a comment, use it in the
-templates, add a refusal to `testdata/refusals.txt` for any combination the
-binary would reject, and run `just chart` to update the goldens (commit them).
+templates, add a refusal to `tests/invalid/audit/refusals.txt` for any
+combination the binary would reject, and run `just chart` to update the
+goldens (commit them).
 
 **A command.** A function in `cmd/audit/main.go` that parses flags and calls a
 type in `internal/cli` that does the work and is tested there. Add it to the

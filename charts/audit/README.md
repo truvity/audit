@@ -132,9 +132,10 @@ credentials, for a broker that verifies nobody
 
 ## What it refuses to render
 
-Every configuration listed in `testdata/refusals.txt` is something the
-binaries reject at start-up or, worse, accept and get quietly wrong, and
-`testdata/refuse.sh` holds each refusal to its words. The least obvious:
+Every configuration listed in `tests/invalid/audit/refusals.txt` is
+something the binaries reject at start-up or, worse, accept and get
+quietly wrong, and `testdata/refuse.sh` holds each refusal to its words.
+The least obvious:
 
 - `mode: stream` with no `stream.url`: a receiver told to publish with
   nowhere to publish to acknowledges nothing, and the application's `block`

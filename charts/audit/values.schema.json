@@ -4,7 +4,7 @@
   "description": "The audit trail's write path: the split writer, and the jobs that seal, verify and prune what it writes. Names follow docs/reference/configuration.md.",
   "type": "object",
   "additionalProperties": false,
-  "_comment": "Nothing is required here that the template already refuses to render without (see charts/audit/testdata/refusals.txt and templates/_checks.tpl, which fail with a sentence saying why). The schema catches typos and wrong types, and holds every key name to what the templates and values.yaml actually read \u2014 it is what caught testdata/values/stream.yaml's workloadIdentity/networkPolicy mis-indentation. Enums are deliberately omitted from fields the templates already validate with a human-readable `fail` message (`mode`, `lockMode`, `keys.provider`, `query.searcher`): a schema enum would refuse those values first, with Helm's own generic message, and testdata/refuse.sh checks for the template's own wording.",
+  "_comment": "Nothing is required here that the template already refuses to render without (see tests/invalid/audit/refusals.txt and templates/_checks.tpl, which fail with a sentence saying why). The schema catches typos and wrong types, and holds every key name to what the templates and values.yaml actually read \u2014 it is what caught testdata/values/stream.yaml's workloadIdentity/networkPolicy mis-indentation. Enums are deliberately omitted from fields the templates already validate with a human-readable `fail` message (`mode`, `lockMode`, `keys.provider`, `query.searcher`): a schema enum would refuse those values first, with Helm's own generic message, and testdata/refuse.sh checks for the template's own wording.",
   "properties": {
     "image": {
       "type": "object",

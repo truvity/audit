@@ -98,9 +98,9 @@ quietly double.
 ```yaml
 audit:
   mode: stream
-  bucket: audit-eu-central-1
+  bucket: audit-eu-example-1
   prefix: audit/app
-  region: eu-central-1
+  region: eu-example-1
   kmsKey: alias/audit-archive
 
   replicas: 2                       # receivers
@@ -234,7 +234,7 @@ where the chart's own tests render them.
 ```console
 $ audit conformance --query https://audit-query.app.svc:8080 \
       --profile security --token-file ./token
-$ audit verify --bucket audit-eu-central-1 --prefix audit/app --public-key key.pub
+$ audit verify --bucket audit-eu-example-1 --prefix audit/app --public-key key.pub
 ```
 
 Then check the two things that are specific to this shape: that the stream's

@@ -43,7 +43,7 @@ profiles the installation composes:
 
   ```sh
   aws s3api create-bucket --bucket example-audit \
-    --create-bucket-configuration LocationConstraint=eu-central-1 \
+    --create-bucket-configuration LocationConstraint=eu-example-1 \
     --object-lock-enabled-for-bucket
   ```
 

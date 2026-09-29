@@ -314,5 +314,7 @@ e2e-smoke:
 [doc("The whole kind tier, from a snapshot build to the suite")]
 e2e-all: e2e-snapshot e2e-fixture e2e-install e2e-smoke
 
-# Everything CI runs
-check: build test lint proto drift schemas chart leak-canary vuln
+# Everything CI runs. `vuln` is deliberately not here: a new CVE in a
+# dependency must not turn this gate red on a PR that never touched it. Run
+# `just vuln` on its own to check.
+check: build test lint proto drift schemas chart leak-canary

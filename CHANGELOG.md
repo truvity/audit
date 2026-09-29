@@ -1,11 +1,10 @@
 # Changelog
 
-All notable changes to this project are documented here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/). A section
-describes the state of the repository at that version, not the history of
-edits that got there.
+All notable changes to this project are documented here, one `## vX.Y.Z`
+heading per released tag, newest first. A section describes the state of the
+repository at that version, not the history of edits that got there.
 
-## [0.3.1] - 2026-09-23
+## v0.3.1
 
 ### The archive writes to a store that is not AWS, whatever the object carries
 
@@ -26,7 +25,7 @@ succeeds, the precomputed value succeeds with both.
 (`AUDIT_S3_COMPATIBLE_BUCKET`, `AUDIT_S3_COMPATIBLE_ENDPOINT`) because no
 emulator reproduces it -- an emulator accepts what the SDK sends.
 
-## [0.3.0] - 2026-09-23
+## v0.3.0
 
 ### The receiver and the writers identify themselves to the stream
 
@@ -113,7 +112,7 @@ store has one.
 `Endpoint` and `PathStyle`; `cli.Archive` and `cli.ExportStore` are replaced
 by `cli.ArchiveFlags` and `cli.ExportFlags`.
 
-## [0.2.6] - 2026-09-22
+## v0.2.6
 
 ### The writer takes no caller's word for the shape of a record, its own included
 
@@ -129,7 +128,7 @@ is keyed. A test holds the writer's own record to the check every
 emitter's record passes, and a record with no time is dead-lettered with
 the reason, never written.
 
-## [0.2.5] - 2026-09-22
+## v0.2.5
 
 ### An instrumented emitter no longer drops in silence
 
@@ -181,7 +180,7 @@ contradicts; reworded.
   and that `@truvity/audit` is published with a release. The first is done;
   the second is not true — it is consumed from a release tag, not a registry.
 
-## [0.2.4] - 2026-09-22
+## v0.2.4
 
 ### A put carries the legal-hold header only when it places a hold
 
@@ -199,7 +198,7 @@ hold the way it has a default retention, so nothing about an object
 changes. The guide says so too, with what the refusal looks like for
 anyone who meets it on an older version.
 
-## [0.2.3] - 2026-09-22
+## v0.2.3
 
 Two fixes and a correction, all found by running a real installation.
 
@@ -228,7 +227,7 @@ start. A policy written from that table lets the writer put the composition
 and not get it, so it writes one object, takes an AccessDenied and dies, on a
 loop, which reads as a broken archive rather than a missing verb.
 
-## [0.2.2] - 2026-09-22
+## v0.2.2
 
 One fix, found the moment the first installation's writer started.
 
@@ -253,7 +252,7 @@ wrong reason -- its profile pseudonymises, so the message it wanted came
 from either check. It now says which, and there is a second test for the
 deployment that needs no keys at all.
 
-## [0.2.1] - 2026-09-22
+## v0.2.1
 
 One fix, found installing 0.2.0 for the first time: a release with an index
 never finished installing.
@@ -280,7 +279,7 @@ work. And `testdata/hook-order.py` asserts that every hook that runs a Pod
 brings its own account, applied at a lower weight: an ordering fault is not a
 render error, so only an install finds it otherwise.
 
-## [0.2.0] - 2026-09-22
+## v0.2.0
 
 One installation per application, and the code to match. The documentation was
 rewritten first and is the specification the rest of this version was built
@@ -531,7 +530,7 @@ it is empty rather than letting every registration be refused at run time.
   `docs/reference/`, and `docs/design/viewer.md` becomes
   `docs/design/audit-page.md` with the standalone console dropped.
 
-## [0.1.1] - 2026-09-21
+## v0.1.1
 
 The images publish where the chart looks for them. 0.1.0's release
 failed: the four ko images carried a `repositories:` list each, and the
@@ -541,7 +540,7 @@ their name from the command's import path under one repository path, as
 access-roster's two images do, and the chart's defaults name the same
 four: `ghcr.io/truvity/audit/{audit,audit-writer,audit-query,audit-registry}`.
 
-## [0.1.0] - 2026-09-21
+## v0.1.0
 
 The foundation, released so that consumers have something to pin. Every
 contract, binary and chart below is at its first published version, and

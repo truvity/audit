@@ -25,6 +25,103 @@ flowchart LR
   UI["Audit page in the<br/>application's console"] --> Q
 ```
 
+## Who it is for
+
+An application team that already has, or can provision, a Postgres
+database, an S3-compatible bucket with Object Lock, a signing key (a KMS
+key is the usual choice) and a reference clock — the things
+[Before either shape](docs/deployment/README.md#before-either-shape) lists.
+
+It deliberately does not install: a central, multi-tenant audit service (an
+installation belongs to one application,
+[0011](docs/decisions/0011-one-installation-per-service-or-product.md));
+its own message bus (stream mode consumes the application's existing
+JetStream); or the Audit page itself, which lives in the application's own
+console and only calls the query service.
+
+## The model
+
+An **installation** is one deployment of this chart, in one application's
+namespace, in one of the two **shapes** (`direct` or `stream`). It writes
+**records** — validated against the application's **catalogue** — through a
+**receiver** into the **archive** (an Object-Locked bucket) and an
+**index** (Postgres, rebuildable, not itself evidence). A **query service**
+reads the index and the archive back out, behind grants the installation's
+values declare.
+
+## Install and a worked example
+
+This chart is instantiated, not deployed standalone: an installation
+belongs to one application and is rendered by that application's own
+chart, which takes this one as a dependency
+([0011](docs/decisions/0011-one-installation-per-service-or-product.md)).
+
+```yaml
+# the application chart's Chart.yaml
+dependencies:
+  - name: audit
+    version: 0.4.0
+    repository: oci://ghcr.io/truvity/charts
+```
+
+Then the application's own `values.yaml` sets what this chart reads under
+the `audit:` key. The `direct` shape, a whole worked example
+([`charts/audit/examples/direct.yaml`](charts/audit/examples/direct.yaml),
+rendered as one of this repository's golden fixtures):
+
+```yaml
+audit:
+  mode: direct
+  bucket: audit-eu-example-1
+  prefix: audit/app
+  region: eu-example-1
+  kmsKey: alias/audit-archive
+  replicas: 2
+  profiles:
+    security:
+      presets: [security]
+  keys:
+    provider: none
+  externalIdentifiersAreOpaque: true
+  database:
+    existingSecret: audit-db
+  workloadIdentity:
+    issuers:
+      - url: https://oidc.example.com/id/CLUSTER
+    workloads:
+      - subject: system:serviceaccount:app:api
+        source: app
+  query:
+    enabled: true
+    replicas: 1
+    database:
+      existingSecret: audit-db-reader
+      role: audit_query
+    grants:
+      issuers:
+        - url: https://console.example.com
+          audience: audit
+  jobs:
+    digest:
+      enabled: true
+      kmsKey: alias/audit-digest
+    verify:
+      enabled: true
+      publicKey:
+        existingSecret: audit-digest-public
+    purge:
+      enabled: true
+    clockSync:
+      enabled: true
+      ntp: ["169.254.169.123"]
+```
+
+[stream mode's example](charts/audit/examples/stream.yaml) is the same
+shape with a JetStream receiver; both render as golden fixtures
+`tests/golden/audit/example-direct.yaml` and
+`tests/golden/audit/example-stream.yaml`, so this README's example is
+proven to render, not just plausible.
+
 ## The two shapes
 
 | shape | for | how a record becomes durable |
@@ -43,19 +140,6 @@ no shape that puts the writer inside the application
 | [billing](docs/deployment/extensions/billing.md) | rollups at index time, an immutable monthly statement | a metering profile |
 | [usage quotas](docs/deployment/extensions/quotas.md) | a usage consumer, a counter cache, an hourly reconciler | stream mode |
 
-## Start here
-
-| you want to | read |
-|---|---|
-| see how it fits together | [Architecture](docs/architecture.md) — the parts, the catalogue, what an acknowledgement means, what can be lost |
-| connect an application | [Integrating](docs/guides/integrate.md) — the catalogue, one constructor per action, the CI check, the Audit page |
-| run one in a cluster | [Deployment](docs/deployment/README.md) — what to prepare, then [direct](docs/deployment/direct.md) or [stream](docs/deployment/stream.md) |
-| record what your application does | [Emitting](docs/guides/emit.md) — deliveries, registration, the Go emitter; [`examples/emit`](examples/emit/main.go) |
-| search the trail, or audit it | [Reading](docs/guides/read.md) — grants, the API, the clients, `audit verify`; [`examples/read`](examples/read/main.go) |
-| know which presets to compose | [Presets policy](docs/operations/presets-policy.md), then [presets/](presets/README.md) |
-| understand why it is built this way | [why](docs/why.md), [concepts](docs/concepts.md), [the decisions](docs/decisions/README.md) |
-| work on this repository | [layout](docs/development/layout.md), [CONTRIBUTING](CONTRIBUTING.md) |
-
 ## Consumers
 
 | repo | surface |
@@ -69,6 +153,28 @@ no shape that puts the writer inside the application
 - **access-roster ↔ openbao ↔ audit.** access-roster is the issuer; openbao
   is a relying party (its own `docs/integrations/access-roster.md`); audit is
   the record every one of them writes.
+
+## Documentation
+
+| you want to | read |
+|---|---|
+| see how it fits together | [Architecture](docs/architecture.md) — the parts, the catalogue, what an acknowledgement means, what can be lost |
+| connect an application | [Integrating](docs/guides/integrate.md) — the catalogue, one constructor per action, the CI check, the Audit page |
+| run one in a cluster | [Deployment](docs/deployment/README.md) — what to prepare, then [direct](docs/deployment/direct.md) or [stream](docs/deployment/stream.md) |
+| record what your application does | [Emitting](docs/guides/emit.md) — deliveries, registration, the Go emitter; [`examples/emit`](examples/emit/main.go) |
+| search the trail, or audit it | [Reading](docs/guides/read.md) — grants, the API, the clients, `audit verify`; [`examples/read`](examples/read/main.go) |
+| know which presets to compose | [Presets policy](docs/operations/presets-policy.md), then [presets/](presets/README.md) |
+| understand why it is built this way | [why](docs/why.md), [concepts](docs/concepts.md), [the decisions](docs/decisions/README.md) |
+
+## The rule that makes this repository public
+
+Mechanism only: nothing in this repository may name a real organisation,
+cluster, account, team, person, incident or internal ticket
+([CONTRIBUTING](CONTRIBUTING.md)). Every chart value that names a cluster,
+an account, a hostname or a secret path is an input with a neutral
+default — the consuming estate supplies the particulars from its own,
+private repository. `hack/leak-canary.sh` enforces it on tracked files,
+and `just check` runs it.
 
 ## Status
 
@@ -96,6 +202,21 @@ no shape that puts the writer inside the application
 - **Not a wallet transaction log.** A digital identity wallet's own log
   lives on the user's device and is invisible to the provider by law. This
   component sees operational events only.
+
+## Development
+
+Tools come from `devbox.json` through direnv; `devbox shell` puts them on
+PATH. `just check` is the gate — it needs nothing but this checkout: no C
+toolchain, no network. It builds, tests, lints, renders the chart against
+every golden under `tests/golden/audit/` and every refusal in
+`tests/invalid/audit/refusals.txt`, and runs the leak canary.
+
+`just chart` regenerates the chart's goldens (review the diff before
+committing); `just drift-ts` regenerates the TypeScript client's generated
+code. `just race`, `just conformance` and the other recipes that need a C
+toolchain, Docker, or the network are separate, for the same reason: a gate
+that fails because of what somebody else's environment lacks is a gate
+people learn to ignore. See [CONTRIBUTING](CONTRIBUTING.md) for the rest.
 
 ## Releasing
 

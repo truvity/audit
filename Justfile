@@ -203,30 +203,30 @@ chart:
     helm lint charts/audit -f charts/audit/testdata/values/stream.yaml
     bash charts/audit/testdata/refuse.sh
     helm template audit charts/audit -f charts/audit/testdata/values/direct.yaml \
-        > charts/audit/testdata/golden/direct.yaml
+        > tests/golden/audit/direct.yaml
     helm template audit charts/audit -f charts/audit/testdata/values/stream.yaml \
-        > charts/audit/testdata/golden/stream.yaml
+        > tests/golden/audit/stream.yaml
     helm template audit charts/audit -f charts/audit/testdata/values/transit.yaml \
-        > charts/audit/testdata/golden/transit.yaml
+        > tests/golden/audit/transit.yaml
     # The attested tier on an S3-compatible store: no lock, an endpoint, path
     # style, static credentials, and an exports bucket on a store of its own.
     helm template audit charts/audit -f charts/audit/testdata/values/attested.yaml \
-        > charts/audit/testdata/golden/attested.yaml
+        > tests/golden/audit/attested.yaml
     # The two shapes the deployment pages document, rendered from the very
     # files those pages show. The values above are trial installs with no
     # index, so without these the migration hook -- which only exists when
     # there is a database -- is never rendered at all.
     helm template audit charts/audit -f charts/audit/examples/direct.yaml \
-        > charts/audit/testdata/golden/example-direct.yaml
+        > tests/golden/audit/example-direct.yaml
     helm template audit charts/audit -f charts/audit/examples/stream.yaml \
-        > charts/audit/testdata/golden/example-stream.yaml
+        > tests/golden/audit/example-stream.yaml
     # A hook Pod whose service account the chart creates normally is admitted
     # and then never scheduled: only an install finds that, so assert it here.
     for shape in direct stream transit attested example-direct example-stream; do \
         python3 charts/audit/testdata/hook-order.py \
-            < charts/audit/testdata/golden/$shape.yaml; \
+            < tests/golden/audit/$shape.yaml; \
     done
-    git diff --exit-code -- charts/audit/testdata/golden
+    git diff --exit-code -- tests/golden/audit
 
 # The TypeScript package: install, typecheck, test, build, and check what a
 # publish would ship. Not part of `check`, which needs nothing but the

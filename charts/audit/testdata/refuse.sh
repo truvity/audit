@@ -26,7 +26,7 @@ while IFS=$'\t' read -r overrides want; do
         echo "  said: $(tail -2 <<< "$out" | tr '\n' ' ')"
         fail=1
     fi
-done < "$chart/testdata/refusals.txt"
+done < tests/invalid/audit/refusals.txt
 if [ "$fail" -eq 0 ]; then
     echo "every refusal holds"
 fi

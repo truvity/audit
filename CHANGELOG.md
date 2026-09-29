@@ -4,6 +4,13 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## v0.4.0
+
+- `charts/audit` gains `values.schema.json`; the schema surfaced and fixed a mis-indented test fixture that had silently dropped a NetworkPolicy from a golden render.
+- `vuln` is no longer part of `check`; `.github/workflows/security.yaml` runs it on its own so a new CVE cannot turn the gate red. `renovate.json` extends the shared preset.
+- `Chart.yaml` commits `0.0.0`; the release stamps the version. Examples use `eu-example-1`; the live-S3 test helpers keep the CI account's real region.
+- README gains `Consumers`, `Neighbours` and `Releasing`; CHANGELOG headings follow `## vX.Y.Z`; ci-workflows pins unified at v3.13.1.
+
 ## v0.3.1
 
 ### The archive writes to a store that is not AWS, whatever the object carries

@@ -5,11 +5,11 @@
 # this chart as a dependency. Everything not named here has a default.
 mode: direct
 
-bucket: audit-eu-central-1
+bucket: audit-eu-example-1
 # Required wherever the bucket is shared: it is what keeps two applications'
 # archives apart, and what each role's IAM is scoped to.
 prefix: audit/app
-region: eu-central-1
+region: eu-example-1
 kmsKey: alias/audit-archive
 replicas: 2
 

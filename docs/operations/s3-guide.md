@@ -53,7 +53,7 @@ chart's `prefix`:
 
 ```yaml
 audit:
-  bucket: audit-eu-central-1
+  bucket: audit-eu-example-1
   prefix: audit/<application>
 ```
 

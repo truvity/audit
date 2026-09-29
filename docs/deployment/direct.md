@@ -80,9 +80,9 @@ The application's chart takes this one as a dependency and sets:
 ```yaml
 audit:
   mode: direct
-  bucket: audit-eu-central-1
+  bucket: audit-eu-example-1
   prefix: audit/app                 # required in a shared bucket
-  region: eu-central-1
+  region: eu-example-1
   kmsKey: alias/audit-archive
   replicas: 2
 
@@ -156,7 +156,7 @@ where the chart's own tests render them.
 ```console
 $ audit conformance --query https://audit-query.app.svc:8080 \
       --profile security --token-file ./token
-$ audit verify --bucket audit-eu-central-1 --prefix audit/app --public-key key.pub
+$ audit verify --bucket audit-eu-example-1 --prefix audit/app --public-key key.pub
 ```
 
 The first asks the query service the questions every searcher must answer

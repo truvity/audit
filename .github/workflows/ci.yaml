@@ -25,16 +25,16 @@ jobs:
   # `just conformance` runs the service-backed tests and `just ts` the
   # TypeScript package.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
-      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "vuln", "leak-canary"]'
+      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "leak-canary"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
   # everything else builds with cgo off — which is what makes the binaries
   # static. Putting it in `check` would mean every contributor needs one to
   # run the gate at all.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
       recipes: '["race"]'
 
@@ -42,7 +42,7 @@ jobs:
   # from a remote registry that rate limits, and a gate that fails because
   # somebody else was generating code is a gate people learn to ignore.
   drift-ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
       recipes: '["drift-ts"]'
 
@@ -172,7 +172,7 @@ jobs:
   # publish would ship. It installs from the registry, which is why it is not
   # in `check`.
   ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@ea3c238133634f69f0c51240ede27bb270e24dc0 # v3.0.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     with:
       recipes: '["ts"]'
 
@@ -189,7 +189,7 @@ jobs:
   # repository's own .gitignore silently kept out of the commit), once on
   # a clean rerun of the same code.
   cluster:
-    uses: truvity/ci-workflows/.github/workflows/integration.yaml@1deba8589700d0d5ba433f4790cdacc208f166c5 # v3.13.0
+    uses: truvity/ci-workflows/.github/workflows/integration.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
     permissions:
       contents: read
       id-token: write

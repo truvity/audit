@@ -14,7 +14,7 @@
     "quantity": "10737418240",
     "unit": "byte",
     "kind": "KIND_GAUGE",
-    "dimensions": { "region": "eu-central-1", "tier": "hot" }
+    "dimensions": { "region": "eu-example-1", "tier": "hot" }
   },
   "data": { "buckets": 3 }
 }

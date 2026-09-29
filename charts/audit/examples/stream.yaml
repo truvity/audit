@@ -5,9 +5,9 @@
 # this chart as a dependency. Everything not named here has a default.
 mode: stream
 
-bucket: audit-eu-central-1
+bucket: audit-eu-example-1
 prefix: audit/app
-region: eu-central-1
+region: eu-example-1
 kmsKey: alias/audit-archive
 
 # Receivers scale with the application's request rate; they validate, publish

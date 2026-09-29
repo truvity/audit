@@ -4,7 +4,7 @@
 mode: stream
 bucket: audit-archive
 prefix: prod
-region: eu-central-1
+region: eu-example-1
 kmsKey: alias/audit
 replicas: 2
 writer:
@@ -47,7 +47,8 @@ workloadIdentity:
     - url: https://oidc.example.com/id/CLUSTER
   workloads:
     - subject: system:serviceaccount:wallet:wallet-api
-      networkPolicy:
+      source: wallet
+networkPolicy:
   enabled: true
 telemetry:
   otlpEndpoint: http://otel-collector.observability.svc:4318

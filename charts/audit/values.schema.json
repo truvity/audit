@@ -1,0 +1,1091 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "audit",
+  "description": "The audit trail's write path: the split writer, and the jobs that seal, verify and prune what it writes. Names follow docs/reference/configuration.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "_comment": "Nothing is required here that the template already refuses to render without (see charts/audit/testdata/refusals.txt and templates/_checks.tpl, which fail with a sentence saying why). The schema catches typos and wrong types, and holds every key name to what the templates and values.yaml actually read \u2014 it is what caught testdata/values/stream.yaml's workloadIdentity/networkPolicy mis-indentation. Enums are deliberately omitted from fields the templates already validate with a human-readable `fail` message (`mode`, `lockMode`, `keys.provider`, `query.searcher`): a schema enum would refuse those values first, with Helm's own generic message, and testdata/refuse.sh checks for the template's own wording.",
+  "properties": {
+    "image": {
+      "type": "object",
+      "properties": {
+        "writer": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "description": "Image repository. Defaults to the chart's own ghcr.io/truvity/audit/* image for this binary."
+            },
+            "tag": {
+              "type": "string",
+              "description": "Image tag. Empty defaults to the chart's appVersion."
+            }
+          },
+          "additionalProperties": false,
+          "description": "One of the chart's images (writer, cli or query)."
+        },
+        "cli": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "description": "Image repository. Defaults to the chart's own ghcr.io/truvity/audit/* image for this binary."
+            },
+            "tag": {
+              "type": "string",
+              "description": "Image tag. Empty defaults to the chart's appVersion."
+            }
+          },
+          "additionalProperties": false,
+          "description": "One of the chart's images (writer, cli or query)."
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "repository": {
+              "type": "string",
+              "description": "Image repository. Defaults to the chart's own ghcr.io/truvity/audit/* image for this binary."
+            },
+            "tag": {
+              "type": "string",
+              "description": "Image tag. Empty defaults to the chart's appVersion."
+            }
+          },
+          "additionalProperties": false,
+          "description": "One of the chart's images (writer, cli or query)."
+        },
+        "pullPolicy": {
+          "type": "string",
+          "description": "Pull policy for every image the chart renders.",
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "description": "The three images the chart renders: one per binary, as ko builds them."
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "description": "Names of existing image pull secrets.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The Secret's name."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "nameOverride": {
+      "type": "string",
+      "description": "Overrides the chart's name in generated resource names."
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Overrides the full generated resource name."
+    },
+    "writer": {
+      "type": "object",
+      "properties": {
+        "consumers": {
+          "type": "integer",
+          "description": "How many writer replicas consume the stream, in `mode: stream`. Scales with the record rate.",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "The writers that consume the stream, in `mode: stream`."
+    },
+    "replicas": {
+      "type": "integer",
+      "description": "How many front-door pods there are (the receiver in `mode: stream`, the single process in `mode: direct`). More than one needs `database` and, with the `local` key provider, a shared directory.",
+      "minimum": 1
+    },
+    "mode": {
+      "type": "string",
+      "description": "How the write path is arranged: `direct` (one process, no stream) or `stream` (a receiver plus `writer.consumers` writers). The chart refuses any other word."
+    },
+    "bucket": {
+      "type": "string",
+      "description": "The archive bucket. Required: the writer has nowhere to write without it."
+    },
+    "prefix": {
+      "type": "string",
+      "description": "A prefix within the bucket. Required wherever the bucket is shared between applications."
+    },
+    "region": {
+      "type": "string",
+      "description": "The archive bucket's region. No default: an estate fact the installation must supply, not a value this chart assumes."
+    },
+    "kmsKey": {
+      "type": "string",
+      "description": "A KMS key (ARN or alias) that encrypts the archive at rest, or signs the digest when set under `jobs.digest.kmsKey`."
+    },
+    "endpoint": {
+      "type": "string",
+      "description": "An S3-compatible endpoint. Empty keeps the AWS endpoint, so nothing changes for an AWS deployment."
+    },
+    "pathStyle": {
+      "type": "boolean",
+      "description": "Address the bucket as endpoint/bucket/key rather than bucket.endpoint/key. A property of the store's certificate, not of the endpoint."
+    },
+    "existingSecret": {
+      "type": "string",
+      "description": "An existing Secret with AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (and optionally AWS_SESSION_TOKEN) for a store with no pod identity. Empty keeps the pod's ambient identity."
+    },
+    "lockMode": {
+      "type": "string",
+      "description": "The Object Lock mode every object is written in: `compliance`, `governance` or `none`. The chart refuses any other word, and refuses a mode weaker than a composed profile demands."
+    },
+    "governance": {
+      "type": "boolean",
+      "description": "Deprecated: the same as `lockMode: governance`. Set one or the other, never both."
+    },
+    "profiles": {
+      "type": "object",
+      "description": "The profiles this deployment keeps, as `audit-writer --deployment` reads them. Each is composed from the presets the library ships; `security` is composed everywhere.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "presets": {
+            "type": "array",
+            "description": "The presets this profile composes.",
+            "items": {
+              "type": "string",
+              "description": "A preset name, e.g. `security`."
+            }
+          }
+        },
+        "additionalProperties": false,
+        "description": "One profile."
+      }
+    },
+    "query": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Run the query service: search, facets, get, export, tail and resolve."
+        },
+        "replicas": {
+          "type": "integer",
+          "description": "How many query service pods there are.",
+          "minimum": 1
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "integer",
+              "description": "The query Service's port.",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "The query service's Kubernetes Service."
+        },
+        "searcher": {
+          "type": "string",
+          "description": "Where the query service answers reads from: `postgres` (from the index) or `s3scan` (the archive within a budget, for a deployment with no database). The chart refuses any other word."
+        },
+        "database": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "Inline Postgres URL for the query service's own role. For a trial install; prefer existingSecret."
+            },
+            "existingSecret": {
+              "type": "string",
+              "description": "An existing Secret holding the query service's own database URL."
+            },
+            "secretKey": {
+              "type": "string",
+              "description": "Key within existingSecret to read."
+            },
+            "role": {
+              "type": "string",
+              "description": "The role that URL connects as. Required with the postgres searcher, and must not be the writer's role: the migration job grants it usage and select, and nothing else."
+            }
+          },
+          "additionalProperties": false,
+          "description": "The query service's own database role, required with the postgres searcher. Must NOT be the writer's database."
+        },
+        "grants": {
+          "type": "object",
+          "properties": {
+            "issuers": {
+              "type": "array",
+              "description": "Issuers trusted to sign the query service's own callers in.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "description": "The issuer URL trusted to sign callers in."
+                  },
+                  "audience": {
+                    "type": "string",
+                    "description": "The audience the issuer's tokens must carry."
+                  }
+                },
+                "additionalProperties": false,
+                "description": "A trusted OIDC issuer for the query service's own callers."
+              }
+            },
+            "presets": {
+              "type": "array",
+              "description": "Named grants presets, each bound to one issuer.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "The preset's name, e.g. `access-roster`."
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "description": "The issuer this preset applies to."
+                  }
+                },
+                "additionalProperties": true,
+                "description": "A named grants preset applied to one issuer."
+              }
+            }
+          },
+          "additionalProperties": true,
+          "description": "The issuers trusted to sign callers in, presets and rules. See docs/guides/read.md#access. Without an issuer nobody can sign in."
+        },
+        "exports": {
+          "type": "object",
+          "properties": {
+            "bucket": {
+              "type": "string",
+              "description": "The exports bucket. Empty refuses the export operation. Has no Object Lock, which clears exports."
+            },
+            "expiry": {
+              "type": "string",
+              "description": "How long an export is kept before it is cleared."
+            },
+            "linkValid": {
+              "type": "string",
+              "description": "How long an export's download link stays valid."
+            },
+            "endpoint": {
+              "type": "string",
+              "description": "The exports bucket's own S3-compatible endpoint. Empty inherits the archive's endpoint."
+            },
+            "pathStyle": {
+              "type": "boolean",
+              "description": "Address the exports bucket path-style. Empty inherits the archive's setting."
+            },
+            "existingSecret": {
+              "type": "string",
+              "description": "A second identity for the query process, for an exports bucket the archive's credentials do not reach."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Where the query service writes exports."
+        },
+        "resolve": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Allow resolving a pseudonym back to a person. Needs the writer's key provider to be set."
+            },
+            "transit": {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "description": "How the query service signs in to OpenBAO to resolve, never the writer's role: its policy grants decrypt and nothing else."
+                },
+                "token": {
+                  "type": "object",
+                  "properties": {
+                    "existingSecret": {
+                      "type": "string",
+                      "description": "Name of an existing Secret holding the OpenBAO token."
+                    },
+                    "secretKey": {
+                      "type": "string",
+                      "description": "Key within existingSecret to read."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "An OpenBAO token held in a Secret."
+                },
+                "tokenFile": {
+                  "type": "string",
+                  "description": "A file holding the OpenBAO token, kept renewed by something else."
+                }
+              },
+              "additionalProperties": false,
+              "description": "How the query service authenticates to OpenBAO transit to resolve pseudonyms, with the `transit` key provider."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Resolving a pseudonym back to a person."
+        },
+        "serviceAccount": {
+          "type": "object",
+          "properties": {
+            "create": {
+              "type": "boolean",
+              "description": "Create a ServiceAccount for the query service."
+            },
+            "annotations": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": true,
+              "description": "Annotations on the query service's ServiceAccount, e.g. Pod Identity or IRSA."
+            }
+          },
+          "additionalProperties": false,
+          "description": "The query service's own identity: read on the archive, write on the exports bucket, and, with transit, decrypt."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The query service: search, facets, get, export, tail and resolve, behind `query.grants`."
+    },
+    "workloadIdentity": {
+      "type": "object",
+      "properties": {
+        "issuers": {
+          "type": "array",
+          "description": "The issuers trusted to name a calling workload.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "The issuer URL, exactly as it appears in a token's `iss` claim."
+              },
+              "audience": {
+                "type": "string",
+                "description": "The audience this issuer's tokens must carry. Empty falls back to workloadIdentity.audience."
+              }
+            },
+            "additionalProperties": false,
+            "description": "A trusted OIDC issuer for workload identity tokens."
+          }
+        },
+        "audience": {
+          "type": "string",
+          "description": "The audience the jobs request on their tokens and the services require, unless an issuer names its own."
+        },
+        "expirationSeconds": {
+          "type": "integer",
+          "description": "How long a projected service-account token lives before the kubelet replaces it.",
+          "minimum": 1
+        },
+        "workloads": {
+          "type": "array",
+          "description": "Which service account speaks for which catalogue source. A workload not listed cannot register a catalogue.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string",
+                "description": "The service account's identity as the projected token's `sub` claim reads it, e.g. `system:serviceaccount:wallet:wallet-api`."
+              },
+              "source": {
+                "type": "string",
+                "description": "The catalogue source this workload registers as."
+              },
+              "issuer": {
+                "type": "string",
+                "description": "Which of workloadIdentity.issuers vouches for this workload. Required only when more than one issuer is trusted."
+              }
+            },
+            "additionalProperties": false,
+            "description": "A workload allowed to register a catalogue, and the source it speaks for."
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Who is calling the writer: the issuers and workloads the writer verifies a caller's projected service-account token against."
+    },
+    "anonymousWrites": {
+      "type": "boolean",
+      "description": "Accept writes over HTTP from callers nobody verified, stamped with no observer. For a trial install only."
+    },
+    "extensions": {
+      "type": "object",
+      "properties": {
+        "billing": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Rollups at index time and a monthly immutable statement. Needs a profile composed from a metering preset."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Billing rollups and statements."
+        },
+        "quotas": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "A usage consumer, an hourly reconciler and a decision point in front of the application. Needs `mode: stream`."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Usage quotas."
+        }
+      },
+      "additionalProperties": false,
+      "description": "What a product switches on in its own installation. Both are projections of records the installation already keeps."
+    },
+    "telemetry": {
+      "type": "object",
+      "properties": {
+        "otlpEndpoint": {
+          "type": "string",
+          "description": "Where metrics are pushed over OTLP. Empty sends nothing and costs nothing."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Metrics, pushed over OTLP."
+    },
+    "catalogues": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": true,
+      "description": "Catalogues mounted for the writer at start-up, as name -> document. The common catalogue is built in and needs no entry here."
+    },
+    "database": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "Inline Postgres URL. For a trial install; prefer existingSecret."
+        },
+        "existingSecret": {
+          "type": "string",
+          "description": "An existing Secret holding the Postgres URL."
+        },
+        "secretKey": {
+          "type": "string",
+          "description": "Key within existingSecret to read."
+        },
+        "migrate": {
+          "type": "boolean",
+          "description": "Apply the schema with a hook Job before the writer rolls. The writer refuses to start against a schema version it does not know."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The index and the shared deduplication table. Without it the writer indexes nothing and may only run one replica."
+    },
+    "externalIdentifiersAreOpaque": {
+      "type": "boolean",
+      "description": "Whether identifiers this installation receives for people outside the organisation are already opaque (application-minted), so a profile asking for a pseudonym gets the identifier in clear instead."
+    },
+    "keys": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "description": "The pseudonymisation key provider: `none` (no pseudonyms, no key material), `local` (a root Secret and a directory) or `transit` (OpenBAO). The chart refuses any other word."
+        },
+        "transit": {
+          "type": "object",
+          "properties": {
+            "prefix": {
+              "type": "string",
+              "description": "Every key is <prefix>.<purpose>.<tenant>; the policies glob on it."
+            },
+            "role": {
+              "type": "string",
+              "description": "How the writer signs in to OpenBAO transit: a role on openbao.auth.mount, taken with the writer's projected service-account token."
+            },
+            "token": {
+              "type": "object",
+              "properties": {
+                "existingSecret": {
+                  "type": "string",
+                  "description": "Name of an existing Secret holding the OpenBAO token."
+                },
+                "secretKey": {
+                  "type": "string",
+                  "description": "Key within existingSecret to read."
+                }
+              },
+              "additionalProperties": false,
+              "description": "An OpenBAO token held in a Secret."
+            },
+            "tokenFile": {
+              "type": "string",
+              "description": "A file holding the OpenBAO token, kept renewed by something else."
+            }
+          },
+          "additionalProperties": false,
+          "description": "OpenBAO transit as the pseudonymisation key provider."
+        },
+        "local": {
+          "type": "object",
+          "properties": {
+            "existingSecret": {
+              "type": "string",
+              "description": "An existing Secret holding the 32-byte root the data keys are wrapped under."
+            },
+            "secretKey": {
+              "type": "string",
+              "description": "Key within existingSecret to read."
+            },
+            "persistence": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "Persist the wrapped data keys. Data keys are random, not derived from the root, so the directory is the only copy."
+                },
+                "size": {
+                  "type": "string",
+                  "description": "The PersistentVolumeClaim's size, e.g. `1Gi`."
+                },
+                "storageClass": {
+                  "type": "string",
+                  "description": "The PersistentVolumeClaim's storage class. Empty uses the cluster default."
+                },
+                "accessModes": {
+                  "type": "array",
+                  "description": "The PersistentVolumeClaim's access modes. ReadWriteMany is what lets several replicas agree about a tenant's key.",
+                  "items": {
+                    "type": "string",
+                    "description": "A PersistentVolumeClaim access mode.",
+                    "enum": [
+                      "ReadWriteOnce",
+                      "ReadWriteMany",
+                      "ReadOnlyMany"
+                    ]
+                  }
+                },
+                "existingClaim": {
+                  "type": "string",
+                  "description": "An existing PersistentVolumeClaim to use instead of creating one."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Where the wrapped data keys are kept."
+            },
+            "ephemeralIsAcceptable": {
+              "type": "boolean",
+              "description": "Acknowledge that pseudonyms will change on every restart with no persistence, making the trail unlinkable across one. For a throwaway install only."
+            }
+          },
+          "additionalProperties": false,
+          "description": "A local root key and directory as the pseudonymisation key provider."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Pseudonymisation keys."
+    },
+    "openbao": {
+      "type": "object",
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "The OpenBAO this release reaches, for the transit key provider and for a transit digest signer."
+        },
+        "mount": {
+          "type": "string",
+          "description": "The transit secrets engine's mount path."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "The OpenBAO namespace the engine and auth mount are in, in an estate with a namespace per environment. Empty is root."
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "mount": {
+              "type": "string",
+              "description": "A JWT auth mount that takes this cluster's service-account tokens, e.g. `jwt-devel`."
+            },
+            "audience": {
+              "type": "string",
+              "description": "The audience each component requests on the projected token it signs in with."
+            },
+            "expirationSeconds": {
+              "type": "integer",
+              "description": "How long the projected service-account token used to sign in lives.",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "How components authenticate to OpenBAO's JWT auth mount."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The OpenBAO this release reaches, for the transit key provider and the digest signer."
+    },
+    "trust": {
+      "type": "object",
+      "properties": {
+        "configMap": {
+          "type": "string",
+          "description": "A ConfigMap with a CA bundle trusted beside the system roots, typically trust-manager's. Empty trusts only the system roots."
+        },
+        "key": {
+          "type": "string",
+          "description": "The key within the ConfigMap holding the CA bundle."
+        }
+      },
+      "additionalProperties": false,
+      "description": "A CA bundle every pod that reaches OpenBAO or Postgres mounts, beside the system roots."
+    },
+    "stream": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The JetStream broker URL. Without it the writer only serves its own sink, which is direct mode."
+        },
+        "name": {
+          "type": "string",
+          "description": "The JetStream stream name."
+        },
+        "consumer": {
+          "type": "string",
+          "description": "The JetStream consumer name the writers share."
+        },
+        "batch": {
+          "type": "integer",
+          "description": "How many messages a writer fetches from the stream at once.",
+          "minimum": 1
+        },
+        "ackWait": {
+          "type": "string",
+          "description": "How long the stream waits for a batch before offering it again. Must exceed roll.interval plus the longest a put can take."
+        },
+        "token": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Present a projected service-account token as the NATS token, verified by the broker's auth callout."
+            },
+            "audience": {
+              "type": "string",
+              "description": "The audience the projected token is requested for."
+            },
+            "expirationSeconds": {
+              "type": "integer",
+              "description": "How long the projected token lives before it is replaced.",
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "How the receiver and writers identify themselves to the broker."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The wide stream, in `mode: stream`."
+    },
+    "roll": {
+      "type": "object",
+      "properties": {
+        "interval": {
+          "type": "string",
+          "description": "How long an object stays open gathering records before it is written. In direct mode, how long an object may stay open inside one write."
+        },
+        "maxRecords": {
+          "type": "integer",
+          "description": "How many records an object gathers before it is written, whichever of interval or this comes first.",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "How often an object is rolled and put."
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "The writer's Service type.",
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer",
+            "ExternalName"
+          ]
+        },
+        "port": {
+          "type": "integer",
+          "description": "The writer's Service port.",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "The writer's Kubernetes Service."
+    },
+    "jobs": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Run the scheduled digest job, which seals what the writer wrote."
+            },
+            "schedule": {
+              "type": "string",
+              "description": "The digest job's cron schedule."
+            },
+            "serviceAccount": {
+              "type": "object",
+              "properties": {
+                "create": {
+                  "type": "boolean",
+                  "description": "Create a ServiceAccount for the digest job. A different privilege from writing: the signing key must not live where the writer's credentials do."
+                },
+                "annotations": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": true,
+                  "description": "Annotations on the digest job's ServiceAccount."
+                }
+              },
+              "additionalProperties": false,
+              "description": "The digest job's own identity."
+            },
+            "signingKey": {
+              "type": "object",
+              "properties": {
+                "existingSecret": {
+                  "type": "string",
+                  "description": "An existing Secret holding the PEM signing key. Required unless kmsKey or transit.key is set."
+                },
+                "secretKey": {
+                  "type": "string",
+                  "description": "Key within existingSecret to read."
+                },
+                "keyID": {
+                  "type": "string",
+                  "description": "An identifier for the key, carried in the digest for verification."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Sign the digest with a key Secret."
+            },
+            "kmsKey": {
+              "type": "string",
+              "description": "Sign the digest with an AWS KMS ECC_NIST_P256 key instead of a key Secret. The private half never leaves KMS."
+            },
+            "transit": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "description": "The OpenBAO transit ed25519 key that signs the digest."
+                },
+                "role": {
+                  "type": "string",
+                  "description": "How the digest job signs in to OpenBAO transit, never the writer's role."
+                },
+                "token": {
+                  "type": "object",
+                  "properties": {
+                    "existingSecret": {
+                      "type": "string",
+                      "description": "Name of an existing Secret holding the OpenBAO token."
+                    },
+                    "secretKey": {
+                      "type": "string",
+                      "description": "Key within existingSecret to read."
+                    }
+                  },
+                  "additionalProperties": false,
+                  "description": "An OpenBAO token held in a Secret."
+                },
+                "tokenFile": {
+                  "type": "string",
+                  "description": "A file holding the OpenBAO token, kept renewed by something else."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Sign the digest with an OpenBAO transit key instead of a key Secret."
+            },
+            "lookback": {
+              "type": "string",
+              "description": "How far back a digest run considers. Empty covers everything not yet sealed."
+            },
+            "maxWindows": {
+              "type": "integer",
+              "description": "The most windows one digest run seals. 0 is unlimited.",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false,
+          "description": "Seals what the writer wrote, on a schedule."
+        },
+        "verify": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Run the scheduled verify job, which checks last night's digest chain."
+            },
+            "schedule": {
+              "type": "string",
+              "description": "The verify job's cron schedule."
+            },
+            "window": {
+              "type": "string",
+              "description": "How far back the job checks."
+            },
+            "record": {
+              "type": "boolean",
+              "description": "Write each window's result under verified/ in the archive, which is where a record's verified_at comes from. Needs s3:PutObject on verified/*."
+            },
+            "serviceAccount": {
+              "type": "object",
+              "properties": {
+                "create": {
+                  "type": "boolean",
+                  "description": "Create a ServiceAccount for the verify job."
+                },
+                "annotations": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": true,
+                  "description": "Annotations on the verify job's ServiceAccount."
+                }
+              },
+              "additionalProperties": false,
+              "description": "Credentials that read the archive and the public half of the signing key."
+            },
+            "publicKey": {
+              "type": "object",
+              "properties": {
+                "existingSecret": {
+                  "type": "string",
+                  "description": "An existing Secret holding the PEM public key that verifies the digest chain."
+                },
+                "secretKey": {
+                  "type": "string",
+                  "description": "Key within existingSecret to read."
+                }
+              },
+              "additionalProperties": false,
+              "description": "The public half of the signing key, to verify the digest chain."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Checks last night's digest chain, on a schedule."
+        },
+        "purge": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Run the scheduled purge job, which prunes the index and the deduplication table. Needs `database`."
+            },
+            "schedule": {
+              "type": "string",
+              "description": "The purge job's cron schedule."
+            },
+            "identifyingAfter": {
+              "type": "string",
+              "description": "How long the index keeps who an event happened to, as opposed to what happened. Empty means nothing is forgotten early."
+            },
+            "dedupeWindow": {
+              "type": "string",
+              "description": "How long the deduplication table keeps an entry."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Prunes the index and the deduplication table, on a schedule."
+        },
+        "clockSync": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Run the scheduled clock-sync job, which fails when the host clock drifts beyond maxOffset."
+            },
+            "schedule": {
+              "type": "string",
+              "description": "The clock-sync job's cron schedule."
+            },
+            "ntp": {
+              "type": "array",
+              "description": "Time references to check the host clock against. Required while clockSync.enabled.",
+              "items": {
+                "type": "string",
+                "description": "An NTP server hostname or address."
+              }
+            },
+            "maxOffset": {
+              "type": "string",
+              "description": "Beyond this drift the run fails, so the job going red is the alert."
+            }
+          },
+          "additionalProperties": false,
+          "description": "Checks the host clock against NTP, on a schedule."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The scheduled jobs. Each records what it did through the writer's own sink."
+    },
+    "serviceAccount": {
+      "type": "object",
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create a ServiceAccount for the writer."
+        },
+        "annotations": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": true,
+          "description": "Annotations on the writer's ServiceAccount, e.g. Pod Identity or IRSA."
+        },
+        "name": {
+          "type": "string",
+          "description": "The ServiceAccount's name. Empty derives one from the release name."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The writer's own identity."
+    },
+    "networkPolicy": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Render NetworkPolicies restricting who may reach the writer's sink and the query service."
+        },
+        "ingressFrom": {
+          "type": "array",
+          "description": "Selectors for what may reach the writer's sink, beside this release's own pods.",
+          "items": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        },
+        "queryIngressFrom": {
+          "type": "array",
+          "description": "Selectors for what may reach the query service. Empty leaves it open inside the cluster.",
+          "items": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Who may reach each component."
+    },
+    "podAnnotations": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": true,
+      "description": "Annotations added to every pod this chart creates."
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "properties": {
+        "runAsNonRoot": {
+          "type": "boolean",
+          "description": "Refuse to run as root."
+        },
+        "runAsUser": {
+          "type": "integer",
+          "description": "The UID every container runs as."
+        },
+        "fsGroup": {
+          "type": "integer",
+          "description": "The GID that owns mounted volumes."
+        },
+        "seccompProfile": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "The seccomp profile type.",
+              "enum": [
+                "RuntimeDefault",
+                "Localhost",
+                "Unconfined"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "description": "The pod's seccomp profile."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The Pod-level security context every workload this chart creates uses."
+    },
+    "securityContext": {
+      "type": "object",
+      "properties": {
+        "allowPrivilegeEscalation": {
+          "type": "boolean",
+          "description": "Whether a process can gain more privileges than its parent."
+        },
+        "readOnlyRootFilesystem": {
+          "type": "boolean",
+          "description": "Mount the root filesystem read-only."
+        },
+        "capabilities": {
+          "type": "object",
+          "properties": {
+            "drop": {
+              "type": "array",
+              "description": "Linux capabilities to drop.",
+              "items": {
+                "type": "string",
+                "description": "A Linux capability name, e.g. `ALL`."
+              }
+            }
+          },
+          "additionalProperties": false,
+          "description": "Linux capabilities."
+        }
+      },
+      "additionalProperties": false,
+      "description": "The container-level security context every workload this chart creates uses."
+    },
+    "resources": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": true,
+      "description": "Kubernetes resource requests and limits, applied to every container this chart creates."
+    },
+    "nodeSelector": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": true,
+      "description": "Node selector applied to every pod this chart creates. No default: an estate fact the installation must supply."
+    },
+    "tolerations": {
+      "type": "array",
+      "description": "Tolerations applied to every pod this chart creates. No default: an estate fact the installation must supply.",
+      "items": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": true
+      }
+    },
+    "affinity": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": true,
+      "description": "Affinity rules applied to every pod this chart creates."
+    }
+  }
+}

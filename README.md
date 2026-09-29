@@ -56,6 +56,20 @@ no shape that puts the writer inside the application
 | understand why it is built this way | [why](docs/why.md), [concepts](docs/concepts.md), [the decisions](docs/decisions/README.md) |
 | work on this repository | [layout](docs/development/layout.md), [CONTRIBUTING](CONTRIBUTING.md) |
 
+## Consumers
+
+| repo | surface |
+|---|---|
+| truvity/gitops | chart `audit` |
+| opwerm/nexus | chart `audit` |
+| truvity/cloudflare | Go, from `r2broker` |
+
+## Neighbours
+
+- **access-roster ↔ openbao ↔ audit.** access-roster is the issuer; openbao
+  is a relying party (its own `docs/integrations/access-roster.md`); audit is
+  the record every one of them writes.
+
 ## Status
 
 | part | state |
@@ -82,6 +96,20 @@ no shape that puts the writer inside the application
 - **Not a wallet transaction log.** A digital identity wallet's own log
   lives on the user's device and is invisible to the provider by law. This
   component sees operational events only.
+
+## Releasing
+
+A pushed `v*` tag runs [`release.yaml`](.github/workflows/release.yaml), the
+shared `release-public` workflow
+([truvity/ci-workflows](https://github.com/truvity/ci-workflows)): it builds
+the toolchain archives and, through `ko`, the three images the chart
+deploys, and packages and pushes the `audit` chart to
+`oci://ghcr.io/truvity/charts/audit` at the tag's version.
+[`charts/audit/Chart.yaml`](charts/audit/Chart.yaml)'s committed
+`version: 0.0.0` / `appVersion: "0.0.0"` are placeholders the release
+stamps over — never bump them by hand. The CLI is also published as a Nix
+flake release asset, for pinning `audit verify` the way other repositories
+pin `accessctl`.
 
 ## Licence
 

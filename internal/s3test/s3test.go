@@ -47,7 +47,7 @@ import (
 const URLEnv = "AUDIT_S3_URL"
 
 // region is the one these tests create buckets in.
-const region = "eu-example-1"
+const region = "eu-central-1"
 
 // Open returns a store over a bucket of this test's own.
 //

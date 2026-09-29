@@ -176,6 +176,9 @@ default — the consuming estate supplies the particulars from its own,
 private repository. `hack/leak-canary.sh` enforces it on tracked files,
 and `just check` runs it.
 
+This repository follows the shared
+[component contract](https://github.com/truvity/policy/blob/master/docs/contracts/component.md).
+
 ## Status
 
 | part | state |

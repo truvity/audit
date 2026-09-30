@@ -35,7 +35,7 @@ func (c *Catalogue) Compose(action string) (*Composed, error) {
 	}
 	x := &Composed{Source: c.Source, Version: c.Version, Name: action, Action: a, catalogue: c}
 	if a.DataSchema != "" {
-		if s, ok := c.schemas[a.DataSchema]; ok {
+		if s, ok := c.schemas[CanonicalID(a.DataSchema)]; ok {
 			x.Data = s
 		}
 	}
@@ -182,7 +182,7 @@ func (x *Composed) validateActor(r *record.Record) []error {
 		}
 		return nil
 	}
-	s, ok := x.catalogue.schemas[kind.AttributesSchema]
+	s, ok := x.catalogue.schemas[CanonicalID(kind.AttributesSchema)]
 	if !ok {
 		return []error{fmt.Errorf("actor kind %q references schema %s, which is not loaded", a.GetKind(), kind.AttributesSchema)}
 	}
@@ -218,7 +218,7 @@ func (x *Composed) validateTargets(r *record.Record) []error {
 			}
 			continue
 		}
-		s, ok := x.catalogue.schemas[declared.AttributesSchema]
+		s, ok := x.catalogue.schemas[CanonicalID(declared.AttributesSchema)]
 		if !ok {
 			problems = append(problems, fmt.Errorf("targets[%d]: schema %s is not loaded", i, declared.AttributesSchema))
 			continue
@@ -238,7 +238,7 @@ func (x *Composed) validateContext(r *record.Record) []error {
 			problems = append(problems, fmt.Errorf("context area %q is not declared by catalogue %s", area, x.Source))
 			continue
 		}
-		s, ok := x.catalogue.schemas[id]
+		s, ok := x.catalogue.schemas[CanonicalID(id)]
 		if !ok {
 			problems = append(problems, fmt.Errorf("context area %q references schema %s, which is not loaded", area, id))
 			continue
@@ -274,7 +274,7 @@ func (x *Composed) validateMeter(r *record.Record) []error {
 		problems = append(problems, fmt.Errorf("meter %q is a %s", declared.Name, m.Kind))
 	}
 	if m.DimensionsSchema != "" {
-		if s, ok := x.catalogue.schemas[m.DimensionsSchema]; ok {
+		if s, ok := x.catalogue.schemas[CanonicalID(m.DimensionsSchema)]; ok {
 			if err := s.Validate(asAny(carried.GetDimensions())); err != nil {
 				problems = append(problems, fmt.Errorf("meter.dimensions: %w", err))
 			}

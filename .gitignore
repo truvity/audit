@@ -38,3 +38,4 @@ frontend/tsconfig.tsbuildinfo
 
 # Devbox
 .devbox/
+/_site/

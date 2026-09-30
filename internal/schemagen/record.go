@@ -16,7 +16,7 @@ const OutDir = "gen/jsonschema"
 const FileName = "record.v1.schema.json"
 
 // ID is the identifier a record's schema is published under.
-const ID = "https://schemas.truvity.com/audit/v1/record.schema.json"
+const ID = "https://truvity.github.io/audit/schemas/v1/record.schema.json"
 
 // Title and Description are what the published schema says about itself.
 var (

@@ -1,5 +1,5 @@
 {
-  "$id": "https://schemas.truvity.com/audit/v1/common/export-completed.json",
+  "$id": "https://truvity.github.io/audit/schemas/v1/common/export-completed.json",
   "type": "object",
   "additionalProperties": false,
   "properties": {

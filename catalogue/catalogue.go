@@ -172,10 +172,10 @@ func Load(doc []byte, schemas [][]byte) (*Catalogue, error) {
 		if err != nil {
 			return nil, fmt.Errorf("catalogue %s: %w", c.Source, err)
 		}
-		if _, seen := c.schemas[s.ID]; seen {
+		if _, seen := c.schemas[CanonicalID(s.ID)]; seen {
 			return nil, fmt.Errorf("catalogue %s: two schemas claim %s", c.Source, s.ID)
 		}
-		c.schemas[s.ID] = s
+		c.schemas[CanonicalID(s.ID)] = s
 	}
 	c.document = append([]byte(nil), doc...)
 	if err := c.check(); err != nil {
@@ -218,7 +218,7 @@ func Common() (*Catalogue, error) { return LoadFS(audit.Catalogue, "catalogue/co
 
 // Schema returns a referenced extension schema.
 func (c *Catalogue) Schema(id string) (*Schema, bool) {
-	s, ok := c.schemas[id]
+	s, ok := c.schemas[CanonicalID(id)]
 	return s, ok
 }
 
@@ -260,8 +260,8 @@ func (c *Catalogue) check() error {
 		if id == "" {
 			return
 		}
-		referenced[id] = true
-		if _, ok := c.schemas[id]; !ok {
+		referenced[CanonicalID(id)] = true
+		if _, ok := c.schemas[CanonicalID(id)]; !ok {
 			fail("%s references schema %s, which was not supplied", where, id)
 		}
 	}
@@ -323,7 +323,7 @@ func (c *Catalogue) check() error {
 // property it can read identifiers from, and an expiry to extend to. Either
 // missing would make the declaration a promise the writer quietly breaks.
 func (c *Catalogue) checkExtends(name string, a Action) []error {
-	s, ok := c.schemas[a.DataSchema]
+	s, ok := c.schemas[CanonicalID(a.DataSchema)]
 	if !ok {
 		return []error{fmt.Errorf("action %s extends earlier records but has no data schema to name them in", name)}
 	}
@@ -386,7 +386,7 @@ func (c *Catalogue) checkMessages(name string, a Action) []error {
 // argumentCollisions refuses a data schema two of whose properties would
 // answer to the same template argument: /a_b and /a/b are both data_a_b.
 func (c *Catalogue) argumentCollisions(name string, a Action) []error {
-	s, ok := c.schemas[a.DataSchema]
+	s, ok := c.schemas[CanonicalID(a.DataSchema)]
 	if !ok {
 		return nil
 	}
@@ -437,7 +437,7 @@ func (c *Catalogue) messageArguments(a Action) map[string]bool {
 			allowed[fmt.Sprintf("targets_%d_%s", i, part)] = true
 		}
 	}
-	if s, ok := c.schemas[a.DataSchema]; ok {
+	if s, ok := c.schemas[CanonicalID(a.DataSchema)]; ok {
 		for pointer := range s.Properties {
 			allowed[DataArgument(pointer)] = true
 		}

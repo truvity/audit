@@ -1,5 +1,5 @@
 source: audit
-version: "1.0.0"
+version: "1.0.1"
 locales: [en]
 
 actor_kinds:
@@ -75,7 +75,7 @@ actions:
     categories: [log_access]
     profiles: [security]
     target_types: [export]
-    data_schema: https://schemas.truvity.com/audit/v1/common/export-completed.json
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/export-completed.json
     message: { en: "export {targets_0_id} completed with {data_records} records" }
   audit.catalogue.registered:
     summary: A source registered a catalogue version.
@@ -92,7 +92,7 @@ actions:
     profiles: [security, evidence]
     target_types: [profile]
     delivery: block
-    data_schema: https://schemas.truvity.com/audit/v1/common/profile-changed.json
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/profile-changed.json
     message: { en: "{actor} changed profile {targets_0_id}" }
   audit.preset.changed:
     summary: A preset version in use changed.
@@ -101,7 +101,7 @@ actions:
     profiles: [security, evidence]
     target_types: [preset]
     delivery: block
-    data_schema: https://schemas.truvity.com/audit/v1/common/preset-changed.json
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/preset-changed.json
     message: { en: "{actor} changed preset {targets_0_id}" }
   audit.key.destroyed:
     summary: A pseudonymisation key was destroyed, unlinking its pseudonyms.
@@ -133,7 +133,7 @@ actions:
     categories: [logging_control]
     profiles: [security, evidence]
     target_types: [digest]
-    data_schema: https://schemas.truvity.com/audit/v1/common/digest-written.json
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/digest-written.json
     message: { en: "digest {targets_0_id} written covering {data_objects} objects" }
   audit.digest.verified:
     summary: A digest chain window was verified.
@@ -159,7 +159,7 @@ actions:
     # recorded too, with the reason: the earlier evidence then keeps its old
     # date, and this is where a reader finds out.
     target_types: [record]
-    data_schema: https://schemas.truvity.com/audit/v1/common/retention-extended.json
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/retention-extended.json
     message: { en: "the lock on record {targets_0_id} was lengthened for record {targets_1_id}" }
   audit.writer.started:
     summary: A split writer instance started.
@@ -187,5 +187,5 @@ actions:
     categories: [clock]
     profiles: [security, evidence]
     delivery: block
-    data_schema: https://schemas.truvity.com/audit/v1/common/clock-synchronised.json
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/clock-synchronised.json
     message: { en: "clock on {observer_instance} synchronised with UTC, offset {data_offset_ms} ms" }

@@ -1,5 +1,5 @@
 {
-  "$id": "https://schemas.truvity.com/audit/v1/common/preset-changed.json",
+  "$id": "https://truvity.github.io/audit/schemas/v1/common/preset-changed.json",
   "type": "object",
   "additionalProperties": false,
   "properties": {

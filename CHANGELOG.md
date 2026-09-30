@@ -4,6 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## v0.5.1
+
+- The writer no longer warns `no configured profile keeps these` for an action whose catalogue names a profile this deployment does not configure, when another profile it names does keep the records. `audit.catalogue.registered` and `audit.digest.written` name `evidence` beside `security` for trust-service deployments, so every other deployment logged a warning about records it was in fact keeping. That case is now a debug line naming the profiles that keep the action and the ones not configured; the warning is for an action none of whose profiles is configured, whose records are dead-lettered, and it says so.
+
 ## v0.5.0
 
 - Schema `$id`s move from `https://schemas.truvity.com/audit/v1/...` to `https://truvity.github.io/audit/schemas/v1/...`, and `.github/workflows/pages.yaml` serves the files there so an `$id` resolves. The catalogue loader accepts the old identifiers as aliases of the new ones (`catalogue.CanonicalID`) and the common catalogue keeps version 1.0.0, so archived catalogues and schemas keep validating; everything newly generated uses the new base. See [ADR 0015](docs/decisions/0015-schema-ids-on-github-pages.md).

@@ -289,8 +289,8 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 					"records", len(ids), "error", err)
 				counts.DuplicatesLikely(len(ids))
 			},
-			OnUnhandled: func(action string, p []string) {
-				log.Warn("no configured profile keeps these", "action", action, "profiles", p)
+			OnUnhandled: func(action string, missing, kept []string) {
+				reportUnhandled(log, action, missing, kept)
 			},
 			OnMetaDropped: func(action, reason string) {
 				log.Error("the writer could not record itself", "action", action, "reason", reason)
@@ -417,4 +417,20 @@ func longestRetention(profiles map[string]*preset.Profile) time.Duration {
 		longest = 10 * 365 * 24 * time.Hour
 	}
 	return longest
+}
+
+// reportUnhandled says what a configuration that lacks some of the profiles an
+// action names means for that action. A catalogue may name a profile only some
+// deployments configure (a trust service's evidence profile, say); when another
+// profile named keeps the records, nothing is lost and that is a debug line.
+// Only when none of them is configured are the records dropped, which an
+// operator must hear about.
+func reportUnhandled(log *slog.Logger, action string, missing, kept []string) {
+	if len(kept) == 0 {
+		log.Warn("no configured profile keeps this action; its records are dead-lettered",
+			"action", action, "profiles", missing)
+		return
+	}
+	log.Debug("some profiles this action names are not configured; its records are kept by the others",
+		"action", action, "kept", kept, "not_configured", missing)
 }

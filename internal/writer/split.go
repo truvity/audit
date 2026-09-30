@@ -119,6 +119,19 @@ func (s *Splitter) Unhandled(x *catalogue.Composed) []string {
 	return out
 }
 
+// Handled returns the profiles an action names that this deployment has: the
+// ones that keep its records. Empty means nothing keeps them.
+func (s *Splitter) Handled(x *catalogue.Composed) []string {
+	var out []string
+	for _, name := range x.Action.Profiles {
+		if _, ok := s.Profiles[name]; ok {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func (s *Splitter) copyFor(
 	ctx context.Context, r *record.Record, x *catalogue.Composed, p *preset.Profile,
 ) (*record.Record, error) {

@@ -18,12 +18,15 @@ import (
 
 const subject = "audit.records"
 
-// opts are the stream settings these tests use. AckWait is a second rather than
-// the half minute a deployment wants, so that a redelivery can be waited for.
+// opts are the stream settings these tests use. AckWait is long: the stream
+// redelivers whatever is not acknowledged within it, so a short one turns a
+// machine that stalls for a second between taking a record and acknowledging it
+// into a duplicate, and every count in a test into a guess. The one test that
+// waits for a redelivery shortens it for itself.
 func opts(url string, batch int) streamOptions {
 	return streamOptions{
 		URL: url, Stream: "AUDIT", Durable: "audit-writer",
-		Batch: batch, AckWait: time.Second,
+		Batch: batch, AckWait: time.Minute,
 		// A window shorter than the tests' patience: these exercise the
 		// consumption, and the roll has its own tests in sink/natssink.
 		Window: 10 * time.Millisecond,
@@ -93,6 +96,19 @@ func (c *target) count() int {
 	return len(c.taken)
 }
 
+// distinct is how many different records the writer has taken. A record the
+// stream delivered twice counts once: delivery is at least once, and the
+// writer's dedupe is what makes it one.
+func (c *target) distinct() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ids := map[string]bool{}
+	for _, id := range c.taken {
+		ids[id] = true
+	}
+	return len(ids)
+}
+
 func publish(t *testing.T, js jetstream.JetStream, n int) {
 	t.Helper()
 	p, err := natssink.NewPublisher(js, natssink.Options{Subject: subject})
@@ -116,9 +132,12 @@ func publish(t *testing.T, js jetstream.JetStream, n int) {
 	}
 }
 
+// eventually polls until want holds. The bound is only how long a broken build
+// takes to be told so: a working one is not waiting on it, and a loaded
+// machine that is merely slow must not be mistaken for a broken one.
 func eventually(t *testing.T, want func() bool, why string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(time.Minute)
 	for time.Now().Before(deadline) {
 		if want() {
 			return
@@ -159,7 +178,13 @@ func TestARefusedBatchComesBack(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	stop, err := consume(ctx, opts(url, 10), sink.Func(
+	// The redelivery is the stream's, after the ack wait, so this is the one
+	// test that shortens it. A machine slow enough to deliver a record a second
+	// time is no failure here, which is why the count below is of distinct
+	// records.
+	redelivering := opts(url, 10)
+	redelivering.AckWait = time.Second
+	stop, err := consume(ctx, redelivering, sink.Func(
 		func(c context.Context, req *sink.Request) (*sink.Result, error) {
 			res, err := into.Write(c, req)
 			if err != nil {
@@ -174,7 +199,7 @@ func TestARefusedBatchComesBack(t *testing.T) {
 	}
 	defer stop()
 
-	eventually(t, func() bool { return into.count() == 3 },
+	eventually(t, func() bool { return into.distinct() == 3 },
 		"a batch the writer refused was not redelivered")
 	mu.Lock()
 	defer mu.Unlock()
@@ -200,15 +225,41 @@ func TestConsumeRefusesAStreamThatIsNotThere(t *testing.T) {
 }
 
 // Two replicas share one durable consumer, so a record goes to one of them.
+//
+// Which replica takes what is the broker's to decide, and on a loaded machine
+// one of them can take everything before the other has fetched at all. So the
+// test does not hope: each replica's first write waits until the other has
+// made one too. That can only end one way if the first cannot hold every
+// record: the stream's limit on what is unacknowledged is twice the batch, ten
+// of the twenty, and it is shared by both replicas. A replica rolls at five
+// records (MaxRecords), so when it stops to wait it holds at most nine, and the
+// other is left at least one to take.
 func TestTwoWritersShareOneDurableConsumer(t *testing.T) {
 	url, js := stream(t)
 	publish(t, js, 20)
 
 	first, second := &target{}, &target{}
+	arrived := map[*target]chan struct{}{first: make(chan struct{}), second: make(chan struct{})}
+	other := map[*target]*target{first: second, second: first}
+	once := map[*target]*sync.Once{first: {}, second: {}}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	for _, into := range []*target{first, second} {
-		stop, err := consume(ctx, opts(url, 5), into)
+		shared := opts(url, 5)
+		shared.MaxRecords = 5
+		stop, err := consume(ctx, shared, sink.Func(
+			func(c context.Context, req *sink.Request) (*sink.Result, error) {
+				once[into].Do(func() {
+					close(arrived[into])
+					select {
+					case <-arrived[other[into]]:
+					case <-time.After(time.Minute):
+						t.Error("one replica took everything: the other was never given a record")
+					}
+				})
+				return into.Write(c, req)
+			}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -218,7 +269,6 @@ func TestTwoWritersShareOneDurableConsumer(t *testing.T) {
 	eventually(t, func() bool { return first.count()+second.count() == 20 },
 		"the two replicas did not between them take every record")
 	if first.count() == 0 || second.count() == 0 {
-		t.Skipf("one replica took everything (%d/%d), which is allowed but proves nothing here",
-			first.count(), second.count())
+		t.Fatalf("one replica took everything (%d/%d)", first.count(), second.count())
 	}
 }

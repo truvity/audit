@@ -18,7 +18,7 @@ import (
 // an hour later.
 func TestTheTokenIsReadAfreshOnEveryConnect(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
-	source := tokenFromFile(path)
+	source := newTokenLease(path, 0).token
 
 	if got := source(); got != "" {
 		t.Fatalf("a missing file yielded %q, want no token", got)

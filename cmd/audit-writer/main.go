@@ -475,7 +475,12 @@ type streamOptions struct {
 	// TokenFile holds the token presented to the broker, when it verifies who
 	// connects; empty connects with no credentials. See connectOptions.
 	TokenFile string
-	Batch     int
+	// RefreshLead is how long before the token expires the connection is
+	// reopened with the renewed one. Zero is thirty seconds; see tokenLease.
+	RefreshLead time.Duration
+	// Log is where the connection reports; nil is slog's default.
+	Log   *slog.Logger
+	Batch int
 	// AckWait is how long the stream waits for a batch to be taken before
 	// offering it again. It has to be longer than the longest a write can
 	// honestly take — a batch is acknowledged only once its records are in the

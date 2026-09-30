@@ -50,9 +50,14 @@ identifiers, both as a schema's own `$id` and as the `data_schema` and
 - The site's URL depends on the repository's name and owner. Moving the
   repository moves the identifiers; that would be a new decision and
   another alias, not a silent change.
-- A catalogue's bytes are part of what its version means, so the common
-  catalogue's changed identifiers are a new version, `1.0.1`; one archived
-  as `1.0.0` keeps its bytes and still loads through the alias.
+- The common catalogue stays at version `1.0.0`. Only its identifiers
+  change, not what any record under it means, and the version is stamped on
+  every record the writer emits and used to find the catalogue that
+  describes it: a bump would leave records already written under `1.0.0`
+  pointing at a version no build carries. The bytes behind that version
+  differ from before, but the alias makes the old and new forms the same
+  catalogue to every reader here. A catalogue in the registry is unaffected:
+  it is stored as the application registered it.
 - Pages must be enabled on the repository, a setting owned by whoever
   manages the repository's configuration.
 

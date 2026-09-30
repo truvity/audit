@@ -4,6 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## v0.5.2
+
+- A writer whose stream consumer has stopped no longer goes on answering its health check. `natssink.Consumer.Run` returns only when the connection is closed for good or the request is invalid, and `audit-writer` logged "the stream consumer stopped" and carried on with no consumer, so Kubernetes never restarted the pod and records piled up in the stream unread. `/healthz` now answers 503 once the consumer has stopped without being asked to, and the chart's liveness probe, which already reads `/healthz`, restarts the container. A stop asked for by SIGTERM or a cancelled context is an orderly shutdown and leaves the check passing.
+
 ## v0.5.1
 
 - The writer no longer warns `no configured profile keeps these` for an action whose catalogue names a profile this deployment does not configure, when another profile it names does keep the records. `audit.catalogue.registered` and `audit.digest.written` name `evidence` beside `security` for trust-service deployments, so every other deployment logged a warning about records it was in fact keeping. That case is now a debug line naming the profiles that keep the action and the ones not configured; the warning is for an action none of whose profiles is configured, whose records are dead-lettered, and it says so.

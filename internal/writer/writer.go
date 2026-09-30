@@ -66,9 +66,11 @@ type Hooks struct {
 	// the index absorbs by identifier. A deployment watches this because a
 	// store that has stopped accepting marks stops deduplicating entirely.
 	OnDuplicatesLikely func(ids []string, err error)
-	// OnUnhandled is called with the profiles an action names that this
-	// deployment does not have.
-	OnUnhandled func(action string, profiles []string)
+	// OnUnhandled is called, once per action, with the profiles the action
+	// names that this deployment does not have (missing) and those it does
+	// (kept). An empty kept means nothing keeps the action's records; a
+	// non-empty one means they are kept, only not under every profile named.
+	OnUnhandled func(action string, missing, kept []string)
 	// OnMetaDropped is called when the writer's account of itself could not be
 	// recorded. It is best-effort by construction, so this is the only place a
 	// deployment learns that the writer's own trail has a hole in it.
@@ -298,7 +300,7 @@ func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension
 	}
 
 	if unhandled := w.Splitter.Unhandled(x); len(unhandled) > 0 {
-		w.reportUnhandled(r.GetAction(), unhandled)
+		w.reportUnhandled(r.GetAction(), unhandled, w.Splitter.Handled(x))
 	}
 	copies, err := w.Splitter.Split(ctx, r, x)
 	if err != nil {
@@ -353,12 +355,12 @@ func (w *Writer) deadLetter(ctx context.Context, r *record.Record, reason string
 }
 
 // reportUnhandled tells an operator once per action, not once per record.
-func (w *Writer) reportUnhandled(action string, profiles []string) {
+func (w *Writer) reportUnhandled(action string, missing, kept []string) {
 	if _, told := w.unhandled.LoadOrStore(action, true); told {
 		return
 	}
 	if w.Hooks.OnUnhandled != nil {
-		w.Hooks.OnUnhandled(action, profiles)
+		w.Hooks.OnUnhandled(action, missing, kept)
 	}
 }
 

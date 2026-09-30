@@ -26,14 +26,15 @@ import (
 )
 
 type built struct {
-	writer     *writer.Writer
-	store      *storetest.Memory
-	dedupe     *writer.MemoryDedupe
-	index      *index.Memory
-	deadLetter []string
-	duplicates int
-	unhandled  map[string][]string
-	identities *identity.Map
+	writer        *writer.Writer
+	store         *storetest.Memory
+	dedupe        *writer.MemoryDedupe
+	index         *index.Memory
+	deadLetter    []string
+	duplicates    int
+	unhandled     map[string][]string
+	unhandledKept map[string][]string
+	identities    *identity.Map
 }
 
 // parts lets a test swap in the real index and deduplication store, or share a
@@ -87,10 +88,11 @@ func buildWith(t *testing.T, p parts) *built {
 	}
 	at := fixedDay(t)
 	b := &built{
-		store:     s,
-		dedupe:    &writer.MemoryDedupe{},
-		index:     index.NewMemory(),
-		unhandled: map[string][]string{},
+		store:         s,
+		dedupe:        &writer.MemoryDedupe{},
+		index:         index.NewMemory(),
+		unhandled:     map[string][]string{},
+		unhandledKept: map[string][]string{},
 	}
 	indexer, dedupe := index.Indexer(b.index), writer.Dedupe(b.dedupe)
 	if p.indexer != nil {
@@ -130,7 +132,7 @@ func buildWith(t *testing.T, p parts) *built {
 		Hooks: writer.Hooks{
 			OnDeadLettered: func(_ *record.Record, reason string) { b.deadLetter = append(b.deadLetter, reason) },
 			OnDuplicate:    func(*record.Record) { b.duplicates++ },
-			OnUnhandled:    func(action string, p []string) { b.unhandled[action] = p },
+			OnUnhandled:    func(action string, p, kept []string) { b.unhandled[action], b.unhandledKept[action] = p, kept },
 		},
 	})
 	if err != nil {
@@ -344,6 +346,28 @@ func TestUnhandledProfilesAreReportedOncePerAction(t *testing.T) {
 	got := b.unhandled["wallet.credential.issued"]
 	if len(got) != 1 || got[0] != "nowhere" {
 		t.Fatalf("unhandled = %v", got)
+	}
+	// The other profiles the action names keep it, and the hook says so.
+	if kept := b.unhandledKept["wallet.credential.issued"]; len(kept) == 0 {
+		t.Fatalf("kept = %v, want the profiles that keep the action", kept)
+	}
+}
+
+// An action every profile of which is configured has nothing to report.
+func TestNothingIsReportedWhenEveryProfileIsConfigured(t *testing.T) {
+	c, err := catalogue.Load([]byte(strings.Replace(walletDoc,
+		"profiles: [security, billing, history, nowhere]", "profiles: [security]", 1)),
+		[][]byte{[]byte(walletSchema)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := build(t)
+	registry := &writer.Registry{}
+	registry.Register(c)
+	b.writer.Catalogues = registry
+	write(t, b, fresh(t))
+	if len(b.unhandled) != 0 {
+		t.Fatalf("unhandled = %v", b.unhandled)
 	}
 }
 

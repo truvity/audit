@@ -200,30 +200,50 @@ func (l *logs) logger() *slog.Logger {
 // about to expire reopens its connection on its own schedule, while it is
 // publishing, and not one record fails or is written twice. The log says so at
 // INFO, and says nothing at ERROR.
+//
+// The lease's clock and timer are the test's, so that the reconnect happens
+// when the test says, in the middle of a publish, and not when a loaded
+// machine's scheduler gets to it.
 func TestAPlannedReconnectLosesAndFailsNothing(t *testing.T) {
 	out := &logs{}
 
-	// The token expires in three seconds and the lead is two, so the
-	// receiver reopens its connection about a second in, and once more
-	// if the second reading still leaves room before the lead.
-	token := jwtExpiring(time.Now().Add(3 * time.Second))
+	exp := time.Unix(1_900_000_000, 0)
+	token := jwtExpiring(exp)
 	url, js := verifyingStream(t, token)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Every timer the lease sets is handed over, so the test can fire it.
+	timers := make(chan func(), 16)
 	with := opts(url, 10)
 	with.TokenFile = tokenFile(t, token)
 	with.RefreshLead = 2 * time.Second
 	with.Log = out.logger()
+	with.leaseHook = func(l *tokenLease) {
+		l.now = func() time.Time { return exp.Add(-3 * time.Second) }
+		l.after = func(d time.Duration, f func()) func() bool {
+			if d != time.Second {
+				t.Errorf("the reconnect is due in %s, want 1s", d)
+			}
+			timers <- f
+			return func() bool { return true }
+		}
+	}
 	p, stop, err := publisherFor(ctx, with)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer stop()
 
-	var sent int
-	deadline := time.Now().Add(4 * time.Second)
-	for time.Now().Before(deadline) {
+	var fire func()
+	select {
+	case fire = <-timers:
+	default:
+		t.Fatal("connecting scheduled no reconnect")
+	}
+
+	var sent atomic.Int64
+	publish := func() {
 		batch := make([]*record.Record, 0, 20)
 		for range 20 {
 			r := &record.Record{
@@ -235,20 +255,50 @@ func TestAPlannedReconnectLosesAndFailsNothing(t *testing.T) {
 		}
 		res, err := p.Write(ctx, &sink.Request{Records: batch, Delivery: sink.Block})
 		if err != nil {
-			t.Fatalf("a publish failed across the planned reconnect after %d records: %v", sent, err)
+			t.Errorf("a publish failed across the planned reconnect after %d records: %v", sent.Load(), err)
+			return
 		}
 		if res.Accepted != len(batch) {
-			t.Fatalf("accepted %d of %d", res.Accepted, len(batch))
+			t.Errorf("accepted %d of %d", res.Accepted, len(batch))
+			return
 		}
-		sent += len(batch)
+		sent.Add(int64(len(batch)))
+	}
+
+	// Publish continuously, and reconnect in the middle of it.
+	done := make(chan struct{})
+	halt := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-halt:
+				return
+			default:
+			}
+			publish()
+			if t.Failed() {
+				return
+			}
+		}
+	}()
+	waitFor(t, "some records to be published", func() bool { return sent.Load() >= 100 || t.Failed() })
+	fire()
+	waitFor(t, "the planned reconnect to complete", func() bool {
+		return strings.Contains(out.String(), "msg=\"reconnected to the stream\"") || t.Failed()
+	})
+	// Records published after the reconnect, on the new connection.
+	after := sent.Load()
+	waitFor(t, "records to be published on the new connection", func() bool { return sent.Load() >= after+100 || t.Failed() })
+	close(halt)
+	<-done
+	if t.Failed() {
+		t.FailNow()
 	}
 
 	logged := out.String()
 	if !strings.Contains(logged, "level=INFO msg=\"reconnecting to the stream before its token expires\"") {
 		t.Fatalf("no planned reconnect was logged at INFO:\n%s", logged)
-	}
-	if !strings.Contains(logged, "msg=\"reconnected to the stream\"") {
-		t.Fatalf("the planned reconnect did not complete:\n%s", logged)
 	}
 	if strings.Contains(logged, "level=ERROR") {
 		t.Fatalf("a planned reconnect logged an error:\n%s", logged)
@@ -262,7 +312,20 @@ func TestAPlannedReconnectLosesAndFailsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.State.Msgs != uint64(sent) {
-		t.Fatalf("the stream holds %d messages for %d records published", info.State.Msgs, sent)
+	if info.State.Msgs != uint64(sent.Load()) {
+		t.Fatalf("the stream holds %d messages for %d records published", info.State.Msgs, sent.Load())
+	}
+}
+
+// waitFor polls until cond holds. The bound is only how long a broken build
+// takes to be told so; a working one is not waiting on it.
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(time.Minute)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

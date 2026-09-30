@@ -481,6 +481,9 @@ type streamOptions struct {
 	// Log is where the connection reports; nil is slog's default.
 	Log   *slog.Logger
 	Batch int
+	// leaseHook is for tests: it is handed the token lease before anything
+	// connects, to give it a clock and timers of its own.
+	leaseHook func(*tokenLease)
 	// AckWait is how long the stream waits for a batch to be taken before
 	// offering it again. It has to be longer than the longest a write can
 	// honestly take — a batch is acknowledged only once its records are in the

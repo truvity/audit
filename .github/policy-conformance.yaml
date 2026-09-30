@@ -1,5 +1,5 @@
 exempt:
   C13:
-    reason: internal/s3test is a test-only helper; its region is a fixture of the live-S3 tests, never a default that ships
-    checks: [region]
-    paths: [internal/s3test/**]
+    reason: internal/s3test is a test-only fixture (region); catalogue/schemaid.go keeps the old schema base URL on purpose so archived records written under the old ids stay readable (domain)
+    checks: [region, domain]
+    paths: [internal/s3test/**, catalogue/schemaid.go]

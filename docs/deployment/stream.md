@@ -196,6 +196,17 @@ the installation publishes into; neither is this chart's to configure. A
 broker that verifies nobody needs nothing here: the toggle is off by default,
 and off the pods connect as they always did, with no credentials.
 
+A broker that binds the session to the token ends it when the token expires,
+so each pod reopens its connection thirty seconds before the token it
+presented does, by then long renewed in the file. The expiry is read from the
+token's `exp` claim without verifying it: it only says when to ask again, and
+the broker decides the rest. The planned reconnect is logged at INFO, and a
+publish in flight across it — or across any other reconnect — is sent again
+once the connection is back, under the same message id, so it neither fails
+its caller nor lands twice. A consumer whose pulls fail, as they do while the
+stream elects a leader, retries after a pause that grows from a tenth of a
+second to five.
+
 A token the broker refuses at start-up stops the pod with the reason in its
 log, as a missing stream does. A refusal later — a token that was stale for a
 moment, or a file that could not be read — is retried on the next reconnect

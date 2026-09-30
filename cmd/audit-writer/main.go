@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -247,6 +248,7 @@ func run() error {
 	var (
 		front    sink.Sink
 		shutdown func(context.Context) error
+		health   = &healthState{}
 	)
 	if *mode == "receiver" {
 		publisher, stop, err := publisherFor(ctx, streamOptions{
@@ -292,7 +294,8 @@ func run() error {
 		// rather than a hole.
 		if *streamURL != "" {
 			stop, err := consume(ctx, streamOptions{
-				URL: *streamURL, TokenFile: *streamToken, Stream: *streamName, Durable: *consumerName,
+				OnStopped: health.consumerStopped,
+				URL:       *streamURL, TokenFile: *streamToken, Stream: *streamName, Durable: *consumerName,
 				Batch: *streamBatch, AckWait: *streamAckWait,
 				Window: *rollEvery, MaxRecords: *rollRecords,
 			}, w)
@@ -344,7 +347,7 @@ func run() error {
 			"because a registered catalogue is kept beside the index it describes")
 	}
 
-	mux.HandleFunc("/healthz", func(rw http.ResponseWriter, _ *http.Request) { rw.WriteHeader(http.StatusOK) })
+	mux.Handle("/healthz", health)
 	server := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
@@ -484,6 +487,12 @@ type streamOptions struct {
 	// leaseHook is for tests: it is handed the token lease before anything
 	// connects, to give it a clock and timers of its own.
 	leaseHook func(*tokenLease)
+	// connHook is for tests: it is handed the stream connection once the
+	// consumer runs, so a test can close it underneath the consumer.
+	connHook func(*nats.Conn)
+	// OnStopped is called when the consumer stops without the writer having
+	// asked it to, with the reason. It is never called on an orderly shutdown.
+	OnStopped func(error)
 	// AckWait is how long the stream waits for a batch to be taken before
 	// offering it again. It has to be longer than the longest a write can
 	// honestly take — a batch is acknowledged only once its records are in the
@@ -608,9 +617,19 @@ func consume(ctx context.Context, o streamOptions, target sink.Sink) (func(), er
 	go func() {
 		defer close(done)
 		if err := consumer.Run(running); err != nil {
+			if ctx.Err() != nil || running.Err() != nil {
+				// Asked to stop: an orderly shutdown, not a fault.
+				return
+			}
 			slog.Error("the stream consumer stopped", "error", err)
+			if o.OnStopped != nil {
+				o.OnStopped(err)
+			}
 		}
 	}()
+	if o.connHook != nil {
+		o.connHook(conn)
+	}
 	slog.Info("consuming the stream", "url", o.URL, "stream", o.Stream, "consumer", o.Durable)
 
 	return func() {
@@ -621,4 +640,29 @@ func consume(ctx context.Context, o streamOptions, target sink.Sink) (func(), er
 		<-done
 		_ = conn.Drain()
 	}, nil
+}
+
+// healthState is what /healthz reports. The consumer ends only when its
+// connection is really closed or its request is invalid, and a writer that
+// carried on answering its probes without one would leave records piling up in
+// the stream with nobody reading them. Once the consumer has stopped without
+// being asked to, the check fails, so the liveness probe restarts the pod.
+type healthState struct {
+	stopped atomic.Pointer[error]
+}
+
+// consumerStopped records that the consumer ended on its own.
+func (h *healthState) consumerStopped(err error) {
+	if err == nil {
+		err = errors.New("the stream consumer returned")
+	}
+	h.stopped.Store(&err)
+}
+
+func (h *healthState) ServeHTTP(rw http.ResponseWriter, _ *http.Request) {
+	if err := h.stopped.Load(); err != nil {
+		http.Error(rw, "the stream consumer stopped: "+(*err).Error(), http.StatusServiceUnavailable)
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
 }

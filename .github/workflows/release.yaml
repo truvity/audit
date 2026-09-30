@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: write
       packages: write
-    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@02d66a9a2d64fe255d7703a1bebd764d0899f187 # v3.16.0
+    uses: truvity/ci-workflows/.github/workflows/release-public.yaml@929cbec783b5c9c60ab849ef2f52b13a53689783 # v3.17.0
     with:
       charts: '["audit"]'
       # The CLI as a Nix flake, one release asset, so that another

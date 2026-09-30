@@ -37,6 +37,9 @@ func connectOptions(name string, o streamOptions) []nats.Option {
 	if o.TokenFile != "" {
 		lease = newTokenLease(o.TokenFile, o.RefreshLead)
 		lease.log = log
+		if o.leaseHook != nil {
+			o.leaseHook(lease)
+		}
 	}
 	opts := []nats.Option{
 		nats.Name(name),

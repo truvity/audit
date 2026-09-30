@@ -6,7 +6,7 @@ repository at that version, not the history of edits that got there.
 
 ## Unreleased
 
-- The common catalogue is version 1.0.1: its schema identifiers changed. Schema `$id`s move from `https://schemas.truvity.com/audit/v1/...` to `https://truvity.github.io/audit/schemas/v1/...`, and `.github/workflows/pages.yaml` serves the files there so an `$id` resolves. The catalogue loader accepts the old identifiers as aliases of the new ones (`catalogue.CanonicalID`), so archived catalogues and schemas keep validating; everything newly generated uses the new base. See [ADR 0015](docs/decisions/0015-schema-ids-on-github-pages.md).
+- Schema `$id`s move from `https://schemas.truvity.com/audit/v1/...` to `https://truvity.github.io/audit/schemas/v1/...`, and `.github/workflows/pages.yaml` serves the files there so an `$id` resolves. The catalogue loader accepts the old identifiers as aliases of the new ones (`catalogue.CanonicalID`) and the common catalogue keeps version 1.0.0, so archived catalogues and schemas keep validating; everything newly generated uses the new base. See [ADR 0015](docs/decisions/0015-schema-ids-on-github-pages.md).
 - `.github/policy-conformance.yaml` exempts `internal/s3test` from the contract's C13 `region` check: it is a test-only helper.
 
 ## v0.4.0

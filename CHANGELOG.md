@@ -4,7 +4,7 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.5.0
 
 - Schema `$id`s move from `https://schemas.truvity.com/audit/v1/...` to `https://truvity.github.io/audit/schemas/v1/...`, and `.github/workflows/pages.yaml` serves the files there so an `$id` resolves. The catalogue loader accepts the old identifiers as aliases of the new ones (`catalogue.CanonicalID`) and the common catalogue keeps version 1.0.0, so archived catalogues and schemas keep validating; everything newly generated uses the new base. See [ADR 0015](docs/decisions/0015-schema-ids-on-github-pages.md).
 - A reconnect to the stream no longer fails a publish. The client fails every acknowledgement outstanding when its connection drops, and `natssink.Publisher.Write` returned that `nats: server is disconnected` to its caller — for a `block` record, the action it recorded. Records whose publish failed to a reconnect are now sent again once the connection is back, within the same timeout, under the same `Nats-Msg-Id`, so the stream's duplicate window absorbs any that had landed. A refusal from the stream is still returned at once.

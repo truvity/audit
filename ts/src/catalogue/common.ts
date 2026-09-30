@@ -3,7 +3,7 @@ import type { Sentences } from "../sentences.js";
 
 export const common: Sentences = {
   "source": "audit",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "locales": [
     "en"
   ],

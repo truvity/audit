@@ -25,8 +25,11 @@ jobs:
   # `just conformance` runs the service-backed tests and `just ts` the
   # TypeScript package.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@91c763810588ea21a5f7d34d623633230d8baff9 # v3.15.0
     with:
+      # Report-only: the component contract (C1-C12) is judged and
+      # shown in the job summary, and never fails this job.
+      policy-conformance: true
       recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "leak-canary"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
@@ -34,7 +37,7 @@ jobs:
   # static. Putting it in `check` would mean every contributor needs one to
   # run the gate at all.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@91c763810588ea21a5f7d34d623633230d8baff9 # v3.15.0
     with:
       recipes: '["race"]'
 
@@ -42,7 +45,7 @@ jobs:
   # from a remote registry that rate limits, and a gate that fails because
   # somebody else was generating code is a gate people learn to ignore.
   drift-ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@91c763810588ea21a5f7d34d623633230d8baff9 # v3.15.0
     with:
       recipes: '["drift-ts"]'
 
@@ -172,7 +175,7 @@ jobs:
   # publish would ship. It installs from the registry, which is why it is not
   # in `check`.
   ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@83a33664e82b4df3764ed4b4544707320b51db92 # v3.13.1
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@91c763810588ea21a5f7d34d623633230d8baff9 # v3.15.0
     with:
       recipes: '["ts"]'
 

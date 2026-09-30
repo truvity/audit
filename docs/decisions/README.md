@@ -20,5 +20,6 @@ choices are recorded by the deployer.
 | [0012](0012-two-deliveries-and-a-durable-ack.md) | Two deliveries, and the receiver's acknowledgement means durable | accepted |
 | [0013](0013-no-pseudonymisation-keys-by-default.md) | No pseudonymisation keys by default | accepted |
 | [0014](0014-lock-modes-and-store-tiers.md) | Lock modes and store tiers: the lock is demanded where a framework demands it | accepted |
+| [0015](0015-schema-ids-on-github-pages.md) | Schema identifiers on GitHub Pages, the old ones kept as aliases | accepted |
 
 Template: [0000-template.md](0000-template.md).

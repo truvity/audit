@@ -1,0 +1,43 @@
+# Serve the JSON Schemas at the identifiers they carry as $id
+# (https://truvity.github.io/audit/schemas/v1/...), so that an $id resolves.
+# hack/pages-site.sh assembles the site and refuses a file whose $id is not
+# the URL it would be served at. Third-party actions are pinned to commit
+# SHAs with the tag inline.
+name: Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "schemas/*.json"
+      - "catalogue/*.json"
+      - "gen/jsonschema/*.json"
+      - "hack/pages-site.sh"
+      - ".github/workflows/pages.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: hack/pages-site.sh _site
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

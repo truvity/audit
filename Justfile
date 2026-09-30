@@ -255,6 +255,11 @@ snapshot:
 leak-canary:
     hack/leak-canary.sh
 
+# Assemble the schema site into a scratch directory: proves every published
+# schema's $id is the URL it is served at.
+pages:
+    hack/pages-site.sh "$(mktemp -d)/site"
+
 # Run Go vulnerability check
 vuln:
     govulncheck ./...
@@ -317,4 +322,4 @@ e2e-all: e2e-snapshot e2e-fixture e2e-install e2e-smoke
 # Everything CI runs. `vuln` is deliberately not here: a new CVE in a
 # dependency must not turn this gate red on a PR that never touched it. Run
 # `just vuln` on its own to check.
-check: build test lint proto drift schemas chart leak-canary
+check: build test lint proto drift schemas chart leak-canary pages

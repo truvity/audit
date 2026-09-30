@@ -6,7 +6,7 @@ also where a reader goes for what each field means.
 Its JSON Schema is generated from that proto by a buf plugin during
 `just generate` and published as
 [`gen/jsonschema/record.v1.schema.json`](../../gen/jsonschema/record.v1.schema.json),
-under the identifier `https://schemas.truvity.com/audit/v1/record.schema.json`.
+under the identifier `https://truvity.github.io/audit/schemas/v1/record.schema.json`.
 It describes the form this project writes — proto field names, enums as names,
 64-bit integers as strings, unpopulated fields absent — and carries every proto
 comment as a description, so that a reader outside Go can both validate an

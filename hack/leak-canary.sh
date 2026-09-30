@@ -35,9 +35,9 @@ patterns=(
   'truvity-[a-z0-9-]*-(ci-cache|artifacts|state)'   # S3 buckets
   # Internal hostnames. schemas.truvity.com is excluded in the grep below,
   # not dropped from the pattern: it is not a host this estate runs but the
-  # identifier of the published JSON Schemas, and a schema's $id has to be a
-  # stable public URI or nothing outside can reference the contract. That is
-  # this repository's product, not a particular leaking out of it.
+  # legacy identifier the published JSON Schemas carried before they moved to
+  # GitHub Pages, which the loader still accepts (ADR 0015). That is this
+  # repository's compatibility, not a particular leaking out of it.
   '\.truvity\.(xyz|com|co)'            # internal hostnames
   'glpat-|ghp_|github_pat_'            # tokens, in case of an accident
   'INF-[0-9]+'                         # tracker keys: this repository's issues are

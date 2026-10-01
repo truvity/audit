@@ -21,6 +21,7 @@ the road you are on.
 | Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [extension points](reference/extension-points.md), [presets](reference/presets.md), [API](reference/api.md), [configuration](reference/configuration.md) |
 | Operations | [which presets to compose](operations/presets-policy.md), [S3 guide](operations/s3-guide.md), [verification](operations/verify.md), [runbook](operations/runbook.md), [key custody](operations/key-custody.md), [OpenBAO keys](operations/openbao-keys.md) |
 | Development | [layout, and how to add to it](development/layout.md) |
+| Roadmap | [to do](roadmap.md) |
 
 The decisions explain why the component is shaped as it is; the design
 pages explain each part; the reference pages are the contracts. Operations

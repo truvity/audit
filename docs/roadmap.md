@@ -8,18 +8,16 @@ R2 is a supported archive store, with governance-grade retention.
 
 ## To do
 
-### audit-notary as a Cloudflare Cron Worker over R2
+Nothing is queued.
 
-- It lists an hour's prefix, reads each record's sha256 from the object's
-  custom metadata (no GETs), builds the hash tree, signs it with ECDSA P-384
-  and writes the digest object.
-- **Open question.** Go compiled to Wasm, or a small TypeScript port. A size
-  prototype decides.
-- **Depends on** the bucket-layout spec (ingest-time ordered keys, sha256 in
-  object metadata), and the declared retention grade (R2 gives governance).
+## Parked
 
-### Cloudflare Queues as an ingest transport and the R2 change feed
-
-- A `cfqueue` Sink that returns Queued.
-- R2 event notifications into Queues as observe's wake-up hint, pulled over
-  HTTP. Listing with a durable cursor stays the source of truth.
+A Cloudflare Cron Worker as the notary over R2, and Cloudflare Queues as an
+ingest transport and the change feed for observe, are parked: R2's locks are
+governance-grade only, and the target is S3 Object Lock in compliance mode
+with Lambda and Kubernetes as the platforms
+([0016](decisions/0016-three-parts-installed-independently.md),
+[0023](decisions/0023-archive-retention-and-lifecycle.md)). Cloudflare stays a
+proxy and DNS in front of an installation. Both would depend on the
+[bucket contract](reference/bucket-contract.md), which is a target a store
+other than S3 would have to meet.

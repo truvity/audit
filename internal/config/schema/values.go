@@ -1,3 +1,4 @@
+//nolint:lll // a schema is prose, and a description is one string
 package schema
 
 import (

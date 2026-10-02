@@ -18,7 +18,7 @@ record/               the canonical record: identifiers, bounds, negative list, 
 preset/               presets, profile composition, the deployment document
 emit/                 the emitter an application imports; the async queue; request
                       middleware; Register
-sink/                 the write contract; Connect client and handler; sink/natssink (JetStream)
+sink/                 the write contract and its durability; Connect client and handler; natssink (JetStream), sqssink (SQS), logsink (log lines), sinktest (the conformance suite)
 keys/                 pseudonymisation providers (local, OpenBAO transit) and digest signers
                       (key file, AWS KMS, OpenBAO transit)
 store/                the object store interface and archive layout; s3store/ the bucket;

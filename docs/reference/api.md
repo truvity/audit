@@ -20,19 +20,39 @@ that accepts it
 `audit.v1.SinkService/Write` — a batch of records with a delivery.
 Reachable by the application's workloads and by adapters; never by browsers.
 
-The response says how many were accepted and lists each `Rejection` by id
-with a machine-readable reason. A whole batch is refused before any record
+The response says how many were accepted, lists each `Rejection` by id
+with a machine-readable reason, and names the batch's `Durability`. A whole batch is refused before any record
 is accepted when the refusal is structural — an unknown catalogue version, a
 schema violation.
 
-There are two deliveries, `block` and `async`, and an acknowledgement always
-means durable
-([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
+There are two deliveries, `block` and `async`
+([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)), and the
+acknowledgement says how durable the batch is
+([0017](../decisions/0017-sink-durability-and-transports.md)).
 
 | the catalogue says | on the wire | the call returns |
 |---|---|---|
 | `block` | `DELIVERY_BLOCK` | when the records are durable at the next hop |
 | `async` (the default) | `DELIVERY_ASYNC` | at once; the record waits in the emitter's bounded queue |
+
+| `durability` | means |
+|---|---|
+| `DURABILITY_ARCHIVED` | the records are in the archive's bucket; the writer's own put reports this |
+| `DURABILITY_QUEUED` | a durable, replicated queue holds them: the JetStream and SQS publishers report this, after every acknowledgement |
+| `DURABILITY_LOGGED` | the process wrote them to its log |
+| `DURABILITY_UNSPECIFIED` | the hop did not say, which counts as weaker than all of the above |
+
+The values are ordered, a higher number surviving more, and a hop reports what
+the last hop that took the batch reported: a receiver forwards its next hop's
+answer, and a wrapper never reports more than its successor did. The field was
+added to the response without renumbering, so a caller built before it reads
+`UNSPECIFIED`.
+
+In Go, a sink declares the best it will ever report with `Guarantees()`;
+`sink.Require(s, min)` refuses a chain that cannot give `min` when the process
+starts, and `sink.Guard(s, min)` does that and also fails any write whose
+acknowledgement is weaker at run time. A Connect client cannot know what the
+far side is configured to give, so `Client.Expecting` says.
 
 `DELIVERY_OUTBOX` and `DELIVERY_BEST_EFFORT` stay in the enum, deprecated. A
 value removed is a record nobody can read, and this package is `v1`, so they

@@ -43,40 +43,60 @@ means a rotation by somebody else changes nothing.
 In the namespace the keys live in (in an estate with a namespace per
 environment, the environment's):
 
-- a **transit** engine, at `openbao.mount` (`transit`);
+- a **transit** engine, at `openbao.mount` (`transit`, a key of the `openbao`
+  block of the configuration);
 - a **JWT auth mount** that takes this cluster's service-account tokens, e.g.
   `jwt-devel`, with one **role per component**. Each role binds the
   component's service account as the subject and `openbao` as the audience,
   and names the component's policy:
 
-| component | service account (chart default) | chart value | policy |
+| component | service account (chart default) | where its role is set | policy |
 |---|---|---|---|
-| writer | `<release>` | `keys.transit.role` | writer |
-| query service, if it resolves | `<release>-query` | `query.resolve.transit.role` | resolve |
-| digest job, if it signs with transit | `<release>-digest` | `jobs.digest.transit.role` | digest |
+| writer | `<release>` | `writer.config.keys.transit.openbao.login.role` | writer |
+| query service, if it resolves | `<release>-query` | `query.config.keys.transit.openbao.login.role` | resolve |
+| digest job, if it signs with transit | `<release>-digest` | `jobs.digest.config.signer.transit.openbao.login.role` | digest |
 
-The chart refuses to give two components the same role or token. Each is a
+Give each component a role of its own. Each is a
 separate privilege, and one identity holding two of them is the thing the
 separation exists to prevent.
 
 ## Signing in
 
-Each component signs in with its **projected service-account token**. The chart
-mounts one with audience `openbao.auth.audience` (default `openbao`) that the
-kubelet replaces before it expires. The component presents it on
-`openbao.auth.mount` under its role, and signs in again once three quarters of
-the session's lease has passed, or at once if the engine refuses a session that
-was revoked early. No token is stored anywhere, so there is nothing to leak and
-nothing to rotate.
+Each component signs in with its **projected service-account token**. The
+component's `tokens` entry mounts one with the audience the JWT role expects
+(`openbao`), which the kubelet replaces before it expires, and the
+configuration names the file in `login.jwtFile`:
 
-A token Secret or a token file is accepted instead, for an engine that is not
-set up for JWT logins. `audit key destroy`, run from an operator's shell, takes
-`BAO_ADDR`, `BAO_NAMESPACE`, `BAO_CACERT` and `BAO_TOKEN`, or the `VAULT_`
-names.
+```yaml
+keys:
+  provider: transit
+  transit:
+    prefix: audit
+    openbao:
+      address: https://openbao.example.com:8200
+      mount: transit
+      login:
+        mount: jwt-devel
+        role: audit-writer
+        jwtFile: /var/run/openbao/token
+```
+
+with `tokens: [{audience: openbao, mountPath: /var/run/openbao}]` beside the
+`config:` in the chart. The component presents the token on `login.mount`
+under its role, and signs in again once three quarters of the session's lease
+has passed, or at once if the engine refuses a session that was revoked early.
+No token is stored anywhere, so there is nothing to leak and nothing to rotate.
+
+A token file (`tokenFile`) or a token in an environment variable (`tokenEnv`,
+which holds the variable's name) is accepted instead, for an engine that is not
+set up for JWT logins; exactly one of the three. `audit key destroy`, run from
+an operator's shell, takes `BAO_ADDR`, `BAO_NAMESPACE`, `BAO_CACERT` and
+`BAO_TOKEN`, or the `VAULT_` names.
 
 If the engine's certificate comes from a private chain, give the chart that
-chain's bundle as `trust.configMap`. trust-manager's ConfigMap is the usual
-source. Every pod that reaches OpenBAO or Postgres mounts it.
+chain's bundle as `trust.configMap` and name the file in `openbao.caFile`
+(`/etc/audit/trust/<key>`). trust-manager's ConfigMap is the usual source.
+Every pod mounts it.
 
 ## Policies
 

@@ -36,18 +36,19 @@ Output: one line per digest and per object, `valid`, `unlocked` or
 `unlocked` is information and does not count.
 
 Auditors run it with read-only credentials scoped to the installation's
-prefix. The nightly run inside the cluster does the same for the previous day
+prefix. The nightly run inside the cluster (`audit verify --config`, whose file has
+the same settings under their own names) does the same for the previous day
 and records the outcome as `audit.digest.verified` or `audit.digest.failed`.
 
 | flag | what |
 |---|---|
-| `--prefix <p>` | the installation's prefix in the bucket, as the chart's `prefix` names it; omit only where the installation is at the bucket's root |
+| `--prefix <p>` | the installation's prefix in the bucket, as `archive.prefix` of the chart's configuration names it; omit only where the installation is at the bucket's root |
 | `--last 24h` | the windows of the last this long, ending at the hour that has closed; instead of `--from` and `--to` |
 | `--lookback 168h` | how far before the range to look for objects keyed under an older day; at least what `audit digest` used |
 | `--sink <writer>` | record what was checked through the writer. The scheduled job does; an auditor's run by hand should not |
 | `--record` | also write one verification per window under `verified/`, which `Get` reports as a record's `verified_at`; needs write access there |
 | `--deployment <file>` | the profile configuration, so the check knows what lock the profile demands. The scheduled job passes it; an auditor without it still gets the chain checked, with nothing said about locks |
-| `--lock-mode none` | for `--record` on a store with no lock, so the verification is written without a lock header; the scheduled job takes it from the chart's `lockMode` |
+| `--lock-mode none` | for `--record` on a store with no lock, so the verification is written without a lock header; the scheduled job takes it from `archive.lockMode` |
 | `--endpoint`, `--path-style` | an S3-compatible store that is not AWS, as the [S3 guide](s3-guide.md#s3-compatible-stores) has it |
 
 `--profile` is required, and a profile is verified on its own: an

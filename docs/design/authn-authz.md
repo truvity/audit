@@ -93,8 +93,8 @@ see [the Audit page](audit-page.md).
 through the identity map. It is granted to as few roles as possible and
 emits `audit.get`-class records naming the rule.
 
-Where the deployment runs no pseudonymisation keys — `keys.provider: none`,
-the default — there is nothing to resolve, and the operation is refused as
+Where the deployment runs no pseudonymisation keys — `keys.provider: none`
+(or no `keys` block), the default — there is nothing to resolve, and the operation is refused as
 unimplemented rather than answered emptily
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). A grant
 may still name it; it will never be exercised.

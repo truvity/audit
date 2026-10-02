@@ -75,7 +75,7 @@ Two consequences worth knowing before composing:
   `dora` and `evidence-etsi` demand Object Lock in compliance mode, so an
   installation composing any of them needs a bucket that has it; `security`,
   `history` and `billing-nl` are satisfied by the digest chain under a
-  managed key, and may run on any S3-compatible store with `lockMode: none`.
+  managed key, and may run on any S3-compatible store with `archive.lockMode: none`.
   A component refuses to start when the store is weaker than a composed
   profile demands
   ([0014](../decisions/0014-lock-modes-and-store-tiers.md)).

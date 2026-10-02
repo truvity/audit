@@ -7,7 +7,7 @@ The bucket is on one of two tiers
 ([0014](../decisions/0014-lock-modes-and-store-tiers.md)), and which one is
 the profiles' decision, not the operator's:
 
-| tier | `lockMode` | the store must answer | enough for |
+| tier | `archive.lockMode` | the store must answer | enough for |
 |---|---|---|---|
 | **record** | `compliance` (the default; `governance` for a non-production bucket) | `PutObject` with the Object Lock headers, `PutObjectRetention`, `PutObjectLegalHold`, `GetObject`, `HeadObject`, `ListObjectsV2`, presigned `GetObject` | every profile |
 | **attested** | `none` | `PutObject`, `GetObject`, `HeadObject`, `ListObjectsV2`, presigned `GetObject` | profiles composed only from presets that demand no lock: `security`, `history`, `billing-nl` |
@@ -90,15 +90,17 @@ Everything one installation writes, beneath its `prefix`:
 | `identity/tenant=<t>/purpose=<p>/<pseudonym>` | writer | the sealed identity behind a pseudonym, for resolve | the longest profile |
 
 The last one exists only where the deployment configured a key provider.
-`keys.provider: none` is the default, and an installation running without
+`keys.provider: none` is the default (no `keys` block), and an installation running without
 keys writes no `identity/` prefix at all
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
 
 Exports go to a **separate bucket with no Object Lock** and a lifecycle rule
 that expires `export/`: an export is a copy meant to be collected and cleared,
 and the archive's policy denies every delete. It may be on a store of its
-own: the chart's `query.exports.endpoint`, `pathStyle` and `existingSecret`
-are the archive's three again, for that bucket.
+own: `exports.bucket` of the query service's configuration takes the same
+`endpoint`, `pathStyle` and `credentialsEnv` as the archive's bucket. It
+inherits none of them from the archive: name each explicitly, and the exports
+bucket has credentials of its own.
 
 ## The attested tier
 
@@ -106,7 +108,7 @@ The same archive, the same keys under the same prefix, the same digest chain
 — on a store that holds no lock. Either the store has no Object Lock API,
 which is most S3-compatible stores, or the deployment composes only profiles
 that demand none and chooses not to lock. The writer is told with
-`--lock-mode none` (the chart's `lockMode: none`), sends no lock header on
+`archive.lockMode: none` (the interactive commands' `--lock-mode none`), sends no lock header on
 any put, and answers a retention extension or a legal hold with
 `store.ErrNotLockable`: the extension is recorded in the trail as not made,
 and `audit hold place` is refused and records the attempt.
@@ -118,7 +120,7 @@ What the deployment supplies in place of the lock:
   operator cannot re-sign with proves the operator did not choose what to
   sign.
 - **A shorter digest interval.** The unsealed window is the one gap the
-  lock alone covered. `jobs.digest.schedule` every ten minutes narrows it
+  lock alone covered. A `jobs.digest.schedule` every ten minutes narrows it
   from an hour to ten.
 - **No delete permission on any component**, exactly as on the record tier,
   and versioning on where the store offers it.
@@ -140,20 +142,35 @@ one, an object with no lock is `INVALID`.
 Any store that speaks the S3 API takes the archive on the attested tier, and
 on the record tier if it implements Object Lock. Three things differ from
 AWS, and every component that touches the archive takes all three from the
-chart's values (`endpoint`, `pathStyle`, `existingSecret`) or the binaries'
-flags (`--endpoint`, `--path-style`; credentials from the environment):
+`bucket` block of its configuration (`endpoint`, `pathStyle`,
+`credentialsEnv`; the interactive commands take `--endpoint` and
+`--path-style`, with credentials from the environment):
 
-- **The endpoint.** `--endpoint https://s3.example.test`
-  (`AUDIT_S3_ENDPOINT`). The SDK's own `AWS_ENDPOINT_URL_S3` works too, since
-  the binaries load the default configuration. Empty is AWS.
+```yaml
+archive:
+  bucket:
+    name: audit-example
+    region: auto
+    endpoint: https://s3.example.test
+    pathStyle: true
+    credentialsEnv:
+      accessKeyID: AUDIT_S3_ACCESS_KEY_ID
+      secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+```
+
+- **The endpoint.** `bucket.endpoint`. Unset is the SDK's own resolution for
+  the region, which is AWS.
 - **Path-style addressing**, when the store's certificate does not cover a
-  bucket subdomain: `--path-style` (`AUDIT_S3_PATH_STYLE=true`) sends
-  `endpoint/bucket/key` rather than `bucket.endpoint/key`.
+  bucket subdomain: `bucket.pathStyle` sends `endpoint/bucket/key` rather than
+  `bucket.endpoint/key`.
 - **Static credentials**, when the store has no pod identity:
-  `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (and `AWS_SESSION_TOKEN`
-  if there is one) in a Secret the chart gives every archive container
-  through `existingSecret`. Nothing in the binaries reads them; the SDK
-  does.
+  `bucket.credentialsEnv` names the two environment variables that hold the
+  access key id and the secret, and the component's `secretEnv` puts a
+  Secret's keys there. Unset, the SDK's ambient credentials are used, which is
+  what a workload identity provides.
+- **A private CA.** `bucket.ca` is the path to a bundle trusted for the
+  endpoint, mounted by the platform (the chart's `trust` puts one at
+  `/etc/audit/trust/<key>`).
 
 With an endpoint set, the SDK's default CRC32 request checksum — which AWS
 answers and other stores may refuse — is sent only where an operation
@@ -162,13 +179,13 @@ still stored as the object's checksum where the store keeps one.
 
 One region-shaped trap: a store that serves one region and does not answer
 a bucket-location lookup wants `region` set to whatever it documents
-(often `auto`), so that the SDK skips the lookup. Set it in the values; the
-binaries pass it as `AWS_REGION`.
+(often `auto`), so that the SDK skips the lookup. Set it as
+`bucket.region`.
 
 Where the store's documentation names an S3 feature it does not implement
 — conditional writes (`If-None-Match`), `ListObjectsV2` continuation, SSE-KMS
 with a customer key — check before choosing it: the writer relies on the
-first two, and `kmsKey` on the third.
+first two, and `archive.kmsKey` on the third.
 
 ## IAM per component
 

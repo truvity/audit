@@ -230,6 +230,7 @@ neither puts anything new in the request path.
 | searchers: Postgres, archive scan, memory | built |
 | signers: key file, AWS KMS, OpenBAO transit | built |
 | key providers `local` and OpenBAO `transit`; AWS KMS envelope designed | built, and off by default |
+| one configuration file per binary, validated against a schema ([0021](decisions/0021-one-validated-configuration-file.md)) | built; the chart passes it through |
 | the chart, instantiated per application: `mode`, receiver, writer, query service, the four jobs, the extension toggles | built; a golden per shape, and every documented example rendered |
 | `@truvity/audit`: query client, sentences, React hooks and view | built; consumed from a release tag (`github:truvity/audit#vX.Y.Z`), not from a registry |
 | TypeScript emitter | designed, not built |

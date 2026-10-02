@@ -33,7 +33,7 @@ target architecture is 📄.
 | deduplication on Postgres or in memory | ✅ | 📄 | 📄 |
 | deduplication on JetStream (duplicate window, KV with TTL) | 📄 | — | — |
 | deduplication on DynamoDB | — | 📄 | — |
-| one configuration file against a schema | 📄 | 📄 | 📄 |
+| one configuration file against a schema | ✅ | 📄 | 📄 |
 
 The `s3` sink works against any store that speaks the S3 API; on a store
 without Object Lock it is the `attested` tier of

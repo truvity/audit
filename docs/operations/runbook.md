@@ -216,8 +216,8 @@ puts an object it could not index. The records are safe and the object is in
 the archive under its lock; what is behind is the projection.
 
 It also counts the rows in `audit.writer.index.deferred`, labelled by profile,
-when a collector is named (`OTEL_EXPORTER_OTLP_ENDPOINT`; the chart's
-`telemetry.otlpEndpoint`). Alert on any increase: nothing else notices an index
+when a collector is named (`OTEL_EXPORTER_OTLP_ENDPOINT`, set on the pod by
+the platform; there is no setting for it in the file or the chart). Alert on any increase: nothing else notices an index
 that is quietly behind until it answers a search wrongly. With the usual
 OTLP-to-Prometheus naming:
 
@@ -326,7 +326,7 @@ never seen arrives as a dead letter rather than as a loss.
 
 When the primary bucket's region is unavailable, the replica — same Object
 Lock, retention replicated — is the archive. Point `audit verify` and the
-query service's `--bucket` at it (reads only; the writer keeps writing to the
+query service's `archive.bucket` at it (reads only; the writer keeps writing to the
 primary, and a writer that cannot reach it withholds acknowledgements until it
 can). Verification against the replica is as good as against the primary: the
 chain was replicated with the objects it covers.
@@ -349,7 +349,7 @@ is still recorded.
 ## When the deployment runs pseudonymisation keys
 
 The three sections below apply only to an installation that configured a key
-provider. `keys.provider: none` is the default — most deployments run no
+provider. `keys.provider: none` (no `keys` block) is the default — most deployments run no
 pseudonymisation keys at all, there is no `identity/` prefix, and resolve is
 refused as unimplemented
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),

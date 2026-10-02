@@ -79,7 +79,7 @@ Which tier a deployment may run on is the profiles' decision. Every preset
 says the least lock its framework demands — `compliance` for `pci-dss`,
 `nen-7513`, `dora` and `evidence-etsi`, `none` for `security`, `history` and
 `billing-nl` — and the writer, the digest job and the verify job refuse to
-start when the deployment's `--lock-mode` is weaker than any composed profile
+start when the deployment's `archive.lockMode` is weaker than any composed profile
 demands.
 
 ## Who holds the key
@@ -138,7 +138,7 @@ the tenants first and walk one bounded listing per tenant and day
 (`store.WalkDays`). Listing the whole profile would be right until the archive
 outgrew a page and wrong in silence after.
 
-Both jobs keep an account of themselves, given `--sink`: `audit.digest.written`
+Both jobs keep an account of themselves, given a `sink`: `audit.digest.written`
 per sealed window, carrying how many objects it covers, and
 `audit.digest.verified` or `audit.digest.failed` per window checked. Without
 them a chain that was never sealed and one sealed over a quiet hour are
@@ -176,7 +176,7 @@ page said the digest carried an `anchor` field; it never did.
 
 ## Verification, per record
 
-The nightly verification (`audit verify --record`, the chart's default) writes
+The nightly verification (`audit verify --record`, `record: true` in the job's file) writes
 one result per window under `verified/`, kept as long as the digest it checks.
 `Get` reads a record's standing from there: the digest that names its object,
 and when that digest was last verified **clean**. A later verification that

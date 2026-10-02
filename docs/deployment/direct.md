@@ -75,58 +75,98 @@ and `Batch` are the knobs.
 
 ## Values
 
-The application's chart takes this one as a dependency and sets:
+The application's chart takes this one as a dependency and sets the values
+below. Each component's `config:` is the binary's own configuration file,
+validated against its schema, and a secret is only ever named there, with
+`secretEnv` supplying it from a Secret
+([configuration reference](../reference/configuration.md#chart-values)).
 
 ```yaml
 audit:
   mode: direct
-  bucket: audit-eu-example-1
-  prefix: audit/app                 # required in a shared bucket
-  region: eu-example-1
-  kmsKey: alias/audit-archive
-  replicas: 2
-
+  replicas: 2                       # writer.config.replicas must say the same
   profiles:
     security:
       presets: [security]
-
-  keys:
-    provider: none
   externalIdentifiersAreOpaque: true
+  workloadIdentity:
+    issuers:
+      - url: https://oidc.example.com/id/CLUSTER
+    workloads:
+      - subject: system:serviceaccount:app:api
+        source: app
 
-  database:
-    existingSecret: audit-db
-    migrate: true
+  migrate:
+    enabled: true
+    config:
+      database:
+        url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_DATABASE_PASSWORD
+      reader: audit_query
+    secretEnv:
+      - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db, key: password}
+
+  writer:
+    config:
+      deployment: /etc/audit/deployment.yaml
+      workloads: /etc/audit/workloads.yaml
+      replicas: 2
+      archive:
+        bucket: {name: audit-eu-example-1, region: eu-example-1}
+        prefix: audit/app           # required in a shared bucket
+        kmsKey: alias/audit-archive
+      database:
+        url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_DATABASE_PASSWORD
+      roll:
+        interval: 60s
+    secretEnv:
+      - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db, key: password}
 
   query:
     enabled: true
     replicas: 1
-    database:
-      existingSecret: audit-db-reader
-      role: audit_query
     grants:
       issuers:
-        - url: https://console.example.com
-          audience: audit
-
-  roll:
-    interval: 60s
+        - {url: https://console.example.com, audience: audit}
+    config:
+      deployment: /etc/audit/deployment.yaml
+      grants: /etc/audit/grants.yaml
+      sink: {url: "http://audit:8080", tokenFile: /var/run/audit/token}
+      database:                     # its own role, not the owner
+        url: postgres://audit_query@db.example.com:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+      archive:
+        bucket: {name: audit-eu-example-1, region: eu-example-1}
+        prefix: audit/app
+    secretEnv:
+      - {name: AUDIT_QUERY_DATABASE_PASSWORD, secretName: audit-db-reader, key: password}
+    tokens:
+      - {audience: audit, mountPath: /var/run/audit}
 
   jobs:
     digest:
-      enabled: true
-      kmsKey: alias/audit-digest
-    verify:
-      enabled: true
-    purge:
-      enabled: true
+      config:
+        deployment: /etc/audit/deployment.yaml
+        archive:
+          bucket: {name: audit-eu-example-1, region: eu-example-1}
+          prefix: audit/app
+        sink: {url: "http://audit:8080", tokenFile: /var/run/audit/token}
+        signer: {kmsKey: alias/audit-digest}
+      tokens:
+        - {audience: audit, mountPath: /var/run/audit}
     clockSync:
-      enabled: true
-      ntp: ["169.254.169.123"]      # required by every compliance preset
+      config:
+        ntp: ["169.254.169.123"]    # required by every compliance preset
+        sink: {url: "http://audit:8080", tokenFile: /var/run/audit/token}
+      tokens:
+        - {audience: audit, mountPath: /var/run/audit}
+    # verify and purge are configured the same way: see the example file
 ```
 
 Every value here renders today. `charts/audit/examples/direct.yaml` is the
-same thing as a file, kept beside the chart and rendered by its tests.
+whole thing as a file, with the verify and purge jobs, kept beside the chart
+and rendered by its tests.
 
 `prefix` is what keeps two applications apart in one bucket, and the chart's
 notes print the IAM statements the four roles need underneath it: the
@@ -142,6 +182,9 @@ the same migration:
 ```console
 $ audit migrate --database "$OWNER_URL" --reader audit_query
 ```
+
+In the chart this is the `migrate` hook above, which runs `audit migrate
+--config` with the same two settings in its file.
 
 If the application already runs a Postgres cluster, this is one more
 database in it. If it does not, a single-instance cluster is enough: the

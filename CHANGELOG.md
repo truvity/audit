@@ -4,7 +4,7 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## v0.6.0
+## v0.5.3
 
 - The acknowledgement of `SinkService.Write` says how durable the batch is. `WriteResponse` gains `durability` (`DURABILITY_LOGGED`, `QUEUED`, `ARCHIVED`, ordered, `UNSPECIFIED` for a hop that did not say), added without renumbering; `sink.Result.Durability` carries it and the Connect client and handler pass it through. The writer reports `Archived`, `natssink.Publisher` and `sqssink.Publisher` report `Queued` after every acknowledgement, `sink.Memory` and `logsink` report `Logged`, `sink.Discard` reports nothing, and `sink.Receiver` reports what its next hop does. See [ADR 0017](docs/decisions/0017-sink-durability-and-transports.md).
 - `sink.Require(s, min)` refuses, at start-up, a chain whose strongest durability (`Guarantees()`) is below `min`, and `sink.Guard(s, min)` also fails any write whose acknowledgement is weaker at run time. `sink.ParseDurability` reads the spelling a configuration will use; `sink.Client.Expecting` says what a remote service is configured to give.

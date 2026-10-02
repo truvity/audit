@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	standard = "https://sqs.example.test/000000000000/audit"
-	fifo     = "https://sqs.example.test/000000000000/audit.fifo"
+	standard = "https://sqs.example.test/queue/audit"
+	fifo     = "https://sqs.example.test/queue/audit.fifo"
 )
 
 func publisher(t *testing.T, api sqssink.API, url string) *sqssink.Publisher {

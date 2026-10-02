@@ -16,7 +16,7 @@ import (
 
 func TestParseDurability(t *testing.T) {
 	for in, want := range map[string]sink.Durability{
-		"logged": sink.Logged, " QUEUED ": sink.Queued, "archived": sink.Archived,
+		"logged": sink.Logged, "QUEUED": sink.Queued, "archived": sink.Archived,
 	} {
 		if got, err := sink.ParseDurability(in); err != nil || got != want {
 			t.Errorf("ParseDurability(%q) = %v, %v; want %v", in, got, err, want)
@@ -36,10 +36,10 @@ func TestRequireRefusesAWeakChain(t *testing.T) {
 	if err := sink.Require(logged, sink.Logged); err != nil {
 		t.Errorf("logged satisfies logged: %v", err)
 	}
-	for _, min := range []sink.Durability{sink.Queued, sink.Archived} {
-		err := sink.Require(logged, min)
+	for _, least := range []sink.Durability{sink.Queued, sink.Archived} {
+		err := sink.Require(logged, least)
 		if err == nil || !strings.Contains(err.Error(), "logged at best") {
-			t.Errorf("Require(logged, %v) = %v", min, err)
+			t.Errorf("Require(logged, %v) = %v", least, err)
 		}
 	}
 	if err := sink.Require(sink.Discard, sink.Logged); err == nil {

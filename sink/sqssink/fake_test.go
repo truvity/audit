@@ -143,7 +143,9 @@ func (f *fakeSQS) DeleteMessageBatch(_ context.Context, in *sqs.DeleteMessageBat
 	return &sqs.DeleteMessageBatchOutput{}, nil
 }
 
-func (f *fakeSQS) ChangeMessageVisibilityBatch(_ context.Context, in *sqs.ChangeMessageVisibilityBatchInput, _ ...func(*sqs.Options)) (*sqs.ChangeMessageVisibilityBatchOutput, error) {
+func (f *fakeSQS) ChangeMessageVisibilityBatch(
+	_ context.Context, in *sqs.ChangeMessageVisibilityBatchInput, _ ...func(*sqs.Options),
+) (*sqs.ChangeMessageVisibilityBatchOutput, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, e := range in.Entries {

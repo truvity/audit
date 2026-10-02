@@ -17,7 +17,7 @@ follows.
   rendering the chart against this exact file.
 - `e2e/fixture` — stands in for the platform: the database and its two
   roles (a writer role that owns the schema, and a query role the migrate
-  job's `--reader` grant lets read it and nothing else), the JetStream
+  job's `reader` grant lets read it and nothing else), the JetStream
   stream, the archive bucket, and the digest chain's signing key pair.
   `e2e/fixture/apply.sh` provisions it; `e2e/fixture/names.go` is what
   reads the values file so nothing is named twice.

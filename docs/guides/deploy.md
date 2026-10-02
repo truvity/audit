@@ -50,11 +50,12 @@ profiles the installation composes:
 - **attested** — no lock; the signed digest chain under a managed key is the
   integrity control. Enough for `security`, `history` and `billing-nl`, and
   the only tier a store without the Object Lock API can offer. The same
-  command without `--object-lock-enabled-for-bucket`, and `lockMode: none`
-  in the values. On any S3-compatible store that is not AWS — a service from
-  another provider, MinIO, Ceph — add `endpoint`, `pathStyle` if its
-  certificate does not cover a bucket subdomain, and `existingSecret` with
-  static keys if it has no pod identity; the
+  command without `--object-lock-enabled-for-bucket`, and
+  `archive.lockMode: none` in the writer's configuration. On any
+  S3-compatible store that is not AWS — a service from another provider,
+  MinIO, Ceph — add `bucket.endpoint`, `bucket.pathStyle` if its certificate
+  does not cover a bucket subdomain, and `bucket.credentialsEnv` with static
+  keys if it has no pod identity; the
   [S3 guide](../operations/s3-guide.md#s3-compatible-stores) has the recipe.
 
 The bucket needs no default retention: on the record tier the writer sets
@@ -83,7 +84,7 @@ One Postgres database, in the application's existing cluster if it has one.
 The writer owns it. The query service reads it as a **separate role**, because
 the tenant row-level policies bind a role that does not own the tables, and it
 is what still holds if a query forgets its tenant term. The chart refuses the
-writer's Secret or URL under `query.database`.
+writer's URL under the query service's `database`.
 
 Create the role — the chart creates none — and let the migration grant it:
 
@@ -94,8 +95,9 @@ audit migrate --database "$OWNER_URL" --reader audit_query
 
 `--reader` grants that role usage on the schema and select on every table, now
 and later, and nothing else. The chart runs the same migration as a hook Job
-before the writer rolls when `database.migrate` is true, with
-`query.database.role` as the reader.
+before the writer rolls when `migrate.enabled` is true, with
+`migrate.config.reader` as the reader; the password is named by
+`passwordEnv` and supplied by `secretEnv`.
 
 The index is a projection: `audit reindex` rebuilds it from the archive. It
 needs no backup and no replica, and losing it costs search until the rebuild
@@ -108,9 +110,9 @@ digest job signs with a key the writer's role cannot use. Three ways, in order
 of preference:
 
 ```sh
-# AWS KMS (jobs.digest.kmsKey): an ECC_NIST_P256 key. The private half never
+# AWS KMS (signer.kmsKey): an ECC_NIST_P256 key. The private half never
 # leaves KMS, and only the digest job's role has kms:Sign on it.
-# OpenBAO transit (jobs.digest.transit.key): an ed25519 key, the same
+# OpenBAO transit (signer.transit): an ed25519 key, the same
 # separation for a deployment whose secrets live in OpenBAO.
 
 # Or a key file, when there is neither:
@@ -120,6 +122,10 @@ kubectl create secret generic audit-signing-key -n <app> --from-file=key.pem=key
 kubectl create secret generic audit-signing-public -n <app> --from-file=public.pem=public.pem
 ```
 
+The digest job's `signer.keyFile.path` and the verify job's `publicKeyFile`
+name the files, and each job's `secretMounts` mounts the Secret that holds
+them.
+
 The verify job and every auditor need only the public half:
 `audit key public --kms-key <id>` (or `--transit-key`, or `--key`) prints it.
 Keep a key file somewhere other than the cluster —
@@ -128,15 +134,16 @@ Keep a key file somewhere other than the cluster —
 ### A reference clock
 
 Every preset with a compliance obligation asks for a daily record of the
-clock's offset from UTC, and the chart refuses to render an installation that
-composes one without a reference configured:
+clock's offset from UTC, and the job's configuration refuses to load without
+a reference:
 
 ```yaml
 jobs:
   clockSync:
     enabled: true
-    ntp: ["169.254.169.123"]
-    maxOffset: 1s          # beyond this the run fails, so the job going red is the alert
+    config:
+      ntp: ["169.254.169.123"]
+      maxOffset: 1s        # beyond this the run fails, so the job going red is the alert
 ```
 
 The job does not set the clock. Whatever runs the machine does that, and
@@ -158,7 +165,8 @@ chart is a command with arguments.
 
 ### What you do not have to prepare
 
-**Pseudonymisation keys.** `keys.provider: none` is the default, so there
+**Pseudonymisation keys.** `keys.provider: none` is the default (no `keys`
+block), so there
 is no key directory, no secret manager to log in to, no `identity/` prefix,
 and resolve is refused as unimplemented. The deployment declares instead that the external
 identifiers it receives are opaque. A deployment that must be able to
@@ -189,13 +197,13 @@ reason lives. What every installation sets, whichever shape:
 
 | value | what it is |
 |---|---|
-| `bucket`, `prefix`, `region`, `kmsKey` | the archive, and this application's part of it |
-| `lockMode` | `compliance` (the default), `governance` or `none`: which tier the bucket is. The writer refuses to start if a profile demands more |
-| `endpoint`, `pathStyle`, `existingSecret` | only on an S3-compatible store that is not AWS: where it is, how the bucket is addressed, and static keys if it has no pod identity |
+| `writer.config.archive.bucket`, `.prefix`, `.kmsKey` | the archive, and this application's part of it |
+| `writer.config.archive.lockMode` | `compliance` (the default), `governance` or `none`: which tier the bucket is. The writer refuses to start if a profile demands more |
+| `bucket.endpoint`, `.pathStyle`, `.credentialsEnv` | only on an S3-compatible store that is not AWS: where it is, how the bucket is addressed, and the names of the variables holding static keys if it has no pod identity |
 | `profiles` | what copies are kept, each composed from presets |
-| `database` | the index, as a Secret holding the URL |
-| `query.enabled`, `query.database`, `query.grants` | the read path, its own role, and who may read what |
-| `jobs.*` | digest, verify, purge and clock-sync |
+| `writer.config.database`, `writer.secretEnv` | the index: its URL, and the Secret holding the password |
+| `query.enabled`, `query.config`, `query.grants` | the read path, its own database role, and who may read what |
+| `jobs.*.config` | digest, verify, purge and clock-sync |
 
 Which presets to compose is a policy question, not a values question:
 [which presets a deployment composes](../operations/presets-policy.md).
@@ -210,17 +218,17 @@ helm upgrade --install <application> ./charts/<application> -n <app> -f values.y
 ```
 
 The chart **refuses to render** a configuration the binaries would reject, or
-accept and get quietly wrong: a digest job with no signer, a compliance preset
-with no reference clock, the writer's credentials given to the query service,
-`mode: stream` with no `stream.url` or no database, an ack wait that does not
-outlast the roll, or an extension whose profile the deployment does not
-compose.
+accept and get quietly wrong: a configuration that does not match its
+binary's schema (a digest job with no signer, a misspelt key, a password in a
+URL), the writer's database given to the query service, `mode: stream` with no
+`writer.config.stream` or no database, a `replicas` that is not the number of
+writer pods, or an extension whose profile the deployment does not compose.
 Each refusal says why, and they are listed in
 [the chart README](../../charts/audit/README.md) with
 [`values.yaml`](../../charts/audit/values.yaml) commenting every setting.
 
 One refusal the chart cannot make is the binaries': a profile whose presets
-demand a lock stricter than `lockMode` — `pci-dss` on `lockMode: none`, say.
+demand a lock stricter than `archive.lockMode` — `pci-dss` on `lockMode: none`, say.
 The presets' readings live in the binaries, not the chart, so the writer, the
 digest job and the verify job refuse to **start** instead, naming the profile
 and both modes, and the first rollout is where it shows.
@@ -260,7 +268,8 @@ and both modes, and the first rollout is where it shows.
    Run it after the first records land, and `audit verify` an hour later, so
    that there is a sealed hour to walk.
 
-7. **Alerts.** With `telemetry.otlpEndpoint` set, page on
+7. **Alerts.** With the `OTEL_EXPORTER_OTLP_ENDPOINT` environment set on the
+   pods by the platform, page on
    `audit.writer.index.deferred` (the index is behind the archive) and the
    dead-letter counter (records the writer could not take), and — in the
    application — on `audit.emit.records.dropped`. The

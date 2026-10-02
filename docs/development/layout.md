@@ -9,7 +9,8 @@ additions are made.
 ```
 proto/audit/v1/       the contracts: record, sink, registry, query
 gen/                  generated Go (and ts/src/gen: generated TypeScript), committed
-schemas/              meta-schemas: catalogue, preset, extension slot
+schemas/              meta-schemas: catalogue, preset, extension slot;
+                      schemas/config/ is each binary's configuration file
 presets/              the framework presets
 catalogue/            catalogue loading, validation, composition, sentences;
                       common.yaml, the component's own actions
@@ -43,6 +44,8 @@ internal/registry/    registered catalogues: validation, storage, the archive co
 internal/clock/       an SNTP client for the daily clock check
 internal/telemetry/   OTLP metrics
 internal/cli/         the commands of cmd/audit
+internal/config/      each binary's configuration: the types, the loader, and the
+                      schema generator behind schemas/config/
 internal/corpus/      the record corpus (testdata/records) for transport tests
 internal/s3test/      a real S3 for the archive walks; internal/pgtest/ a database
 internal/authtest/    token issuers for tests
@@ -113,18 +116,26 @@ repository) and `just sentences` (the TypeScript copy of the templates).
 **A key provider.** Implement `keys.Provider` (and `keys.Sealer` to support
 resolve). It must be stable across replicas and restarts, separate tenants and
 purposes, never mint a key for an erased (tenant, purpose), and be tested
-against the real service it wraps. Add it to `cli.KeyFlags` and the chart's
-`keys.provider`, with refusals for configurations it cannot run in.
+against the real service it wraps. Add it to the `keys` block of
+`internal/config/schema/schema.go` (then `just config-schemas`) and its
+loader's refusals, with refusals for configurations it cannot run in.
 
 **A signer.** Implement `keys.Signer`; `KeyID` names the key version, so a
 verifier can pick the public half after a change.
 
-**A chart value.** Add it to `values.yaml` with a comment, use it in the
-templates, add a refusal to `tests/invalid/audit/refusals.txt` for any
+**A configuration key.** Add it to the type in `internal/config/types.go` and
+the schema in `internal/config/schema/schema.go`, run `just config-schemas`,
+and document it in the [configuration reference](../reference/configuration.md).
+The chart takes it through `config:` with no change.
+
+**A chart value.** For what is the platform's and not the binary's, add it to
+`values.yaml` with a comment, use it in the
+templates, add a refusal under `tests/invalid/audit/` for any
 combination the binary would reject, and run `just chart` to update the
 goldens (commit them).
 
-**A command.** A function in `cmd/audit/main.go` that parses flags and calls a
+**A command.** A function in `cmd/audit/main.go` that parses flags (a scheduled command
+also takes `--config`, with its schema in `schemas/config/`) and calls a
 type in `internal/cli` that does the work and is tested there. Add it to the
 usage text.
 

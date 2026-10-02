@@ -96,7 +96,7 @@ rebuilt against 1.2.0.
 apart so that a deployment can purge it on a shorter schedule of its own, and
 can grant a reader the event without the person. No shipped preset states such
 a schedule — the frameworks they cite want the actor for the whole retention —
-so `audit purge --identifying-after` has no default. `events_data` holds the filterable
+so the purge job's `identifyingAfter` has no default. `events_data` holds the filterable
 extension properties. `facet_counts` is what the [Audit page](audit-page.md)'s navigation reads.
 
 The three event tables are partitioned monthly on `recorded_at`, because a
@@ -184,7 +184,7 @@ was taken.
 `occurred_at` only, and refuses `recorded_at`, because the archive is laid out
 by the day things happened: following the order things were recorded in would
 mean reading far more of it than a poll can justify. The suite requires that
-refusal rather than allowing a narrower answer. So `query.searcher: s3scan` is
+refusal rather than allowing a narrower answer. So `searcher: s3scan` is
 for a deployment that searches the trail, not one that follows it.
 
 ## Reading is recorded

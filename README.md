@@ -65,62 +65,61 @@ dependencies:
 ```
 
 Then the application's own `values.yaml` sets what this chart reads under
-the `audit:` key. The `direct` shape, a whole worked example
+the `audit:` key. The `direct` shape, abridged from a worked example
 ([`charts/audit/examples/direct.yaml`](charts/audit/examples/direct.yaml),
 rendered as one of this repository's golden fixtures):
 
 ```yaml
 audit:
   mode: direct
-  bucket: audit-eu-example-1
-  prefix: audit/app
-  region: eu-example-1
-  kmsKey: alias/audit-archive
   replicas: 2
   profiles:
     security:
       presets: [security]
-  keys:
-    provider: none
   externalIdentifiersAreOpaque: true
-  database:
-    existingSecret: audit-db
   workloadIdentity:
     issuers:
       - url: https://oidc.example.com/id/CLUSTER
     workloads:
       - subject: system:serviceaccount:app:api
         source: app
-  query:
+  migrate:
     enabled: true
-    replicas: 1
-    database:
-      existingSecret: audit-db-reader
-      role: audit_query
-    grants:
-      issuers:
-        - url: https://console.example.com
-          audience: audit
-  jobs:
-    digest:
-      enabled: true
-      kmsKey: alias/audit-digest
-    verify:
-      enabled: true
-      publicKey:
-        existingSecret: audit-digest-public
-    purge:
-      enabled: true
-    clockSync:
-      enabled: true
-      ntp: ["169.254.169.123"]
+    config:
+      database:
+        url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_DATABASE_PASSWORD
+      reader: audit_query
+    secretEnv:
+      - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db, key: password}
+  writer:
+    config:                          # audit-writer's own configuration file
+      deployment: /etc/audit/deployment.yaml
+      workloads: /etc/audit/workloads.yaml
+      replicas: 2
+      archive:
+        bucket: {name: audit-eu-example-1, region: eu-example-1}
+        prefix: audit/app
+        kmsKey: alias/audit-archive
+      database:
+        url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_DATABASE_PASSWORD
+    secretEnv:                       # the Secret behind that variable name
+      - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db, key: password}
+  # query, and the digest, verify, purge and clock-sync jobs, each take a
+  # `config:` the same way; see the example file below
 ```
+
+Each `config:` is the binary's own configuration file, validated against the
+schema in `schemas/config/` both when the chart renders and when the process
+starts; a secret is named there and supplied by `secretEnv`. The keys are in
+the [configuration reference](docs/reference/configuration.md).
 
 [stream mode's example](charts/audit/examples/stream.yaml) is the same
 shape with a JetStream receiver; both render as golden fixtures
 `tests/golden/audit/example-direct.yaml` and
-`tests/golden/audit/example-stream.yaml`, so this README's example is
-proven to render, not just plausible.
+`tests/golden/audit/example-stream.yaml`, so the example it is abridged
+from is proven to render, not just plausible.
 
 ## The two shapes
 

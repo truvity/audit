@@ -27,13 +27,14 @@ the application. The deployment pages show the values each shape takes:
 - **`audit-query`** (`query.enabled`), search, facets, get, export, tail and —
   given the keys — resolve, behind the grants in `query.grants`. Every read is
   recorded through the writer. It reads the index as **its own database
-  role**, which must not own the tables (`query.database`).
-- **Four CronJobs**: `audit digest` hourly, `audit verify` nightly per
-  profile, `audit purge` daily, `audit clock-sync` daily. Each records what
-  it did through the writer's own sink. `clock-sync` needs at least one
-  reference clock (`jobs.clockSync.ntp`): every preset with a compliance
-  obligation asks for a daily record of the offset, and the chart refuses to
-  render without one.
+  role**, which must not own the tables (`query.config.database`).
+- **Four CronJobs**: `audit digest` hourly, `audit verify` nightly (one job
+  for the profiles it lists, or every profile), `audit purge` daily,
+  `audit clock-sync` daily. Each runs `--config` against its own file and
+  records what it did through the writer's own sink. `clock-sync` needs at
+  least one reference clock (`jobs.clockSync.config.ntp`): every preset with a
+  compliance obligation asks for a daily record of the offset, and its
+  configuration is refused without one.
 
 `mode` chooses between them. In `direct` the chart renders one Deployment that
 serves the sink and writes the archive. In `stream` it renders two: a receiver
@@ -54,35 +55,68 @@ that keeps an index and verifies callers must fill it in, and the chart refuses
 to render when it is empty — with no mapping every registration would be
 refused at run time instead.
 
+## How it is configured
+
+Each component has a `config:` block: the binary's own configuration file,
+rendered as it stands into a ConfigMap `<fullname>-<component>-config` and
+mounted at `/etc/audit/config.yaml`. The components are `writer`, `receiver`
+(stream mode), `query`, `migrate` and `jobs.digest`, `jobs.verify`,
+`jobs.purge` and `jobs.clockSync`. The chart translates none of it: a key
+under `config:` is the binary's key, and it is validated by
+`values.schema.json`, which embeds the schemas in `schemas/config/`, and again
+by the binary at start-up. The
+[configuration reference](../../docs/reference/configuration.md) lists every
+key.
+
+What is not configuration is the platform's, and each component has the same
+three of those:
+
+- `secretEnv`: environment variables from a Secret's keys, which the config
+  names as the holder of a secret (`passwordEnv`, `credentialsEnv`,
+  `tokenEnv`). A secret is never in `config:`;
+- `secretMounts`: a Secret mounted as a directory, for a key or a root a
+  config names by path;
+- `tokens`: a projected service-account token of an audience, a file `token`
+  in the `mountPath`, for `tokenFile` and `jwtFile` to name.
+
+Telemetry is the `OTEL_*` environment, which the platform sets on the pods;
+the chart has no telemetry value. The documents a config names by path are
+rendered from the chart's own values: `profiles` into
+`/etc/audit/deployment.yaml`, `workloadIdentity` into
+`/etc/audit/workloads.yaml`, `query.grants` into `/etc/audit/grants.yaml`,
+`catalogues` into `/etc/audit/catalogues/`. `trust` mounts a CA bundle at
+`/etc/audit/trust/<key>` and `keysVolume` the local key directory at
+`/var/lib/audit/keys`.
+
 ## What the deployment brings
 
 The chart takes references; it creates none of these.
 
 | thing | value |
 |---|---|
-| a bucket belonging to the environment: with Object Lock in compliance mode for a profile that demands it, or without a lock where none does ([0014](../../docs/decisions/0014-lock-modes-and-store-tiers.md)) | `bucket`, `lockMode` |
-| **only on an S3-compatible store that is not AWS**: its endpoint, whether its certificate covers a bucket subdomain, and a Secret with static keys if it has no pod identity | `endpoint`, `pathStyle`, `existingSecret` |
-| **a prefix of its own within it**, required wherever the bucket is shared: it is what keeps two applications' archives apart, and what each role's IAM is scoped to | `prefix` |
+| a bucket belonging to the environment: with Object Lock in compliance mode for a profile that demands it, or without a lock where none does ([0014](../../docs/decisions/0014-lock-modes-and-store-tiers.md)) | `writer.config.archive.bucket`, `.lockMode` |
+| **only on an S3-compatible store that is not AWS**: its endpoint, whether its certificate covers a bucket subdomain, and the names of the variables holding static keys if it has no pod identity | `archive.bucket.endpoint`, `.pathStyle`, `.credentialsEnv` with `secretEnv` |
+| **a prefix of its own within it**, required wherever the bucket is shared: it is what keeps two applications' archives apart, and what each role's IAM is scoped to | `archive.prefix` |
 | a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `holds/` | the writer's ServiceAccount annotation |
-| the digest signing key: a Secret (PEM, ed25519), an AWS KMS ECC_NIST_P256 key, or an OpenBAO transit ed25519 key | `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` or `jobs.digest.transit` |
-| a Secret with its public half | `jobs.verify.publicKey.existingSecret` |
-| a reference clock the clock-synchronisation job can reach | `jobs.clockSync.ntp` |
-| **a database in the application's existing Postgres**, owned by the writer, in a Secret. It holds the index, the dedupe table and the rollups, all rebuildable with `audit reindex`, so it needs no backup | `database.existingSecret` |
-| **a separate read-only role** for the query service: `usage` on the schema, `select` on its tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.database.existingSecret`, `query.database.role` |
-| the JetStream stream, already created, with `mode: stream` | `stream.url`, `stream.name` |
-| **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.token.enabled`, `stream.token.audience` |
+| the digest signing key: a Secret (PEM, ed25519), an AWS KMS ECC_NIST_P256 key, or an OpenBAO transit ed25519 key | `jobs.digest.config.signer`: `keyFile` (with `secretMounts`), `kmsKey` or `transit` |
+| a Secret with its public half | `jobs.verify.config.publicKeyFile`, with `secretMounts` |
+| a reference clock the clock-synchronisation job can reach | `jobs.clockSync.config.ntp` |
+| **a database in the application's existing Postgres**, owned by the writer, in a Secret. It holds the index, the dedupe table and the rollups, all rebuildable with `audit reindex`, so it needs no backup | `writer.config.database` and `passwordEnv`, with `secretEnv` |
+| **a separate read-only role** for the query service: `usage` on the schema, `select` on its tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.config.database` and `passwordEnv`, with `query.secretEnv`; `migrate.config.reader` names the role |
+| the JetStream stream, already created, with `mode: stream` | `writer.config.stream`, `receiver.config.stream` |
+| **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.nats.tokenFile` and a `tokens` entry of the broker's audience |
 | the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
-| an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.exports.bucket`, and its own `endpoint`, `pathStyle`, `existingSecret` |
+| an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsEnv` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
 | the images | `image.writer`, `image.query`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
 | a role per component — writer, query, digest, verify — bound through its ServiceAccount's annotations | `serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
-| **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/operations/openbao-keys.md#what-the-engine-needs)) | `keys.local.existingSecret`, or `keys.provider: transit` with `openbao` and `keys.transit.role` |
+| **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/operations/openbao-keys.md#what-the-engine-needs)) | `keys.local.rootFile` with `secretMounts`, or `keys.provider: transit` with `keys.transit.openbao.login` and a `tokens` entry |
 | a CA bundle, if OpenBAO or Postgres serve from a private chain (e.g. trust-manager's) | `trust.configMap` |
-| a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keys.local.persistence` |
+| a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keysVolume` |
 
 ## Keys are off
 
-`keys.provider: none` is the default: no key directory, no login to a secret
+`keys.provider: none` is the default, which is no `keys` block: no key directory, no login to a secret
 manager, no `identity/` prefix in the archive, and resolve refused as
 `unimplemented`. A deployment instead declares
 `externalIdentifiersAreOpaque`, which relaxes a profile's `external:
@@ -113,69 +147,64 @@ stream, because neither could work.
 The receiver verifies every caller's projected service-account token against
 the cluster's own OIDC issuer. The token's subject is the service account,
 which the kubelet vouches for and the workload cannot choose, and the writer
-stamps it on each record as the observer. The chart's own jobs are given
-projected tokens (`workloadIdentity.audience`, default `audit`) and present
-them the same way.
+stamps it on each record as the observer. The chart's own jobs and the query
+service are given projected tokens (their `tokens`, audience `audit`) and
+present them through `sink.tokenFile` the same way.
 
 The application's pods mount a projected token with the same audience and
 point `AUDIT_TOKEN_FILE` at it, or set the bearer themselves.
-`anonymousWrites: true` turns verification off, for a trial install only. The
-chart refuses to render with neither issuers nor that flag set.
+`anonymousWrites: true` in the writer's config turns verification off, for a
+trial install only. The binary refuses to start with neither `workloads` nor
+that key set.
 
-The stream is reached the same way. With `stream.token.enabled`, the receiver
-and the writers mount a projected token of `stream.token.audience` and present
-it to the broker as their NATS token, read afresh on every connect; the
-broker's auth callout, which is the deployment's, reviews it and maps the
-namespace to an account. Off, which is the default, they connect with no
+The stream is reached the same way. With a `tokens` entry of the broker's
+audience and `stream.nats.tokenFile` naming it, the receiver and the writers
+present the token to the broker as their NATS token, read afresh on every
+connect; the broker's auth callout, which is the deployment's, reviews it and
+maps the namespace to an account. Without them, they connect with no
 credentials, for a broker that verifies nobody
 ([stream](../../docs/deployment/stream.md#authenticating-to-the-stream)).
 
 ## What it refuses to render
 
-Every configuration listed in `tests/invalid/audit/refusals.txt` is
-something the binaries reject at start-up or, worse, accept and get
-quietly wrong, and `testdata/refuse.sh` holds each refusal to its words.
-The least obvious:
+Every configuration in `tests/invalid/audit/` is something the binaries
+reject at start-up or, worse, accept and get quietly wrong, and
+`testdata/refuse.sh` holds each refusal to its words; each file names the
+reason on its first line. A `config:` that does not match its schema is
+refused first, naming the path: a misspelt key, a missing `deployment`, a
+password in a database URL, a value from before the file such as a top-level
+`bucket`. What is left is what only the platform can see
+(`templates/_checks.tpl`):
 
-- `mode: stream` with no `stream.url`: a receiver told to publish with
-  nowhere to publish to acknowledges nothing, and the application's `block`
-  actions all fail;
-- an extension enabled with no profile it can read — `extensions.billing`
-  without a metering profile, `extensions.quotas` without `mode: stream` —
-  because a projection of records that are never kept is a values mistake
-  worth catching at render time;
-- `security` composed with no reference clock for `jobs.clockSync`: an
-  integrity chain whose timestamps nobody vouches for proves less than it
-  appears to;
-- OpenBAO (the `transit` key provider, the transit digest signer) needs
-  `openbao.address` and exactly one way to sign in for each component that
-  uses it — a role on `openbao.auth.mount`, a token Secret or a token
-  file — and no two components signing in as the same one;
-- more than one replica with the `local` key provider needs a key directory
-  every replica can write, because data keys are random rather than derived —
-  separate directories mean a different pseudonym for the same person on each
-  replica;
-- a key directory that does not persist re-keys every tenant on every restart,
-  so turning persistence off takes `keys.local.ephemeralIsAcceptable: true`,
-  not a flag.
+- `mode` is `direct` or `stream` and nothing else, and `profiles` is not
+  empty;
+- `writer.config.replicas` is the number of writer pods the chart renders
+  (`replicas` in direct mode, `writer.consumers` in stream mode), because the
+  writer cannot count them itself, and more than one needs a `database` in
+  `writer.config`, since deduplication in one process cannot absorb a
+  redelivery that lands on another;
+- `mode: stream` needs `receiver.config` with `mode: receiver`,
+  `writer.config.stream` and a `database`;
+- more than one writer pod with a `keysVolume` that is not ReadWriteMany:
+  data keys are random rather than derived, so separate directories mean a
+  different pseudonym for the same person on each replica. `query.keysVolume`
+  needs the volume enabled and ReadWriteMany;
+- `workloads` in the writer's config without `workloadIdentity.issuers`,
+  issuers without `workloads`, an index with verified callers and no
+  `workloadIdentity.workloads` (with no mapping every registration would be
+  refused at run time), and a workload that names no issuer when more than one
+  is trusted;
+- the query service enabled with no `query.grants.issuers`, or with the
+  writer's `database.url`: an owner bypasses the tenant policies;
+- an extension enabled with no profile it can read: `extensions.billing`
+  without a metering profile, `extensions.quotas` without `mode: stream`.
 
-And three more from the shapes: `mode` is `direct` or `stream` and nothing
-else; `mode: stream` needs both `stream.url` and a database, since several
-writers share one stream and deduplication in one process cannot absorb a
-redelivery that lands on another; and `stream.ackWait` must outlast
-`roll.interval`, or the stream offers records a writer is still gathering to
-a second writer and the day's objects double.
-
-There is one more, which the writer serving `RegisterCatalogue` brought with
-it: an installation that verifies callers and keeps an index must map the
-workloads that may register in `workloadIdentity.workloads`.
-
-And one the chart cannot make, which the binaries make instead: a profile
-whose presets demand a stricter lock than `lockMode` — `pci-dss` composed on
-`lockMode: none` — is refused by the writer, the digest job and the verify
-job at start-up, naming the profile and both modes. The presets' readings
-live in the binaries, so the chart only holds `lockMode` to its three words
-and refuses `governance: true` beside a `lockMode` that says otherwise.
+The binaries refuse the rest at start-up, naming the key: `stream.ackWait` not
+longer than `roll.interval`, a profile that demands a stricter lock than
+`archive.lockMode` (`pci-dss` composed on `lockMode: none`, refused by the
+writer, the digest job and the verify job), OpenBAO configured with none or
+more than one way to sign in, and a digest `signer` with none or more than one
+of its three.
 
 ## Checking it
 

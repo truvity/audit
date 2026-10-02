@@ -1,9 +1,9 @@
 // Command audit-writer is an installation's front door and its write path,
 // which are one process in a small installation and two in a busy one.
 //
-// With --mode writer, the default, it does both: it serves the sink, puts the
+// With mode writer, the default, it does both: it serves the sink, puts the
 // copies their profiles keep, and consumes a stream when one is configured.
-// With --mode receiver it only takes records and publishes them to the stream,
+// With mode receiver it only takes records and publishes them to the stream,
 // holding no bucket and no keys; the writers consume the other end. That split
 // is what lets the write path scale away from the front door, and what keeps
 // the stream's credentials out of the application entirely.
@@ -15,6 +15,12 @@
 // archive, and the only one that holds the pseudonymisation keys where a
 // deployment configures any. Everything else either hands it records or reads
 // what it wrote.
+//
+// It is configured by one file, --config, validated against
+// schemas/config/audit-writer.schema.json before anything starts; the
+// environment adds only the secrets that file names, and OpenTelemetry's own
+// OTEL_* variables say where telemetry goes. See
+// docs/decisions/0021-one-validated-configuration-file.md.
 package main
 
 import (
@@ -39,7 +45,9 @@ import (
 	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/catalogue"
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
+	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/keys"
@@ -60,80 +68,27 @@ func main() {
 }
 
 func run() error {
-	var (
-		kmsKey     = flag.String("kms-key", env("AUDIT_KMS_KEY", ""), "the key objects are encrypted with")
-		governance = flag.Bool("governance", false,
-			"deprecated: the same as --lock-mode governance")
-		deployment = flag.String("deployment", env("AUDIT_DEPLOYMENT", ""), "the profile configuration")
-		catalogues = flag.String("catalogues", env("AUDIT_CATALOGUES", ""), "a directory of catalogues to register")
-		replicas   = flag.Int("replicas", envInt("AUDIT_REPLICAS", 1), "how many writers share this stream")
-		database   = flag.String("database", env("AUDIT_DATABASE", ""),
-			"the Postgres URL of the index; without it the writer indexes nothing and deduplicates in process")
-		listen    = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve the sink on")
-		workloads = flag.String("workloads", env("AUDIT_WORKLOADS", ""),
-			"the file naming the issuers trusted to say which workload is publishing")
-		keepIdentities = flag.Bool("keep-identities", true,
-			"keep the identity behind each pseudonym, sealed under its key, so that resolve can find it")
-		anonymous = flag.Bool("anonymous-writes", false,
-			"accept writes over HTTP from callers nobody verified; for a trial install only")
-		streamURL = flag.String("stream-url", env("AUDIT_STREAM_URL", ""),
-			"the NATS server holding the wide stream; without it the writer only serves the sink")
-		streamName  = flag.String("stream", env("AUDIT_STREAM", "AUDIT"), "the stream to consume")
-		streamToken = flag.String("stream-token-file", env("AUDIT_STREAM_TOKEN_FILE", ""),
-			"a file holding the token presented to the stream's broker, read afresh on every "+
-				"connect; a projected service-account token where the broker verifies workloads. "+
-				"Empty connects with no credentials")
-		consumerName = flag.String("consumer", env("AUDIT_CONSUMER", "audit-writer"),
-			"the durable consumer this deployment's writers share")
-		streamBatch = flag.Int("stream-batch", envInt("AUDIT_STREAM_BATCH", 100),
-			"how many records are taken from the stream at once")
-		streamAckWait = flag.Duration("stream-ack-wait", 2*time.Minute,
-			"how long the stream waits for the writer to take a batch before offering it again. It "+
-				"must exceed --roll-interval plus the longest a put can take, or the stream will "+
-				"offer records the consumer is still gathering")
-		rollEvery = flag.Duration("roll-interval", 30*time.Second,
-			"how long records gathered from the stream wait before they are written, and how long "+
-				"an object stays open within one write")
-		rollRecords = flag.Int("roll-max-records", envInt("AUDIT_ROLL_MAX_RECORDS", 5000),
-			"how many records gathered from the stream are written at once")
-		version = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
-		mode    = flag.String("mode", env("AUDIT_MODE", "writer"),
-			"writer (serve the sink, write the archive, consume the stream) or "+
-				"receiver (serve the sink and publish to the stream, nothing else)")
-	)
-	keyFlags := cli.NewKeyFlags(flag.CommandLine, env)
-	archiveFlags := cli.NewArchiveFlags(flag.CommandLine, env, cli.Writes)
+	configPath := flag.String("config", "", "the configuration file: the one thing that configures this process")
+	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
-	bucket := archiveFlags.Bucket
-	if *governance {
-		if err := archiveFlags.SetLock(s3store.Governance); err != nil {
-			return err
-		}
+	if *showVersion {
+		fmt.Println("audit-writer", buildinfo.Version)
+		return nil
 	}
-
-	switch *mode {
-	case "writer":
-		if *bucket == "" {
-			return errors.New("name the archive's bucket with --bucket")
-		}
-	case "receiver":
-		// A receiver is the front door and nothing else. Letting it hold the
-		// archive's credentials or a key would make it a writer that happens
-		// to publish, and the separation is the point: see
-		// docs/decisions/0011-one-installation-per-service-or-product.md.
-		switch {
-		case *streamURL == "":
-			return errors.New("--mode receiver needs --stream-url: a receiver publishes, and without a stream there is nowhere to publish to")
-		case *bucket != "":
-			return errors.New("--mode receiver takes no --bucket: the writers on the other side of the stream hold the archive")
-		case keyFlags.Configured():
-			return errors.New("--mode receiver takes no key provider: pseudonyms are the writer's, and a receiver that held the keys would be one")
-		}
-	default:
-		return fmt.Errorf("--mode is writer or receiver, not %q", *mode)
+	if *configPath == "" {
+		return errors.New("give the configuration file with --config: it is the only thing that configures this process " +
+			"(schemas/config/audit-writer.schema.json says what it holds)")
 	}
-	if *deployment == "" {
-		return errors.New("give the profile configuration with --deployment")
+	// Everything is checked before anything is opened: a file the schema
+	// refuses never reaches a connection.
+	cfg, err := config.LoadWriter(*configPath)
+	if err != nil {
+		return err
+	}
+	version := buildinfo.Version
+	streamURL := ""
+	if cfg.Stream != nil {
+		streamURL = cfg.Stream.NATS.URL
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -143,7 +98,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	d, err := cli.LoadDeployment(*deployment)
+	d, err := cli.LoadDeployment(cfg.Deployment)
 	if err != nil {
 		return err
 	}
@@ -154,22 +109,17 @@ func run() error {
 
 	var archive store.Store
 	var provider keys.Provider
-	if *mode == "writer" {
-		options, err := archiveFlags.Options()
-		if err != nil {
-			return err
-		}
-		options.KMSKeyID = *kmsKey
+	if cfg.Mode == "writer" {
 		// A profile whose frameworks demand a lock this store does not
 		// write is refused here, before a single copy lands where it could
 		// be deleted: docs/decisions/0014-lock-modes-and-store-tiers.md.
-		if err := preset.CheckLockMode(profiles, string(options.Lock)); err != nil {
+		if err := preset.CheckLockMode(profiles, cfg.Archive.LockMode); err != nil {
 			return err
 		}
-		if archive, err = cli.OpenStore(ctx, *archiveFlags.Region, options); err != nil {
+		if archive, err = cli.OpenArchiveFrom(ctx, *cfg.Archive); err != nil {
 			return err
 		}
-		if provider, err = keyFlags.Open(ctx); err != nil {
+		if provider, err = cli.OpenKeysFrom(ctx, cfg.Keys); err != nil {
 			return err
 		}
 	}
@@ -178,8 +128,8 @@ func run() error {
 	}
 
 	var found []*catalogue.Catalogue
-	if *catalogues != "" {
-		if found, err = loadAll(*catalogues); err != nil {
+	if cfg.Catalogues != "" {
+		if found, err = loadAll(cfg.Catalogues); err != nil {
 			return err
 		}
 	}
@@ -189,17 +139,15 @@ func run() error {
 	// the writer from a single instance into a deployment. Without a database
 	// the writer still writes the archive, which is the part that is evidence.
 	var pool *pgxpool.Pool
-	if *database != "" {
-		if pool, err = pgxpool.New(ctx, *database); err != nil {
+	if cfg.Database != nil {
+		poolConfig, err := cfg.Database.PoolConfig()
+		if err != nil {
+			return err
+		}
+		if pool, err = pgxpool.NewWithConfig(ctx, poolConfig); err != nil {
 			return err
 		}
 		defer pool.Close()
-	}
-	if *replicas > 1 && keyFlags.Local() && *keyFlags.Dir == "" {
-		return errors.New(
-			"writer: more than one replica with keys held only in memory: each replica would mint " +
-				"its own keys and the same person would get a different pseudonym on each. Give " +
-				"--key-dir on storage every replica shares")
 	}
 
 	// Who is publishing is verified, not declared: the writer stamps the
@@ -216,8 +164,8 @@ func run() error {
 	// Identity as "nobody is checking" and would then take the document's word.
 	sourceOf := auth.Workloads(nil).SourceFrom
 	switch {
-	case *workloads != "":
-		callers, err := cli.LoadWorkloads(*workloads)
+	case cfg.Workloads != "":
+		callers, err := cli.LoadWorkloads(cfg.Workloads)
 		if err != nil {
 			return err
 		}
@@ -225,18 +173,17 @@ func run() error {
 			return err
 		}
 		sourceOf = callers.Map.SourceFrom
-	case *anonymous:
+	case cfg.AnonymousWrites:
 		slog.Warn("accepting writes from callers nobody verified: records written over HTTP " +
 			"carry no observer identity, and anyone who can reach this port can write them")
 	default:
-		return errors.New(
-			"give --workloads so the writer can verify who publishes, or --anonymous-writes " +
-				"for a trial install that accepts anybody")
+		// Unreachable: the schema requires one of the two.
+		return errors.New("the writer verifies who publishes or says it accepts anybody")
 	}
 
 	// Metrics, pushed over OTLP when a collector is named in the environment
 	// and a no-op otherwise. The one to alert on is index.deferred.
-	stopTelemetry, err := telemetry.Start(ctx, "audit-writer", *version, slog.Default())
+	stopTelemetry, err := telemetry.Start(ctx, "audit-writer", version, slog.Default())
 	if err != nil {
 		return err
 	}
@@ -250,10 +197,10 @@ func run() error {
 		shutdown func(context.Context) error
 		health   = &healthState{}
 	)
-	if *mode == "receiver" {
+	if cfg.Mode == "receiver" {
 		publisher, stop, err := publisherFor(ctx, streamOptions{
-			URL: *streamURL, TokenFile: *streamToken, Stream: *streamName, Durable: *consumerName,
-			Batch: *streamBatch, AckWait: *streamAckWait,
+			URL: streamURL, TokenFile: cfg.Stream.NATS.TokenFile, Stream: cfg.Stream.Name, Durable: cfg.Stream.Consumer,
+			Batch: cfg.Stream.Batch, AckWait: cfg.Stream.AckWait.D(),
 		})
 		if err != nil {
 			return err
@@ -263,7 +210,7 @@ func run() error {
 		// side are reading messages and have no caller to verify, so an
 		// identity not attached here is an identity lost.
 		front = &sink.Receiver{
-			To: publisher, Version: *version, Instance: record.InstanceName(),
+			To: publisher, Version: version, Instance: record.InstanceName(),
 		}
 		shutdown = func(context.Context) error { return nil }
 	} else {
@@ -273,14 +220,14 @@ func run() error {
 			Keys:             provider,
 			Catalogues:       found,
 			Database:         pool,
-			Replicas:         *replicas,
-			ForgetIdentities: !*keepIdentities,
-			RollInterval:     *rollEvery,
-			Version:          *version,
+			Replicas:         cfg.Replicas,
+			ForgetIdentities: cfg.ForgetIdentities,
+			RollInterval:     cfg.Roll.Interval.D(),
+			Version:          version,
 			// Records reaching this writer over the stream were stamped by a
 			// receiver of this installation, which is the only thing that may
 			// publish to it.
-			FromStream: *streamURL != "",
+			FromStream: streamURL != "",
 		})
 		if err != nil {
 			return err
@@ -292,12 +239,12 @@ func run() error {
 		// to the writer needs none; a deployment with a stream wants the writer
 		// behind a durable consumer, so that a writer that is down is a backlog
 		// rather than a hole.
-		if *streamURL != "" {
+		if cfg.Stream != nil {
 			stop, err := consume(ctx, streamOptions{
 				OnStopped: health.consumerStopped,
-				URL:       *streamURL, TokenFile: *streamToken, Stream: *streamName, Durable: *consumerName,
-				Batch: *streamBatch, AckWait: *streamAckWait,
-				Window: *rollEvery, MaxRecords: *rollRecords,
+				URL:       streamURL, TokenFile: cfg.Stream.NATS.TokenFile, Stream: cfg.Stream.Name, Durable: cfg.Stream.Consumer,
+				Batch: cfg.Stream.Batch, AckWait: cfg.Stream.AckWait.D(),
+				Window: cfg.Roll.Interval.D(), MaxRecords: cfg.Roll.MaxRecords,
 			}, w)
 			if err != nil {
 				return err
@@ -338,7 +285,7 @@ func run() error {
 			},
 			// Recorded through this writer itself: a catalogue arriving changes
 			// what the archive's records mean, so the archive should say when.
-			OnRegistered: recorder(front, *version),
+			OnRegistered: recorder(front, version),
 		}
 		regPath, regHandler := registry.NewHandler(reg)
 		mux.Handle(regPath, auth.Middleware(authenticated, regHandler))
@@ -348,7 +295,7 @@ func run() error {
 	}
 
 	mux.Handle("/healthz", health)
-	server := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Addr: cfg.Listen.Address, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		<-ctx.Done()
@@ -362,7 +309,11 @@ func run() error {
 		}
 	}()
 
-	slog.Info("audit-writer", "mode", *mode, "listen", *listen, "bucket", *bucket, "profiles", len(profiles))
+	bucket := ""
+	if cfg.Archive != nil {
+		bucket = cfg.Archive.Bucket.Name
+	}
+	slog.Info("audit-writer", "mode", cfg.Mode, "listen", cfg.Listen.Address, "bucket", bucket, "profiles", len(profiles))
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -435,21 +386,6 @@ func loadAll(dir string) ([]*catalogue.Catalogue, error) {
 		slog.Info("catalogue registered", "source", c.Source, "version", c.Version)
 	}
 	return out, nil
-}
-
-func env(name, fallback string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func envInt(name string, fallback int) int {
-	var v int
-	if _, err := fmt.Sscanf(os.Getenv(name), "%d", &v); err == nil && v > 0 {
-		return v
-	}
-	return fallback
 }
 
 func dirOf(p string) string {

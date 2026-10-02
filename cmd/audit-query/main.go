@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,7 +24,9 @@ import (
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
+	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/query"
@@ -38,53 +41,32 @@ func main() {
 }
 
 func run() error {
-	var (
-		searcher = flag.String("searcher", env("AUDIT_SEARCHER", "postgres"),
-			"where answers come from: postgres, or s3scan for a deployment with no database")
-		database = flag.String("database", env("AUDIT_DATABASE", ""), "the Postgres URL of the index")
-		grants   = flag.String("grants", env("AUDIT_GRANTS", ""),
-			"the file naming the trusted issuers and mapping their claims to grants")
-		deployment = flag.String("deployment", env("AUDIT_DEPLOYMENT", ""),
-			"the profile configuration, which a grant preset turns roles into profiles with")
-		sinkURL = flag.String("sink", env("AUDIT_SINK", ""),
-			"the writer reads are recorded through")
-		exportExpiry = flag.Duration("export-expiry", 7*24*time.Hour,
-			"how long an export is kept before the bucket clears it")
-		linkValid = flag.Duration("export-link-valid", time.Hour,
-			"how long a download link works")
-		listen  = flag.String("listen", env("AUDIT_LISTEN", ":8080"), "address to serve on")
-		version = flag.String("version", env("AUDIT_VERSION", "dev"), "this build's version")
-	)
-	keyFlags := cli.NewKeyFlags(flag.CommandLine, env)
-	// The query service reads the archive and writes nothing into it, so it
-	// takes no lock mode. AUDIT_REGION is honoured as it always was, beside
-	// the AWS_REGION every other command reads.
-	archiveFlags := cli.NewArchiveFlags(flag.CommandLine, func(name, fallback string) string {
-		if name == "AWS_REGION" {
-			return env("AUDIT_REGION", env(name, fallback))
-		}
-		return env(name, fallback)
-	}, cli.Reads)
-	exportFlags := cli.NewExportFlags(flag.CommandLine, env)
+	configPath := flag.String("config", "", "the configuration file: the one thing that configures this process")
+	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
-	bucket, exports := archiveFlags.Bucket, exportFlags.Bucket
-
-	if *sinkURL == "" {
-		return errors.New(
-			"give the writer with --sink: reading an audit trail is itself an auditable event, " +
-				"and a query service that records none is half a service")
+	if *showVersion {
+		fmt.Println("audit-query", buildinfo.Version)
+		return nil
+	}
+	if *configPath == "" {
+		return errors.New("give the configuration file with --config: it is the only thing that configures this process " +
+			"(schemas/config/audit-query.schema.json says what it holds)")
+	}
+	cfg, err := config.LoadQuery(*configPath)
+	if err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	var profiles map[string]*preset.Profile
-	if *deployment != "" {
+	if cfg.Deployment != "" {
 		presets, err := preset.Builtin()
 		if err != nil {
 			return err
 		}
-		d, err := cli.LoadDeployment(*deployment)
+		d, err := cli.LoadDeployment(cfg.Deployment)
 		if err != nil {
 			return err
 		}
@@ -92,7 +74,7 @@ func run() error {
 			return err
 		}
 	}
-	access, err := cli.LoadAccess(*grants, profiles)
+	access, err := cli.LoadAccess(cfg.Grants, profiles)
 	if err != nil {
 		return err
 	}
@@ -105,16 +87,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	found, err := searcherFor(ctx, *searcher, *database, archiveFlags)
+	found, err := searcherFor(ctx, cfg)
 	if err != nil {
 		return err
 	}
-	if *exports != "" && *exports == *bucket {
-		return errors.New(
-			"--exports must not be the archive bucket: an export is an unlocked copy meant to be " +
-				"cleared, and the archive's policy denies every delete, so it would stay forever")
-	}
-	exportTo, err := exportsFor(ctx, exportFlags, archiveFlags, *exportExpiry, *linkValid)
+	exportTo, err := exportsFor(ctx, cfg.Exports)
 	if err != nil {
 		return err
 	}
@@ -123,8 +100,8 @@ func run() error {
 	// chain is read for Get. Without it Get still answers, with where the copy
 	// is and nothing about whether it has been verified.
 	var archive store.Store
-	if *bucket != "" {
-		if archive, err = archiveFlags.Open(ctx); err != nil {
+	if cfg.Archive != nil {
+		if archive, err = cli.OpenArchiveFrom(ctx, *cfg.Archive); err != nil {
 			return err
 		}
 	}
@@ -134,12 +111,8 @@ func run() error {
 	// does not mount the keys here has a query service that cannot undo a
 	// pseudonym at all, whatever a grant says.
 	var sealer keys.Sealer
-	if keyFlags.Configured() {
-		if archive == nil || (keyFlags.Local() && *keyFlags.Dir == "") {
-			return errors.New("resolve needs the writer's keys (--key-root and --key-dir, " +
-				"or --key-provider transit) and --bucket together")
-		}
-		provider, err := keyFlags.Open(ctx)
+	if cfg.Keys.Enabled() {
+		provider, err := cli.OpenKeysFrom(ctx, cfg.Keys)
 		if err != nil {
 			return err
 		}
@@ -159,11 +132,11 @@ func run() error {
 		Searcher:      found,
 		Authenticator: authenticator,
 		Authorizer:    access.Rules,
-		Sink:          cli.WriterClient(*sinkURL),
+		Sink:          cli.SinkFrom(cfg.Sink),
 		Archive:       archive,
 		Keys:          sealer,
 		Exports:       exportTo,
-		Version:       *version,
+		Version:       buildinfo.Version,
 	})
 	if err != nil {
 		return err
@@ -174,7 +147,7 @@ func run() error {
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	server := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Addr: cfg.Listen.Address, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		<-ctx.Done()
@@ -183,7 +156,7 @@ func run() error {
 		_ = server.Shutdown(shutdown)
 	}()
 
-	slog.Info("serving queries", "listen", *listen, "searcher", *searcher)
+	slog.Info("serving queries", "listen", cfg.Listen.Address, "searcher", cfg.Searcher)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -197,30 +170,29 @@ func run() error {
 // bucket policy denies every delete, so an export written there would stay
 // forever, and the bucket needs a lifecycle rule on the export prefix, which
 // is a rule nobody should ever write against the archive.
-func exportsFor(
-	ctx context.Context, exports *cli.ExportFlags, archive *cli.ArchiveFlags, expiry, linkValid time.Duration,
-) (*query.Exports, error) {
-	if *exports.Bucket == "" {
+func exportsFor(ctx context.Context, exports *config.Exports) (*query.Exports, error) {
+	if exports == nil {
 		return nil, nil
 	}
-	files, err := exports.Open(ctx, *archive.Region, archive)
+	files, err := cli.OpenExportsFrom(ctx, exports.Bucket)
 	if err != nil {
 		return nil, err
 	}
 	return &query.Exports{
 		Store: files, Presigner: files,
-		Expiry: expiry, LinkValid: linkValid,
+		Expiry: exports.Expiry.D(), LinkValid: exports.LinkValid.D(),
 	}, nil
 }
 
 // searcherFor builds the searcher a deployment asked for.
-func searcherFor(ctx context.Context, kind, database string, archive *cli.ArchiveFlags) (index.Searcher, error) {
-	switch kind {
+func searcherFor(ctx context.Context, cfg *config.Query) (index.Searcher, error) {
+	switch cfg.Searcher {
 	case "postgres":
-		if database == "" {
-			return nil, errors.New("the postgres searcher needs --database")
+		poolConfig, err := cfg.Database.PoolConfig()
+		if err != nil {
+			return nil, err
 		}
-		pool, err := pgxpool.New(ctx, database)
+		pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -228,23 +200,11 @@ func searcherFor(ctx context.Context, kind, database string, archive *cli.Archiv
 			return nil, err
 		}
 		return postgres.NewReader(pool)
-	case "s3scan":
-		if *archive.Bucket == "" {
-			return nil, errors.New("the s3scan searcher needs --bucket")
-		}
-		scanned, err := archive.Open(ctx)
+	default: // s3scan; the schema admits no other
+		scanned, err := cli.OpenArchiveFrom(ctx, *cfg.Archive)
 		if err != nil {
 			return nil, err
 		}
 		return &s3scan.Scanner{Store: scanned}, nil
-	default:
-		return nil, errors.New("--searcher is postgres or s3scan")
 	}
-}
-
-func env(name, fallback string) string {
-	if v := os.Getenv(name); v != "" {
-		return v
-	}
-	return fallback
 }

@@ -20,7 +20,7 @@ builds:
     goos: [linux, darwin]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags: [-s -w]
+    ldflags: ["-s -w -X github.com/truvity/audit/internal/buildinfo.Version={{ .Version }}"]
   - id: audit-query
     main: ./cmd/audit-query
     binary: audit-query
@@ -28,7 +28,7 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags: [-s -w]
+    ldflags: ["-s -w -X github.com/truvity/audit/internal/buildinfo.Version={{ .Version }}"]
   - id: audit-writer
     main: ./cmd/audit-writer
     binary: audit-writer
@@ -36,7 +36,7 @@ builds:
     goos: [linux]
     goarch: [amd64, arm64]
     flags: [-trimpath]
-    ldflags: [-s -w]
+    ldflags: ["-s -w -X github.com/truvity/audit/internal/buildinfo.Version={{ .Version }}"]
 
 # One archive shape for every platform. Mixed formats are what breaks the
 # download step of whatever installs these.

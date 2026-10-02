@@ -2320,6 +2320,10 @@
           "description": "Mount a volume. Losing it re-keys every tenant.",
           "type": "boolean"
         },
+        "ephemeralIsAcceptable": {
+          "description": "Keep the keys in an emptyDir when there is no volume. Pseudonyms then change on every restart.",
+          "type": "boolean"
+        },
         "existingClaim": {
           "description": "A claim that already exists. Empty creates one.",
           "type": "string"

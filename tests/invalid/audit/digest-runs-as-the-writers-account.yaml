@@ -1,0 +1,6 @@
+# refuse: give the job its own service account
+# base: separation-base
+jobs:
+  digest:
+    serviceAccount:
+      create: false

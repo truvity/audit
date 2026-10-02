@@ -105,7 +105,7 @@ spec:
               mountPath: /etc/audit/catalogues
               readOnly: true
             {{- end }}
-            {{- if and $archive $.Values.keysVolume.enabled }}
+            {{- if and $archive (or $.Values.keysVolume.enabled $.Values.keysVolume.ephemeralIsAcceptable) }}
             - name: keys
               mountPath: /var/lib/audit/keys
             {{- end }}
@@ -125,6 +125,10 @@ spec:
         - name: keys
           persistentVolumeClaim:
             claimName: {{ include "audit.keysClaim" $ }}
+        {{- else if and $archive $.Values.keysVolume.ephemeralIsAcceptable }}
+        - name: keys
+          # Acknowledged as disposable: pseudonyms change on every restart.
+          emptyDir: {}
         {{- end }}
         {{- include "audit.trustVolume" $ | nindent 8 }}
         {{- include "audit.extraVolumes" $comp | nindent 8 }}

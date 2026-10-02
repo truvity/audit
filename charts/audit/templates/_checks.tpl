@@ -101,13 +101,47 @@ two numbers must say the same thing. */}}
   {{- end -}}
 {{- end -}}
 
+
+{{/* Separation of duties. Whoever writes the archive and can also sign its
+digests can choose what to sign, so the digest job and the query service's
+resolve each sign in as themselves, never as the writer. Only the chart sees
+both configurations. */}}
+{{- $writerBao := dig "transit" "openbao" nil (dig "keys" nil $writer | default dict) -}}
+{{- $writerWho := include "audit.baoIdentity" (dict "bao" $writerBao "env" .Values.writer.secretEnv) -}}
+{{- $digest := .Values.jobs.digest.config | default dict -}}
+{{- $digestSigner := dig "signer" nil $digest | default dict -}}
+{{- if and .Values.jobs.digest.enabled $digestSigner -}}
+  {{- $digestWho := include "audit.baoIdentity" (dict "bao" (dig "transit" "openbao" nil $digestSigner) "env" .Values.jobs.digest.secretEnv) -}}
+  {{- if and $digestWho $writerWho (eq $digestWho $writerWho) -}}
+  {{- fail "audit: the digest job signs in as the writer. Whoever writes the archive and can also sign its digests can choose what to sign; give the job its own role." -}}
+  {{- end -}}
+  {{- if and (or (hasKey $digestSigner "kmsKey") (hasKey $digestSigner "transit")) (not .Values.jobs.digest.serviceAccount.create) -}}
+  {{- fail "audit: the digest job signs in as the writer: `jobs.digest.serviceAccount.create` is false, so it runs as the release's own service account. Whoever writes the archive and can also sign its digests can choose what to sign; give the job its own service account." -}}
+  {{- end -}}
+{{- end -}}
+{{- if and .Values.query.enabled .Values.query.config -}}
+  {{- $queryKeys := dig "keys" nil .Values.query.config | default dict -}}
+  {{- $queryWho := include "audit.baoIdentity" (dict "bao" (dig "transit" "openbao" nil $queryKeys) "env" .Values.query.secretEnv) -}}
+  {{- if and $queryWho $writerWho (eq $queryWho $writerWho) -}}
+  {{- fail "audit: `query.config.keys` signs in as the writer. Resolving and writing are separate privileges: the writer's policy seals and must not open." -}}
+  {{- end -}}
+{{- end -}}
+
+{{/* Keys held in a directory are the only copy: losing it re-keys every
+tenant. */}}
+{{- $writerKeys := dig "keys" nil $writer | default dict -}}
+{{- if and (eq (dig "provider" "none" $writerKeys) "local") (not .Values.keysVolume.enabled) (not .Values.keysVolume.ephemeralIsAcceptable) -}}
+{{- fail "audit: the local key provider with `keysVolume.enabled` false. Data keys are random and wrapped into that directory, so losing it re-keys every tenant: the same person gets a new pseudonym and the trail stops linking across the restart. Set `keysVolume.ephemeralIsAcceptable: true` if this install is disposable." -}}
+{{- end -}}
+
 {{- if .Values.query.enabled -}}
   {{- if not .Values.query.grants.issuers -}}
   {{- fail "audit: `query.grants.issuers` is empty, so nobody could ever sign in and the query service refuses to start. Name the issuers whose tokens it trusts; see docs/guides/read.md#access." -}}
   {{- end -}}
   {{- $query := .Values.query.config | default dict -}}
   {{- $queryDatabase := dig "database" nil $query -}}
-  {{- if and $queryDatabase $database (eq (dig "url" "" $queryDatabase) (dig "url" "" $database)) -}}
+  {{- $sameUser := and $queryDatabase $database (eq (include "audit.databaseUser" (dig "url" "" $queryDatabase)) (include "audit.databaseUser" (dig "url" "" $database))) -}}
+  {{- if and $queryDatabase $database (or (eq (dig "url" "" $queryDatabase) (dig "url" "" $database)) $sameUser) -}}
   {{- fail "audit: the query service's `database.url` is the writer's. The writer owns the tables, and an owner bypasses the tenant policies, so every tenant's isolation would rest on the service alone. Give the query service a role that does not own them." -}}
   {{- end -}}
 {{- end -}}

@@ -140,11 +140,12 @@ func Values() []byte {
 		"migrate": obj("The index schema, applied by a hook Job before the writer rolls.",
 			with(platform("audit-migrate", false, false), m{"enabled": boolean("Run it.")})),
 		"keysVolume": obj("The local key provider's directory, mounted at /var/lib/audit/keys.", m{
-			"enabled":       boolean("Mount a volume. Losing it re-keys every tenant."),
-			"size":          str("The claim's size."),
-			"storageClass":  m{"type": "string"},
-			"accessModes":   m{"type": "array", "items": m{"type": "string"}},
-			"existingClaim": m{"type": "string", "description": "A claim that already exists. Empty creates one."},
+			"enabled":               boolean("Mount a volume. Losing it re-keys every tenant."),
+			"size":                  str("The claim's size."),
+			"storageClass":          m{"type": "string"},
+			"accessModes":           m{"type": "array", "items": m{"type": "string"}},
+			"existingClaim":         m{"type": "string", "description": "A claim that already exists. Empty creates one."},
+			"ephemeralIsAcceptable": boolean("Keep the keys in an emptyDir when there is no volume. Pseudonyms then change on every restart."),
 		}),
 		"trust": obj("A CA bundle trusted beside the system roots, mounted at /etc/audit/trust.", m{
 			"configMap": m{"type": "string", "description": "The ConfigMap. Empty mounts none."}, "key": str("The key in it."),

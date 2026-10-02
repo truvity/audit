@@ -1,0 +1,10 @@
+# refuse: oneOf
+writer:
+  config:
+    keys:
+      provider: transit
+      transit:
+        openbao:
+          address: https://openbao.example.test:8200
+          tokenEnv: BAO_TOKEN
+          tokenFile: /var/run/token

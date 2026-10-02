@@ -314,9 +314,18 @@ e2e-install:
         exit 1
     fi
     kubectl --context "$KCTX" get namespace "$NS" >/dev/null 2>&1 || kubectl --context "$KCTX" create namespace "$NS"
-    helm --kube-context "$KCTX" upgrade --install "$RELEASE" "$CHART_TGZ" -n "$NS" \
+    # A hook that fails is kept for debugging, and so are its pods, which is the
+    # only place a failed migration says why: print them before giving up.
+    if ! helm --kube-context "$KCTX" upgrade --install "$RELEASE" "$CHART_TGZ" -n "$NS" \
         -f charts/audit/testdata/values/e2e.yaml \
-        --wait --timeout 8m
+        --wait --timeout 8m; then
+        echo "--- the release did not install; what the cluster says ---" >&2
+        kubectl --context "$KCTX" -n "$NS" get pods,jobs >&2 || true
+        kubectl --context "$KCTX" -n "$NS" describe jobs,pods >&2 || true
+        kubectl --context "$KCTX" -n "$NS" logs -l "app.kubernetes.io/instance=$RELEASE" \
+            --all-containers --prefix --tail=200 >&2 || true
+        exit 1
+    fi
     kubectl --context "$KCTX" -n "$NS" get pods
 
 # Prove the chart works end to end — a Go suite

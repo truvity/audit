@@ -43,7 +43,7 @@ in stream mode
 | `block` | when the receiver has acknowledged durability | the action **fails** | a privileged sign-in, a key destruction, a billable operation |
 | `async` (the default) | at once | the record waits in a bounded in-memory queue and is retried with backoff | everything else |
 
-An acknowledgement always means durable, in either shape. An `async` record
+An acknowledgement says how durable the batch is ([0017](../decisions/0017-sink-durability-and-transports.md)), in either shape. An `async` record
 is dropped only if the queue overflows, and then it is counted
 (`audit.emit.records.dropped`) and logged.
 

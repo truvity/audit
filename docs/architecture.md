@@ -106,13 +106,15 @@ Delivery is chosen per action in the catalogue, not per installation.
 | `block` | when the receiver has acknowledged durability | the action **fails** | a privileged sign-in, a key destruction, a billable operation |
 | `async` (default) | at once | the record waits in a bounded queue and is retried with backoff | everything else |
 
-**The acknowledgement always means durable.** In stream mode that is the
-stream's replicated publish acknowledgement. In direct mode it is the object
-in the bucket: the receiver puts every batch it takes before answering, under
-either delivery. The difference is only who waits — the application under
-`block`, its own queue under `async`.
-[0012](decisions/0012-two-deliveries-and-a-durable-ack.md) has the
-reasoning.
+**The acknowledgement says how durable the batch is.** `Archived` is the
+object in the bucket: the receiver puts every batch it takes before answering,
+in direct mode. `Queued` is a replicated queue's acknowledgement, from a
+stream or an SQS queue. `Logged` is a line in the process's log. The
+difference between the deliveries is only who waits — the application under
+`block`, its own queue under `async`. A chain's start-up guard,
+`sink.Require`, refuses one that can never give what the deployment needs.
+[0017](decisions/0017-sink-durability-and-transports.md) has the reasoning;
+it supersedes [0012](decisions/0012-two-deliveries-and-a-durable-ack.md).
 
 ## What each mode can lose
 

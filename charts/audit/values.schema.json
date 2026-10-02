@@ -1680,6 +1680,25 @@
       },
       "type": "object"
     },
+    "pinned": {
+      "additionalProperties": false,
+      "description": "One image as the release pins it.",
+      "properties": {
+        "digest": {
+          "type": "string"
+        },
+        "registry": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "secretEnv": {
       "description": "Environment variables from a Secret's keys: the holders of the secrets a config names (`passwordEnv`, `credentialsEnv`, `tokenEnv`). A secret is never in `config`.",
       "items": {
@@ -2144,6 +2163,22 @@
         "type": "object"
       },
       "type": "array"
+    },
+    "images": {
+      "additionalProperties": false,
+      "description": "Digest-pinned images, written by packaging the chart and never by hand; one wins over `image`.",
+      "properties": {
+        "audit": {
+          "$ref": "#/$defs/pinned"
+        },
+        "audit-query": {
+          "$ref": "#/$defs/pinned"
+        },
+        "audit-writer": {
+          "$ref": "#/$defs/pinned"
+        }
+      },
+      "type": "object"
     },
     "jobs": {
       "additionalProperties": false,

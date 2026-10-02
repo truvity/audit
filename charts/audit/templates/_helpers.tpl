@@ -27,12 +27,24 @@ app.kubernetes.io/name: {{ include "audit.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{/* An image: the digest-pinned one packaging wrote into `images`, else the
+one `image` names, at the chart's appVersion unless given a tag. Takes (dict
+"root" $ "name" <key in images> "image" <the matching entry of image>). */}}
+{{- define "audit.image" -}}
+{{- $pinned := index .root.Values.images .name | default dict -}}
+{{- if $pinned.digest -}}
+{{ with $pinned.registry }}{{ . }}/{{ end }}{{ $pinned.repository }}:{{ $pinned.tag }}@{{ $pinned.digest }}
+{{- else -}}
+{{ .image.repository }}:{{ .image.tag | default .root.Chart.AppVersion }}
+{{- end -}}
+{{- end -}}
+
 {{- define "audit.writerImage" -}}
-{{ .Values.image.writer.repository }}:{{ .Values.image.writer.tag | default .Chart.AppVersion }}
+{{ include "audit.image" (dict "root" . "name" "audit-writer" "image" .Values.image.writer) }}
 {{- end -}}
 
 {{- define "audit.queryImage" -}}
-{{ .Values.image.query.repository }}:{{ .Values.image.query.tag | default .Chart.AppVersion }}
+{{ include "audit.image" (dict "root" . "name" "audit-query" "image" .Values.image.query) }}
 {{- end -}}
 
 {{/* The writer's pods. Every component carries the release's labels, so the
@@ -51,7 +63,7 @@ app.kubernetes.io/component: consumer
 {{- end -}}
 
 {{- define "audit.cliImage" -}}
-{{ .Values.image.cli.repository }}:{{ .Values.image.cli.tag | default .Chart.AppVersion }}
+{{ include "audit.image" (dict "root" . "name" "audit" "image" .Values.image.cli) }}
 {{- end -}}
 
 {{- define "audit.serviceAccountName" -}}

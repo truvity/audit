@@ -23,6 +23,29 @@
 # Anything else a config names, such as a token or a key file, is mounted by
 # the component's `secretMounts` or `tokens`, at the path you give them.
 
+# The images, digest-pinned. Nothing here is set by hand: packaging the chart
+# (helmctl package --manifest, as the release does, and as the kind tier does
+# with the images it has just built) writes the registry, the repository, the
+# tag and the digest of what the build published, and a pinned image wins over
+# `image` below. A chart installed from this directory has none, and uses
+# `image`. The keys are the last path segment of each image's repository.
+images:
+  audit-writer:
+    registry: ""
+    repository: ""
+    tag: ""
+    digest: ""
+  audit-query:
+    registry: ""
+    repository: ""
+    tag: ""
+    digest: ""
+  audit:
+    registry: ""
+    repository: ""
+    tag: ""
+    digest: ""
+
 image:
   # One image per binary, as ko builds them: the writer runs in the
   # Deployment, the toolchain in the jobs. Both are distroless and have no

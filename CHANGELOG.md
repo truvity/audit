@@ -4,13 +4,17 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## v0.5.3
+## Unreleased
 
 - The acknowledgement of `SinkService.Write` says how durable the batch is. `WriteResponse` gains `durability` (`DURABILITY_LOGGED`, `QUEUED`, `ARCHIVED`, ordered, `UNSPECIFIED` for a hop that did not say), added without renumbering; `sink.Result.Durability` carries it and the Connect client and handler pass it through. The writer reports `Archived`, `natssink.Publisher` and `sqssink.Publisher` report `Queued` after every acknowledgement, `sink.Memory` and `logsink` report `Logged`, `sink.Discard` reports nothing, and `sink.Receiver` reports what its next hop does. See [ADR 0017](docs/decisions/0017-sink-durability-and-transports.md).
 - `sink.Require(s, min)` refuses, at start-up, a chain whose strongest durability (`Guarantees()`) is below `min`, and `sink.Guard(s, min)` also fails any write whose acknowledgement is weaker at run time. `sink.ParseDurability` reads the spelling a configuration will use; `sink.Client.Expecting` says what a remote service is configured to give.
 - A `log` sink, `sink/logsink`, writes one JSON line per record, `MESSAGE` and `AUDIT_RECORD`, and reports `Logged`.
 - An `sqs` sink, `sink/sqssink`: a publisher that sends records with `SendMessageBatch`, deduplicates by record id on a FIFO queue and carries it as an attribute otherwise, reports `Queued` only once SQS has taken every message, refuses what SQS refuses for the message's own sake and sends again what it failed for its own; and a consumer that writes each receive to a target and deletes only what the target took. `just test-s3` and the `s3` CI job now run it against LocalStack's SQS.
 - `sink/sinktest.Run` is a conformance suite for any sink: declared and reported durability, a batch taken whole, an empty request, a cancelled context, a refusal surfaced, a repeated record kept once where the sink claims it. It runs against `sink.Memory`, the Connect client and handler, `natssink`, `logsink` and `sqssink`.
+
+## v0.5.3
+
+- The chart deletes the migrate hook's resources once they succeed. Its Job, ServiceAccount and ConfigMap kept only `before-hook-creation`, so after a successful sync they lingered in the cluster and showed in ArgoCD as resources requiring pruning. They now carry `hook-succeeded` as well; a hook that failed is kept for debugging.
 
 ## v0.5.2
 

@@ -3,6 +3,9 @@ exempt:
     - checks: [region]
       paths: [internal/s3test/**]
       reason: internal/s3test is a test-only helper; its region is a fixture of the live-S3 tests, never a default that ships
+    - checks: [region]
+      paths: [sink/sqssink/integration_test.go]
+      reason: the LocalStack SQS test signs requests for a region the fake accepts; it is a fixture of that test, never a default that ships
     - checks: [domain]
       paths: [catalogue/schemaid.go]
       reason: catalogue.schemaid maps the legacy schema base URL to preserve archived record readability

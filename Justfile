@@ -102,7 +102,8 @@ stop-postgres:
 # not a change.
 s3_image := "localstack/localstack@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
 
-# Run the archive-walk tests against a real S3.
+# Run the archive-walk tests against a real S3, and the SQS sink against a real
+# SQS: LocalStack serves both.
 #
 # These are the tests that would have caught the two bugs the memory store hid:
 # a digest covering one tenant, and a listing stopping at the first thousand
@@ -111,13 +112,13 @@ test-s3:
     #!/usr/bin/env bash
     set -euo pipefail
     docker rm -f audit-s3 >/dev/null 2>&1 || true
-    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms {{s3_image}} >/dev/null
+    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms,sqs {{s3_image}} >/dev/null
     trap 'docker rm -f audit-s3 >/dev/null 2>&1 || true' EXIT
     for i in $(seq 1 40); do
         curl -sf -m 3 http://localhost:4566/_localstack/health >/dev/null 2>&1 && break
         sleep 3
     done
-    AUDIT_S3_URL=http://localhost:4566 go test ./internal/s3test/... ./store/...
+    AUDIT_S3_URL=http://localhost:4566 AUDIT_SQS_URL=http://localhost:4566 go test ./internal/s3test/... ./store/... ./sink/sqssink/...
 
 # The OpenBAO the transit key provider and signer are tested against. Pinned
 # by digest for the reason the S3 image is: a moving tag changes the test.
@@ -143,7 +144,7 @@ conformance:
 
     docker rm -f audit-s3 audit-bao >/dev/null 2>&1 || true
     trap 'docker rm -f audit-s3 audit-bao >/dev/null 2>&1 || true' EXIT
-    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms {{s3_image}} >/dev/null
+    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms,sqs {{s3_image}} >/dev/null
     docker run -d --name audit-bao -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
         {{openbao_image}} server -dev -dev-listen-address=0.0.0.0:8200 >/dev/null
     for i in $(seq 1 40); do

@@ -1,0 +1,4 @@
+# refuse: no profile composes a metering preset
+extensions:
+  billing:
+    enabled: true

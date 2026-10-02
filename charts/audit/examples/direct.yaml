@@ -2,15 +2,17 @@
 # process, no stream, and an index in a small Postgres of its own.
 #
 # This is what an application's chart sets under the `audit:` key when it takes
-# this chart as a dependency. Everything not named here has a default.
+# this chart as a dependency. Everything not named here has a default. Each
+# `config:` block is the binary's own configuration, key for key
+# (docs/reference/configuration.md): the chart passes it through, and the same
+# schema validates it here and when the process starts. A secret is never in
+# one: the file names an environment variable, and `secretEnv` puts a Secret's
+# key there. The sink URL names the writer's Service, which is the release's
+# full name: `audit` here, and `<release>-audit` under an application's own.
 mode: direct
 
-bucket: audit-eu-example-1
-# Required wherever the bucket is shared: it is what keeps two applications'
-# archives apart, and what each role's IAM is scoped to.
-prefix: audit/app
-region: eu-example-1
-kmsKey: alias/audit-archive
+# Two pods. The writer is told how many there are, because it refuses to run
+# several without the database that makes it safe.
 replicas: 2
 
 profiles:
@@ -19,12 +21,7 @@ profiles:
 
 # No pseudonymisation keys: staff are kept in clear, and people outside arrive
 # as identifiers this application minted.
-keys:
-  provider: none
 externalIdentifiersAreOpaque: true
-
-database:
-  existingSecret: audit-db
 
 # Who may register a catalogue, and as what. A workload not listed here cannot.
 workloadIdentity:
@@ -34,29 +31,127 @@ workloadIdentity:
     - subject: system:serviceaccount:app:api
       source: app
 
+# The index schema, applied before the writer rolls. `reader` is the query
+# service's role.
+migrate:
+  enabled: true
+  config:
+    database:
+      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    reader: audit_query
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-db
+      key: password
+
+writer:
+  config:
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    replicas: 2
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-example-1
+      # Required wherever the bucket is shared: it is what keeps two
+      # applications' archives apart, and what each role's IAM is scoped to.
+      prefix: audit/app
+      kmsKey: alias/audit-archive
+    database:
+      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-db
+      key: password
+
 query:
   enabled: true
   replicas: 1
-  database:
-    existingSecret: audit-db-reader
-    role: audit_query
   grants:
     issuers:
       - url: https://console.example.com
         audience: audit
+  config:
+    deployment: /etc/audit/deployment.yaml
+    grants: /etc/audit/grants.yaml
+    sink:
+      url: http://audit:8080
+      tokenFile: /var/run/audit/token
+    database:
+      url: postgres://audit_query@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-example-1
+      prefix: audit/app
+  secretEnv:
+    - name: AUDIT_QUERY_DATABASE_PASSWORD
+      secretName: audit-db-reader
+      key: password
+  tokens:
+    - audience: audit
+      mountPath: /var/run/audit
 
 jobs:
   digest:
     enabled: true
-    kmsKey: alias/audit-digest
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive:
+        bucket:
+          name: audit-eu-example-1
+          region: eu-example-1
+        prefix: audit/app
+      sink:
+        url: http://audit:8080
+        tokenFile: /var/run/audit/token
+      signer:
+        kmsKey: alias/audit-digest
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit
   verify:
     enabled: true
-    publicKey:
-      existingSecret: audit-digest-public
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive:
+        bucket:
+          name: audit-eu-example-1
+          region: eu-example-1
+        prefix: audit/app
+      sink:
+        url: http://audit:8080
+        tokenFile: /var/run/audit/token
+      publicKeyFile: /etc/audit/public/public.pem
+    secretMounts:
+      - secretName: audit-digest-public
+        mountPath: /etc/audit/public
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit
   purge:
     enabled: true
+    config:
+      deployment: /etc/audit/deployment.yaml
+      database:
+        url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_DATABASE_PASSWORD
+    secretEnv:
+      - name: AUDIT_DATABASE_PASSWORD
+        secretName: audit-db
+        key: password
   clockSync:
     enabled: true
-    # Required by every preset with a compliance obligation. On AWS this is the
-    # instance's own time service.
-    ntp: ["169.254.169.123"]
+    config:
+      # Required by every preset with a compliance obligation. On AWS this is
+      # the instance's own time service.
+      ntp: ["169.254.169.123"]
+      sink:
+        url: http://audit:8080
+        tokenFile: /var/run/audit/token
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit

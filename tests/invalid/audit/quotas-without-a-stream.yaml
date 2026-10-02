@@ -1,0 +1,4 @@
+# refuse: needs `mode: stream`
+extensions:
+  quotas:
+    enabled: true

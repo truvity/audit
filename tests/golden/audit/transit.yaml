@@ -72,16 +72,143 @@ metadata:
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 data:
-  # What `audit-writer --deployment` reads: which presets each profile is
-  # composed from, and where its copies land. The jobs read the same document,
-  # because retention is a property of the profile and every one of them needs
-  # to agree about it.
+  # The document a config names as `deployment`: which presets each profile is
+  # composed from, and where its copies land. Every component that reads
+  # profiles reads this one, because retention is a property of the profile and
+  # every one of them needs to agree about it.
   deployment.yaml: |
     external_identifiers_are_opaque: false
     profiles:
       security:
         presets:
         - security
+
+---
+# Source: audit/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-writer-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: writer
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    anonymousWrites: true
+    archive:
+      bucket:
+        name: audit-archive
+    database:
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+      url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full&sslrootcert=/etc/audit/trust/ca.crt
+    deployment: /etc/audit/deployment.yaml
+    keys:
+      provider: transit
+      transit:
+        openbao:
+          address: https://openbao.example:8200
+          caFile: /etc/audit/trust/ca.crt
+          login:
+            jwtFile: /var/run/openbao/token
+            mount: jwt-devel
+            role: audit-writer
+          namespace: devel
+    replicas: 3
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Hourly. Seals the windows since the last digest into the signed chain. It
+# resumes past a missed run on its own, so a failed hour needs no operator: a
+# gap in the chain cannot be told from a digest somebody removed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-digest-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: digest
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+    deployment: /etc/audit/deployment.yaml
+    signer:
+      transit:
+        key: audit-digest
+        openbao:
+          address: https://openbao.example:8200
+          caFile: /etc/audit/trust/ca.crt
+          login:
+            jwtFile: /var/run/openbao/token
+            mount: jwt-devel
+            role: audit-digest
+          namespace: devel
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Nightly. Walks each profile's chain and reports what it finds; a non-zero
+# exit is the alert. It takes the public half of the signing key only, which is
+# what lets an auditor run the same command and get the same answer.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-verify-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: verify
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+    deployment: /etc/audit/deployment.yaml
+    publicKeyFile: /etc/audit/public/public.pem
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Daily. Compares this cluster's clock with UTC and records the answer, which is
+# what ETSI EN 319 401 7.10 asks for. It never sets the clock. A drift beyond
+# the tolerance fails the run, so the job going red is the alert.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-clock-sync-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: clock-sync
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    ntp:
+    - time.cloudflare.com
 
 ---
 # Source: audit/templates/query.yaml
@@ -103,6 +230,46 @@ data:
     issuers:
     - audience: audit
       url: https://id.example.com
+
+---
+# Source: audit/templates/query.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-query-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+    database:
+      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+      url: postgres://audit_query@db.example.test:5432/audit?sslmode=verify-full&sslrootcert=/etc/audit/trust/ca.crt
+    deployment: /etc/audit/deployment.yaml
+    grants: /etc/audit/grants.yaml
+    keys:
+      provider: transit
+      transit:
+        openbao:
+          address: https://openbao.example:8200
+          caFile: /etc/audit/trust/ca.crt
+          login:
+            jwtFile: /var/run/openbao/token
+            mount: jwt-devel
+            role: audit-resolve
+          namespace: devel
+    sink:
+      url: http://audit:8080
 
 ---
 # Source: audit/templates/query.yaml
@@ -182,6 +349,7 @@ spec:
         app.kubernetes.io/instance: audit
         app.kubernetes.io/component: query
       annotations:
+        checksum/config: 0db61bfd39372425aae3bb2362f9f64346ad57791753b0d896c75e206c6b09db
         checksum/grants: c6e926709c6176bc66b906eaad228b9bb32e6760036c8733b2758355055342a1
         # A grant preset turns roles into profiles, so the profiles are part
         # of what a grant means.
@@ -200,32 +368,14 @@ spec:
           image: ghcr.io/truvity/audit/audit-query:0.0.0
           imagePullPolicy: IfNotPresent
           args:
-            - --searcher=postgres
-            - --grants=/etc/audit/grants.yaml
-            - --deployment=/etc/audit/deployment.yaml
-            - --sink=http://audit:8080
-            - --listen=:8080
-            - --key-provider=transit
-            - --transit-prefix=audit
-            - --transit-address=https://openbao.example:8200
-            - --transit-mount=transit
-            - --transit-namespace=devel
-            - --transit-ca-file=/etc/audit/trust/ca.crt
-            - --transit-auth-mount=jwt-devel
-            - --transit-auth-role=audit-resolve
-            - --transit-jwt-file=/var/run/openbao/token
-            - --version=0.0.0
+            - --config=/etc/audit/config.yaml
           env:
-            - name: AUDIT_BUCKET
-              value: "audit-archive"
-            - name: AUDIT_DATABASE
+            
+            - name: AUDIT_QUERY_DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: audit-query-database
-                  key: url
-            
-            - name: PGSSLROOTCERT
-              value: /etc/audit/trust/ca.crt
+                  key: password
           ports:
             - name: http
               containerPort: 8080
@@ -246,6 +396,10 @@ spec:
           resources:
             {}
           volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
             - name: deployment
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
@@ -255,16 +409,19 @@ spec:
               subPath: grants.yaml
               readOnly: true
             
-            - name: openbao-token
-              mountPath: /var/run/openbao
-              readOnly: true
-            
             - name: trust
               mountPath: /etc/audit/trust
+              readOnly: true
+            
+            - name: token-0
+              mountPath: /var/run/openbao
               readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: config
+          configMap:
+            name: audit-query-config
         - name: deployment
           configMap:
             name: audit-deployment
@@ -272,17 +429,17 @@ spec:
           configMap:
             name: audit-grants
         
-        - name: openbao-token
+        - name: trust
+          configMap:
+            name: private-ca-bundle
+        
+        - name: token-0
           projected:
             sources:
               - serviceAccountToken:
                   path: token
                   audience: "openbao"
                   expirationSeconds: 600
-        
-        - name: trust
-          configMap:
-            name: private-ca-bundle
         - name: tmp
           emptyDir: {}
 
@@ -312,11 +469,13 @@ spec:
         app.kubernetes.io/instance: audit
         app.kubernetes.io/component: writer
       annotations:
-        # A profile change must reach a running writer, which only happens if
-        # the pod is replaced.
+        # A changed configuration must reach a running pod, and a file mounted
+        # with subPath is never updated in place, so the pod is replaced.
+        checksum/config: 117ac0556615ade957f75df38d990fb6418e1baa4132b611b66b02bfafa09e15
+        # Likewise a profile change.
         checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
-        # Likewise who may write: a changed issuer or mapping must reach it.
-        checksum/workloads: b84b4ff82948eb0bf63ac4428d4927f43364293575e1ef8b0626ac8f68afa11f
+        # And who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: 274aa3accbe10dbf671359ace426a24af2c33648b7017d8008c24e9eb79c4d06
     spec:
       serviceAccountName: audit
       
@@ -331,34 +490,14 @@ spec:
           image: ghcr.io/truvity/audit/audit-writer:0.0.0
           imagePullPolicy: IfNotPresent
           args:
-            - --deployment=/etc/audit/deployment.yaml
-            - --listen=:8080
-            - --roll-interval=30s
-            - --roll-max-records=5000
-            - --replicas=3
-            - --anonymous-writes
-            - --key-provider=transit
-            - --transit-prefix=audit
-            - --transit-address=https://openbao.example:8200
-            - --transit-mount=transit
-            - --transit-namespace=devel
-            - --transit-ca-file=/etc/audit/trust/ca.crt
-            - --transit-auth-mount=jwt-devel
-            - --transit-auth-role=audit-writer
-            - --transit-jwt-file=/var/run/openbao/token
-            - --version=0.0.0
+            - --config=/etc/audit/config.yaml
           env:
-            - name: AUDIT_BUCKET
-              value: "audit-archive"
             
-            - name: AUDIT_DATABASE
+            - name: AUDIT_DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: audit-database
-                  key: url
-            
-            - name: PGSSLROOTCERT
-              value: /etc/audit/trust/ca.crt
+                  key: password
           ports:
             - name: http
               containerPort: 8080
@@ -379,44 +518,48 @@ spec:
           resources:
             {}
           volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
             - name: deployment
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
               readOnly: true
             
-            - name: openbao-token
-              mountPath: /var/run/openbao
-              readOnly: true
-            
             - name: trust
               mountPath: /etc/audit/trust
+              readOnly: true
+            
+            - name: token-0
+              mountPath: /var/run/openbao
               readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: config
+          configMap:
+            name: audit-writer-config
         - name: deployment
           configMap:
             name: audit-deployment
         
-        - name: openbao-token
+        - name: trust
+          configMap:
+            name: private-ca-bundle
+        
+        - name: token-0
           projected:
             sources:
               - serviceAccountToken:
                   path: token
                   audience: "openbao"
                   expirationSeconds: 600
-        
-        - name: trust
-          configMap:
-            name: private-ca-bundle
         - name: tmp
           emptyDir: {}
 
 ---
 # Source: audit/templates/cronjobs.yaml
-# Hourly. Seals the windows since the last digest into the signed chain. It
-# resumes past a missed run on its own, so a failed hour needs no operator: a
-# gap in the chain cannot be told from a digest somebody removed.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -429,7 +572,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "7 * * * *"
-  # A run that overlaps itself only re-reads windows it will skip.
+  # A run that overlaps itself only does the same work twice.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -440,6 +583,8 @@ spec:
           labels:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: d436476dc8c720cb3673a36c19acd923d6f9b99bb34c3d74efc00c431f6a347b
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit-digest
@@ -456,24 +601,7 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - digest
-                - --deployment=/etc/audit/deployment.yaml
-                - --transit-key=audit-digest
-                - --transit-address=https://openbao.example:8200
-                - --transit-mount=transit
-                - --transit-namespace=devel
-                - --transit-ca-file=/etc/audit/trust/ca.crt
-                - --transit-auth-mount=jwt-devel
-                - --transit-auth-role=audit-digest
-                - --transit-jwt-file=/var/run/openbao/token
-                - --sink=http://audit:8080
-                - --instance=$(POD_NAME)
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                - name: AUDIT_BUCKET
-                  value: "audit-archive"
+                - --config=/etc/audit/config.yaml
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -481,44 +609,48 @@ spec:
                   - ALL
                 readOnlyRootFilesystem: true
               volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
                 - name: deployment
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
                 
-                - name: openbao-token
-                  mountPath: /var/run/openbao
-                  readOnly: true
-                
                 - name: trust
                   mountPath: /etc/audit/trust
                   readOnly: true
+                
+                - name: token-0
+                  mountPath: /var/run/openbao
+                  readOnly: true
           volumes:
+            - name: config
+              configMap:
+                name: audit-digest-config
             - name: deployment
               configMap:
                 name: audit-deployment
             
-            - name: openbao-token
+            - name: trust
+              configMap:
+                name: private-ca-bundle
+            
+            - name: token-0
               projected:
                 sources:
                   - serviceAccountToken:
                       path: token
                       audience: "openbao"
                       expirationSeconds: 600
-            
-            - name: trust
-              configMap:
-                name: private-ca-bundle
 
 ---
 # Source: audit/templates/cronjobs.yaml
-# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: audit-verify-security
+  name: audit-verify
   labels:
     helm.sh/chart: audit-0.0.0
     app.kubernetes.io/name: audit
@@ -527,6 +659,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "23 3 * * *"
+  # A run that overlaps itself only does the same work twice.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -537,6 +670,8 @@ spec:
           labels:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 1bd52328b6cbb18b75ad6066acfb0fee374c0b083d75a66b6baf4561a530a5cd
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit-verify
@@ -553,23 +688,7 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - verify
-                - --profile=security
-                - --last=24h
-                - --public-key=/etc/audit/public/public.pem
-                # With the deployment the check knows what lock the profile
-                # demands: an object with none is INVALID under a profile
-                # that demands one, and `unlocked` under one that does not.
-                - --deployment=/etc/audit/deployment.yaml
-                - --sink=http://audit:8080
-                - --instance=$(POD_NAME)
-                - --record
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                - name: AUDIT_BUCKET
-                  value: "audit-archive"
+                - --config=/etc/audit/config.yaml
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -577,26 +696,40 @@ spec:
                   - ALL
                 readOnlyRootFilesystem: true
               volumeMounts:
-                - name: public
-                  mountPath: /etc/audit/public
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
                   readOnly: true
                 - name: deployment
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
+                
+                - name: trust
+                  mountPath: /etc/audit/trust
+                  readOnly: true
+                
+                - name: secret-0
+                  mountPath: /etc/audit/public
+                  readOnly: true
           volumes:
-            - name: public
-              secret:
-                secretName: audit-signing-public
+            - name: config
+              configMap:
+                name: audit-verify-config
             - name: deployment
               configMap:
                 name: audit-deployment
+            
+            - name: trust
+              configMap:
+                name: private-ca-bundle
+            
+            - name: secret-0
+              secret:
+                secretName: audit-signing-public
 
 ---
 # Source: audit/templates/cronjobs.yaml
-# Daily. Compares this cluster's clock with UTC and records the answer, which is
-# what ETSI EN 319 401 7.10 asks for. It never sets the clock. A drift beyond
-# the tolerance fails the run, so the job going red is the alert.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -609,6 +742,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "13 2 * * *"
+  # A run that overlaps itself only does the same work twice.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -619,6 +753,8 @@ spec:
           labels:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 177a60ef03d8bfad44743a0fac1edb4ced7e3259db59ba2453d5cab28bec66b4
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit
@@ -635,21 +771,31 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - clock-sync
-                - --ntp=time.cloudflare.com
-                - --sink=http://audit:8080
-                - --max-offset=1s
-                - --instance=$(POD_NAME)
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
+                - --config=/etc/audit/config.yaml
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop:
                   - ALL
                 readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                
+                - name: trust
+                  mountPath: /etc/audit/trust
+                  readOnly: true
+                
+          volumes:
+            - name: config
+              configMap:
+                name: audit-clock-sync-config
+            
+            - name: trust
+              configMap:
+                name: private-ca-bundle
 ---
 # Source: audit/templates/migrate.yaml
 # The identity this Job runs as, created as a hook of its own so that it
@@ -657,12 +803,12 @@ spec:
 # release's ordinary resources, so a hook Pod cannot name a ServiceAccount
 # the release has not created yet: the Job would be admitted and then never
 # get a Pod, with "serviceaccount not found" on the Job and a release that
-# waits for a hook that can never run.
+# waits for a hook that can never run. The same is true of its configuration.
 #
 # It is the migration's own, not the writer's, and it carries no cloud
-# annotations. This Job reads a database URL from a Secret and talks to
-# Postgres; it has no business holding the credentials that write the
-# archive. A lower weight than the Job so it is applied first.
+# annotations. This Job talks to Postgres; it has no business holding the
+# credentials that write the archive. A lower weight than the Job so it is
+# applied first.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -677,6 +823,32 @@ metadata:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-10"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+
+---
+# Source: audit/templates/migrate.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-migrate-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    database:
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+      url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full&sslrootcert=/etc/audit/trust/ca.crt
 
 ---
 # Source: audit/templates/migrate.yaml
@@ -724,17 +896,14 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - migrate
-            - --database=$(AUDIT_DATABASE)
+            - --config=/etc/audit/config.yaml
           env:
             
-            - name: AUDIT_DATABASE
+            - name: AUDIT_DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: audit-database
-                  key: url
-            
-            - name: PGSSLROOTCERT
-              value: /etc/audit/trust/ca.crt
+                  key: password
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -742,13 +911,22 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
             
             - name: trust
               mountPath: /etc/audit/trust
               readOnly: true
+            
       volumes:
+        - name: config
+          configMap:
+            name: audit-migrate-config
         
         - name: trust
           configMap:
             name: private-ca-bundle
+        
 

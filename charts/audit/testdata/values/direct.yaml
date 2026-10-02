@@ -2,17 +2,45 @@
 # writer, and the jobs that need no database. A trial install, so the writer
 # takes writes from callers it cannot verify.
 mode: direct
-bucket: audit-archive
-anonymousWrites: true
 externalIdentifiersAreOpaque: true
+writer:
+  config:
+    deployment: /etc/audit/deployment.yaml
+    anonymousWrites: true
+    archive:
+      bucket:
+        name: audit-archive
 jobs:
   digest:
-    signingKey:
-      existingSecret: audit-signing-key
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive:
+        bucket:
+          name: audit-archive
+      sink:
+        url: http://audit:8080
+      signer:
+        keyFile:
+          path: /etc/audit/signing/key.pem
+    secretMounts:
+      - secretName: audit-signing-key
+        mountPath: /etc/audit/signing
   verify:
-    publicKey:
-      existingSecret: audit-signing-public
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive:
+        bucket:
+          name: audit-archive
+      sink:
+        url: http://audit:8080
+      publicKeyFile: /etc/audit/public/public.pem
+    secretMounts:
+      - secretName: audit-signing-public
+        mountPath: /etc/audit/public
   purge:
     enabled: false
   clockSync:
-    ntp: [time.cloudflare.com]
+    config:
+      ntp: [time.cloudflare.com]
+      sink:
+        url: http://audit:8080

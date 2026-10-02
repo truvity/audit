@@ -1,0 +1,10 @@
+# refuse: needs `writer.config.stream`
+mode: stream
+receiver:
+  config:
+    mode: receiver
+    deployment: /etc/audit/deployment.yaml
+    anonymousWrites: true
+    stream:
+      nats:
+        url: nats://nats.example.test:4222

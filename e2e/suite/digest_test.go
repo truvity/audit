@@ -75,5 +75,5 @@ func TestDigestJobRunsAndSignsWithTheMountedKey(t *testing.T) {
 func TestVerifyJobRunsWithTheMountedPublicKey(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	runToCompletion(ctx, t, shared.names.Release+"-verify-security")
+	runToCompletion(ctx, t, shared.names.Release+"-verify")
 }

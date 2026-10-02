@@ -1,0 +1,8 @@
+# refuse: no mapping every registration would be refused
+# base: verified-base
+workloadIdentity:
+  workloads: []
+writer:
+  config:
+    database:
+      url: postgres://audit@db.example.test:5432/audit

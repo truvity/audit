@@ -1,0 +1,5 @@
+# refuse: written twice
+replicas: 3
+writer:
+  config:
+    replicas: 3

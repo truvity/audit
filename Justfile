@@ -26,11 +26,12 @@ generate-local:
 # gate people learn to ignore. `drift-ts` is the same check for TypeScript and
 # belongs in CI, where a retry is cheap.
 drift: generate-local sentences config-schemas
-    git diff --exit-code -- gen ts/src/catalogue schemas/config
+    git diff --exit-code -- gen ts/src/catalogue schemas/config charts/audit/values.schema.json
 
 # The JSON Schema of each binary's configuration file, written into
-# schemas/config/ from internal/config/schema. The binaries embed these files,
-# the chart's schema embeds them, and `drift` fails when they are not what this
+# schemas/config/ from internal/config/schema, and the chart's values schema,
+# which embeds them under each component's `config`. The binaries embed the
+# first and Helm reads the second; `drift` fails when either is not what this
 # writes.
 config-schemas:
     go run ./internal/config/gen
@@ -206,9 +207,13 @@ schemas:
 # shows up as a diff a reviewer reads rather than as a surprise in a cluster.
 # The refusals matter more: each is a configuration the binaries reject at
 # start-up, or accept and then get quietly wrong, and a chart that renders one
-# anyway moves the failure somewhere nobody is looking.
+# anyway moves the failure somewhere nobody is looking. And the chart passes
+# each component's `config` through unchanged, which `go test ./charts/audit`
+# holds it to: every rendered ConfigMap is the values' block, and a file its
+# binary's schema accepts.
 chart:
     helm lint charts/audit -f charts/audit/testdata/values/stream.yaml
+    AUDIT_REQUIRE_HELM=1 go test -count=1 ./charts/audit/
     bash charts/audit/testdata/refuse.sh
     helm template audit charts/audit -f charts/audit/testdata/values/direct.yaml \
         > tests/golden/audit/direct.yaml

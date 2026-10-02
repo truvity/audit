@@ -1,113 +1,20 @@
-{{- $full := include "audit.fullname" . -}}
-{{- $sink := include "audit.sinkURL" . -}}
-{{- if .Values.jobs.digest.enabled }}
-# Hourly. Seals the windows since the last digest into the signed chain. It
-# resumes past a missed run on its own, so a failed hour needs no operator: a
-# gap in the chain cannot be told from a digest somebody removed.
+{{/*
+A scheduled job: `audit <command> --config`, in the toolchain's image, with the
+configuration of its own. Takes (dict "root" $ "name" "digest" "command"
+"digest" "comp" <the job's values> "account" <service account> "profiles" bool).
+`profiles` mounts the profile document, for a job whose config names it.
+*/}}
+{{- define "audit.cronjob" -}}
+{{- $ := .root -}}
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: {{ $full }}-digest
-  labels:
-    {{- include "audit.labels" . | nindent 4 }}
-spec:
-  schedule: {{ .Values.jobs.digest.schedule | quote }}
-  # A run that overlaps itself only re-reads windows it will skip.
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            {{- include "audit.selectorLabels" . | nindent 12 }}
-        spec:
-          restartPolicy: OnFailure
-          serviceAccountName: {{ include "audit.digestServiceAccountName" . }}
-          {{- include "audit.podDefaults" . | nindent 10 }}
-          containers:
-            - name: digest
-              image: {{ include "audit.cliImage" . }}
-              imagePullPolicy: {{ .Values.image.pullPolicy }}
-              args:
-                - digest
-                - --deployment=/etc/audit/deployment.yaml
-                {{- if .Values.jobs.digest.kmsKey }}
-                - --kms-key={{ .Values.jobs.digest.kmsKey }}
-                {{- else if .Values.jobs.digest.transit.key }}
-                - --transit-key={{ .Values.jobs.digest.transit.key }}
-                {{- include "audit.openbaoArgs" (dict "root" . "creds" .Values.jobs.digest.transit) | nindent 16 }}
-                {{- else }}
-                - --key=/etc/audit/signing/{{ .Values.jobs.digest.signingKey.secretKey }}
-                {{- with .Values.jobs.digest.signingKey.keyID }}
-                - --key-id={{ . }}
-                {{- end }}
-                {{- end }}
-                - --sink={{ $sink }}
-                - --instance=$(POD_NAME)
-                {{- with .Values.jobs.digest.lookback }}
-                - --lookback={{ . }}
-                {{- end }}
-                {{- if .Values.jobs.digest.maxWindows }}
-                - --max-windows={{ .Values.jobs.digest.maxWindows }}
-                {{- end }}
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                {{- include "audit.archiveEnv" . | nindent 16 }}
-                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 16 }}{{- end }}
-              {{- if .Values.existingSecret }}
-              {{- include "audit.archiveEnvFrom" . | nindent 14 }}
-              {{- end }}
-              securityContext:
-                {{- toYaml .Values.securityContext | nindent 16 }}
-              volumeMounts:
-                - name: deployment
-                  mountPath: /etc/audit/deployment.yaml
-                  subPath: deployment.yaml
-                  readOnly: true
-                {{- if .Values.jobs.digest.signingKey.existingSecret }}
-                - name: signing
-                  mountPath: /etc/audit/signing
-                  readOnly: true
-                {{- end }}
-                {{- if .Values.jobs.digest.transit.key }}
-                {{- include "audit.openbaoMount" (dict "root" . "creds" .Values.jobs.digest.transit) | nindent 16 }}
-                {{- include "audit.trustMount" . | nindent 16 }}
-                {{- end }}
-                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 16 }}{{- end }}
-          volumes:
-            - name: deployment
-              configMap:
-                name: {{ $full }}-deployment
-            {{- if .Values.jobs.digest.signingKey.existingSecret }}
-            - name: signing
-              secret:
-                secretName: {{ .Values.jobs.digest.signingKey.existingSecret }}
-            {{- end }}
-            {{- if .Values.jobs.digest.transit.key }}
-            {{- include "audit.openbaoVolume" (dict "root" . "creds" .Values.jobs.digest.transit) | nindent 12 }}
-            {{- include "audit.trustVolume" . | nindent 12 }}
-            {{- end }}
-            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 12 }}{{- end }}
-{{- end }}
-{{- if .Values.jobs.verify.enabled }}
-{{- range $name, $_ := .Values.profiles }}
----
-# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: {{ $full }}-verify-{{ $name }}
+  name: {{ include "audit.fullname" $ }}-{{ .name }}
   labels:
     {{- include "audit.labels" $ | nindent 4 }}
 spec:
-  schedule: {{ $.Values.jobs.verify.schedule | quote }}
+  schedule: {{ .comp.schedule | quote }}
+  # A run that overlaps itself only does the same work twice.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -117,171 +24,72 @@ spec:
         metadata:
           labels:
             {{- include "audit.selectorLabels" $ | nindent 12 }}
+          annotations:
+            checksum/config: {{ toYaml .comp.config | sha256sum }}
         spec:
           restartPolicy: OnFailure
-          serviceAccountName: {{ include "audit.verifyServiceAccountName" $ }}
+          serviceAccountName: {{ .account }}
           {{- include "audit.podDefaults" $ | nindent 10 }}
           containers:
-            - name: verify
+            - name: {{ .name }}
               image: {{ include "audit.cliImage" $ }}
               imagePullPolicy: {{ $.Values.image.pullPolicy }}
               args:
-                - verify
-                - --profile={{ $name }}
-                - --last={{ $.Values.jobs.verify.window }}
-                - --public-key=/etc/audit/public/{{ $.Values.jobs.verify.publicKey.secretKey }}
-                # With the deployment the check knows what lock the profile
-                # demands: an object with none is INVALID under a profile
-                # that demands one, and `unlocked` under one that does not.
-                - --deployment=/etc/audit/deployment.yaml
-                {{- with $.Values.jobs.digest.lookback }}
-                - --lookback={{ . }}
-                {{- end }}
-                - --sink={{ $sink }}
-                - --instance=$(POD_NAME)
-                {{- if $.Values.jobs.verify.record }}
-                - --record
-                {{- end }}
+                - {{ .command }}
+                - --config=/etc/audit/config.yaml
+              {{- with include "audit.secretEnv" .comp }}
               env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                {{- include "audit.archiveEnv" $ | nindent 16 }}
-                {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenEnv" $ | nindent 16 }}{{- end }}
-              {{- if $.Values.existingSecret }}
-              {{- include "audit.archiveEnvFrom" $ | nindent 14 }}
+                {{- . | nindent 16 }}
               {{- end }}
               securityContext:
                 {{- toYaml $.Values.securityContext | nindent 16 }}
               volumeMounts:
-                - name: public
-                  mountPath: /etc/audit/public
-                  readOnly: true
-                - name: deployment
-                  mountPath: /etc/audit/deployment.yaml
-                  subPath: deployment.yaml
-                  readOnly: true
-                {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenMount" $ | nindent 16 }}{{- end }}
+                {{- include "audit.configMount" $ | nindent 16 }}
+                {{- if .profiles }}
+                {{- include "audit.deploymentMount" $ | nindent 16 }}
+                {{- end }}
+                {{- include "audit.trustMount" $ | nindent 16 }}
+                {{- include "audit.extraMounts" .comp | nindent 16 }}
           volumes:
-            - name: public
-              secret:
-                secretName: {{ $.Values.jobs.verify.publicKey.existingSecret }}
-            - name: deployment
-              configMap:
-                name: {{ $full }}-deployment
-            {{- if include "audit.verifiesWorkloads" $ }}{{ include "audit.tokenVolume" $ | nindent 12 }}{{- end }}
+            {{- include "audit.configVolume" (dict "root" $ "name" .name) | nindent 12 }}
+            {{- if .profiles }}
+            {{- include "audit.deploymentVolume" $ | nindent 12 }}
+            {{- end }}
+            {{- include "audit.trustVolume" $ | nindent 12 }}
+            {{- include "audit.extraVolumes" .comp | nindent 12 }}
+{{- end -}}
+{{- if .Values.jobs.digest.enabled }}
+# Hourly. Seals the windows since the last digest into the signed chain. It
+# resumes past a missed run on its own, so a failed hour needs no operator: a
+# gap in the chain cannot be told from a digest somebody removed.
+{{ include "audit.configMap" (dict "root" . "name" "digest" "config" .Values.jobs.digest.config) }}
+---
+{{ include "audit.cronjob" (dict "root" . "name" "digest" "command" "digest" "comp" .Values.jobs.digest "account" (include "audit.digestServiceAccountName" .) "profiles" true) }}
 {{- end }}
+{{- if .Values.jobs.verify.enabled }}
+---
+# Nightly. Walks each profile's chain and reports what it finds; a non-zero
+# exit is the alert. It takes the public half of the signing key only, which is
+# what lets an auditor run the same command and get the same answer.
+{{ include "audit.configMap" (dict "root" . "name" "verify" "config" .Values.jobs.verify.config) }}
+---
+{{ include "audit.cronjob" (dict "root" . "name" "verify" "command" "verify" "comp" .Values.jobs.verify "account" (include "audit.verifyServiceAccountName" .) "profiles" true) }}
 {{- end }}
 {{- if .Values.jobs.purge.enabled }}
 ---
 # Daily. Brings the index and the deduplication table back within what the
 # profiles allow. It never touches the archive: those objects are released by
 # their object lock, which is what makes a retention a retention.
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: {{ $full }}-purge
-  labels:
-    {{- include "audit.labels" . | nindent 4 }}
-spec:
-  schedule: {{ .Values.jobs.purge.schedule | quote }}
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            {{- include "audit.selectorLabels" . | nindent 12 }}
-        spec:
-          restartPolicy: OnFailure
-          serviceAccountName: {{ include "audit.serviceAccountName" . }}
-          {{- include "audit.podDefaults" . | nindent 10 }}
-          containers:
-            - name: purge
-              image: {{ include "audit.cliImage" . }}
-              imagePullPolicy: {{ .Values.image.pullPolicy }}
-              args:
-                - purge
-                - --deployment=/etc/audit/deployment.yaml
-                - --database=$(AUDIT_DATABASE)
-                {{- with .Values.jobs.purge.identifyingAfter }}
-                - --identifying-after={{ . }}
-                {{- end }}
-                {{- with .Values.jobs.purge.dedupeWindow }}
-                - --dedupe-window={{ . }}
-                {{- end }}
-              env:
-                {{- include "audit.databaseEnv" . | nindent 16 }}
-                {{- include "audit.trustEnv" . | nindent 16 }}
-              securityContext:
-                {{- toYaml .Values.securityContext | nindent 16 }}
-              volumeMounts:
-                - name: deployment
-                  mountPath: /etc/audit/deployment.yaml
-                  subPath: deployment.yaml
-                  readOnly: true
-                {{- include "audit.trustMount" . | nindent 16 }}
-          volumes:
-            - name: deployment
-              configMap:
-                name: {{ $full }}-deployment
-            {{- include "audit.trustVolume" . | nindent 12 }}
+{{ include "audit.configMap" (dict "root" . "name" "purge" "config" .Values.jobs.purge.config) }}
+---
+{{ include "audit.cronjob" (dict "root" . "name" "purge" "command" "purge" "comp" .Values.jobs.purge "account" (include "audit.serviceAccountName" .) "profiles" true) }}
 {{- end }}
 {{- if .Values.jobs.clockSync.enabled }}
 ---
 # Daily. Compares this cluster's clock with UTC and records the answer, which is
 # what ETSI EN 319 401 7.10 asks for. It never sets the clock. A drift beyond
 # the tolerance fails the run, so the job going red is the alert.
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: {{ $full }}-clock-sync
-  labels:
-    {{- include "audit.labels" . | nindent 4 }}
-spec:
-  schedule: {{ .Values.jobs.clockSync.schedule | quote }}
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            {{- include "audit.selectorLabels" . | nindent 12 }}
-        spec:
-          restartPolicy: OnFailure
-          serviceAccountName: {{ include "audit.serviceAccountName" . }}
-          {{- include "audit.podDefaults" . | nindent 10 }}
-          containers:
-            - name: clock-sync
-              image: {{ include "audit.cliImage" . }}
-              imagePullPolicy: {{ .Values.image.pullPolicy }}
-              args:
-                - clock-sync
-                {{- range .Values.jobs.clockSync.ntp }}
-                - --ntp={{ . }}
-                {{- end }}
-                - --sink={{ $sink }}
-                - --max-offset={{ .Values.jobs.clockSync.maxOffset }}
-                - --instance=$(POD_NAME)
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenEnv" . | nindent 16 }}{{- end }}
-              securityContext:
-                {{- toYaml .Values.securityContext | nindent 16 }}
-              {{- if include "audit.verifiesWorkloads" . }}
-              volumeMounts:
-                {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenMount" . | nindent 16 }}{{- end }}
-              {{- end }}
-          {{- if include "audit.verifiesWorkloads" . }}
-          volumes:
-            {{- if include "audit.verifiesWorkloads" . }}{{ include "audit.tokenVolume" . | nindent 12 }}{{- end }}
-          {{- end }}
+{{ include "audit.configMap" (dict "root" . "name" "clock-sync" "config" .Values.jobs.clockSync.config) }}
+---
+{{ include "audit.cronjob" (dict "root" . "name" "clock-sync" "command" "clock-sync" "comp" .Values.jobs.clockSync "account" (include "audit.serviceAccountName" .) "profiles" false) }}
 {{- end }}

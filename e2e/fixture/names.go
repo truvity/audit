@@ -12,17 +12,20 @@
 // cluster. See drift_test.go, which renders that file through the chart and
 // fails if the chart stops honouring a name this package gives it.
 //
-// The two role names and the object each secret holds are this package's
-// own choice: the chart takes a Secret's NAME and reads whatever is inside
-// it, and never a role or a database name directly, so there is nothing in
-// the values file to agree with for those beyond the Secret and its key.
+// The database, its host and the writer's role are one fact, the URL in the
+// writer's config; the query role is the migration's `reader`. What each
+// Secret holds is this package's own choice beyond its name and its key: the
+// database password under `password`, and the connection string too, under
+// `url`, for the suite that connects from outside.
 package fixture
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -55,44 +58,93 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
+// secretEnv is one entry of a component's `secretEnv`: a Secret's key, put in
+// the variable its config names.
+type secretEnv struct {
+	Name       string `json:"name"`
+	SecretName string `json:"secretName"`
+	Key        string `json:"key"`
+}
+
+type secretMount struct {
+	SecretName string `json:"secretName"`
+	MountPath  string `json:"mountPath"`
+}
+
 // chartValues is the handful of fields this package reads out of
 // charts/audit/testdata/values/e2e.yaml — everything else in that file is
-// the chart's own business.
+// the chart's own business. They are the binaries' own configuration keys,
+// read from where the chart's values carry them.
 type chartValues struct {
-	Bucket     string `json:"bucket"`
-	Region     string `json:"region"`
-	Endpoint   string `json:"endpoint"`
-	PathStyle  bool   `json:"pathStyle"`
-	LockMode   string `json:"lockMode"`
-	ExistingS3 string `json:"existingSecret"`
-	Database   struct {
-		ExistingSecret string `json:"existingSecret"`
-	} `json:"database"`
-	Stream struct {
-		URL      string `json:"url"`
-		Name     string `json:"name"`
-		Consumer string `json:"consumer"`
-	} `json:"stream"`
-	Query struct {
-		Database struct {
-			ExistingSecret string `json:"existingSecret"`
-			Role           string `json:"role"`
-		} `json:"database"`
-	} `json:"query"`
+	Writer struct {
+		Config struct {
+			Archive struct {
+				Bucket struct {
+					Name      string `json:"name"`
+					Region    string `json:"region"`
+					Endpoint  string `json:"endpoint"`
+					PathStyle bool   `json:"pathStyle"`
+				} `json:"bucket"`
+				LockMode string `json:"lockMode"`
+			} `json:"archive"`
+			Stream struct {
+				NATS struct {
+					URL string `json:"url"`
+				} `json:"nats"`
+				Name     string `json:"name"`
+				Consumer string `json:"consumer"`
+			} `json:"stream"`
+		} `json:"config"`
+		SecretEnv []secretEnv `json:"secretEnv"`
+	} `json:"writer"`
+	Migrate struct {
+		Config struct {
+			Database struct {
+				URL         string `json:"url"`
+				PasswordEnv string `json:"passwordEnv"`
+			} `json:"database"`
+			Reader string `json:"reader"`
+		} `json:"config"`
+		SecretEnv []secretEnv `json:"secretEnv"`
+	} `json:"migrate"`
 	Jobs struct {
 		Digest struct {
-			SigningKey struct {
-				ExistingSecret string `json:"existingSecret"`
-				KeyID          string `json:"keyID"`
-			} `json:"signingKey"`
+			Config struct {
+				Signer struct {
+					KeyFile struct {
+						ID string `json:"id"`
+					} `json:"keyFile"`
+				} `json:"signer"`
+			} `json:"config"`
+			SecretMounts []secretMount `json:"secretMounts"`
 		} `json:"digest"`
 		Verify struct {
-			PublicKey struct {
-				ExistingSecret string `json:"existingSecret"`
-			} `json:"publicKey"`
+			SecretMounts []secretMount `json:"secretMounts"`
 		} `json:"verify"`
 	} `json:"jobs"`
 }
+
+// secretOf finds the Secret a variable is taken from.
+func secretOf(env []secretEnv, name string) string {
+	for _, e := range env {
+		if e.Name == name {
+			return e.SecretName
+		}
+	}
+	return ""
+}
+
+func firstMount(m []secretMount) string {
+	if len(m) == 0 {
+		return ""
+	}
+	return m[0].SecretName
+}
+
+// queryDatabaseSecret is the query role's credential, a Secret this package
+// names itself: the e2e suite reads it, and the chart's values never do, since
+// the query service is off in this tier.
+const queryDatabaseSecret = "audit-e2e-query-database"
 
 // Names is everything the fixture creates, and everything the chart install
 // must be given to find it.
@@ -150,18 +202,29 @@ func Resolve(o Options) (Names, error) {
 		return Names{}, fmt.Errorf("parse %s: %w", valuesFilePath(), err)
 	}
 
+	// The database is named by the URL the config carries: its host, its
+	// name and the role it connects as are one fact, written once.
+	db, err := url.Parse(v.Migrate.Config.Database.URL)
+	if err != nil {
+		return Names{}, fmt.Errorf("%s: migrate.config.database.url: %w", valuesFilePath(), err)
+	}
+	writerSecret := secretOf(v.Migrate.SecretEnv, v.Migrate.Config.Database.PasswordEnv)
+	s3Secret := secretOf(v.Writer.SecretEnv, "AUDIT_S3_ACCESS_KEY_ID")
+
 	for field, got := range map[string]string{
-		"bucket":                                v.Bucket,
-		"existingSecret":                        v.ExistingS3,
-		"database.existingSecret":               v.Database.ExistingSecret,
-		"stream.url":                            v.Stream.URL,
-		"stream.name":                           v.Stream.Name,
-		"stream.consumer":                       v.Stream.Consumer,
-		"query.database.existingSecret":         v.Query.Database.ExistingSecret,
-		"query.database.role":                   v.Query.Database.Role,
-		"jobs.digest.signingKey.existingSecret": v.Jobs.Digest.SigningKey.ExistingSecret,
-		"jobs.digest.signingKey.keyID":          v.Jobs.Digest.SigningKey.KeyID,
-		"jobs.verify.publicKey.existingSecret":  v.Jobs.Verify.PublicKey.ExistingSecret,
+		"writer.config.archive.bucket.name":                  v.Writer.Config.Archive.Bucket.Name,
+		"migrate.config.database.url (host)":                 db.Host,
+		"migrate.config.database.url (user)":                 db.User.Username(),
+		"migrate.config.database.url (database)":             strings.TrimPrefix(db.Path, "/"),
+		"migrate.secretEnv (the database password's Secret)": writerSecret,
+		"writer.secretEnv (AUDIT_S3_ACCESS_KEY_ID's Secret)": s3Secret,
+		"writer.config.stream.nats.url":                      v.Writer.Config.Stream.NATS.URL,
+		"writer.config.stream.name":                          v.Writer.Config.Stream.Name,
+		"writer.config.stream.consumer":                      v.Writer.Config.Stream.Consumer,
+		"migrate.config.reader":                              v.Migrate.Config.Reader,
+		"jobs.digest.secretMounts[0].secretName":             firstMount(v.Jobs.Digest.SecretMounts),
+		"jobs.digest.config.signer.keyFile.id":               v.Jobs.Digest.Config.Signer.KeyFile.ID,
+		"jobs.verify.secretMounts[0].secretName":             firstMount(v.Jobs.Verify.SecretMounts),
 	} {
 		if got == "" {
 			return Names{}, fmt.Errorf("%s: %s is empty — this package has nothing to name", valuesFilePath(), field)
@@ -171,27 +234,27 @@ func Resolve(o Options) (Names, error) {
 	return Names{
 		Options: o,
 
-		DatabaseHost: boxPostgresAddress,
-		DatabaseName: "audit_e2e",
-		WriterRole:   "audit_e2e_writer",
-		QueryRole:    v.Query.Database.Role,
-		WriterSecret: v.Database.ExistingSecret,
-		QuerySecret:  v.Query.Database.ExistingSecret,
+		DatabaseHost: strings.TrimSuffix(db.Host, ":"+db.Port()),
+		DatabaseName: strings.TrimPrefix(db.Path, "/"),
+		WriterRole:   db.User.Username(),
+		QueryRole:    v.Migrate.Config.Reader,
+		WriterSecret: writerSecret,
+		QuerySecret:  queryDatabaseSecret,
 
-		StreamURL:      v.Stream.URL,
-		StreamName:     v.Stream.Name,
+		StreamURL:      v.Writer.Config.Stream.NATS.URL,
+		StreamName:     v.Writer.Config.Stream.Name,
 		StreamSubject:  "e2e.audit-records",
-		StreamConsumer: v.Stream.Consumer,
+		StreamConsumer: v.Writer.Config.Stream.Consumer,
 
-		Bucket:        v.Bucket,
-		Region:        v.Region,
-		Endpoint:      v.Endpoint,
-		PathStyle:     v.PathStyle,
-		LockMode:      v.LockMode,
-		S3CredsSecret: v.ExistingS3,
+		Bucket:        v.Writer.Config.Archive.Bucket.Name,
+		Region:        v.Writer.Config.Archive.Bucket.Region,
+		Endpoint:      v.Writer.Config.Archive.Bucket.Endpoint,
+		PathStyle:     v.Writer.Config.Archive.Bucket.PathStyle,
+		LockMode:      v.Writer.Config.Archive.LockMode,
+		S3CredsSecret: s3Secret,
 
-		DigestKeySecret:    v.Jobs.Digest.SigningKey.ExistingSecret,
-		DigestKeyID:        v.Jobs.Digest.SigningKey.KeyID,
-		VerifyPublicSecret: v.Jobs.Verify.PublicKey.ExistingSecret,
+		DigestKeySecret:    firstMount(v.Jobs.Digest.SecretMounts),
+		DigestKeyID:        v.Jobs.Digest.Config.Signer.KeyFile.ID,
+		VerifyPublicSecret: firstMount(v.Jobs.Verify.SecretMounts),
 	}, nil
 }

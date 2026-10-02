@@ -1,75 +1,71 @@
 {{/*
 The refusals.
 
-Every one of these is a configuration the binaries would reject at start-up, or
-accept and then do something silently wrong with. A chart that renders a
-manifest its own image will not run is worse than an error here: the failure
-moves from `helm install` to a CrashLoopBackOff somebody has to read logs to
-understand, or — worse — to a trail that looks fine and is not.
+What a component's `config` says is checked twice before anything runs: by
+values.schema.json, which embeds the schema each binary validates its file
+against, and by the binary at start-up. What is left here is what only the
+platform side can see: whether the shape the values ask the chart to render
+agrees with what the configurations say. Each is a configuration the binaries
+would accept and then do something silently wrong with — or a manifest they
+would reject — and a chart that renders one moves the failure from
+`helm install` to a CrashLoopBackOff somebody has to read logs to understand,
+or to a trail that looks fine and is not.
 */}}
 {{- define "audit.checks" -}}
 
-{{- if not .Values.bucket -}}
-{{- fail "audit: set `bucket`. There is nowhere to write the archive." -}}
+{{- if not (has .Values.mode (list "direct" "stream")) -}}
+{{- fail (printf "audit: `mode` is `direct` or `stream`, not %q." .Values.mode) -}}
 {{- end -}}
 
 {{- if not .Values.profiles -}}
 {{- fail "audit: set `profiles`. A writer with no profile keeps nothing, and every record it took would be dead-lettered." -}}
 {{- end -}}
 
-{{- if gt (int .Values.replicas) 1 -}}
-  {{- if not (include "audit.hasDatabase" .) -}}
-  {{- fail "audit: `replicas` above 1 needs `database`. Deduplication in one process only absorbs a repeat on the replica that saw the original, so a redelivery landing on another would be written twice. The writer refuses to start this way." -}}
+{{- $writer := .Values.writer.config | default dict -}}
+{{- $mode := dig "mode" "writer" $writer -}}
+{{- $database := dig "database" nil $writer -}}
+{{- $pods := ternary (int .Values.writer.consumers) (int .Values.replicas) (eq .Values.mode "stream") -}}
+
+{{- if eq .Values.mode "stream" -}}
+  {{- if not .Values.receiver.config -}}
+  {{- fail "audit: `mode: stream` needs `receiver.config`, with `mode: receiver`. The receiver serves the sink and publishes to the stream, and its configuration is its own." -}}
   {{- end -}}
-  {{- if eq .Values.keys.provider "local" -}}
-    {{- if not (has "ReadWriteMany" .Values.keys.local.persistence.accessModes) -}}
-    {{- fail "audit: `replicas` above 1 with the local key provider needs `keys.local.persistence.accessModes` to include ReadWriteMany. Data keys are random, not derived from the root, so replicas that cannot see one directory mint different keys for the same tenant and the same person gets a different pseudonym on each." -}}
-    {{- end -}}
+  {{- if ne (dig "mode" "writer" .Values.receiver.config) "receiver" -}}
+  {{- fail "audit: `receiver.config.mode` must be `receiver`. A receiver holds neither the archive nor a key, and that is what the mode says." -}}
   {{- end -}}
+  {{- if eq $mode "receiver" -}}
+  {{- fail "audit: `writer.config.mode` is `receiver` in stream mode. `writer.config` is the consumers' configuration; the receiver's is `receiver.config`." -}}
+  {{- end -}}
+  {{- if not (dig "stream" nil $writer) -}}
+  {{- fail "audit: `mode: stream` needs `writer.config.stream`: the consumers read the stream, and without one there is nothing for them to read." -}}
+  {{- end -}}
+  {{- if not $database -}}
+  {{- fail "audit: `mode: stream` needs `database` in `writer.config`. Several writers share one stream, and deduplication in one process only absorbs a repeat on the writer that saw the original; a redelivery landing on another would be written twice." -}}
+  {{- end -}}
+{{- else if eq $mode "receiver" -}}
+{{- fail "audit: `writer.config.mode` is `receiver` in direct mode. A receiver only publishes to a stream; use `mode: stream`, or `writer.config.mode: writer`." -}}
 {{- end -}}
 
-{{- if eq .Values.keys.provider "none" -}}
-  {{- /* Nothing to check: there is no key material, no directory to share
-  between replicas, and nothing to sign in to. What a deployment without keys
-  must still decide is whether its external identifiers are opaque, which the
-  writer refuses to start without — and the chart cannot tell, because a
-  profile it composes may keep nobody at all. */ -}}
-{{- else if eq .Values.keys.provider "local" -}}
-  {{- if not .Values.keys.local.existingSecret -}}
-  {{- fail "audit: set `keys.local.existingSecret` to a Secret holding the 32-byte root. Without it the writer will not start, and a root generated per install would make the pseudonyms of two installs incomparable." -}}
-  {{- end -}}
-  {{- if and (not .Values.keys.local.persistence.enabled) (not .Values.keys.local.ephemeralIsAcceptable) -}}
-  {{- fail "audit: `keys.local.persistence.enabled` is false. Data keys are random and wrapped into that directory, so losing it re-keys every tenant: the same person gets a new pseudonym and the trail stops linking across the restart. Set `keys.local.ephemeralIsAcceptable: true` if this install is disposable." -}}
-  {{- end -}}
-{{- else if eq .Values.keys.provider "transit" -}}
-  {{- include "audit.checkOpenBAO" (dict "root" . "creds" .Values.keys.transit "what" "the transit key provider" "at" "keys.transit") -}}
-{{- else -}}
-{{- fail (printf "audit: key provider %q is not one this chart knows: `none`, `local` or `transit`." .Values.keys.provider) -}}
+{{/* The writers count themselves, to refuse to run several without the shared
+state that makes it safe. The chart is what decides how many there are, so the
+two numbers must say the same thing. */}}
+{{- if ne (int (dig "replicas" 1 $writer)) $pods -}}
+{{- fail (printf "audit: `writer.config.replicas` is %d and the chart renders %d writer pod(s) (`%s`). The writer refuses to run several without a database, and refuses in-memory keys with several; it can only do that if it is told the truth." (int (dig "replicas" 1 $writer)) $pods (ternary "writer.consumers" "replicas" (eq .Values.mode "stream"))) -}}
 {{- end -}}
 
-{{- if .Values.jobs.digest.enabled -}}
-  {{- $signers := 0 -}}
-  {{- if .Values.jobs.digest.signingKey.existingSecret }}{{ $signers = add1 $signers }}{{ end -}}
-  {{- if .Values.jobs.digest.kmsKey }}{{ $signers = add1 $signers }}{{ end -}}
-  {{- if .Values.jobs.digest.transit.key }}{{ $signers = add1 $signers }}{{ end -}}
-  {{- if eq $signers 0 -}}
-  {{- fail "audit: `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` or `jobs.digest.transit.key` is required while `jobs.digest.enabled`. An unsigned chain proves nothing, so the command refuses without a key and the job would only ever fail." -}}
-  {{- end -}}
-  {{- if gt $signers 1 -}}
-  {{- fail "audit: more than one of `jobs.digest.signingKey.existingSecret`, `jobs.digest.kmsKey` and `jobs.digest.transit.key` is set. One chain has one signer; pick one." -}}
-  {{- end -}}
-  {{- if .Values.jobs.digest.transit.key -}}
-    {{- include "audit.checkOpenBAO" (dict "root" . "creds" .Values.jobs.digest.transit "what" "the digest job" "at" "jobs.digest.transit") -}}
-    {{- if and (eq .Values.keys.provider "transit") (or (and .Values.jobs.digest.transit.role (eq .Values.jobs.digest.transit.role .Values.keys.transit.role)) (and .Values.jobs.digest.transit.token.existingSecret (eq .Values.jobs.digest.transit.token.existingSecret .Values.keys.transit.token.existingSecret))) -}}
-    {{- fail "audit: the digest job signs in as the writer. Whoever writes the archive and can also sign its digests can choose what to sign; give the job its own role." -}}
-    {{- end -}}
-  {{- end -}}
+{{- if and (gt $pods 1) (not $database) -}}
+{{- fail "audit: more than one writer pod needs `database` in `writer.config`. Deduplication in one process only absorbs a repeat on the replica that saw the original, so a redelivery landing on another would be written twice. The writer refuses to start this way." -}}
 {{- end -}}
 
-{{- if .Values.jobs.verify.enabled -}}
-  {{- if not .Values.jobs.verify.publicKey.existingSecret -}}
-  {{- fail "audit: `jobs.verify.publicKey.existingSecret` is required while `jobs.verify.enabled`. Verification takes the public half only, which is what lets an auditor run it without being able to sign anything." -}}
-  {{- end -}}
+{{- if and .Values.keysVolume.enabled (gt $pods 1) (not (has "ReadWriteMany" .Values.keysVolume.accessModes)) -}}
+{{- fail "audit: more than one writer pod with `keysVolume.accessModes` lacking ReadWriteMany. Data keys are random, not derived from the root, so replicas that cannot see one directory mint different keys for the same tenant and the same person gets a different pseudonym on each." -}}
+{{- end -}}
+
+{{- if and .Values.query.keysVolume (not .Values.keysVolume.enabled) -}}
+{{- fail "audit: `query.keysVolume` mounts the writer's key directory, and `keysVolume.enabled` is false: there is no directory to mount." -}}
+{{- end -}}
+{{- if and .Values.query.keysVolume (not (has "ReadWriteMany" .Values.keysVolume.accessModes)) -}}
+{{- fail "audit: `query.keysVolume` needs `keysVolume.accessModes` to include ReadWriteMany: the query service runs beside the writer, not in its place. The transit provider needs no shared volume." -}}
 {{- end -}}
 
 {{- if .Values.extensions.billing.enabled -}}
@@ -88,98 +84,32 @@ understand, or — worse — to a trail that looks fine and is not.
 {{- fail "audit: `extensions.quotas.enabled` needs `mode: stream`. Quotas are counted by a second consumer of the same stream, and in direct mode there is no stream to consume." -}}
 {{- end -}}
 
-{{- if not (has .Values.mode (list "direct" "stream")) -}}
-{{- fail (printf "audit: `mode` is `direct` or `stream`, not %q." .Values.mode) -}}
+{{/* Who is calling the writer: the document and the config must agree. */}}
+{{- $verifies := dig "workloads" "" $writer -}}
+{{- if and $verifies (not .Values.workloadIdentity.issuers) -}}
+{{- fail "audit: `writer.config.workloads` names the workloads file, and `workloadIdentity.issuers` is empty, so the chart renders none. Name the issuers whose tokens the writer trusts." -}}
 {{- end -}}
-
-{{- if eq .Values.mode "stream" -}}
-  {{- if not .Values.stream.url -}}
-  {{- fail "audit: `mode: stream` needs `stream.url`. A receiver publishes, and without a stream there is nowhere to publish to." -}}
-  {{- end -}}
-  {{- if not (include "audit.hasDatabase" .) -}}
-  {{- fail "audit: `mode: stream` needs `database`. Several writers share one stream, and deduplication in one process only absorbs a repeat on the writer that saw the original; a redelivery landing on another would be written twice." -}}
-  {{- end -}}
+{{- if and .Values.workloadIdentity.issuers (not $verifies) -}}
+{{- fail "audit: `workloadIdentity.issuers` is set and `writer.config.workloads` is not, so nothing reads the file the chart renders. Set `workloads: /etc/audit/workloads.yaml` in the writer's config, or drop the issuers for a trial install with `anonymousWrites: true`." -}}
 {{- end -}}
-
-{{- if .Values.stream.url -}}
-  {{- if not (gt (include "audit.seconds" .Values.stream.ackWait | int) (include "audit.seconds" .Values.roll.interval | int)) -}}
-  {{- fail "audit: `stream.ackWait` must be longer than `roll.interval`. A writer gathers records from the stream for one interval before it writes them, and leaves them unacknowledged meanwhile; a stream that gives up waiting sooner offers the same records to another writer, which writes them twice." -}}
-  {{- end -}}
+{{- if and .Values.workloadIdentity.issuers $database (not .Values.workloadIdentity.workloads) -}}
+{{- fail "audit: map every workload that registers a catalogue in `workloadIdentity.workloads`. The writer serves RegisterCatalogue beside the sink, and takes whose catalogue a document is from the caller's verified service account and never from the document, so with no mapping every registration would be refused." -}}
 {{- end -}}
-
-{{- if and .Values.workloadIdentity.issuers (include "audit.hasDatabase" .) -}}
-  {{- if not .Values.workloadIdentity.workloads -}}
-  {{- fail "audit: map every workload that registers a catalogue in `workloadIdentity.workloads`. The writer serves RegisterCatalogue beside the sink, and takes whose catalogue a document is from the caller's verified service account and never from the document, so with no mapping every registration would be refused." -}}
-  {{- end -}}
-{{- end -}}
-
-{{- if .Values.query.enabled -}}
-  {{- if not (has .Values.query.searcher (list "postgres" "s3scan")) -}}
-  {{- fail (printf "audit: `query.searcher` is postgres or s3scan, not %q." .Values.query.searcher) -}}
-  {{- end -}}
-  {{- if eq .Values.query.searcher "postgres" -}}
-    {{- if not (or .Values.query.database.url .Values.query.database.existingSecret) -}}
-    {{- fail "audit: the postgres searcher needs `query.database`: the query service's own role, with select on the index and nothing else. Tenant row-level security binds only a role that does not own the tables; the writer's URL is the owner's." -}}
-    {{- end -}}
-    {{- if or (and .Values.query.database.existingSecret (eq .Values.query.database.existingSecret .Values.database.existingSecret)) (and .Values.query.database.url (eq .Values.query.database.url .Values.database.url)) -}}
-    {{- fail "audit: `query.database` names the writer's database credentials. The writer owns the tables, and an owner bypasses the tenant policies, so every tenant's isolation would rest on the service alone. Give the query service a role that does not own them." -}}
-    {{- end -}}
-  {{- end -}}
-  {{- if not .Values.query.grants.issuers -}}
-  {{- fail "audit: `query.grants.issuers` is empty, so nobody could ever sign in and the query service refuses to start. Name the issuers whose tokens it trusts; see docs/guides/read.md#access." -}}
-  {{- end -}}
-  {{- if not (or .Values.workloadIdentity.issuers .Values.anonymousWrites) -}}
-  {{- fail "audit: the query service records every read through the writer, which must be able to take it." -}}
-  {{- end -}}
-  {{- if .Values.query.resolve.enabled -}}
-    {{- if eq .Values.keys.provider "none" -}}
-    {{- fail "audit: `query.resolve.enabled` with `keys.provider: none`. Resolve opens what the writer sealed under a key, and without a provider nothing was sealed: there is nothing to open. Turn resolve off, or choose a provider." -}}
-    {{- end -}}
-    {{- if eq .Values.keys.provider "local" -}}
-      {{- if not (and .Values.keys.local.persistence.enabled (has "ReadWriteMany" .Values.keys.local.persistence.accessModes)) -}}
-      {{- fail "audit: `query.resolve` with the local key provider mounts the writer's key directory, which needs `keys.local.persistence` with ReadWriteMany: the query service runs beside the writer, not in its place. The transit provider needs no shared volume." -}}
-      {{- end -}}
-    {{- else if eq .Values.keys.provider "transit" -}}
-      {{- include "audit.checkOpenBAO" (dict "root" . "creds" .Values.query.resolve.transit "what" "resolve in the query service" "at" "query.resolve.transit") -}}
-      {{- if or (and .Values.query.resolve.transit.role (eq .Values.query.resolve.transit.role .Values.keys.transit.role)) (and .Values.query.resolve.transit.token.existingSecret (eq .Values.query.resolve.transit.token.existingSecret .Values.keys.transit.token.existingSecret)) -}}
-      {{- fail "audit: `query.resolve.transit` signs in as the writer. Resolving and writing are separate privileges: the writer's policy seals and must not open." -}}
-      {{- end -}}
-    {{- end -}}
-  {{- end -}}
-{{- end -}}
-
-{{- if and .Values.workloadIdentity.issuers .Values.anonymousWrites -}}
-{{- fail "audit: `anonymousWrites` and `workloadIdentity.issuers` are both set. The writer verifies callers or it does not; pick one, and only a trial install should pick anonymous." -}}
-{{- end -}}
-
-{{- if not (or .Values.workloadIdentity.issuers .Values.anonymousWrites) -}}
-{{- fail "audit: set `workloadIdentity.issuers` so the writer can verify which workload publishes, or `anonymousWrites: true` for a trial install. Without either the writer refuses to start: records taken from anybody under nobody's name are not a trail." -}}
-{{- end -}}
-
 {{- range .Values.workloadIdentity.workloads -}}
   {{- if and (not .issuer) (gt (len $.Values.workloadIdentity.issuers) 1) -}}
   {{- fail (printf "audit: workload %s names no issuer, and more than one is trusted. Two clusters can both have that namespace and service account; say which one it is." .subject) -}}
   {{- end -}}
 {{- end -}}
 
-{{- if and .Values.jobs.purge.enabled (not (include "audit.hasDatabase" .)) -}}
-{{- fail "audit: `jobs.purge.enabled` needs `database`. The purge prunes the index and the deduplication table; with neither there is nothing for it to do." -}}
-{{- end -}}
-
-{{- if and .Values.jobs.clockSync.enabled (not .Values.jobs.clockSync.ntp) -}}
-{{- fail "audit: `jobs.clockSync.ntp` must name at least one time reference while `jobs.clockSync.enabled`. A clock check with nothing to check against would report that the clock was not checked, every night." -}}
-{{- end -}}
-
-{{- if not (has .Values.lockMode (list "compliance" "governance" "none")) -}}
-{{- fail (printf "audit: `lockMode` is `compliance`, `governance` or `none`, not %q. The binaries refuse any other word." .Values.lockMode) -}}
-{{- end -}}
-
-{{- if and .Values.governance (ne .Values.lockMode "compliance") (ne .Values.lockMode "governance") -}}
-{{- fail (printf "audit: `governance: true` and `lockMode: %s` are two answers to one question. `governance` is the deprecated spelling of `lockMode: governance`; say one thing." .Values.lockMode) -}}
-{{- end -}}
-
-{{- if and .Values.query.enabled .Values.query.exports.existingSecret (not .Values.query.exports.bucket) -}}
-{{- fail "audit: `query.exports.existingSecret` names credentials for an exports bucket that `query.exports.bucket` does not name. Name the bucket, or drop the Secret." -}}
+{{- if .Values.query.enabled -}}
+  {{- if not .Values.query.grants.issuers -}}
+  {{- fail "audit: `query.grants.issuers` is empty, so nobody could ever sign in and the query service refuses to start. Name the issuers whose tokens it trusts; see docs/guides/read.md#access." -}}
+  {{- end -}}
+  {{- $query := .Values.query.config | default dict -}}
+  {{- $queryDatabase := dig "database" nil $query -}}
+  {{- if and $queryDatabase $database (eq (dig "url" "" $queryDatabase) (dig "url" "" $database)) -}}
+  {{- fail "audit: the query service's `database.url` is the writer's. The writer owns the tables, and an owner bypasses the tenant policies, so every tenant's isolation would rest on the service alone. Give the query service a role that does not own them." -}}
+  {{- end -}}
 {{- end -}}
 
 {{- end -}}

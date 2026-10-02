@@ -1,0 +1,9 @@
+# refuse: must be `receiver`
+mode: stream
+receiver:
+  config:
+    deployment: /etc/audit/deployment.yaml
+    anonymousWrites: true
+    archive:
+      bucket:
+        name: audit-archive

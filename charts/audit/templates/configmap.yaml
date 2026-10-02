@@ -6,17 +6,17 @@ metadata:
   labels:
     {{- include "audit.labels" . | nindent 4 }}
 data:
-  # What `audit-writer --deployment` reads: which presets each profile is
-  # composed from, and where its copies land. The jobs read the same document,
-  # because retention is a property of the profile and every one of them needs
-  # to agree about it.
+  # The document a config names as `deployment`: which presets each profile is
+  # composed from, and where its copies land. Every component that reads
+  # profiles reads this one, because retention is a property of the profile and
+  # every one of them needs to agree about it.
   deployment.yaml: |
     external_identifiers_are_opaque: {{ .Values.externalIdentifiersAreOpaque }}
     profiles:
       {{- toYaml .Values.profiles | nindent 6 }}
-  {{- if include "audit.verifiesWorkloads" . }}
-  # What `audit-writer --workloads` reads: the
-  # issuers trusted to name a calling workload, and the source each speaks for.
+  {{- if .Values.workloadIdentity.issuers }}
+  # The document a writer's config names as `workloads`: the issuers trusted to
+  # name a calling workload, and the source each speaks for.
   workloads.yaml: |
     issuers:
       {{- range .Values.workloadIdentity.issuers }}
@@ -28,6 +28,12 @@ data:
       {{- toYaml . | nindent 6 }}
     {{- end }}
   {{- end }}
+---
+{{ include "audit.configMap" (dict "root" . "name" "writer" "config" .Values.writer.config) }}
+{{- if eq .Values.mode "stream" }}
+---
+{{ include "audit.configMap" (dict "root" . "name" "receiver" "config" .Values.receiver.config) }}
+{{- end }}
 {{- if .Values.catalogues }}
 ---
 apiVersion: v1
@@ -41,16 +47,4 @@ data:
   {{ $name }}: |
     {{- $doc | nindent 4 }}
   {{- end }}
-{{- end }}
-{{- if and .Values.database.url (not .Values.database.existingSecret) }}
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ include "audit.databaseSecretName" . }}
-  labels:
-    {{- include "audit.labels" . | nindent 4 }}
-type: Opaque
-stringData:
-  {{ .Values.database.secretKey }}: {{ .Values.database.url | quote }}
 {{- end }}

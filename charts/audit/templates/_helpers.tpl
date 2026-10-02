@@ -70,15 +70,6 @@ app.kubernetes.io/component: consumer
 {{- end -}}
 {{- end -}}
 
-{{/* The Secret holding the query service's own database URL. */}}
-{{- define "audit.queryDatabaseSecretName" -}}
-{{- if .Values.query.database.existingSecret -}}
-{{- .Values.query.database.existingSecret -}}
-{{- else -}}
-{{- printf "%s-query-database" (include "audit.fullname" .) -}}
-{{- end -}}
-{{- end -}}
-
 {{- define "audit.digestServiceAccountName" -}}
 {{- if .Values.jobs.digest.serviceAccount.create -}}
 {{- printf "%s-digest" (include "audit.fullname" .) -}}
@@ -93,82 +84,6 @@ app.kubernetes.io/component: consumer
 {{- else -}}
 {{- include "audit.serviceAccountName" . -}}
 {{- end -}}
-{{- end -}}
-
-{{/* The Secret holding the database URL, whether given inline or by name. */}}
-{{- define "audit.databaseSecretName" -}}
-{{- if .Values.database.existingSecret -}}
-{{- .Values.database.existingSecret -}}
-{{- else -}}
-{{- printf "%s-database" (include "audit.fullname" .) -}}
-{{- end -}}
-{{- end -}}
-
-{{- define "audit.hasDatabase" -}}
-{{- if or .Values.database.url .Values.database.existingSecret -}}true{{- end -}}
-{{- end -}}
-
-{{/* The lock mode, with the deprecated `governance` folded in. */}}
-{{- define "audit.lockMode" -}}
-{{- if .Values.governance -}}governance{{- else -}}{{ .Values.lockMode }}{{- end -}}
-{{- end -}}
-
-{{/* The environment every command shares: where the archive is, which store
-it is on, and which lock it is written with. Each is set only when it differs
-from what the binaries assume, so an AWS deployment in compliance mode gets
-the environment it always had. */}}
-{{- define "audit.archiveEnv" -}}
-- name: AUDIT_BUCKET
-  value: {{ .Values.bucket | quote }}
-{{- if .Values.prefix }}
-- name: AUDIT_PREFIX
-  value: {{ .Values.prefix | quote }}
-{{- end }}
-{{- if .Values.region }}
-- name: AWS_REGION
-  value: {{ .Values.region | quote }}
-{{- end }}
-{{- with .Values.endpoint }}
-# Only when set: an empty endpoint would be taken literally by the SDK
-# rather than falling back to the AWS default.
-- name: AUDIT_S3_ENDPOINT
-  value: {{ . | quote }}
-{{- end }}
-{{- if .Values.pathStyle }}
-- name: AUDIT_S3_PATH_STYLE
-  value: "true"
-{{- end }}
-{{- if ne (include "audit.lockMode" .) "compliance" }}
-- name: AUDIT_LOCK_MODE
-  value: {{ include "audit.lockMode" . | quote }}
-{{- end }}
-{{- end -}}
-
-{{/* Static credentials for the archive's store, on every container that
-touches it. envFrom rather than named env so a session token is carried too,
-without the chart having to name every variable the SDK may read. Empty
-renders nothing: the pod's own identity is the credential. */}}
-{{- define "audit.archiveEnvFrom" -}}
-{{- with .Values.existingSecret }}
-envFrom:
-  - secretRef:
-      name: {{ . }}
-{{- end }}
-{{- end -}}
-
-{{- define "audit.databaseEnv" -}}
-{{- if include "audit.hasDatabase" . }}
-- name: AUDIT_DATABASE
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "audit.databaseSecretName" . }}
-      key: {{ .Values.database.secretKey }}
-{{- end }}
-{{- end -}}
-
-{{/* The writer's sink, which every job records itself through. */}}
-{{- define "audit.sinkURL" -}}
-http://{{ include "audit.fullname" . }}:{{ .Values.service.port }}
 {{- end -}}
 
 {{- define "audit.podDefaults" -}}
@@ -192,145 +107,7 @@ affinity:
 {{- end }}
 {{- end -}}
 
-{{/* Whether workloads are verified at all. */}}
-{{- define "audit.verifiesWorkloads" -}}
-{{- if .Values.workloadIdentity.issuers }}true{{ end -}}
-{{- end -}}
-
-{{/*
-The projected service-account token a pod presents to the writer, read afresh
-on every request because the kubelet replaces it before it expires. Rendered
-only when the services verify workloads; an anonymous trial install has no use
-for it.
-*/}}
-{{- define "audit.tokenEnv" -}}
-- name: AUDIT_TOKEN_FILE
-  value: /var/run/audit/token
-{{- end -}}
-
-{{- define "audit.tokenMount" -}}
-- name: audit-token
-  mountPath: /var/run/audit
-  readOnly: true
-{{- end -}}
-
-{{- define "audit.tokenVolume" -}}
-- name: audit-token
-  projected:
-    sources:
-      - serviceAccountToken:
-          path: token
-          audience: {{ .Values.workloadIdentity.audience | quote }}
-          expirationSeconds: {{ .Values.workloadIdentity.expirationSeconds }}
-{{- end -}}
-
-{{/*
-The projected service-account token the receiver and the writers present to
-the stream's broker, where it verifies who connects. Rendered only with a
-stream and `stream.token.enabled`; a broker that verifies nobody gets nothing,
-and a values file from before this existed renders as it did.
-*/}}
-{{- define "audit.streamToken" -}}
-{{- if and .Values.stream.url .Values.stream.token.enabled }}true{{ end -}}
-{{- end -}}
-
-{{- define "audit.streamTokenEnv" -}}
-- name: AUDIT_STREAM_TOKEN_FILE
-  value: /var/run/audit/stream/token
-{{- end -}}
-
-{{- define "audit.streamTokenMount" -}}
-- name: stream-token
-  mountPath: /var/run/audit/stream
-  readOnly: true
-{{- end -}}
-
-{{- define "audit.streamTokenVolume" -}}
-- name: stream-token
-  projected:
-    sources:
-      - serviceAccountToken:
-          path: token
-          audience: {{ .Values.stream.token.audience | quote }}
-          expirationSeconds: {{ .Values.stream.token.expirationSeconds }}
-{{- end -}}
-
-{{/* The workloads file mount, for the writer. */}}
-{{- define "audit.workloadsMount" -}}
-- name: deployment
-  mountPath: /etc/audit/workloads.yaml
-  subPath: workloads.yaml
-  readOnly: true
-{{- end -}}
-
-{{/*
-How a component reaches OpenBAO: the shared connection, and the component's own
-way of signing in — a role on the JWT auth mount with its projected token, a
-token Secret, or a token file. Called with (dict "root" $ "creds" <values>).
-*/}}
-{{- define "audit.openbaoArgs" -}}
-- --transit-address={{ .root.Values.openbao.address }}
-- --transit-mount={{ .root.Values.openbao.mount }}
-{{- with .root.Values.openbao.namespace }}
-- --transit-namespace={{ . }}
-{{- end }}
-{{- if .root.Values.trust.configMap }}
-- --transit-ca-file=/etc/audit/trust/{{ .root.Values.trust.key }}
-{{- end }}
-{{- if .creds.role }}
-- --transit-auth-mount={{ .root.Values.openbao.auth.mount }}
-- --transit-auth-role={{ .creds.role }}
-- --transit-jwt-file=/var/run/openbao/token
-{{- else if .creds.tokenFile }}
-- --transit-token-file={{ .creds.tokenFile }}
-{{- else }}
-- --transit-token-file=/etc/audit/transit/{{ .creds.token.secretKey }}
-{{- end }}
-{{- end -}}
-
-{{- define "audit.openbaoMount" -}}
-{{- if .creds.role }}
-- name: openbao-token
-  mountPath: /var/run/openbao
-  readOnly: true
-{{- else if .creds.token.existingSecret }}
-- name: transit-token
-  mountPath: /etc/audit/transit
-  readOnly: true
-{{- end }}
-{{- end -}}
-
-{{- define "audit.openbaoVolume" -}}
-{{- if .creds.role }}
-- name: openbao-token
-  projected:
-    sources:
-      - serviceAccountToken:
-          path: token
-          audience: {{ .root.Values.openbao.auth.audience | quote }}
-          expirationSeconds: {{ .root.Values.openbao.auth.expirationSeconds }}
-{{- else if .creds.token.existingSecret }}
-- name: transit-token
-  secret:
-    secretName: {{ .creds.token.existingSecret }}
-{{- end }}
-{{- end -}}
-
-{{/* Refuses a component's OpenBAO credentials unless there is exactly one way. */}}
-{{- define "audit.checkOpenBAO" -}}
-{{- if not .root.Values.openbao.address -}}
-{{- fail (printf "audit: %s signs through OpenBAO: set `openbao.address`." .what) -}}
-{{- end -}}
-{{- $ways := len (compact (list .creds.role .creds.token.existingSecret .creds.tokenFile)) -}}
-{{- if ne $ways 1 -}}
-{{- fail (printf "audit: %s needs exactly one way to sign in to OpenBAO: `%s.role` (a JWT login with its projected token, the estate's way), `%s.token.existingSecret`, or `%s.tokenFile`." .what .at .at .at) -}}
-{{- end -}}
-{{- if and .creds.role (not .root.Values.openbao.auth.mount) -}}
-{{- fail (printf "audit: `%s.role` signs in on `openbao.auth.mount`, which is not set." .at) -}}
-{{- end -}}
-{{- end -}}
-
-{{/* The trust bundle, for OpenBAO and Postgres alike. */}}
+{{/* The trust bundle: a CA the configs name by path, mounted on every pod. */}}
 {{- define "audit.trustMount" -}}
 {{- if .Values.trust.configMap }}
 - name: trust
@@ -347,24 +124,126 @@ token Secret, or a token file. Called with (dict "root" $ "creds" <values>).
 {{- end }}
 {{- end -}}
 
-{{- define "audit.trustEnv" -}}
-{{- if .Values.trust.configMap }}
-- name: PGSSLROOTCERT
-  value: /etc/audit/trust/{{ .Values.trust.key }}
+
+{{/* The pods that answer the sink: the writer in direct mode, the receiver in
+stream mode. Their configuration is the front door's. */}}
+{{- define "audit.frontName" -}}
+{{- if eq .Values.mode "stream" -}}receiver{{- else -}}writer{{- end -}}
+{{- end -}}
+
+{{/* The container port a component listens on, read from its own
+configuration, because that is where the address is chosen: the chart derives
+the port from the file rather than asking for it twice. Takes the component's
+`config`. */}}
+{{- define "audit.port" -}}
+{{- $cfg := . | default dict -}}
+{{- regexFind "[0-9]+$" (dig "listen" "address" ":8080" $cfg) -}}
+{{- end -}}
+
+{{/* A component's configuration is a ConfigMap of its own, rendered as it
+stands: toYaml of the `config` block and nothing else. Takes (dict "root" $
+"name" "writer" "config" <the block>). */}}
+{{- define "audit.configName" -}}
+{{ include "audit.fullname" .root }}-{{ .name }}-config
+{{- end -}}
+
+{{- define "audit.configMap" -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "audit.configName" . }}
+  labels:
+    {{- include "audit.labels" .root | nindent 4 }}
+    app.kubernetes.io/component: {{ .name }}
+  {{- with .hook }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+  {{- end }}
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    {{- toYaml .config | nindent 4 }}
+{{- end -}}
+
+{{- define "audit.configMount" -}}
+- name: config
+  mountPath: /etc/audit/config.yaml
+  subPath: config.yaml
+  readOnly: true
+{{- end -}}
+
+{{- define "audit.configVolume" -}}
+- name: config
+  configMap:
+    name: {{ include "audit.configName" . }}
+{{- end -}}
+
+{{/* What a component takes from the platform beyond its configuration. Each
+takes the component's values: `secretEnv` puts a Secret's key in the variable
+the config names, `secretMounts` mounts a Secret as a directory, and `tokens`
+projects a service-account token. */}}
+{{- define "audit.secretEnv" -}}
+{{- range .secretEnv }}
+- name: {{ .name }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ .secretName }}
+      key: {{ .key }}
+      {{- if .optional }}
+      optional: true
+      {{- end }}
 {{- end }}
 {{- end -}}
 
-{{/* Seconds from a Go duration the chart accepts: 30s, 2m, 1h. Helm has no
-duration type, and comparing "2m" with "30s" as strings would pass silently. */}}
-{{- define "audit.seconds" -}}
-{{- $d := . | toString -}}
-{{- if hasSuffix "h" $d -}}
-{{- mul (trimSuffix "h" $d | float64 | int) 3600 -}}
-{{- else if hasSuffix "ms" $d -}}
-{{- div (trimSuffix "ms" $d | float64 | int) 1000 -}}
-{{- else if hasSuffix "m" $d -}}
-{{- mul (trimSuffix "m" $d | float64 | int) 60 -}}
-{{- else -}}
-{{- trimSuffix "s" $d | float64 | int -}}
+{{- define "audit.extraMounts" -}}
+{{- range $i, $m := .secretMounts }}
+- name: secret-{{ $i }}
+  mountPath: {{ $m.mountPath }}
+  readOnly: true
+{{- end }}
+{{- range $i, $t := .tokens }}
+- name: token-{{ $i }}
+  mountPath: {{ $t.mountPath }}
+  readOnly: true
+{{- end }}
 {{- end -}}
+
+{{- define "audit.extraVolumes" -}}
+{{- range $i, $m := .secretMounts }}
+- name: secret-{{ $i }}
+  secret:
+    secretName: {{ $m.secretName }}
+{{- end }}
+{{- range $i, $t := .tokens }}
+- name: token-{{ $i }}
+  projected:
+    sources:
+      - serviceAccountToken:
+          path: {{ $t.path | default "token" }}
+          audience: {{ $t.audience | quote }}
+          expirationSeconds: {{ $t.expirationSeconds | default 3600 }}
+{{- end }}
+{{- end -}}
+
+{{/* The profile document, which every component that reads profiles mounts. */}}
+{{- define "audit.deploymentMount" -}}
+- name: deployment
+  mountPath: /etc/audit/deployment.yaml
+  subPath: deployment.yaml
+  readOnly: true
+{{- end -}}
+
+{{- define "audit.deploymentVolume" -}}
+- name: deployment
+  configMap:
+    name: {{ include "audit.fullname" . }}-deployment
+{{- end -}}
+
+{{/* The claim the local key directory lives in. */}}
+{{- define "audit.keysClaim" -}}
+{{ .Values.keysVolume.existingClaim | default (printf "%s-keys" (include "audit.fullname" .)) }}
 {{- end -}}

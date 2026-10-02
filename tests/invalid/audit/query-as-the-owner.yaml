@@ -1,0 +1,17 @@
+# refuse: an owner bypasses the tenant policies
+query:
+  enabled: true
+  grants:
+    issuers:
+      - url: https://id.example.test
+        audience: audit
+  config:
+    grants: /etc/audit/grants.yaml
+    sink:
+      url: http://audit:8080
+    database:
+      url: postgres://audit@db.example.test:5432/audit
+writer:
+  config:
+    database:
+      url: postgres://audit@db.example.test:5432/audit

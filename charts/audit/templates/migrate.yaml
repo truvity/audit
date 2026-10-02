@@ -1,15 +1,15 @@
-{{- if and (include "audit.hasDatabase" .) .Values.database.migrate }}
+{{- if .Values.migrate.enabled }}
 # The identity this Job runs as, created as a hook of its own so that it
 # exists before the Job that names it. A pre-install hook runs BEFORE the
 # release's ordinary resources, so a hook Pod cannot name a ServiceAccount
 # the release has not created yet: the Job would be admitted and then never
 # get a Pod, with "serviceaccount not found" on the Job and a release that
-# waits for a hook that can never run.
+# waits for a hook that can never run. The same is true of its configuration.
 #
 # It is the migration's own, not the writer's, and it carries no cloud
-# annotations. This Job reads a database URL from a Secret and talks to
-# Postgres; it has no business holding the credentials that write the
-# archive. A lower weight than the Job so it is applied first.
+# annotations. This Job talks to Postgres; it has no business holding the
+# credentials that write the archive. A lower weight than the Job so it is
+# applied first.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -20,6 +20,8 @@ metadata:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-10"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+{{ include "audit.configMap" (dict "root" . "name" "migrate" "config" .Values.migrate.config "hook" true) }}
 ---
 # The index schema, applied before the writer rolls.
 #
@@ -54,21 +56,19 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - migrate
-            - --database=$(AUDIT_DATABASE)
-            {{- with .Values.query.database.role }}
-            - --reader={{ . }}
-            {{- end }}
+            - --config=/etc/audit/config.yaml
+          {{- with include "audit.secretEnv" .Values.migrate }}
           env:
-            {{- include "audit.databaseEnv" . | nindent 12 }}
-            {{- include "audit.trustEnv" . | nindent 12 }}
+            {{- . | nindent 12 }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if .Values.trust.configMap }}
           volumeMounts:
+            {{- include "audit.configMount" . | nindent 12 }}
             {{- include "audit.trustMount" . | nindent 12 }}
-          {{- end }}
-      {{- if .Values.trust.configMap }}
+            {{- include "audit.extraMounts" .Values.migrate | nindent 12 }}
       volumes:
+        {{- include "audit.configVolume" (dict "root" . "name" "migrate") | nindent 8 }}
         {{- include "audit.trustVolume" . | nindent 8 }}
-      {{- end }}
+        {{- include "audit.extraVolumes" .Values.migrate | nindent 8 }}
 {{- end }}

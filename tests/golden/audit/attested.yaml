@@ -72,10 +72,10 @@ metadata:
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
 data:
-  # What `audit-writer --deployment` reads: which presets each profile is
-  # composed from, and where its copies land. The jobs read the same document,
-  # because retention is a property of the profile and every one of them needs
-  # to agree about it.
+  # The document a config names as `deployment`: which presets each profile is
+  # composed from, and where its copies land. Every component that reads
+  # profiles reads this one, because retention is a property of the profile and
+  # every one of them needs to agree about it.
   deployment.yaml: |
     external_identifiers_are_opaque: true
     profiles:
@@ -85,6 +85,136 @@ data:
       security:
         presets:
         - security
+
+---
+# Source: audit/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-writer-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: writer
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    anonymousWrites: true
+    archive:
+      bucket:
+        credentialsEnv:
+          accessKeyID: AUDIT_S3_ACCESS_KEY_ID
+          secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+        endpoint: https://s3.example.test
+        name: audit-archive
+        pathStyle: true
+        region: auto
+      lockMode: none
+      prefix: audit/app
+    deployment: /etc/audit/deployment.yaml
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Hourly. Seals the windows since the last digest into the signed chain. It
+# resumes past a missed run on its own, so a failed hour needs no operator: a
+# gap in the chain cannot be told from a digest somebody removed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-digest-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: digest
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        credentialsEnv:
+          accessKeyID: AUDIT_S3_ACCESS_KEY_ID
+          secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+        endpoint: https://s3.example.test
+        name: audit-archive
+        pathStyle: true
+        region: auto
+      lockMode: none
+      prefix: audit/app
+    deployment: /etc/audit/deployment.yaml
+    signer:
+      keyFile:
+        path: /etc/audit/signing/key.pem
+    sink:
+      url: http://audit:8080
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Nightly. Walks each profile's chain and reports what it finds; a non-zero
+# exit is the alert. It takes the public half of the signing key only, which is
+# what lets an auditor run the same command and get the same answer.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-verify-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: verify
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        credentialsEnv:
+          accessKeyID: AUDIT_S3_ACCESS_KEY_ID
+          secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+        endpoint: https://s3.example.test
+        name: audit-archive
+        pathStyle: true
+        region: auto
+      lockMode: none
+      prefix: audit/app
+    deployment: /etc/audit/deployment.yaml
+    publicKeyFile: /etc/audit/public/public.pem
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Daily. Compares this cluster's clock with UTC and records the answer, which is
+# what ETSI EN 319 401 7.10 asks for. It never sets the clock. A drift beyond
+# the tolerance fails the run, so the job going red is the alert.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-clock-sync-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: clock-sync
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    ntp:
+    - time.example.test
 
 ---
 # Source: audit/templates/query.yaml
@@ -106,6 +236,48 @@ data:
     issuers:
     - audience: audit
       url: https://id.example.test
+
+---
+# Source: audit/templates/query.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-query-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        credentialsEnv:
+          accessKeyID: AUDIT_S3_ACCESS_KEY_ID
+          secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+        endpoint: https://s3.example.test
+        name: audit-archive
+        pathStyle: true
+        region: auto
+      prefix: audit/app
+    deployment: /etc/audit/deployment.yaml
+    exports:
+      bucket:
+        credentialsEnv:
+          accessKeyID: AUDIT_EXPORTS_ACCESS_KEY_ID
+          secretAccessKey: AUDIT_EXPORTS_SECRET_ACCESS_KEY
+        endpoint: https://files.example.test
+        name: audit-exports
+        pathStyle: true
+    grants: /etc/audit/grants.yaml
+    searcher: s3scan
+    sink:
+      url: http://audit:8080
 
 ---
 # Source: audit/templates/query.yaml
@@ -185,6 +357,7 @@ spec:
         app.kubernetes.io/instance: audit
         app.kubernetes.io/component: query
       annotations:
+        checksum/config: 8d8243745525dfcc297348bc95ddefb96cc408ec0504f8b9746dddc2494f6a02
         checksum/grants: 9dc7463633c5c1fa2aa226620cb1577a4cdc9cf47bda4233c4f758980e8d4d42
         # A grant preset turns roles into profiles, so the profiles are part
         # of what a grant means.
@@ -203,37 +376,19 @@ spec:
           image: ghcr.io/truvity/audit/audit-query:0.0.0
           imagePullPolicy: IfNotPresent
           args:
-            - --searcher=s3scan
-            - --grants=/etc/audit/grants.yaml
-            - --deployment=/etc/audit/deployment.yaml
-            - --sink=http://audit:8080
-            - --listen=:8080
-            - --exports=audit-exports
-            - --export-expiry=168h
-            - --export-link-valid=1h
-            - --exports-endpoint=https://files.example.test
-            - --exports-path-style
-            - --version=0.0.0
+            - --config=/etc/audit/config.yaml
           env:
-            - name: AUDIT_BUCKET
-              value: "audit-archive"
-            - name: AUDIT_PREFIX
-              value: "audit/app"
-            - name: AWS_REGION
-              value: "auto"
-            # Only when set: an empty endpoint would be taken literally by the SDK
-            # rather than falling back to the AWS default.
-            - name: AUDIT_S3_ENDPOINT
-              value: "https://s3.example.test"
-            - name: AUDIT_S3_PATH_STYLE
-              value: "true"
-            - name: AUDIT_LOCK_MODE
-              value: "none"
             
-            # A second identity for the exports bucket, when the archive's
-            # credentials do not reach it. Named variables rather than
-            # envFrom: one process reads one AWS_ACCESS_KEY_ID, so the
-            # exports' arrive under their own names.
+            - name: AUDIT_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: audit-store-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AUDIT_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: audit-store-credentials
+                  key: AWS_SECRET_ACCESS_KEY
             - name: AUDIT_EXPORTS_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -244,16 +399,6 @@ spec:
                 secretKeyRef:
                   name: audit-exports-credentials
                   key: AWS_SECRET_ACCESS_KEY
-            - name: AUDIT_EXPORTS_SESSION_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: audit-exports-credentials
-                  key: AWS_SESSION_TOKEN
-                  optional: true
-          
-          envFrom:
-            - secretRef:
-                name: audit-store-credentials
           ports:
             - name: http
               containerPort: 8080
@@ -274,6 +419,10 @@ spec:
           resources:
             {}
           volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
             - name: deployment
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
@@ -283,15 +432,20 @@ spec:
               subPath: grants.yaml
               readOnly: true
             
+            
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: config
+          configMap:
+            name: audit-query-config
         - name: deployment
           configMap:
             name: audit-deployment
         - name: grants
           configMap:
             name: audit-grants
+        
         
         - name: tmp
           emptyDir: {}
@@ -322,11 +476,13 @@ spec:
         app.kubernetes.io/instance: audit
         app.kubernetes.io/component: writer
       annotations:
-        # A profile change must reach a running writer, which only happens if
-        # the pod is replaced.
+        # A changed configuration must reach a running pod, and a file mounted
+        # with subPath is never updated in place, so the pod is replaced.
+        checksum/config: b9e5176888f6b1763b0dbc9530b2086d6aae689eb3511f61c8145aa94a62b4ff
+        # Likewise a profile change.
         checksum/deployment: 776c6ef2d6419216af14159fb357e78f086792084d8b054d0f0eaefb4031a37c
-        # Likewise who may write: a changed issuer or mapping must reach it.
-        checksum/workloads: b84b4ff82948eb0bf63ac4428d4927f43364293575e1ef8b0626ac8f68afa11f
+        # And who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: 274aa3accbe10dbf671359ace426a24af2c33648b7017d8008c24e9eb79c4d06
     spec:
       serviceAccountName: audit
       
@@ -341,35 +497,19 @@ spec:
           image: ghcr.io/truvity/audit/audit-writer:0.0.0
           imagePullPolicy: IfNotPresent
           args:
-            - --deployment=/etc/audit/deployment.yaml
-            - --listen=:8080
-            - --roll-interval=30s
-            - --roll-max-records=5000
-            - --replicas=1
-            - --anonymous-writes
-            - --key-provider=none
-            - --version=0.0.0
+            - --config=/etc/audit/config.yaml
           env:
-            - name: AUDIT_BUCKET
-              value: "audit-archive"
-            - name: AUDIT_PREFIX
-              value: "audit/app"
-            - name: AWS_REGION
-              value: "auto"
-            # Only when set: an empty endpoint would be taken literally by the SDK
-            # rather than falling back to the AWS default.
-            - name: AUDIT_S3_ENDPOINT
-              value: "https://s3.example.test"
-            - name: AUDIT_S3_PATH_STYLE
-              value: "true"
-            - name: AUDIT_LOCK_MODE
-              value: "none"
             
-            
-          
-          envFrom:
-            - secretRef:
-                name: audit-store-credentials
+            - name: AUDIT_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: audit-store-credentials
+                  key: AWS_ACCESS_KEY_ID
+            - name: AUDIT_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: audit-store-credentials
+                  key: AWS_SECRET_ACCESS_KEY
           ports:
             - name: http
               containerPort: 8080
@@ -390,26 +530,32 @@ spec:
           resources:
             {}
           volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
             - name: deployment
               mountPath: /etc/audit/deployment.yaml
               subPath: deployment.yaml
               readOnly: true
             
+            
             - name: tmp
               mountPath: /tmp
       volumes:
+        - name: config
+          configMap:
+            name: audit-writer-config
         - name: deployment
           configMap:
             name: audit-deployment
+        
         
         - name: tmp
           emptyDir: {}
 
 ---
 # Source: audit/templates/cronjobs.yaml
-# Hourly. Seals the windows since the last digest into the signed chain. It
-# resumes past a missed run on its own, so a failed hour needs no operator: a
-# gap in the chain cannot be told from a digest somebody removed.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -422,7 +568,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "7 * * * *"
-  # A run that overlaps itself only re-reads windows it will skip.
+  # A run that overlaps itself only does the same work twice.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -433,6 +579,8 @@ spec:
           labels:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 66622faaa1755688142243358ef3bc3b98e4bd585d103859b441eaed4015e083
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit-digest
@@ -449,33 +597,19 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - digest
-                - --deployment=/etc/audit/deployment.yaml
-                - --key=/etc/audit/signing/key.pem
-                - --sink=http://audit:8080
-                - --instance=$(POD_NAME)
+                - --config=/etc/audit/config.yaml
               env:
-                - name: POD_NAME
+                
+                - name: AUDIT_S3_ACCESS_KEY_ID
                   valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                - name: AUDIT_BUCKET
-                  value: "audit-archive"
-                - name: AUDIT_PREFIX
-                  value: "audit/app"
-                - name: AWS_REGION
-                  value: "auto"
-                # Only when set: an empty endpoint would be taken literally by the SDK
-                # rather than falling back to the AWS default.
-                - name: AUDIT_S3_ENDPOINT
-                  value: "https://s3.example.test"
-                - name: AUDIT_S3_PATH_STYLE
-                  value: "true"
-                - name: AUDIT_LOCK_MODE
-                  value: "none"
-              
-              envFrom:
-                - secretRef:
-                    name: audit-store-credentials
+                    secretKeyRef:
+                      name: audit-store-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: AUDIT_S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: audit-store-credentials
+                      key: AWS_SECRET_ACCESS_KEY
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -483,30 +617,38 @@ spec:
                   - ALL
                 readOnlyRootFilesystem: true
               volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
                 - name: deployment
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
-                - name: signing
+                
+                
+                - name: secret-0
                   mountPath: /etc/audit/signing
                   readOnly: true
           volumes:
+            - name: config
+              configMap:
+                name: audit-digest-config
             - name: deployment
               configMap:
                 name: audit-deployment
-            - name: signing
+            
+            
+            - name: secret-0
               secret:
                 secretName: audit-signing-key
 
 ---
 # Source: audit/templates/cronjobs.yaml
-# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: audit-verify-history
+  name: audit-verify
   labels:
     helm.sh/chart: audit-0.0.0
     app.kubernetes.io/name: audit
@@ -515,6 +657,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "23 3 * * *"
+  # A run that overlaps itself only does the same work twice.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -525,6 +668,8 @@ spec:
           labels:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: d55e05818ccb0d9b219e61bd3be9f54b913e288476b5b964fef91543e613930f
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit-verify
@@ -541,39 +686,19 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - verify
-                - --profile=history
-                - --last=24h
-                - --public-key=/etc/audit/public/public.pem
-                # With the deployment the check knows what lock the profile
-                # demands: an object with none is INVALID under a profile
-                # that demands one, and `unlocked` under one that does not.
-                - --deployment=/etc/audit/deployment.yaml
-                - --sink=http://audit:8080
-                - --instance=$(POD_NAME)
-                - --record
+                - --config=/etc/audit/config.yaml
               env:
-                - name: POD_NAME
+                
+                - name: AUDIT_S3_ACCESS_KEY_ID
                   valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                - name: AUDIT_BUCKET
-                  value: "audit-archive"
-                - name: AUDIT_PREFIX
-                  value: "audit/app"
-                - name: AWS_REGION
-                  value: "auto"
-                # Only when set: an empty endpoint would be taken literally by the SDK
-                # rather than falling back to the AWS default.
-                - name: AUDIT_S3_ENDPOINT
-                  value: "https://s3.example.test"
-                - name: AUDIT_S3_PATH_STYLE
-                  value: "true"
-                - name: AUDIT_LOCK_MODE
-                  value: "none"
-              
-              envFrom:
-                - secretRef:
-                    name: audit-store-credentials
+                    secretKeyRef:
+                      name: audit-store-credentials
+                      key: AWS_ACCESS_KEY_ID
+                - name: AUDIT_S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: audit-store-credentials
+                      key: AWS_SECRET_ACCESS_KEY
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
@@ -581,124 +706,34 @@ spec:
                   - ALL
                 readOnlyRootFilesystem: true
               volumeMounts:
-                - name: public
-                  mountPath: /etc/audit/public
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
                   readOnly: true
                 - name: deployment
                   mountPath: /etc/audit/deployment.yaml
                   subPath: deployment.yaml
                   readOnly: true
-          volumes:
-            - name: public
-              secret:
-                secretName: audit-signing-public
-            - name: deployment
-              configMap:
-                name: audit-deployment
-
----
-# Source: audit/templates/cronjobs.yaml
-# Nightly, per profile. Walks the chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: audit-verify-security
-  labels:
-    helm.sh/chart: audit-0.0.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.0.0"
-    app.kubernetes.io/managed-by: Helm
-spec:
-  schedule: "23 3 * * *"
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: audit
-            app.kubernetes.io/instance: audit
-        spec:
-          restartPolicy: OnFailure
-          serviceAccountName: audit-verify
-          
-          securityContext:
-            fsGroup: 65532
-            runAsNonRoot: true
-            runAsUser: 65532
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: verify
-              image: ghcr.io/truvity/audit/audit:0.0.0
-              imagePullPolicy: IfNotPresent
-              args:
-                - verify
-                - --profile=security
-                - --last=24h
-                - --public-key=/etc/audit/public/public.pem
-                # With the deployment the check knows what lock the profile
-                # demands: an object with none is INVALID under a profile
-                # that demands one, and `unlocked` under one that does not.
-                - --deployment=/etc/audit/deployment.yaml
-                - --sink=http://audit:8080
-                - --instance=$(POD_NAME)
-                - --record
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
-                - name: AUDIT_BUCKET
-                  value: "audit-archive"
-                - name: AUDIT_PREFIX
-                  value: "audit/app"
-                - name: AWS_REGION
-                  value: "auto"
-                # Only when set: an empty endpoint would be taken literally by the SDK
-                # rather than falling back to the AWS default.
-                - name: AUDIT_S3_ENDPOINT
-                  value: "https://s3.example.test"
-                - name: AUDIT_S3_PATH_STYLE
-                  value: "true"
-                - name: AUDIT_LOCK_MODE
-                  value: "none"
-              
-              envFrom:
-                - secretRef:
-                    name: audit-store-credentials
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                  - ALL
-                readOnlyRootFilesystem: true
-              volumeMounts:
-                - name: public
+                
+                
+                - name: secret-0
                   mountPath: /etc/audit/public
                   readOnly: true
-                - name: deployment
-                  mountPath: /etc/audit/deployment.yaml
-                  subPath: deployment.yaml
-                  readOnly: true
           volumes:
-            - name: public
-              secret:
-                secretName: audit-signing-public
+            - name: config
+              configMap:
+                name: audit-verify-config
             - name: deployment
               configMap:
                 name: audit-deployment
+            
+            
+            - name: secret-0
+              secret:
+                secretName: audit-signing-public
 
 ---
 # Source: audit/templates/cronjobs.yaml
-# Daily. Compares this cluster's clock with UTC and records the answer, which is
-# what ETSI EN 319 401 7.10 asks for. It never sets the clock. A drift beyond
-# the tolerance fails the run, so the job going red is the alert.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -711,6 +746,7 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 spec:
   schedule: "13 2 * * *"
+  # A run that overlaps itself only does the same work twice.
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -721,6 +757,8 @@ spec:
           labels:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 5ae491b43225b50127ed2fbda817e7351498d56f3ff662614a3c6873de6002aa
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit
@@ -737,18 +775,21 @@ spec:
               imagePullPolicy: IfNotPresent
               args:
                 - clock-sync
-                - --ntp=time.example.test
-                - --sink=http://audit:8080
-                - --max-offset=1s
-                - --instance=$(POD_NAME)
-              env:
-                - name: POD_NAME
-                  valueFrom:
-                    fieldRef:
-                      fieldPath: metadata.name
+                - --config=/etc/audit/config.yaml
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:
                   drop:
                   - ALL
                 readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                
+                
+          volumes:
+            - name: config
+              configMap:
+                name: audit-clock-sync-config

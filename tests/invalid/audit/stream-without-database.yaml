@@ -1,0 +1,17 @@
+# refuse: needs `database`
+mode: stream
+replicas: 1
+receiver:
+  config:
+    mode: receiver
+    deployment: /etc/audit/deployment.yaml
+    anonymousWrites: true
+    stream:
+      nats:
+        url: nats://nats.example.test:4222
+writer:
+  consumers: 1
+  config:
+    stream:
+      nats:
+        url: nats://nats.example.test:4222

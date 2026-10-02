@@ -24,7 +24,11 @@ kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "
 step "the writer role's credential"
 if ! kubectl -n "$NAMESPACE" get secret "$WRITER_SECRET" >/dev/null 2>&1; then
   password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
+  # The chart reads the password (the config names the variable it arrives in,
+  # and carries the URL without it); the suite that connects from outside reads
+  # the whole connection string.
   kubectl -n "$NAMESPACE" create secret generic "$WRITER_SECRET" \
+    --from-literal=password="$password" \
     --from-literal=url="postgres://$WRITER_ROLE:$password@$DATABASE_HOST:5432/$DATABASE?sslmode=require"
 fi
 
@@ -32,6 +36,7 @@ step "the query role's credential"
 if ! kubectl -n "$NAMESPACE" get secret "$QUERY_SECRET" >/dev/null 2>&1; then
   password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
   kubectl -n "$NAMESPACE" create secret generic "$QUERY_SECRET" \
+    --from-literal=password="$password" \
     --from-literal=url="postgres://$QUERY_ROLE:$password@$DATABASE_HOST:5432/$DATABASE?sslmode=require"
 fi
 

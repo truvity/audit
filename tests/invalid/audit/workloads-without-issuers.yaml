@@ -1,0 +1,4 @@
+# refuse: `workloadIdentity.issuers` is empty
+# base: verified-base
+workloadIdentity:
+  issuers: []

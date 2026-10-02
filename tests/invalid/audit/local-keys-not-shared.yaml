@@ -1,0 +1,14 @@
+# refuse: different pseudonym
+replicas: 3
+keysVolume:
+  enabled: true
+writer:
+  config:
+    replicas: 3
+    database:
+      url: postgres://audit@db.example.test:5432/audit
+    keys:
+      provider: local
+      local:
+        rootFile: /etc/audit/keys/root
+        dir: /var/lib/audit/keys

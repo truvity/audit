@@ -2,13 +2,7 @@
 # directory the writers share, and the query service beside them resolving
 # through the same directory. A product's shape.
 mode: stream
-bucket: audit-archive
-prefix: prod
-region: eu-example-1
-kmsKey: alias/audit
 replicas: 2
-writer:
-  consumers: 3
 profiles:
   security:
     presets: [security]
@@ -16,32 +10,81 @@ profiles:
     presets: [billing-nl]
   history:
     presets: [history]
-database:
-  existingSecret: audit-database
-stream:
-  url: nats://nats.audit.svc:4222
+
+x-database: &database
+  url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
+  passwordEnv: AUDIT_DATABASE_PASSWORD
+x-stream: &stream
+  nats:
+    url: nats://nats.audit.svc:4222
+    tokenFile: /var/run/audit/stream/token
   name: AUDIT
   consumer: audit-writer
-keys:
-  provider: local
-  local:
-    existingSecret: audit-key-root
-    persistence:
-      accessModes: [ReadWriteMany]
-      storageClass: efs
-jobs:
-  digest:
-    signingKey:
-      existingSecret: audit-signing-key
-      keyID: audit-digest-2026
-    lookback: 168h
-  verify:
-    publicKey:
-      existingSecret: audit-signing-public
-  purge:
-    dedupeWindow: 336h
-  clockSync:
-    ntp: [time.cloudflare.com, time.google.com]
+x-archive: &archive
+  bucket:
+    name: audit-archive
+    region: eu-example-1
+  prefix: prod
+x-sink: &sink
+  url: http://audit:8080
+  tokenFile: /var/run/audit/token
+
+receiver:
+  config:
+    mode: receiver
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    database: *database
+    stream: *stream
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-database
+      key: password
+  tokens:
+    - audience: nats
+      mountPath: /var/run/audit/stream
+writer:
+  consumers: 3
+  config:
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    replicas: 3
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      prefix: prod
+      kmsKey: alias/audit
+    database: *database
+    keys:
+      provider: local
+      local:
+        rootFile: /etc/audit/keys/root
+        dir: /var/lib/audit/keys
+    stream: *stream
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-database
+      key: password
+  secretMounts:
+    - secretName: audit-key-root
+      mountPath: /etc/audit/keys
+  tokens:
+    - audience: nats
+      mountPath: /var/run/audit/stream
+keysVolume:
+  enabled: true
+  accessModes: [ReadWriteMany]
+  storageClass: efs
+migrate:
+  enabled: true
+  config:
+    database: *database
+    reader: audit_query
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-database
+      key: password
 workloadIdentity:
   issuers:
     - url: https://oidc.example.com/id/CLUSTER
@@ -50,13 +93,8 @@ workloadIdentity:
       source: wallet
 networkPolicy:
   enabled: true
-telemetry:
-  otlpEndpoint: http://otel-collector.observability.svc:4318
 query:
   enabled: true
-  database:
-    existingSecret: audit-query-database
-    role: audit_query
   grants:
     issuers:
       - url: https://id.example.com
@@ -64,10 +102,78 @@ query:
     presets:
       - name: access-roster
         issuer: https://id.example.com
-  exports:
-    bucket: audit-exports
-  resolve:
-    enabled: true
+  keysVolume: true
+  config:
+    deployment: /etc/audit/deployment.yaml
+    grants: /etc/audit/grants.yaml
+    sink: *sink
+    database:
+      url: postgres://audit_query@db.example.test:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+    archive: *archive
+    exports:
+      bucket:
+        name: audit-exports
+    keys:
+      provider: local
+      local:
+        rootFile: /etc/audit/keys/root
+        dir: /var/lib/audit/keys
+  secretEnv:
+    - name: AUDIT_QUERY_DATABASE_PASSWORD
+      secretName: audit-query-database
+      key: password
+  secretMounts:
+    - secretName: audit-key-root
+      mountPath: /etc/audit/keys
+  tokens:
+    - audience: audit
+      mountPath: /var/run/audit
   serviceAccount:
     annotations:
       iam.example.com/role: audit-query
+jobs:
+  digest:
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive: *archive
+      sink: *sink
+      signer:
+        keyFile:
+          path: /etc/audit/signing/key.pem
+          id: audit-digest-2026
+      lookback: 168h
+    secretMounts:
+      - secretName: audit-signing-key
+        mountPath: /etc/audit/signing
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit
+  verify:
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive: *archive
+      sink: *sink
+      publicKeyFile: /etc/audit/public/public.pem
+    secretMounts:
+      - secretName: audit-signing-public
+        mountPath: /etc/audit/public
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit
+  purge:
+    config:
+      deployment: /etc/audit/deployment.yaml
+      database: *database
+      dedupeWindow: 336h
+    secretEnv:
+      - name: AUDIT_DATABASE_PASSWORD
+        secretName: audit-database
+        key: password
+  clockSync:
+    config:
+      ntp: [time.cloudflare.com, time.google.com]
+      sink: *sink
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit

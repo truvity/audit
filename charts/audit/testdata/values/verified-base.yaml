@@ -1,0 +1,26 @@
+# A valid install whose writer verifies who publishes, which is the base the
+# refusals about workload identity are laid over (tests/invalid/audit).
+mode: direct
+externalIdentifiersAreOpaque: true
+workloadIdentity:
+  issuers:
+    - url: https://oidc.example.test
+  workloads:
+    - subject: system:serviceaccount:app:api
+      source: app
+writer:
+  config:
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    archive:
+      bucket:
+        name: audit-archive
+jobs:
+  digest:
+    enabled: false
+  verify:
+    enabled: false
+  purge:
+    enabled: false
+  clockSync:
+    enabled: false

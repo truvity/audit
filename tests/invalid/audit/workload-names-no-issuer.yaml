@@ -1,0 +1,6 @@
+# refuse: say which one it is
+# base: verified-base
+workloadIdentity:
+  issuers:
+    - url: https://a.example.test
+    - url: https://b.example.test

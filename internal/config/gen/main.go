@@ -1,4 +1,5 @@
-// Command gen writes the configuration schemas into schemas/config/. Run it
+// Command gen writes the configuration schemas into schemas/config/, and the
+// chart's values schema, which embeds them, into charts/audit/. Run it
 // through `just config-schemas`; the drift check fails when the committed files
 // are not what it writes.
 package main
@@ -17,6 +18,13 @@ func main() {
 		dir = os.Args[1]
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fail(err)
+	}
+	chart := "charts/audit/values.schema.json"
+	if len(os.Args) > 2 {
+		chart = os.Args[2]
+	}
+	if err := os.WriteFile(chart, schema.Values(), 0o644); err != nil {
 		fail(err)
 	}
 	for _, name := range schema.Names {

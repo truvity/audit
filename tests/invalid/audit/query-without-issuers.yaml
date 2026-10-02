@@ -1,0 +1,11 @@
+# refuse: nobody could ever sign in
+query:
+  enabled: true
+  config:
+    grants: /etc/audit/grants.yaml
+    sink:
+      url: http://audit:8080
+    searcher: s3scan
+    archive:
+      bucket:
+        name: audit-archive

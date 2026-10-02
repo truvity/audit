@@ -1,0 +1,4 @@
+# refuse: nothing reads the file
+workloadIdentity:
+  issuers:
+    - url: https://oidc.example.test

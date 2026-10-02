@@ -26,7 +26,7 @@ spec:
         {{- end }}
       ports:
         - protocol: TCP
-          port: {{ .Values.service.port }}
+          port: {{ include "audit.port" (index .Values (include "audit.frontName" .)).config }}
 {{- if and .Values.query.enabled .Values.networkPolicy.queryIngressFrom }}
 ---
 # The query service takes callers from whatever fronts it, normally the
@@ -50,6 +50,6 @@ spec:
         {{- toYaml .Values.networkPolicy.queryIngressFrom | nindent 8 }}
       ports:
         - protocol: TCP
-          port: {{ .Values.query.service.port }}
+          port: {{ include "audit.port" .Values.query.config }}
 {{- end }}
 {{- end }}

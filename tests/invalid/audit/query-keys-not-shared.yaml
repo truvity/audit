@@ -1,0 +1,5 @@
+# refuse: ReadWriteMany
+keysVolume:
+  enabled: true
+query:
+  keysVolume: true

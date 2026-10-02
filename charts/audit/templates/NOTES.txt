@@ -1,14 +1,18 @@
 {{ include "audit.fullname" . }} is installed.
 
 The writer keeps {{ len .Values.profiles }} profile(s): {{ keys .Values.profiles | sortAlpha | join ", " }}.
-Records reach it at {{ include "audit.sinkURL" . }}.
+Records reach it at http://{{ include "audit.fullname" . }}:{{ .Values.service.port }}.
+
+Every component is configured by one file, its `config:` block, rendered as it
+stands and validated against the schema its binary validates it against. A
+secret is never in it: the file names an environment variable, and `secretEnv`
+puts a Secret's key there. Telemetry is the OTEL_* environment, set by the
+platform. docs/reference/configuration.md lists every key.
 
 {{ if eq .Values.mode "stream" -}}
-Stream mode: {{ .Values.replicas }} receiver(s) publish to {{ .Values.stream.name }},
-and {{ .Values.writer.consumers }} writer(s) consume it through the durable consumer
-{{ .Values.stream.consumer }}. The receivers hold neither the bucket nor a key.
-A writer gathers for {{ .Values.roll.interval }} or {{ .Values.roll.maxRecords }} records,
-whichever comes first, before it writes.
+Stream mode: {{ .Values.replicas }} receiver(s) publish to the stream, and
+{{ .Values.writer.consumers }} writer(s) consume it. The receivers hold neither
+the bucket nor a key.
 {{- else -}}
 Direct mode: the front door is the write path. Every batch is put before it is
 acknowledged, and how many objects a day becomes is decided by the emitter's own
@@ -17,47 +21,43 @@ writers behind a durable consumer, which is what makes a writer that is down a
 backlog rather than a hole.
 {{- end }}
 
-{{ if .Values.prefix -}}
-The archive is {{ .Values.bucket }} under {{ .Values.prefix }}/. Four identities
-need rights beneath that prefix, and none of them may delete anything:
+{{ with .Values.writer.config.archive -}}
+The archive is {{ .bucket.name }}{{ with .prefix }} under {{ . }}/{{ end }}.
+{{- if .prefix }} Four identities need rights beneath that prefix, and none of
+them may delete anything:
 
   writer   put objects; put and get retention; put legal holds; get and list
            under the prefix; encrypt with the bucket's key
-  digest   get and list under the prefix; put under {{ .Values.prefix }}/digest/;
+  digest   get and list under the prefix; put under {{ .prefix }}/digest/;
            decrypt; sign with the digest key
-  verify   get and list under the prefix; put under {{ .Values.prefix }}/verified/;
+  verify   get and list under the prefix; put under {{ .prefix }}/verified/;
            decrypt
   query    get and list under the prefix; decrypt
 
-Scope each to the objects under {{ .Values.prefix }}/ in {{ .Values.bucket }}, and
+Scope each to the objects under {{ .prefix }}/ in {{ .bucket.name }}, and
 condition its s3:ListBucket on that prefix, or one application can read
 another's archive. See docs/operations/s3-guide.md for the policies.
-{{- else -}}
-No `prefix` is set, so this installation writes at the root of {{ .Values.bucket }}.
-That is only safe where the bucket is its own; in a shared one, `prefix` is what
+{{- else }}
+No `prefix` is set, so this installation writes at the root of the bucket. That
+is only safe where the bucket is its own; in a shared one, `prefix` is what
 keeps two applications' archives apart and what their IAM is scoped to.
 {{- end }}
+{{- end }}
 
-{{ if not (include "audit.hasDatabase" .) -}}
+{{ if not .Values.writer.config.database -}}
 No database is configured. The writer indexes nothing, deduplicates in process,
 and may run only one replica. Searching what it writes needs `database`.
 {{- end }}
 
-{{ if eq .Values.keys.provider "local" -}}
-{{ if not .Values.keys.local.persistence.enabled -}}
-The key directory is disposable. Pseudonyms will change on every restart and the
-trail will not link across one. This is not a production install.
-{{- else -}}
-Pseudonymisation keys are wrapped into {{ .Values.keys.local.persistence.existingClaim | default (printf "%s-keys" (include "audit.fullname" .)) }}.
+{{ if .Values.keysVolume.enabled -}}
+Pseudonymisation keys are wrapped into {{ include "audit.keysClaim" . }}.
 They are random, not derived: back that claim up, and never delete it to
 reclaim space. Losing it is losing every tenant's pseudonyms.
-{{- end }}
 {{- end }}
 
 {{ if .Values.query.enabled -}}
 The query service answers at http://{{ include "audit.fullname" . }}-query:{{ .Values.query.service.port }}
 for callers signed in by {{ range $i, $e := .Values.query.grants.issuers }}{{ if $i }}, {{ end }}{{ $e.url }}{{ end }}.
-{{- if .Values.query.resolve.enabled }} It may resolve pseudonyms for callers an explicit rule allows.{{ end }}
 {{- end }}
 
 Check what a profile keeps, with the audit CLI (the images have no shell and
@@ -66,4 +66,4 @@ the writer's has no CLI in it):
   audit profile explain <name> --deployment deployment.yaml
 
 Verify the chain yourself, with nothing but the archive and the public key:
-  audit verify --profile <name> --from <date> --to <date> --bucket {{ .Values.bucket }} --public-key <file>
+  audit verify --profile <name> --from <date> --to <date> --bucket <bucket> --public-key <file>

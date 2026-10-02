@@ -47,35 +47,26 @@ func TestChartHonoursTheFixturesNames(t *testing.T) {
 	rendered := string(out)
 
 	// Every Secret this fixture provisions must be the one the chart asks
-	// for by name, and the migrate job's --reader must name the query role
-	// this fixture actually creates and grants — the one field in this
-	// render that names a ROLE rather than a Secret.
+	// for by name, and the configuration the chart renders must carry the
+	// names the box was given: the migration's reader is the query role this
+	// fixture actually creates and grants — the one field here that names a
+	// ROLE rather than a Secret — and the writer's config names the bucket and
+	// the stream the box provisioned.
 	for _, want := range []string{
 		"name: " + names.WriterSecret,
 		"name: " + names.S3CredsSecret,
 		"secretName: " + names.DigestKeySecret,
 		"secretName: " + names.VerifyPublicSecret,
-		"--reader=" + names.QueryRole,
-		`value: "` + names.Bucket + `"`,
-		"--stream-url=" + names.StreamURL,
+		"reader: " + names.QueryRole,
+		"name: " + names.Bucket,
+		"url: " + names.StreamURL,
+		"name: " + names.StreamName,
+		"consumer: " + names.StreamConsumer,
+		"id: " + names.DigestKeyID,
+		names.WriterRole + "@" + names.DatabaseHost,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("the chart's render does not contain %q — the fixture and the chart have drifted:\n%s", want, rendered)
-		}
-	}
-
-	// The stream and its consumer are never rendered — this chart has no
-	// Stream custom resource, unlike an infra chart that would (see
-	// truvity/policy's url-shortener-infra); the writer binds to them by
-	// flag, which the DIGEST job's render cannot show either, since only
-	// the receiver and the consumer Deployments take --stream-url. Assert
-	// those two directly.
-	for _, want := range []string{
-		"--stream=" + names.StreamName,
-		"--consumer=" + names.StreamConsumer,
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Errorf("the chart's render does not contain %q:\n%s", want, rendered)
 		}
 	}
 }

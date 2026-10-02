@@ -18,6 +18,12 @@ though a standard exists for it.
 
 ## Decision
 
+This follows the shared rules of the component contract: configuration is a
+file plus the environment for secrets
+([policy 0002](https://github.com/truvity/policy/blob/master/docs/decisions/0002-config-file-plus-env.md)),
+and telemetry is the SDK's environment
+([policy 0006](https://github.com/truvity/policy/blob/master/docs/decisions/0006-telemetry-is-the-sdk-environment.md)).
+
 **Each binary reads one configuration file** and nothing else configures it.
 The file is YAML, its path is the one flag the binary has (`--config`), and
 it is **validated against a JSON Schema** that ships with the release. An

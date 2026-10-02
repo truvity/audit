@@ -1,6 +1,6 @@
 # 0008. Hourly signed digest chain and an auditor-run verify command
 
-- Status: accepted
+- Status: superseded by [0019](0019-seals.md)
 - Date: 2026-09-17
 
 ## Context

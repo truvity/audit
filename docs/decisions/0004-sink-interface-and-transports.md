@@ -1,6 +1,6 @@
 # 0004. One sink interface at every hop; the queue is invisible
 
-- Status: accepted; the delivery modes are superseded by [0012](0012-two-deliveries-and-a-durable-ack.md)
+- Status: accepted; the delivery modes are superseded by [0012](0012-two-deliveries-and-a-durable-ack.md), itself superseded by [0017](0017-sink-durability-and-transports.md), which extends this
 - Date: 2026-09-17
 
 The sink contract, the transports and the adapter model below stand. The

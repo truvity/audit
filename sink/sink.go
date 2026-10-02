@@ -57,6 +57,46 @@ func ParseDelivery(s string) (Delivery, error) {
 	}
 }
 
+// Durability is what an acknowledgement promises about the records it covers,
+// ordered so that a higher value survives more. See
+// docs/decisions/0017-sink-durability-and-transports.md.
+type Durability = auditv1.Durability
+
+const (
+	// Unspecified is no answer, and counts as the weakest: a hop that does not
+	// say how durable its acknowledgement is can never satisfy a requirement.
+	Unspecified = auditv1.Durability_DURABILITY_UNSPECIFIED
+	// Logged means the process wrote the records to its log and nothing else.
+	Logged = auditv1.Durability_DURABILITY_LOGGED
+	// Queued means a durable, replicated queue holds the records and will
+	// deliver them to the archive.
+	Queued = auditv1.Durability_DURABILITY_QUEUED
+	// Archived means the records are in the archive's bucket.
+	Archived = auditv1.Durability_DURABILITY_ARCHIVED
+)
+
+// ParseDurability reads the spelling a configuration uses: "logged", "queued"
+// or "archived".
+func ParseDurability(s string) (Durability, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "logged":
+		return Logged, nil
+	case "queued":
+		return Queued, nil
+	case "archived":
+		return Archived, nil
+	default:
+		return Unspecified, fmt.Errorf("sink: %q is not a durability: use logged, queued or archived", s)
+	}
+}
+
+func durabilityName(d Durability) string {
+	if d == Unspecified {
+		return "unspecified"
+	}
+	return strings.ToLower(strings.TrimPrefix(d.String(), "DURABILITY_"))
+}
+
 // Request is a batch and how it must be delivered.
 type Request struct {
 	Records  []*record.Record
@@ -67,6 +107,9 @@ type Request struct {
 type Result struct {
 	Accepted int
 	Rejected []Rejection
+	// Durability is how durable the batch is, as reported by the last hop that
+	// took it. A wrapper never reports more than its successor did.
+	Durability Durability
 }
 
 // Rejection is one record the next hop refused, and why.
@@ -94,6 +137,72 @@ type Sink interface {
 	Write(ctx context.Context, req *Request) (*Result, error)
 }
 
+// Guarantor is implemented by a Sink that can say, before anything is written,
+// the strongest durability it will ever report. A wrapper reports its
+// successor's, and a sink that does not implement it guarantees nothing.
+type Guarantor interface {
+	Guarantees() Durability
+}
+
+// Guarantees returns the strongest durability s will report, or Unspecified
+// when it does not say.
+func Guarantees(s Sink) Durability {
+	if g, ok := s.(Guarantor); ok {
+		return g.Guarantees()
+	}
+	return Unspecified
+}
+
+// Require is the start-up guard behind `require:`: it refuses a chain that can
+// never give min, so a misconfiguration fails when the process starts rather
+// than on the first privileged action.
+func Require(s Sink, min Durability) error {
+	if s == nil {
+		return errors.New("sink: no sink to require anything of")
+	}
+	if got := Guarantees(s); got < min {
+		return fmt.Errorf("sink: this chain guarantees %s at best, and %s is required",
+			durabilityName(got), durabilityName(min))
+	}
+	return nil
+}
+
+// Guard returns s refused at start-up by Require, and checked on every write:
+// an acknowledgement weaker than min is an error, not a success with a caveat.
+// An empty batch is not checked, because nothing was kept for it to be weak
+// about.
+func Guard(s Sink, min Durability) (Sink, error) {
+	if err := Require(s, min); err != nil {
+		return nil, err
+	}
+	return &guarded{next: s, min: min}, nil
+}
+
+type guarded struct {
+	next Sink
+	min  Durability
+}
+
+// Guarantees implements Guarantor.
+func (g *guarded) Guarantees() Durability { return Guarantees(g.next) }
+
+// Write implements Sink.
+func (g *guarded) Write(ctx context.Context, req *Request) (*Result, error) {
+	res, err := g.next.Write(ctx, req)
+	if err != nil || len(req.Records) == 0 {
+		return res, err
+	}
+	if res == nil || res.Durability < g.min {
+		got := Unspecified
+		if res != nil {
+			got = res.Durability
+		}
+		return nil, fmt.Errorf("sink: the acknowledgement is %s and %s is required",
+			durabilityName(got), durabilityName(g.min))
+	}
+	return res, nil
+}
+
 // Func adapts a function to a Sink.
 type Func func(ctx context.Context, req *Request) (*Result, error)
 
@@ -102,7 +211,8 @@ func (f Func) Write(ctx context.Context, req *Request) (*Result, error) { return
 
 // Memory keeps records in memory. It is for tests, and for a deployment that
 // has not been given a store yet, where it exists to make that obvious rather
-// than to be useful.
+// than to be useful. It reports Logged: the records are where a log line would
+// be, in the process, and no stronger.
 type Memory struct {
 	// Fail, when set, is returned instead of accepting anything.
 	Fail error
@@ -125,8 +235,11 @@ func (m *Memory) Write(_ context.Context, req *Request) (*Result, error) {
 	if m.Limit > 0 && len(m.records) > m.Limit {
 		m.records = m.records[len(m.records)-m.Limit:]
 	}
-	return &Result{Accepted: len(req.Records)}, nil
+	return &Result{Accepted: len(req.Records), Durability: Logged}, nil
 }
+
+// Guarantees implements Guarantor.
+func (m *Memory) Guarantees() Durability { return Logged }
 
 // Records returns what has been written, oldest first.
 func (m *Memory) Records() []*record.Record {
@@ -149,7 +262,8 @@ func (m *Memory) Reset() {
 	m.records = nil
 }
 
-// Discard accepts everything and keeps nothing.
+// Discard accepts everything and keeps nothing, so it reports Unspecified and
+// satisfies no requirement.
 var Discard Sink = Func(func(_ context.Context, req *Request) (*Result, error) {
 	return &Result{Accepted: len(req.Records)}, nil
 })

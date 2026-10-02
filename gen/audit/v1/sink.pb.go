@@ -92,6 +92,66 @@ func (Delivery) EnumDescriptor() ([]byte, []int) {
 	return file_audit_v1_sink_proto_rawDescGZIP(), []int{0}
 }
 
+// Durability is what an acknowledgement promises about the records it covers.
+// The values are ordered: a higher number survives more.
+type Durability int32
+
+const (
+	// The hop did not say. A caller treats it as the weakest answer, so a hop
+	// that predates this field can never satisfy a requirement.
+	Durability_DURABILITY_UNSPECIFIED Durability = 0
+	// The process wrote the records to its log and nothing else.
+	Durability_DURABILITY_LOGGED Durability = 1
+	// A durable, replicated queue holds the records and will deliver them to
+	// the archive.
+	Durability_DURABILITY_QUEUED Durability = 2
+	// The records are in the archive's bucket.
+	Durability_DURABILITY_ARCHIVED Durability = 3
+)
+
+// Enum value maps for Durability.
+var (
+	Durability_name = map[int32]string{
+		0: "DURABILITY_UNSPECIFIED",
+		1: "DURABILITY_LOGGED",
+		2: "DURABILITY_QUEUED",
+		3: "DURABILITY_ARCHIVED",
+	}
+	Durability_value = map[string]int32{
+		"DURABILITY_UNSPECIFIED": 0,
+		"DURABILITY_LOGGED":      1,
+		"DURABILITY_QUEUED":      2,
+		"DURABILITY_ARCHIVED":    3,
+	}
+)
+
+func (x Durability) Enum() *Durability {
+	p := new(Durability)
+	*p = x
+	return p
+}
+
+func (x Durability) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Durability) Descriptor() protoreflect.EnumDescriptor {
+	return file_audit_v1_sink_proto_enumTypes[1].Descriptor()
+}
+
+func (Durability) Type() protoreflect.EnumType {
+	return &file_audit_v1_sink_proto_enumTypes[1]
+}
+
+func (x Durability) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Durability.Descriptor instead.
+func (Durability) EnumDescriptor() ([]byte, []int) {
+	return file_audit_v1_sink_proto_rawDescGZIP(), []int{1}
+}
+
 type WriteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Records       []*Record              `protobuf:"bytes,1,rep,name=records,proto3" json:"records,omitempty"`
@@ -150,7 +210,10 @@ type WriteResponse struct {
 	// Records refused at this hop, by id, with a machine-readable reason.
 	// A whole batch is refused before any record is accepted when the
 	// refusal is structural (unknown catalogue version, schema violation).
-	Rejected      []*Rejection `protobuf:"bytes,2,rep,name=rejected,proto3" json:"rejected,omitempty"`
+	Rejected []*Rejection `protobuf:"bytes,2,rep,name=rejected,proto3" json:"rejected,omitempty"`
+	// How durable the batch is once this call returns, as reported by the last
+	// hop that took it. See docs/decisions/0017-sink-durability-and-transports.md.
+	Durability    Durability `protobuf:"varint,3,opt,name=durability,proto3,enum=audit.v1.Durability" json:"durability,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -197,6 +260,13 @@ func (x *WriteResponse) GetRejected() []*Rejection {
 		return x.Rejected
 	}
 	return nil
+}
+
+func (x *WriteResponse) GetDurability() Durability {
+	if x != nil {
+		return x.Durability
+	}
+	return Durability_DURABILITY_UNSPECIFIED
 }
 
 type Rejection struct {
@@ -258,10 +328,13 @@ const file_audit_v1_sink_proto_rawDesc = "" +
 	"\x13audit/v1/sink.proto\x12\baudit.v1\x1a\x15audit/v1/record.proto\"j\n" +
 	"\fWriteRequest\x12*\n" +
 	"\arecords\x18\x01 \x03(\v2\x10.audit.v1.RecordR\arecords\x12.\n" +
-	"\bdelivery\x18\x02 \x01(\x0e2\x12.audit.v1.DeliveryR\bdelivery\"\\\n" +
+	"\bdelivery\x18\x02 \x01(\x0e2\x12.audit.v1.DeliveryR\bdelivery\"\x92\x01\n" +
 	"\rWriteResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\x05R\baccepted\x12/\n" +
-	"\brejected\x18\x02 \x03(\v2\x13.audit.v1.RejectionR\brejected\"3\n" +
+	"\brejected\x18\x02 \x03(\v2\x13.audit.v1.RejectionR\brejected\x124\n" +
+	"\n" +
+	"durability\x18\x03 \x01(\x0e2\x14.audit.v1.DurabilityR\n" +
+	"durability\"3\n" +
 	"\tRejection\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason*\x83\x01\n" +
@@ -270,7 +343,13 @@ const file_audit_v1_sink_proto_rawDesc = "" +
 	"\x0eDELIVERY_BLOCK\x10\x01\x12\x17\n" +
 	"\x0fDELIVERY_OUTBOX\x10\x02\x1a\x02\b\x01\x12\x1c\n" +
 	"\x14DELIVERY_BEST_EFFORT\x10\x03\x1a\x02\b\x01\x12\x12\n" +
-	"\x0eDELIVERY_ASYNC\x10\x042G\n" +
+	"\x0eDELIVERY_ASYNC\x10\x04*o\n" +
+	"\n" +
+	"Durability\x12\x1a\n" +
+	"\x16DURABILITY_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11DURABILITY_LOGGED\x10\x01\x12\x15\n" +
+	"\x11DURABILITY_QUEUED\x10\x02\x12\x17\n" +
+	"\x13DURABILITY_ARCHIVED\x10\x032G\n" +
 	"\vSinkService\x128\n" +
 	"\x05Write\x12\x16.audit.v1.WriteRequest\x1a\x17.audit.v1.WriteResponseB\x89\x01\n" +
 	"\fcom.audit.v1B\tSinkProtoP\x01Z-github.com/truvity/audit/gen/audit/v1;auditv1\xa2\x02\x03AXX\xaa\x02\bAudit.V1\xca\x02\bAudit\\V1\xe2\x02\x14Audit\\V1\\GPBMetadata\xea\x02\tAudit::V1b\x06proto3"
@@ -287,26 +366,28 @@ func file_audit_v1_sink_proto_rawDescGZIP() []byte {
 	return file_audit_v1_sink_proto_rawDescData
 }
 
-var file_audit_v1_sink_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_audit_v1_sink_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_audit_v1_sink_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_audit_v1_sink_proto_goTypes = []any{
 	(Delivery)(0),         // 0: audit.v1.Delivery
-	(*WriteRequest)(nil),  // 1: audit.v1.WriteRequest
-	(*WriteResponse)(nil), // 2: audit.v1.WriteResponse
-	(*Rejection)(nil),     // 3: audit.v1.Rejection
-	(*Record)(nil),        // 4: audit.v1.Record
+	(Durability)(0),       // 1: audit.v1.Durability
+	(*WriteRequest)(nil),  // 2: audit.v1.WriteRequest
+	(*WriteResponse)(nil), // 3: audit.v1.WriteResponse
+	(*Rejection)(nil),     // 4: audit.v1.Rejection
+	(*Record)(nil),        // 5: audit.v1.Record
 }
 var file_audit_v1_sink_proto_depIdxs = []int32{
-	4, // 0: audit.v1.WriteRequest.records:type_name -> audit.v1.Record
+	5, // 0: audit.v1.WriteRequest.records:type_name -> audit.v1.Record
 	0, // 1: audit.v1.WriteRequest.delivery:type_name -> audit.v1.Delivery
-	3, // 2: audit.v1.WriteResponse.rejected:type_name -> audit.v1.Rejection
-	1, // 3: audit.v1.SinkService.Write:input_type -> audit.v1.WriteRequest
-	2, // 4: audit.v1.SinkService.Write:output_type -> audit.v1.WriteResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 2: audit.v1.WriteResponse.rejected:type_name -> audit.v1.Rejection
+	1, // 3: audit.v1.WriteResponse.durability:type_name -> audit.v1.Durability
+	2, // 4: audit.v1.SinkService.Write:input_type -> audit.v1.WriteRequest
+	3, // 5: audit.v1.SinkService.Write:output_type -> audit.v1.WriteResponse
+	5, // [5:6] is the sub-list for method output_type
+	4, // [4:5] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_audit_v1_sink_proto_init() }
@@ -320,7 +401,7 @@ func file_audit_v1_sink_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_audit_v1_sink_proto_rawDesc), len(file_audit_v1_sink_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   3,
 			NumExtensions: 0,
 			NumServices:   1,

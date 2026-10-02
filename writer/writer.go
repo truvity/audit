@@ -345,8 +345,11 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 	return out, nil
 }
 
+// Guarantees implements sink.Guarantor.
+func (w *Writer) Guarantees() sink.Durability { return w.inner.Guarantees() }
+
 // Write implements sink.Sink. It returns only once every record in the batch
-// is in the archive, seen before, or dead-lettered.
+// is in the archive, seen before, or dead-lettered, and reports Archived.
 func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
 	return w.inner.Write(ctx, req)
 }

@@ -50,7 +50,11 @@ func NewPublisher(js jetstream.JetStream, o Options) (*Publisher, error) {
 	return &Publisher{js: js, subject: o.Subject, timeout: o.Timeout}, nil
 }
 
-// Write implements sink.Sink.
+// Guarantees implements sink.Guarantor.
+func (p *Publisher) Guarantees() sink.Durability { return sink.Queued }
+
+// Write implements sink.Sink. It reports Queued: a publish is acknowledged only
+// once the stream has replicated it.
 //
 // Every record is published under its own identifier as the message id, so the
 // stream's own duplicate window absorbs a retry: a publisher that did not see
@@ -72,12 +76,12 @@ func NewPublisher(js jetstream.JetStream, o Options) (*Publisher, error) {
 // lost rather than its publish is absorbed by the duplicate window.
 func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
 	if len(req.Records) == 0 {
-		return &sink.Result{}, nil
+		return &sink.Result{Durability: sink.Queued}, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 
-	result := &sink.Result{}
+	result := &sink.Result{Durability: sink.Queued}
 	pending := make([]outgoing, 0, len(req.Records))
 	for _, r := range req.Records {
 		line, err := record.Canonical(r)

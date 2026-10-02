@@ -15,6 +15,7 @@ import (
 // outside the cluster uses, and what a queue consumer calls on the writer.
 type Client struct {
 	client auditv1connect.SinkServiceClient
+	best   Durability
 }
 
 // NewClient returns a Sink backed by the SinkService at baseURL.
@@ -24,6 +25,18 @@ func NewClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.Cl
 	}
 	return &Client{client: auditv1connect.NewSinkServiceClient(httpClient, baseURL, opts...)}
 }
+
+// Expecting names the strongest durability the service at the other end is
+// configured to give, which a client cannot learn before it writes. It is what
+// Require reads at start-up; every write is still checked by Guard against what
+// the service actually reports.
+func (c *Client) Expecting(d Durability) *Client {
+	c.best = d
+	return c
+}
+
+// Guarantees implements Guarantor, as far as Expecting said.
+func (c *Client) Guarantees() Durability { return c.best }
 
 // Write implements Sink.
 func (c *Client) Write(ctx context.Context, req *Request) (*Result, error) {
@@ -67,7 +80,7 @@ func toProto(r *Result) *auditv1.WriteResponse {
 	if r == nil {
 		return &auditv1.WriteResponse{}
 	}
-	out := &auditv1.WriteResponse{Accepted: int32(r.Accepted)}
+	out := &auditv1.WriteResponse{Accepted: int32(r.Accepted), Durability: r.Durability}
 	for _, x := range r.Rejected {
 		out.Rejected = append(out.Rejected, &auditv1.Rejection{Id: x.ID, Reason: x.Reason})
 	}
@@ -75,7 +88,7 @@ func toProto(r *Result) *auditv1.WriteResponse {
 }
 
 func fromProto(m *auditv1.WriteResponse) *Result {
-	out := &Result{Accepted: int(m.GetAccepted())}
+	out := &Result{Accepted: int(m.GetAccepted()), Durability: m.GetDurability()}
 	for _, x := range m.GetRejected() {
 		out.Rejected = append(out.Rejected, Rejection{ID: x.GetId(), Reason: x.GetReason()})
 	}

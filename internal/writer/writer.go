@@ -163,7 +163,10 @@ func New(w *Writer) (*Writer, error) {
 	return w, nil
 }
 
-// Write implements sink.Sink.
+// Guarantees implements sink.Guarantor: the writer's own put is the archive.
+func (w *Writer) Guarantees() sink.Durability { return sink.Archived }
+
+// Write implements sink.Sink. It reports Archived.
 //
 // A batch is taken as a whole: every record in it is either written, seen
 // before, or dead-lettered, and only then does the call return. A caller that
@@ -171,7 +174,7 @@ func New(w *Writer) (*Writer, error) {
 // this depends on.
 func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
 	if len(req.Records) == 0 {
-		return &sink.Result{}, nil
+		return &sink.Result{Durability: sink.Archived}, nil
 	}
 	ids := make([]string, 0, len(req.Records))
 	for _, r := range req.Records {
@@ -182,7 +185,7 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 		return nil, fmt.Errorf("writer: %w", err)
 	}
 
-	result := &sink.Result{}
+	result := &sink.Result{Durability: sink.Archived}
 	written := make([]string, 0, len(req.Records))
 	var pending []extension
 	inBatch := make(map[string]bool, len(req.Records))

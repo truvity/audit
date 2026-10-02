@@ -10,8 +10,9 @@ package audit.v1;
 import "audit/v1/record.proto";
 
 service SinkService {
-  // Write accepts a batch. The acknowledgement always means durable: the
-  // object is in the archive, or the stream has replicated it. What the
+  // Write accepts a batch. The acknowledgement says how durable the batch is
+  // (WriteResponse.durability): the object is in the archive, or a queue has
+  // replicated it, or the process logged it. What the
   // delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
   // caller waits, and the business request does not complete until the
   // record is kept. With DELIVERY_ASYNC the emitter's own queue waits,
@@ -45,6 +46,24 @@ message WriteResponse {
   // A whole batch is refused before any record is accepted when the
   // refusal is structural (unknown catalogue version, schema violation).
   repeated Rejection rejected = 2;
+  // How durable the batch is once this call returns, as reported by the last
+  // hop that took it. See docs/decisions/0017-sink-durability-and-transports.md.
+  Durability durability = 3;
+}
+
+// Durability is what an acknowledgement promises about the records it covers.
+// The values are ordered: a higher number survives more.
+enum Durability {
+  // The hop did not say. A caller treats it as the weakest answer, so a hop
+  // that predates this field can never satisfy a requirement.
+  DURABILITY_UNSPECIFIED = 0;
+  // The process wrote the records to its log and nothing else.
+  DURABILITY_LOGGED = 1;
+  // A durable, replicated queue holds the records and will deliver them to
+  // the archive.
+  DURABILITY_QUEUED = 2;
+  // The records are in the archive's bucket.
+  DURABILITY_ARCHIVED = 3;
 }
 
 message Rejection {

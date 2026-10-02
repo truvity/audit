@@ -45,8 +45,9 @@ const (
 
 // SinkServiceClient is a client for the audit.v1.SinkService service.
 type SinkServiceClient interface {
-	// Write accepts a batch. The acknowledgement always means durable: the
-	// object is in the archive, or the stream has replicated it. What the
+	// Write accepts a batch. The acknowledgement says how durable the batch is
+	// (WriteResponse.durability): the object is in the archive, or a queue has
+	// replicated it, or the process logged it. What the
 	// delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
 	// caller waits, and the business request does not complete until the
 	// record is kept. With DELIVERY_ASYNC the emitter's own queue waits,
@@ -86,8 +87,9 @@ func (c *sinkServiceClient) Write(ctx context.Context, req *connect.Request[v1.W
 
 // SinkServiceHandler is an implementation of the audit.v1.SinkService service.
 type SinkServiceHandler interface {
-	// Write accepts a batch. The acknowledgement always means durable: the
-	// object is in the archive, or the stream has replicated it. What the
+	// Write accepts a batch. The acknowledgement says how durable the batch is
+	// (WriteResponse.durability): the object is in the archive, or a queue has
+	// replicated it, or the process logged it. What the
 	// delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
 	// caller waits, and the business request does not complete until the
 	// record is kept. With DELIVERY_ASYNC the emitter's own queue waits,

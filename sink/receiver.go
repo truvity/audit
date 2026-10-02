@@ -39,6 +39,9 @@ type Receiver struct {
 	Now func() time.Time
 }
 
+// Guarantees implements Guarantor: a receiver gives what its next hop gives.
+func (r *Receiver) Guarantees() Durability { return Guarantees(r.To) }
+
 // Write stamps and forwards.
 func (r *Receiver) Write(ctx context.Context, req *Request) (*Result, error) {
 	if r.To == nil {

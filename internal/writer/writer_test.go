@@ -188,6 +188,21 @@ func TestWriteDoesNotReturnBeforeTheObjectIsWritten(t *testing.T) {
 	}
 }
 
+// The object is in the bucket, which is the strongest thing an acknowledgement
+// can say, and the writer says it before anything has been written too.
+func TestWriteReportsArchived(t *testing.T) {
+	b := build(t)
+	if got := sink.Guarantees(b.writer); got != sink.Archived {
+		t.Fatalf("Guarantees = %v", got)
+	}
+	if res := write(t, b, fresh(t)); res.Durability != sink.Archived {
+		t.Fatalf("reported %v, want archived", res.Durability)
+	}
+	if res := write(t, b); res.Durability != sink.Archived {
+		t.Fatalf("an empty batch reported %v", res.Durability)
+	}
+}
+
 // An emitter's account of who it is is not evidence. The writer stamps the
 // identity the transport verified, and the emitter's own version and instance
 // are kept as what they are.

@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file audit/v1/sink.proto.
  */
 export const file_audit_v1_sink: GenFile = /*@__PURE__*/
-  fileDesc("ChNhdWRpdC92MS9zaW5rLnByb3RvEghhdWRpdC52MSJXCgxXcml0ZVJlcXVlc3QSIQoHcmVjb3JkcxgBIAMoCzIQLmF1ZGl0LnYxLlJlY29yZBIkCghkZWxpdmVyeRgCIAEoDjISLmF1ZGl0LnYxLkRlbGl2ZXJ5IkgKDVdyaXRlUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAUSJQoIcmVqZWN0ZWQYAiADKAsyEy5hdWRpdC52MS5SZWplY3Rpb24iJwoJUmVqZWN0aW9uEgoKAmlkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSqDAQoIRGVsaXZlcnkSGAoUREVMSVZFUllfVU5TUEVDSUZJRUQQABISCg5ERUxJVkVSWV9CTE9DSxABEhcKD0RFTElWRVJZX09VVEJPWBACGgIIARIcChRERUxJVkVSWV9CRVNUX0VGRk9SVBADGgIIARISCg5ERUxJVkVSWV9BU1lOQxAEMkcKC1NpbmtTZXJ2aWNlEjgKBVdyaXRlEhYuYXVkaXQudjEuV3JpdGVSZXF1ZXN0GhcuYXVkaXQudjEuV3JpdGVSZXNwb25zZUKJAQoMY29tLmF1ZGl0LnYxQglTaW5rUHJvdG9QAVotZ2l0aHViLmNvbS90cnV2aXR5L2F1ZGl0L2dlbi9hdWRpdC92MTthdWRpdHYxogIDQVhYqgIIQXVkaXQuVjHKAghBdWRpdFxWMeICFEF1ZGl0XFYxXEdQQk1ldGFkYXRh6gIJQXVkaXQ6OlYxYgZwcm90bzM", [file_audit_v1_record]);
+  fileDesc("ChNhdWRpdC92MS9zaW5rLnByb3RvEghhdWRpdC52MSJXCgxXcml0ZVJlcXVlc3QSIQoHcmVjb3JkcxgBIAMoCzIQLmF1ZGl0LnYxLlJlY29yZBIkCghkZWxpdmVyeRgCIAEoDjISLmF1ZGl0LnYxLkRlbGl2ZXJ5InIKDVdyaXRlUmVzcG9uc2USEAoIYWNjZXB0ZWQYASABKAUSJQoIcmVqZWN0ZWQYAiADKAsyEy5hdWRpdC52MS5SZWplY3Rpb24SKAoKZHVyYWJpbGl0eRgDIAEoDjIULmF1ZGl0LnYxLkR1cmFiaWxpdHkiJwoJUmVqZWN0aW9uEgoKAmlkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSqDAQoIRGVsaXZlcnkSGAoUREVMSVZFUllfVU5TUEVDSUZJRUQQABISCg5ERUxJVkVSWV9CTE9DSxABEhcKD0RFTElWRVJZX09VVEJPWBACGgIIARIcChRERUxJVkVSWV9CRVNUX0VGRk9SVBADGgIIARISCg5ERUxJVkVSWV9BU1lOQxAEKm8KCkR1cmFiaWxpdHkSGgoWRFVSQUJJTElUWV9VTlNQRUNJRklFRBAAEhUKEURVUkFCSUxJVFlfTE9HR0VEEAESFQoRRFVSQUJJTElUWV9RVUVVRUQQAhIXChNEVVJBQklMSVRZX0FSQ0hJVkVEEAMyRwoLU2lua1NlcnZpY2USOAoFV3JpdGUSFi5hdWRpdC52MS5Xcml0ZVJlcXVlc3QaFy5hdWRpdC52MS5Xcml0ZVJlc3BvbnNlQokBCgxjb20uYXVkaXQudjFCCVNpbmtQcm90b1ABWi1naXRodWIuY29tL3RydXZpdHkvYXVkaXQvZ2VuL2F1ZGl0L3YxO2F1ZGl0djGiAgNBWFiqAghBdWRpdC5WMcoCCEF1ZGl0XFYx4gIUQXVkaXRcVjFcR1BCTWV0YWRhdGHqAglBdWRpdDo6VjFiBnByb3RvMw", [file_audit_v1_record]);
 
 /**
  * @generated from message audit.v1.WriteRequest
@@ -59,6 +59,14 @@ export type WriteResponse = Message<"audit.v1.WriteResponse"> & {
    * @generated from field: repeated audit.v1.Rejection rejected = 2;
    */
   rejected: Rejection[];
+
+  /**
+   * How durable the batch is once this call returns, as reported by the last
+   * hop that took it. See docs/decisions/0017-sink-durability-and-transports.md.
+   *
+   * @generated from field: audit.v1.Durability durability = 3;
+   */
+  durability: Durability;
 };
 
 /**
@@ -138,12 +146,57 @@ export const DeliverySchema: GenEnum<Delivery> = /*@__PURE__*/
   enumDesc(file_audit_v1_sink, 0);
 
 /**
+ * Durability is what an acknowledgement promises about the records it covers.
+ * The values are ordered: a higher number survives more.
+ *
+ * @generated from enum audit.v1.Durability
+ */
+export enum Durability {
+  /**
+   * The hop did not say. A caller treats it as the weakest answer, so a hop
+   * that predates this field can never satisfy a requirement.
+   *
+   * @generated from enum value: DURABILITY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The process wrote the records to its log and nothing else.
+   *
+   * @generated from enum value: DURABILITY_LOGGED = 1;
+   */
+  LOGGED = 1,
+
+  /**
+   * A durable, replicated queue holds the records and will deliver them to
+   * the archive.
+   *
+   * @generated from enum value: DURABILITY_QUEUED = 2;
+   */
+  QUEUED = 2,
+
+  /**
+   * The records are in the archive's bucket.
+   *
+   * @generated from enum value: DURABILITY_ARCHIVED = 3;
+   */
+  ARCHIVED = 3,
+}
+
+/**
+ * Describes the enum audit.v1.Durability.
+ */
+export const DurabilitySchema: GenEnum<Durability> = /*@__PURE__*/
+  enumDesc(file_audit_v1_sink, 1);
+
+/**
  * @generated from service audit.v1.SinkService
  */
 export const SinkService: GenService<{
   /**
-   * Write accepts a batch. The acknowledgement always means durable: the
-   * object is in the archive, or the stream has replicated it. What the
+   * Write accepts a batch. The acknowledgement says how durable the batch is
+   * (WriteResponse.durability): the object is in the archive, or a queue has
+   * replicated it, or the process logged it. What the
    * delivery says is who waits for that. With DELIVERY_BLOCK the emitter's
    * caller waits, and the business request does not complete until the
    * record is kept. With DELIVERY_ASYNC the emitter's own queue waits,

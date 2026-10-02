@@ -30,11 +30,6 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// boxPostgresAddress is the box's own Postgres server, reached the same
-// cross-namespace way truvity/policy's own example fixture reaches it:
-// "<service>.<namespace>.svc".
-const boxPostgresAddress = "postgres.postgres.svc"
-
 // Options are the installer's choices.
 type Options struct {
 	Namespace string

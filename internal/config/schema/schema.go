@@ -2,6 +2,8 @@
 //
 // It is a package of its own, apart from the types and the loader, so that the
 // generator which writes the committed files does not need them to exist.
+//
+//nolint:lll // a schema is prose, and a description is one string
 package schema
 
 import (
@@ -51,8 +53,8 @@ func strDefault(description, def string) m {
 	return s
 }
 
-func integer(description string, min int, def any) m {
-	o := m{"type": "integer", "minimum": min, "description": description}
+func integer(description string, least int, def any) m {
+	o := m{"type": "integer", "minimum": least, "description": description}
 	if def != nil {
 		o["default"] = def
 	}

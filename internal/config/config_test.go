@@ -140,13 +140,13 @@ func TestEveryJobTakesAValidFile(t *testing.T) {
 
 // What a typo must do: fail, and say which key.
 func TestAnUnknownKeyIsRefusedAndNamed(t *testing.T) {
-	_, err := config.LoadWriter(write(t, minimalWriter+"archive2: {}\nlisten: {adress: ':1'}\n"))
+	_, err := config.LoadWriter(write(t, minimalWriter+"archive2: {}\nlisten: {adr: ':1'}\n"))
 	var ce *policyconfig.Error
 	if !errors.As(err, &ce) {
 		t.Fatalf("want a configuration error, got %v", err)
 	}
 	msg := err.Error()
-	for _, want := range []string{"'archive2'", "listen: additional properties 'adress'"} {
+	for _, want := range []string{"'archive2'", "listen: additional properties 'adr'"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("the error does not name %q: %s", want, msg)
 		}

@@ -1,6 +1,6 @@
 # 0012. Two deliveries, and the receiver's acknowledgement means durable
 
-- Status: accepted
+- Status: superseded by [0017](0017-sink-durability-and-transports.md)
 - Date: 2026-09-22
 
 Supersedes the delivery modes of

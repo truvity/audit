@@ -13,12 +13,12 @@ the road you are on.
 
 | section | pages |
 |---|---|
-| Entry | [architecture](architecture.md), [why](why.md), [concepts](concepts.md) |
+| Entry | [architecture](architecture.md), [capabilities](capabilities.md), [why](why.md), [concepts](concepts.md) |
 | Deployment | [the shapes](deployment/README.md), [direct](deployment/direct.md), [stream](deployment/stream.md), [billing](deployment/extensions/billing.md), [usage quotas](deployment/extensions/quotas.md) |
 | Guides | [integrating an application](guides/integrate.md), [deploying](guides/deploy.md), [emitting records](guides/emit.md), [reading the trail](guides/read.md) |
 | Design | [split writer](design/split-writer.md), [search](design/search.md), [authentication and authorization](design/authn-authz.md), [integrity](design/integrity.md), [metering](design/metering.md), [the Audit page](design/audit-page.md) |
-| Decisions | [index](decisions/README.md) |
-| Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [extension points](reference/extension-points.md), [presets](reference/presets.md), [API](reference/api.md), [configuration](reference/configuration.md) |
+| Decisions | [index](decisions/README.md), and the [target architecture](decisions/0016-three-parts-installed-independently.md) |
+| Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [extension points](reference/extension-points.md), [presets](reference/presets.md), [API](reference/api.md), [configuration](reference/configuration.md), [bucket contract](reference/bucket-contract.md) |
 | Operations | [which presets to compose](operations/presets-policy.md), [S3 guide](operations/s3-guide.md), [verification](operations/verify.md), [runbook](operations/runbook.md), [key custody](operations/key-custody.md), [OpenBAO keys](operations/openbao-keys.md) |
 | Development | [layout, and how to add to it](development/layout.md) |
 | Roadmap | [to do](roadmap.md) |

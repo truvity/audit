@@ -1,6 +1,6 @@
 # 0003. S3 Object Lock in compliance mode is the record; everything else is a projection
 
-- Status: accepted
+- Status: accepted; the object layout is superseded by [0018](0018-v1-bucket-layout.md), and retention is extended by [0023](0023-archive-retention-and-lifecycle.md)
 - Date: 2026-09-17
 
 ## Context

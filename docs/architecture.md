@@ -9,6 +9,17 @@ binds them together, what an acknowledgement means, and what can be lost.
 run. The [decisions](decisions/README.md) say why, starting with
 [0011](decisions/0011-one-installation-per-service-or-product.md).
 
+This page describes what is built. The target architecture — three parts
+installed independently over a versioned bucket contract, a sink
+acknowledgement that says how durable it is, and signed seals — is in the
+decisions from
+[0016](decisions/0016-three-parts-installed-independently.md) to
+[0023](decisions/0023-archive-retention-and-lifecycle.md), the
+[bucket contract](reference/bucket-contract.md) and the
+[capabilities](capabilities.md) matrix, which says what exists on each
+platform. Where they differ from this page, this page is the present and
+they are the direction.
+
 ## The parts
 
 ```mermaid

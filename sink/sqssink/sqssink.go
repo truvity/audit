@@ -37,10 +37,14 @@ import (
 // API is the part of the SQS client this package calls; *sqs.Client satisfies
 // it, and so does a test's fake.
 type API interface {
-	SendMessageBatch(ctx context.Context, in *sqs.SendMessageBatchInput, opts ...func(*sqs.Options)) (*sqs.SendMessageBatchOutput, error)
-	ReceiveMessage(ctx context.Context, in *sqs.ReceiveMessageInput, opts ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error)
-	DeleteMessageBatch(ctx context.Context, in *sqs.DeleteMessageBatchInput, opts ...func(*sqs.Options)) (*sqs.DeleteMessageBatchOutput, error)
-	ChangeMessageVisibilityBatch(ctx context.Context, in *sqs.ChangeMessageVisibilityBatchInput, opts ...func(*sqs.Options)) (*sqs.ChangeMessageVisibilityBatchOutput, error)
+	SendMessageBatch(ctx context.Context, in *sqs.SendMessageBatchInput,
+		opts ...func(*sqs.Options)) (*sqs.SendMessageBatchOutput, error)
+	ReceiveMessage(ctx context.Context, in *sqs.ReceiveMessageInput,
+		opts ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error)
+	DeleteMessageBatch(ctx context.Context, in *sqs.DeleteMessageBatchInput,
+		opts ...func(*sqs.Options)) (*sqs.DeleteMessageBatchOutput, error)
+	ChangeMessageVisibilityBatch(ctx context.Context, in *sqs.ChangeMessageVisibilityBatchInput,
+		opts ...func(*sqs.Options)) (*sqs.ChangeMessageVisibilityBatchOutput, error)
 }
 
 // RecordIDAttribute is the message attribute that carries the record's id.

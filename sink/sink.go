@@ -156,31 +156,31 @@ func Guarantees(s Sink) Durability {
 // Require is the start-up guard behind `require:`: it refuses a chain that can
 // never give min, so a misconfiguration fails when the process starts rather
 // than on the first privileged action.
-func Require(s Sink, min Durability) error {
+func Require(s Sink, least Durability) error {
 	if s == nil {
 		return errors.New("sink: no sink to require anything of")
 	}
-	if got := Guarantees(s); got < min {
+	if got := Guarantees(s); got < least {
 		return fmt.Errorf("sink: this chain guarantees %s at best, and %s is required",
-			durabilityName(got), durabilityName(min))
+			durabilityName(got), durabilityName(least))
 	}
 	return nil
 }
 
 // Guard returns s refused at start-up by Require, and checked on every write:
-// an acknowledgement weaker than min is an error, not a success with a caveat.
+// an acknowledgement weaker than least is an error, not a success with a caveat.
 // An empty batch is not checked, because nothing was kept for it to be weak
 // about.
-func Guard(s Sink, min Durability) (Sink, error) {
-	if err := Require(s, min); err != nil {
+func Guard(s Sink, least Durability) (Sink, error) {
+	if err := Require(s, least); err != nil {
 		return nil, err
 	}
-	return &guarded{next: s, min: min}, nil
+	return &guarded{next: s, least: least}, nil
 }
 
 type guarded struct {
-	next Sink
-	min  Durability
+	next  Sink
+	least Durability
 }
 
 // Guarantees implements Guarantor.
@@ -192,13 +192,13 @@ func (g *guarded) Write(ctx context.Context, req *Request) (*Result, error) {
 	if err != nil || len(req.Records) == 0 {
 		return res, err
 	}
-	if res == nil || res.Durability < g.min {
+	if res == nil || res.Durability < g.least {
 		got := Unspecified
 		if res != nil {
 			got = res.Durability
 		}
 		return nil, fmt.Errorf("sink: the acknowledgement is %s and %s is required",
-			durabilityName(got), durabilityName(g.min))
+			durabilityName(got), durabilityName(g.least))
 	}
 	return res, nil
 }

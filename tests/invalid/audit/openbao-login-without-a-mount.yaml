@@ -1,0 +1,11 @@
+# refuse: mount
+writer:
+  config:
+    keys:
+      provider: transit
+      transit:
+        openbao:
+          address: https://openbao.example.test:8200
+          login:
+            role: audit-writer
+            jwtFile: /var/run/openbao/token

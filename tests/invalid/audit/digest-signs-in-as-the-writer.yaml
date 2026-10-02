@@ -1,0 +1,10 @@
+# refuse: the digest job signs in as the writer
+# base: separation-base
+jobs:
+  digest:
+    config:
+      signer:
+        transit:
+          openbao:
+            login:
+              role: audit-writer

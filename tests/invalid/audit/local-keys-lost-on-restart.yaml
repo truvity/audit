@@ -1,0 +1,7 @@
+# refuse: re-keys every tenant
+writer:
+  config:
+    keys:
+      provider: local
+      local:
+        rootFile: /etc/audit/keys/root

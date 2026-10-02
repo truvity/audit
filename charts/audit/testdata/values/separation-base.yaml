@@ -1,0 +1,43 @@
+# A valid install whose writer holds its keys in OpenBAO and whose digest job
+# signs with a transit key under a role of its own: the base the refusals about
+# separation of duties are laid over (tests/invalid/audit).
+mode: direct
+externalIdentifiersAreOpaque: true
+writer:
+  config:
+    deployment: /etc/audit/deployment.yaml
+    anonymousWrites: true
+    archive:
+      bucket:
+        name: audit-archive
+    keys:
+      provider: transit
+      transit:
+        openbao:
+          address: https://openbao.example.test:8200
+          login:
+            mount: jwt-devel
+            role: audit-writer
+            jwtFile: /var/run/openbao/token
+jobs:
+  digest:
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive:
+        bucket:
+          name: audit-archive
+      signer:
+        transit:
+          key: audit-digest
+          openbao:
+            address: https://openbao.example.test:8200
+            login:
+              mount: jwt-devel
+              role: audit-digest
+              jwtFile: /var/run/openbao/token
+  verify:
+    enabled: false
+  purge:
+    enabled: false
+  clockSync:
+    enabled: false

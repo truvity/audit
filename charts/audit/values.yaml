@@ -258,6 +258,10 @@ keysVolume:
   # With ReadWriteOnce this chart renders one writer only.
   accessModes: [ReadWriteOnce]
   existingClaim: ""
+  # Acknowledge that a disposable install keeps its keys in an emptyDir, so that
+  # pseudonyms change on every restart and the trail stops linking across one.
+  # Without a volume and without this, the chart refuses the local provider.
+  ephemeralIsAcceptable: false
 
 # A CA bundle trusted beside the system roots — typically trust-manager's
 # ConfigMap of a private chain — mounted on every pod at /etc/audit/trust, for

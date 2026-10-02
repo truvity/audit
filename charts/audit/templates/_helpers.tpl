@@ -259,3 +259,24 @@ projects a service-account token. */}}
 {{- define "audit.keysClaim" -}}
 {{ .Values.keysVolume.existingClaim | default (printf "%s-keys" (include "audit.fullname" .)) }}
 {{- end -}}
+
+{{/* Who an OpenBAO client signs in as: its role on the JWT mount, the file its
+token is read from, or the Secret the variable it names comes from. Takes
+(dict "bao" <the openbao block> "env" <the component's secretEnv>). Empty when
+there is none to compare. */}}
+{{- define "audit.baoIdentity" -}}
+{{- $bao := .bao | default dict -}}
+{{- if dig "login" "role" "" $bao -}}
+role:{{ dig "login" "mount" "" $bao }}/{{ dig "login" "role" "" $bao }}
+{{- else if dig "tokenFile" "" $bao -}}
+file:{{ dig "tokenFile" "" $bao }}
+{{- else if dig "tokenEnv" "" $bao -}}
+{{- $name := dig "tokenEnv" "" $bao -}}
+{{- range .env -}}{{- if eq .name $name -}}secret:{{ .secretName }}/{{ .key }}{{- end -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/* The role a database URL connects as. */}}
+{{- define "audit.databaseUser" -}}
+{{- regexReplaceAll "^[a-z]+://([^:@/]*).*$" (. | default "") "${1}" -}}
+{{- end -}}

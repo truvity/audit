@@ -1,0 +1,5 @@
+# refuse: ntp
+jobs:
+  clockSync:
+    config:
+      ntp: []

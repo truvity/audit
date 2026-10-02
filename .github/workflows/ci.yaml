@@ -25,7 +25,7 @@ jobs:
   # `just conformance` runs the service-backed tests and `just ts` the
   # TypeScript package.
   recipes:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@929cbec783b5c9c60ab849ef2f52b13a53689783 # v3.17.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@822f94031ee2c91b76da8d5071bfb3d1b6af27b7 # v3.19.0
     with:
       # Required: the component contract (C1-C13) is judged, shown in the job summary, and fails this job when a rule fails.
       policy-conformance: true
@@ -37,7 +37,7 @@ jobs:
   # static. Putting it in `check` would mean every contributor needs one to
   # run the gate at all.
   race:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@929cbec783b5c9c60ab849ef2f52b13a53689783 # v3.17.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@822f94031ee2c91b76da8d5071bfb3d1b6af27b7 # v3.19.0
     with:
       recipes: '["race"]'
 
@@ -45,7 +45,7 @@ jobs:
   # from a remote registry that rate limits, and a gate that fails because
   # somebody else was generating code is a gate people learn to ignore.
   drift-ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@929cbec783b5c9c60ab849ef2f52b13a53689783 # v3.17.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@822f94031ee2c91b76da8d5071bfb3d1b6af27b7 # v3.19.0
     with:
       recipes: '["drift-ts"]'
 
@@ -175,7 +175,7 @@ jobs:
   # publish would ship. It installs from the registry, which is why it is not
   # in `check`.
   ts:
-    uses: truvity/ci-workflows/.github/workflows/check.yaml@929cbec783b5c9c60ab849ef2f52b13a53689783 # v3.17.0
+    uses: truvity/ci-workflows/.github/workflows/check.yaml@822f94031ee2c91b76da8d5071bfb3d1b6af27b7 # v3.19.0
     with:
       recipes: '["ts"]'
 
@@ -192,7 +192,7 @@ jobs:
   # repository's own .gitignore silently kept out of the commit), once on
   # a clean rerun of the same code.
   cluster:
-    uses: truvity/ci-workflows/.github/workflows/integration.yaml@929cbec783b5c9c60ab849ef2f52b13a53689783 # v3.17.0
+    uses: truvity/ci-workflows/.github/workflows/integration.yaml@822f94031ee2c91b76da8d5071bfb3d1b6af27b7 # v3.19.0
     permissions:
       contents: read
       id-token: write

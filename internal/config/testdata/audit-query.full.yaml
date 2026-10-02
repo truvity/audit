@@ -1,0 +1,31 @@
+listen:
+  address: ":8080"
+searcher: postgres
+database:
+  url: postgres://audit_reader@db.example.test:5432/audit
+  passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+  maxConnections: 5
+grants: /etc/audit/grants.yaml
+deployment: /etc/audit/deployment.yaml
+sink:
+  url: http://audit:8080
+  tokenFile: /var/run/audit/token
+archive:
+  bucket:
+    name: audit-archive
+  prefix: app
+exports:
+  bucket:
+    name: audit-exports
+    endpoint: https://files.example.test
+    pathStyle: true
+    credentialsEnv:
+      accessKeyID: AUDIT_EXPORTS_ACCESS_KEY_ID
+      secretAccessKey: AUDIT_EXPORTS_SECRET_ACCESS_KEY
+  expiry: 168h0m0s
+  linkValid: 1h0m0s
+keys:
+  provider: local
+  local:
+    rootFile: /etc/audit/keys/root
+    dir: /var/lib/audit/keys

@@ -25,8 +25,15 @@ generate-local:
 # limits, and a gate that fails because somebody else was generating code is a
 # gate people learn to ignore. `drift-ts` is the same check for TypeScript and
 # belongs in CI, where a retry is cheap.
-drift: generate-local sentences
-    git diff --exit-code -- gen ts/src/catalogue
+drift: generate-local sentences config-schemas
+    git diff --exit-code -- gen ts/src/catalogue schemas/config
+
+# The JSON Schema of each binary's configuration file, written into
+# schemas/config/ from internal/config/schema. The binaries embed these files,
+# the chart's schema embeds them, and `drift` fails when they are not what this
+# writes.
+config-schemas:
+    go run ./internal/config/gen
 
 # The common catalogue's sentences, for the viewer in @truvity/audit. Generated
 # from catalogue/common.yaml so the two cannot drift: `drift` fails on a diff.

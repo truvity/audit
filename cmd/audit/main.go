@@ -108,6 +108,11 @@ usage:
 
   audit version
 
+The scheduled jobs (digest, verify, purge, clock-sync, migrate) also take
+--config <file> in place of every other flag: one file, validated against
+schemas/config/audit-<job>.schema.json, with secrets named by environment
+variable and never held in it. That is how the chart runs them.
+
 Run a command with -h for its flags.
 `
 
@@ -258,11 +263,18 @@ func verify(args []string) error {
 		instance = flags.String("instance", "", "the name this job records itself under")
 		record   = flags.Bool("record", false,
 			"write a verification per window into the archive, which a record's provenance reads; needs write access to verified/")
-		asJSON = flags.Bool("json", false, "print the report as JSON")
+		asJSON     = flags.Bool("json", false, "print the report as JSON")
+		configFile = flags.String("config", "", configUsage)
 	)
 	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
 	if _, err := parse(flags, args); err != nil {
 		return err
+	}
+	if *configFile != "" {
+		if err := onlyConfig(flags); err != nil {
+			return err
+		}
+		return verifyFromConfig(*configFile, *asJSON)
 	}
 	switch {
 	case *profile == "":
@@ -441,9 +453,16 @@ func migrate(args []string) error {
 		database = flags.String("database", "", "the Postgres URL of the index")
 		printSQL = flags.Bool("print", false, "print the schema and apply nothing")
 		reader   = flags.String("reader", "", "a role to grant what the query service needs: usage and select, nothing else")
+		cfgFile  = flags.String("config", "", configUsage)
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
+	}
+	if *cfgFile != "" {
+		if err := onlyConfig(flags); err != nil {
+			return err
+		}
+		return migrateFromConfig(*cfgFile)
 	}
 	if *printSQL {
 		fmt.Print(postgres.Schema())
@@ -460,15 +479,21 @@ func migrate(args []string) error {
 	}
 	defer pool.Close()
 
+	return applyMigration(ctx, pool, *reader)
+}
+
+// applyMigration applies the index schema and, when a reader is named, grants
+// it what the query service needs.
+func applyMigration(ctx context.Context, pool *pgxpool.Pool, reader string) error {
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
 	fmt.Printf("index schema version %d applied\n", postgres.Version)
-	if *reader != "" {
-		if err := postgres.GrantReader(ctx, pool, *reader); err != nil {
+	if reader != "" {
+		if err := postgres.GrantReader(ctx, pool, reader); err != nil {
 			return err
 		}
-		fmt.Printf("%s may read the index\n", *reader)
+		fmt.Printf("%s may read the index\n", reader)
 	}
 	return nil
 }
@@ -550,6 +575,21 @@ type repeated []string
 func (r *repeated) String() string     { return strings.Join(*r, ", ") }
 func (r *repeated) Set(v string) error { *r = append(*r, v); return nil }
 
+// dedupeFor is how long a written identifier is remembered: what was asked
+// for, else the widest window the profiles ask for.
+func dedupeFor(profiles map[string]*preset.Profile, asked time.Duration) time.Duration {
+	if asked != 0 {
+		return asked
+	}
+	var widest time.Duration
+	for _, p := range profiles {
+		if d := time.Duration(p.Pipeline.DedupeWindowDays) * 24 * time.Hour; d > widest {
+			widest = d
+		}
+	}
+	return widest
+}
+
 // requiredLocks is what each composed profile demands of the store's lock,
 // which verify holds every object to.
 func requiredLocks(profiles map[string]*preset.Profile) map[string]string {
@@ -593,10 +633,17 @@ func digestCmd(args []string) error {
 		sinkURL    = flags.String("sink", "", "the writer this job records what it sealed through")
 		instance   = flags.String("instance", "", "the name this job records itself under")
 		asJSON     = flags.Bool("json", false, "print the report as JSON")
+		configFile = flags.String("config", "", configUsage)
 	)
 	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
 	if _, err := parse(flags, args); err != nil {
 		return err
+	}
+	if *configFile != "" {
+		if err := onlyConfig(flags); err != nil {
+			return err
+		}
+		return digestFromConfig(*configFile, *asJSON)
 	}
 	switch {
 	case *deployment == "":
@@ -754,11 +801,18 @@ func purge(args []string) error {
 			"how long the index keeps who an event happened to; your policy, as no shipped preset states one")
 		dedupeWindow = flags.Duration("dedupe-window", 0,
 			"how long a written identifier is remembered; default the widest the profiles ask for")
-		dryRun = flags.Bool("dry-run", false, "report what would be purged and purge nothing")
-		asJSON = flags.Bool("json", false, "print the report as JSON")
+		dryRun     = flags.Bool("dry-run", false, "report what would be purged and purge nothing")
+		asJSON     = flags.Bool("json", false, "print the report as JSON")
+		configFile = flags.String("config", "", configUsage)
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
+	}
+	if *configFile != "" {
+		if err := onlyConfig(flags); err != nil {
+			return err
+		}
+		return purgeFromConfig(*configFile, *asJSON)
 	}
 	switch {
 	case *deployment == "":
@@ -771,14 +825,7 @@ func purge(args []string) error {
 	if err != nil {
 		return err
 	}
-	window := *dedupeWindow
-	if window == 0 {
-		for _, p := range profiles {
-			if d := time.Duration(p.Pipeline.DedupeWindowDays) * 24 * time.Hour; d > window {
-				window = d
-			}
-		}
-	}
+	window := dedupeFor(profiles, *dedupeWindow)
 
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, *database)
@@ -815,13 +862,20 @@ func clockSync(args []string) error {
 		sinkURL   = flags.String("sink", "", "the writer the reading is recorded through")
 		maxOffset = flags.Duration("max-offset", time.Second,
 			"how far the clock may be out before the run fails; 0 accepts any offset and only records it")
-		timeout  = flags.Duration("timeout", 5*time.Second, "how long to wait for a reference")
-		instance = flags.String("instance", "", "the name this job records itself under")
-		version  = flags.String("version", "dev", "this build's version")
-		asJSON   = flags.Bool("json", false, "print the report as JSON")
+		timeout    = flags.Duration("timeout", 5*time.Second, "how long to wait for a reference")
+		instance   = flags.String("instance", "", "the name this job records itself under")
+		version    = flags.String("version", "dev", "this build's version")
+		asJSON     = flags.Bool("json", false, "print the report as JSON")
+		configFile = flags.String("config", "", configUsage)
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
+	}
+	if *configFile != "" {
+		if err := onlyConfig(flags); err != nil {
+			return err
+		}
+		return clockSyncFromConfig(*configFile, *asJSON)
 	}
 	if len(servers) == 0 {
 		return errors.New("name at least one time reference with --ntp")

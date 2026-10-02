@@ -1,0 +1,64 @@
+{
+  "$defs": {
+    "duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "sink": {
+      "additionalProperties": false,
+      "description": "The writer this process records through.",
+      "properties": {
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-clock-sync.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "properties": {
+    "maxOffset": {
+      "$ref": "#/$defs/duration",
+      "default": "1s",
+      "description": "How far the clock may be out before the run fails; 0s accepts any offset and only records it."
+    },
+    "ntp": {
+      "description": "Time references; the quickest to answer is believed, and one being unreachable is survivable.",
+      "items": {
+        "description": "A time reference, host or host:port.",
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "sink": {
+      "$ref": "#/$defs/sink",
+      "description": "The writer the reading is recorded through."
+    },
+    "timeout": {
+      "$ref": "#/$defs/duration",
+      "default": "5s",
+      "description": "How long to wait for a reference."
+    }
+  },
+  "required": [
+    "ntp"
+  ],
+  "title": "audit clock-sync",
+  "type": "object"
+}

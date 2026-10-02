@@ -1,0 +1,423 @@
+{
+  "$defs": {
+    "duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "keys": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "local"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "transit": false
+            },
+            "required": [
+              "local"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "transit"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "local": false
+            },
+            "required": [
+              "transit"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "local": false,
+              "transit": false
+            }
+          }
+        }
+      ],
+      "description": "Where pseudonymisation keys live. Unset, or `none`, means no pseudonyms, no key material and no resolve.",
+      "properties": {
+        "local": {
+          "additionalProperties": false,
+          "description": "The local provider.",
+          "properties": {
+            "dir": {
+              "description": "Where the wrapped data keys are kept. They are random, not derived, so this directory is the only copy; unset keeps them in memory, which a trial install may do and nothing else should.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "rootFile": {
+              "description": "A file holding the 32-byte root the data keys are wrapped under.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "rootFile"
+          ],
+          "type": "object"
+        },
+        "provider": {
+          "description": "`none`, `local` (a root and a directory) or `transit` (OpenBAO).",
+          "enum": [
+            "none",
+            "local",
+            "transit"
+          ]
+        },
+        "transit": {
+          "additionalProperties": false,
+          "description": "The transit provider.",
+          "properties": {
+            "openbao": {
+              "$ref": "#/$defs/openbao"
+            },
+            "prefix": {
+              "default": "audit",
+              "description": "What every key's name starts with: <prefix>.<purpose>.<tenant>.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "openbao"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "openbao": {
+      "additionalProperties": false,
+      "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
+      "oneOf": [
+        {
+          "required": [
+            "login"
+          ]
+        },
+        {
+          "required": [
+            "tokenFile"
+          ]
+        },
+        {
+          "required": [
+            "tokenEnv"
+          ]
+        }
+      ],
+      "properties": {
+        "address": {
+          "description": "The server, for example https://openbao.example:8200.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "caFile": {
+          "description": "A PEM bundle trusted beside the system roots, for a server on a private chain.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "additionalProperties": false,
+          "description": "Sign in with a JWT: the pod's projected service-account token, presented to an auth mount. Nothing is stored.",
+          "properties": {
+            "jwtFile": {
+              "description": "The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "mount": {
+              "description": "The JWT auth mount, for example jwt-devel.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "role": {
+              "description": "The role on that mount.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "mount",
+            "role",
+            "jwtFile"
+          ],
+          "type": "object"
+        },
+        "mount": {
+          "default": "transit",
+          "description": "Where the transit engine is mounted.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The OpenBAO namespace the engine and the auth mount are in. Unset is the root namespace.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenEnv": {
+          "description": "The NAME of the environment variable holding a token.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenFile": {
+          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "postgres": {
+      "allOf": [
+        {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/postgres.json"
+        },
+        {
+          "properties": {
+            "url": {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          }
+        }
+      ],
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
+    }
+  },
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-writer.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "else": {
+        "required": [
+          "archive"
+        ]
+      },
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "receiver"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "archive": false,
+          "catalogues": false,
+          "keys": false
+        },
+        "required": [
+          "stream"
+        ]
+      }
+    }
+  ],
+  "description": "The configuration of audit-writer, the installation's front door and write path. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "oneOf": [
+    {
+      "not": {
+        "required": [
+          "anonymousWrites"
+        ]
+      },
+      "required": [
+        "workloads"
+      ]
+    },
+    {
+      "not": {
+        "required": [
+          "workloads"
+        ]
+      },
+      "required": [
+        "anonymousWrites"
+      ]
+    }
+  ],
+  "properties": {
+    "anonymousWrites": {
+      "const": true,
+      "description": "Accept writes over HTTP from callers nobody verified, stamped with no observer. For a trial install only."
+    },
+    "archive": {
+      "additionalProperties": false,
+      "description": "Where the archive is and how it is written.",
+      "properties": {
+        "bucket": {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
+        },
+        "kmsKey": {
+          "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "lockMode": {
+          "default": "compliance",
+          "description": "The Object Lock mode every object is written in: compliance (the record tier), governance (a lock a privileged role can shorten), or none (the attested tier, for a store without Object Lock). A process refuses to start when a profile demands a stricter mode than this.",
+          "enum": [
+            "compliance",
+            "governance",
+            "none"
+          ]
+        },
+        "prefix": {
+          "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "bucket"
+      ],
+      "type": "object"
+    },
+    "catalogues": {
+      "description": "A directory of catalogues to register at start-up.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "database": {
+      "$ref": "#/$defs/postgres",
+      "description": "The index and the shared deduplication table. Without it the writer indexes nothing, deduplicates in process, and may only run one replica."
+    },
+    "deployment": {
+      "description": "Path to the profile configuration: which presets each profile is composed from.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "forgetIdentities": {
+      "description": "Do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it.",
+      "type": "boolean"
+    },
+    "keys": {
+      "$ref": "#/$defs/keys"
+    },
+    "listen": {
+      "$ref": "https://github.com/truvity/policy/schemas/fragments/listen.json"
+    },
+    "mode": {
+      "default": "writer",
+      "description": "`writer` serves the sink, writes the archive and consumes the stream when there is one. `receiver` serves the sink and publishes to the stream and nothing else: it holds no archive and no keys, because a receiver holding either would be a writer.",
+      "enum": [
+        "writer",
+        "receiver"
+      ]
+    },
+    "replicas": {
+      "default": 1,
+      "description": "How many writers share this stream. Above one it needs a database, and with local keys a directory every replica shares.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "roll": {
+      "additionalProperties": false,
+      "description": "How much a writer gathers from the stream before it writes, which decides how many objects a day of records becomes.",
+      "properties": {
+        "interval": {
+          "$ref": "#/$defs/duration",
+          "default": "30s",
+          "description": "How long gathered records wait before they are written, and how long an object stays open within one write."
+        },
+        "maxRecords": {
+          "default": 5000,
+          "description": "How many gathered records are written at once.",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "stream": {
+      "additionalProperties": false,
+      "description": "The wide stream. Without it the writer only serves its own sink.",
+      "properties": {
+        "ackWait": {
+          "$ref": "#/$defs/duration",
+          "default": "2m",
+          "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+        },
+        "batch": {
+          "default": 100,
+          "description": "How many records are taken from the stream at once.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "consumer": {
+          "default": "audit-writer",
+          "description": "The durable consumer this installation's writers share.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "default": "AUDIT",
+          "description": "The stream.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "nats": {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/nats.json"
+        }
+      },
+      "required": [
+        "nats"
+      ],
+      "type": "object"
+    },
+    "workloads": {
+      "description": "Path to the file naming the issuers trusted to say which workload is publishing, and which source each speaks for. Exactly one of `workloads` and `anonymousWrites`.",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "deployment"
+  ],
+  "title": "audit-writer",
+  "type": "object"
+}

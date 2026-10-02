@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "postgres": {
+      "allOf": [
+        {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/postgres.json"
+        },
+        {
+          "properties": {
+            "url": {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          }
+        }
+      ],
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
+    }
+  },
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-migrate.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The configuration of `audit migrate --config`, which applies the index schema. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "properties": {
+    "database": {
+      "$ref": "#/$defs/postgres"
+    },
+    "reader": {
+      "description": "A role to grant what the query service needs: usage on the schema and select on its tables, now and later, and nothing else. The role must already exist.",
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "database"
+  ],
+  "title": "audit migrate",
+  "type": "object"
+}

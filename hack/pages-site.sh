@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 base="https://truvity.github.io/audit/schemas/v1"
 out="${1:-_site}"
 rm -rf "$out"
-mkdir -p "$out/schemas/v1/common"
+mkdir -p "$out/schemas/v1/common" "$out/schemas/v1/config"
 
 publish() { # <source file> <path under schemas/v1>
   local id
@@ -24,6 +24,9 @@ publish() { # <source file> <path under schemas/v1>
 publish gen/jsonschema/record.v1.schema.json record.schema.json
 for f in catalogue extension preset; do
   publish "schemas/$f.schema.json" "$f.schema.json"
+done
+for f in schemas/config/*.schema.json; do
+  publish "$f" "config/$(basename "$f")"
 done
 for f in catalogue/*.json; do
   publish "$f" "common/$(basename "$f")"

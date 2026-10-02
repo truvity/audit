@@ -59,6 +59,12 @@ func Values() []byte {
 			"tag":        m{"type": "string", "description": "Image tag. Empty is the chart's appVersion."},
 		}),
 		"selectors": m{"type": "array", "items": m{"type": "object"}},
+		"pinned": obj("One image as the release pins it.", m{
+			"registry":   m{"type": "string"},
+			"repository": m{"type": "string"},
+			"tag":        m{"type": "string"},
+			"digest":     m{"type": "string"},
+		}),
 	}
 
 	// What every component takes beyond its configuration.
@@ -91,6 +97,9 @@ func Values() []byte {
 	}
 
 	props := m{
+		"images": obj("Digest-pinned images, written by packaging the chart and never by hand; one wins over `image`.", m{
+			"audit-writer": def("pinned"), "audit-query": def("pinned"), "audit": def("pinned"),
+		}),
 		"image": obj("Images.", m{
 			"writer": def("image"), "cli": def("image"), "query": def("image"),
 			"pullPolicy": m{"enum": []string{"Always", "IfNotPresent", "Never"}, "description": "Pull policy for every image the chart renders."},

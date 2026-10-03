@@ -164,6 +164,114 @@ a, err := auditpulumi.New(ctx, "audit", &auditpulumi.Args{
 name is in every physical name, so one account may hold several installations.
 It is 1 to 32 characters of `a-z`, `0-9` and `-`.
 
+### The AWS provider
+
+The library makes one invoke, `aws.GetCallerIdentity`, for the account the seal
+key's policy names. It is made **through the component**, so it uses the provider
+the caller gave `New`, and not the default one, which a stack may have disabled
+(`pulumi:disable-default-providers`, as the truvity gitops stacks do):
+
+```go
+prov, _ := aws.NewProvider(ctx, "audit-account", &aws.ProviderArgs{Region: pulumi.String("eu-west-1")})
+a, err := auditpulumi.New(ctx, "audit", args, pulumi.Provider(prov)) // or pulumi.Providers(prov)
+```
+
+Every resource the library creates is a child of the component and takes the
+provider the same way. A caller that would rather not make the call, or has no
+way to, sets `Args.AccountID` and no invoke is made. No invoke is made either
+when the notary is off, since the account is used for nothing else. The tests
+check on Pulumi's mocks that the provider reaches the invoke.
+
+### Optional parts
+
+The archive is the one part that is always there. The ingest side and the notary
+are each optional, and independent of the other:
+
+| | `Ingest.Disabled` | `Notary.Disabled` | both |
+|---|---|---|---|
+| left out | queue and DLQ, DynamoDB table, writer function, role, log group and event source mapping, the writer's and the queue's alarms (4) | seal key and alias, notary function, role and log group, the schedule and the scheduler's role, the notary's alarms (3) | all of it |
+| outputs that are then empty | `QueueURL`, `QueueArn`, `DlqURL`, `DlqArn`, `DedupeTableName`, `WriterFunctionArn`, `WriterRoleArn` | `SealKeyArn`, `SealKeyAlias`, `NotaryFunctionArn`, `NotaryRoleArn`, `ScheduleArn` | and `AlarmTopicArn` |
+| inputs no longer required | `Writer.BinaryPath`, `Writer.DeploymentYAML` | `Notary.BinaryPath` | |
+
+The alarm topic exists when at least one alarm does. The resource counts the
+tests hold, with the component itself, for the test installation (Governance,
+telemetry, alerts, observe): both parts 42, ingest only 29, notary only 28,
+neither 13.
+
+Use ingest without the notary where the seals are made elsewhere (a notary on
+Talos signing with OpenBao transit), and neither where both are deferred: the
+archive, its key and the roles for what reads it are then all the stack holds.
+A part turned off later is a plain removal: its resources are deleted by the next
+`pulumi up`, except the seal key and the bucket, which are protected and make the
+update stop until the protection is lifted by hand.
+
+### Encryption
+
+`Archive.Encryption` is `kms` (the default, and what every earlier version did) or
+`s3`. With `s3` the bucket's default encryption is SSE-S3 (`AES256`); no archive
+key or alias is created; no role has a `kms:GenerateDataKey` or `kms:Decrypt`
+grant for one; the functions' configuration names no `kmsKey`; and `ArchiveKeyArn`
+is empty. The seal key is a different key and does not change: the notary still
+signs with it. What SSE-S3 gives up is the archive key's own policy and its
+CloudTrail record of every use. Objects already written keep the encryption they
+were written with.
+
+### Kubernetes workloads (IRSA)
+
+A cluster that is not EKS (Talos) can have an IAM OIDC provider of its own, and a
+ServiceAccount's projected token can then assume a role by web identity. Two roles
+accept this, each for **one** ServiceAccount:
+
+```go
+Observe: &auditpulumi.ObserveArgs{
+	IRSA: &auditpulumi.IRSAArgs{
+		OIDCProviderArn: oidcProviderArn,        // arn:aws:iam::<account>:oidc-provider/k8s.example.test
+		IssuerHost:      "k8s.example.test",    // the provider's URL, no scheme
+		Namespace:       "audit",
+		ServiceAccount:  "audit-observe",
+		// Audience defaults to "sts.amazonaws.com"
+	},
+},
+```
+
+The trust policy is
+
+```json
+{
+  "Effect": "Allow",
+  "Principal": { "Federated": "<OIDCProviderArn>" },
+  "Action": "sts:AssumeRoleWithWebIdentity",
+  "Condition": { "StringEquals": {
+    "<IssuerHost>:aud": "sts.amazonaws.com",
+    "<IssuerHost>:sub": "system:serviceaccount:<Namespace>:<ServiceAccount>"
+  } }
+}
+```
+
+Both conditions matter: without the `sub` pin any ServiceAccount of the cluster
+could assume the role, and without the `aud` pin a token minted for another
+audience would be accepted. The library refuses an empty namespace or
+ServiceAccount, and a name with a wildcard in it. The ServiceAccount's token must
+be projected with the audience, and the workload set `AWS_ROLE_ARN` and
+`AWS_WEB_IDENTITY_TOKEN_FILE` (the AWS SDK's own web identity provider).
+
+- **`Observe.IRSA`** makes `<name>-observe-reader` trust the ServiceAccount. It is an
+  alternative to `Observe.TrustedPrincipalArn`, or in addition to it (the role
+  then has both statements). The role is read only: `GetObject` on `records/`,
+  `catalogue/`, `schema/`, `seals/` and `keys/`, `ListBucket` under those prefixes,
+  and `kms:Decrypt` on the archive key when there is one.
+- **`ArchiveWriter`** creates `<name>-archive-writer` for a workload outside AWS
+  that writes part of the archive itself: hive runs the digest on Talos, and it
+  writes `seals/` and `keys/`. `ArchiveWriter.IRSA` is the same block;
+  `ArchiveWriter.Prefixes` are what it may put under (any of `records/`,
+  `catalogue/`, `schema/`, `identity/`, `dlq/`, `seals/`, `keys/`; default `seals/` and
+  `keys/`). Its rights are `PutObject` on those prefixes (and `PutObjectRetention`
+  unless the mode is `NONE`), `GetObject` on `records/` and those prefixes,
+  `ListBucket`, and the archive key's `GenerateDataKey` and `Decrypt` when there is
+  one. It has no delete, no legal hold, no seal key, no queue and no table.
+
+Output: `ArchiveWriterRoleArn`, empty without `ArchiveWriter`.
+
 ### Inputs
 
 Required inputs are marked. Anything not listed has the default stated.
@@ -171,19 +279,22 @@ Required inputs are marked. Anything not listed has the default stated.
 | input | default | meaning |
 |---|---|---|
 | `Tags` | none | on every resource that takes tags |
+| `AccountID` | looked up | the account; empty looks it up through the component's provider, see [the AWS provider](#the-aws-provider) |
 | `RolePath` | `/audit/` | the IAM path of every role the library creates |
 | `LogRetentionDays` | 30 | each function's log group |
 | `Archive.BucketName` | **required** | the bucket; it is in the functions' configuration, so it has to be known before anything is created |
 | `Archive.ObjectLockMode` | **required** | `NONE`, `GOVERNANCE` or `COMPLIANCE`; there is no default, so every caller chooses. See [the lock modes](#the-lock-modes) |
 | `Archive.AcknowledgeCompliance` | false | the deliberate step before `COMPLIANCE`; without it the library builds nothing |
 | `Archive.DefaultRetentionDays` | 0 | the bucket's default retention, a floor: the writer sets each object's own. 0 sets no default rule; refused with `NONE` |
+| `Archive.Encryption` | `kms` | `kms` (SSE-KMS under an archive key) or `s3` (SSE-S3: no archive key, no `kms` grants on it); see [encryption](#encryption) |
 | `Archive.Profiles` | **required** | one lifecycle rule per `records/<profile>/` prefix |
 | `Archive.GlacierIRDays`, `.DeepArchiveDays` | 30, 365 | [0023](../decisions/0023-archive-retention-and-lifecycle.md) |
+| `Ingest.Disabled` | false | leaves out the queue, the table, the writer and their alarms; see [optional parts](#optional-parts) |
 | `Ingest.Senders` | none | principals allowed to send to the queue; none adds no sender statement, so only identity policies in the account grant sending |
 | `Ingest.MaxReceiveCount` | 5 | deliveries before a message moves to the DLQ |
 | `Ingest.RetentionDays` | 14 | the queue's retention; 14 is SQS's limit and the deduplication window's floor |
-| `Writer.BinaryPath` | **required** | the linux/arm64 `bootstrap` |
-| `Writer.DeploymentYAML` | **required** | the profile configuration, the document the chart renders |
+| `Writer.BinaryPath` | **required** unless `Ingest.Disabled` | the linux/arm64 `bootstrap` |
+| `Writer.DeploymentYAML` | **required** unless `Ingest.Disabled` | the profile configuration, the document the chart renders |
 | `Writer.Catalogues` | none | application catalogues by file name (`catalogue.yaml`, `catalogue-<name>.yaml`) |
 | `Writer.Keys`, `.ForgetIdentities` | none | the `keys` block and `forgetIdentities` of the file |
 | `Writer.DedupeWindow` | the profiles' widest | a Go duration |
@@ -191,7 +302,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Writer.BatchSize` | 10 | 1 to 10, the sink's limit |
 | `Writer.MaxBatchingWindowSeconds` | 5 | how long the mapping gathers a batch: fewer, larger objects for a few seconds of latency |
 | `Writer.MaxConcurrency` | 10 | the mapping's concurrency cap, 2 or more |
-| `Notary.BinaryPath` | **required** | the linux/arm64 `bootstrap` |
+| `Notary.Disabled` | false | leaves out the seal key, the notary, its schedule and alarms |
+| `Notary.BinaryPath` | **required** unless `Notary.Disabled` | the linux/arm64 `bootstrap` |
 | `Notary.Schedule` | `cron(15 * * * ? *)` | EventBridge Scheduler, UTC |
 | `Notary.Profiles`, `.Settle` | every profile, `10m` | as `audit-notary` |
 | `Notary.MemoryMB`, `.TimeoutSeconds` | 256, 900 | |
@@ -203,21 +315,24 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Alerts.EndpointURL` | none | the HTTPS endpoint of alert-ingress; none creates the topic and the alarms and no subscription |
 | `Alerts.OldestMessageAgeSeconds` | 900 | |
 | `Alerts.NotarySilenceHours` | 3 | |
-| `Observe.TrustedPrincipalArn` | **required** with `Observe` | the principal that may assume the read role |
-| `Observe.ExternalID` | none | required of the assuming principal when set |
+| `Observe.TrustedPrincipalArn` | one of this and `IRSA` is **required** with `Observe` | the principal that may assume the read role |
+| `Observe.ExternalID` | none | required of the assuming principal when set; does not apply to IRSA |
+| `Observe.IRSA` | none | a ServiceAccount that may assume the read role by web identity, see [IRSA](#kubernetes-workloads-irsa) |
+| `ArchiveWriter` | nil | `IRSA` (the same block) and `Prefixes` (default `seals/`, `keys/`): a write role for a workload outside AWS |
 
 ### Outputs
 
 | output | what |
 |---|---|
 | `BucketName`, `BucketArn` | the archive |
-| `ArchiveKeyArn` | the symmetric key objects are encrypted with (rotation on) |
+| `ArchiveKeyArn` | the symmetric key objects are encrypted with (rotation on); empty with `Encryption: s3` |
 | `SealKeyArn`, `SealKeyAlias` | the `ECC_NIST_P384` `SIGN_VERIFY` key and its alias, `alias/<name>-seal`. `audit key public` reads its public half for `keys/roots.jwks` and the verifier's pin |
 | `QueueURL`, `QueueArn` | the ingest queue a receiver or an application sends to (`forward.sqs.queueUrl`) |
 | `DlqURL`, `DlqArn` | the dead-letter queue |
 | `DedupeTableName` | the DynamoDB table |
 | `WriterFunctionArn`, `NotaryFunctionArn` | the functions |
-| `WriterRoleArn`, `NotaryRoleArn`, `ObserveReaderRoleArn` | the roles, see below; the last is empty without `Observe` |
+| `WriterRoleArn`, `NotaryRoleArn`, `ObserveReaderRoleArn` | the roles, see below; `ObserveReaderRoleArn` is empty without `Observe`; the outputs of a part that is turned off are empty too |
+| `ArchiveWriterRoleArn` | the IRSA write role, empty without `ArchiveWriter` |
 | `AlarmTopicArn` | the SNS topic every alarm publishes to |
 | `ScheduleArn` | the notary's schedule |
 
@@ -225,7 +340,7 @@ Required inputs are marked. Anything not listed has the default stated.
 
 | resource | notes |
 |---|---|
-| S3 bucket | versioning enabled in every mode, protected from a stack destroy in every mode, the bucket's own `objectLockEnabled` never set (it forces replacement), and Object Lock as a separate configuration resource that exists unless the mode is `NONE`; SSE-KMS SSE-KMS under the archive key with bucket keys, all four public-access blocks, bucket-owner-enforced ownership, a policy that denies plain HTTP, a lifecycle rule per profile prefix and one that aborts incomplete multipart uploads after 7 days. `ForceDestroy` is never set |
+| S3 bucket | versioning enabled in every mode, protected from a stack destroy in every mode, the bucket's own `objectLockEnabled` never set (it forces replacement), and Object Lock as a separate configuration resource that exists unless the mode is `NONE`; SSE-KMS under the archive key with bucket keys (SSE-S3 with `Encryption: s3`), all four public-access blocks, bucket-owner-enforced ownership, a policy that denies plain HTTP, a lifecycle rule per profile prefix and one that aborts incomplete multipart uploads after 7 days. `ForceDestroy` is never set |
 | KMS archive key | symmetric, rotation on, protected, alias `alias/<name>-archive` |
 | KMS seal key | `ECC_NIST_P384`, `SIGN_VERIFY`, protected, alias `alias/<name>-seal`, and a key policy of its own (below) |
 | SQS ingest queue and DLQ | SSE-SQS, visibility timeout six times the writer's timeout, a redrive policy to the DLQ and a redrive-allow policy on the DLQ, a queue policy that denies plain HTTP and allows the named senders |
@@ -250,8 +365,13 @@ matcher name, are
 |---|---|---|
 | writer | `arn:aws:iam::<account>:role/audit/audit-writer` | the writer function; the identity the OTLP door sees |
 | notary | `arn:aws:iam::<account>:role/audit/audit-notary` | the notary function; the identity the OTLP door sees |
-| observe reader | `arn:aws:iam::<account>:role/audit/audit-observe-reader` | assumed by observe in another account (only with `Observe`) |
+| observe reader | `arn:aws:iam::<account>:role/audit/audit-observe-reader` | assumed by observe in another account or by a Kubernetes ServiceAccount (only with `Observe`) |
+| archive writer | `arn:aws:iam::<account>:role/audit/audit-archive-writer` | a Kubernetes ServiceAccount, by IRSA (only with `ArchiveWriter`) |
 | scheduler | `arn:aws:iam::<account>:role/audit/audit-scheduler` | EventBridge Scheduler, to invoke the notary and nothing else |
+
+The writer, notary and scheduler roles exist only with their part; the KMS
+row is empty with `Encryption: s3`, and the IRSA write role is described under
+[Kubernetes workloads](#kubernetes-workloads-irsa).
 
 The kernel OTLP door's provisional single role, `role/audit/audit`, is not used:
 the writer and the notary must not share a role, because whoever can write the
@@ -263,7 +383,7 @@ What each role may do, and nothing more:
 | | writer | notary | observe reader |
 |---|---|---|---|
 | S3 put | `PutObject`, `PutObjectRetention`, `PutObjectLegalHold` on `records/`, `catalogue/`, `schema/`, `identity/`, `dlq/` | `PutObject`, `PutObjectRetention` on `seals/`, `keys/` | none |
-| S3 read | `GetObject` on the same and `holds/`, `ListBucket` | `GetObject` on `records/`, `seals/`, `keys/`, `ListBucket` | `GetObject` on `records/`, `catalogue/`, `seals/`, `keys/`; `ListBucket` under those prefixes |
+| S3 read | `GetObject` on the same and `holds/`, `ListBucket` | `GetObject` on `records/`, `seals/`, `keys/`, `ListBucket` | `GetObject` on `records/`, `catalogue/`, `schema/`, `seals/`, `keys/`; `ListBucket` under those prefixes |
 | KMS | `GenerateDataKey`, `Decrypt` on the archive key | the same, and `Sign`, `GetPublicKey`, `DescribeKey` on the **seal key** | `Decrypt` on the archive key |
 | DynamoDB | `GetItem`, `BatchGetItem`, `PutItem` on the dedupe table | none | none |
 | SQS | `ReceiveMessage`, `DeleteMessage`, `GetQueueAttributes`, `ChangeMessageVisibility` on the ingest queue | none | none |
@@ -334,6 +454,9 @@ The function flushes its metrics at the end of every invocation and on SIGTERM, 
 that nothing waits in an environment that is frozen.
 
 ## Alarms
+
+With `Ingest.Disabled` the writer's and the queue's alarms are not created, and with
+`Notary.Disabled` the notary's three are not; with neither there is no topic.
 
 CloudWatch alarms publish, on ALARM and on OK, to the SNS topic `<name>-alarms`,
 which is subscribed to alert-ingress over HTTPS. This is the D13 set:
@@ -461,8 +584,9 @@ is S3's default.
 With `Observe`, the library creates `<name>-observe-reader` in the archive's
 account. It trusts `Observe.TrustedPrincipalArn` (in the kernel's account, the role
 `audit-observe` runs as; add `ExternalID` to require `sts:ExternalId`) and may
-list and get on `records/`, `catalogue/`, `seals/` and `keys/`, and decrypt under
-the archive key, and nothing else. Observe assumes it and follows the bucket by
+list and get on `records/`, `catalogue/`, `schema/`, `seals/` and `keys/`, and decrypt under
+the archive key (when there is one), and nothing else. A cluster outside AWS reaches it
+by [IRSA](#kubernetes-workloads-irsa) instead, or as well. Observe assumes it and follows the bucket by
 cursor ([0020](../decisions/0020-observe-follows-the-bucket.md)); everything
 downstream of that, including the index, is in the other account. The principal's
 own side needs `sts:AssumeRole` on the role's ARN.

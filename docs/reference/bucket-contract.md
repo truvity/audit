@@ -86,8 +86,8 @@ and its payload is `audit.v1.Seal` in proto JSON with the proto field names:
 |---|---|
 | `tenant`, `profile` | what the seal covers |
 | `hour` | the start of the hour covered, RFC 3339, UTC |
-| `count` | the number of objects the seal covers; zero for an empty hour |
-| `root` | the root of a binary Merkle tree whose leaves are the objects' `sha256` values in key order, hashed as in RFC 6962; the hash of nothing for an empty hour |
+| `count` | the number of records in the seal's scope; zero for an empty hour |
+| `root` | the root of a binary Merkle tree whose leaves are the record hashes (the `hash` field of each record line) of every record in the seal's scope, in key order by object, then line order within each object, hashed as in RFC 6962; the hash of nothing for an empty hour |
 | `first`, `last` | the first and last object key of the hour; empty for an empty hour |
 | `prev` | hex SHA-256 of the previous seal's bytes for the same profile and tenant; empty for the first seal |
 | `sealed_at` | when the seal was made, RFC 3339 |
@@ -96,6 +96,14 @@ and its payload is `audit.v1.Seal` in proto JSON with the proto field names:
 A seal for an hour is written when the hour has settled
 ([0020](../decisions/0020-observe-follows-the-bucket.md)). An hour with no
 objects still gets a seal, so a missing seal is a fault and never silence.
+
+### Inclusion proof
+
+A single record is proven by its leaf index (0-based position among all
+records in the hour, in key order by object, then line order within each
+object) plus the RFC 6962 audit path: a sequence of at most log₂(count)
+hashes needed to recompute the root. Its object can still be verified by
+that object's sha256 in the object metadata.
 
 ### Trust
 

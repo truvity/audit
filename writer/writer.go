@@ -52,6 +52,11 @@ import (
 	"github.com/truvity/audit/store"
 )
 
+// Dedupe is the writer's record of what it has written: Seen asks and marks
+// nothing, Mark is called once the copies are durable, Purge forgets. See
+// dedupe/dynamodbdedupe and index/postgres for the shared ones.
+type Dedupe = inner.Dedupe
+
 // Config is what a writer needs. Archive and Profiles are required;
 // everything else has a default that is safe for one instance.
 type Config struct {
@@ -82,6 +87,12 @@ type Config struct {
 	// the writer deduplicates in process, and so may run as one instance
 	// only.
 	Database *pgxpool.Pool
+	// Dedupe, when given, is the deduplication store, in place of the one
+	// Database provides: for a deployment that has no database, such as the
+	// writer on a function platform, where it is a DynamoDB table
+	// (dedupe/dynamodbdedupe). It is shared by every replica, so it lifts the
+	// one-instance limit as Database does. Give it or Database, not both.
+	Dedupe Dedupe
 	// Replicas is how many writers share one stream of records. Above one it
 	// needs Database, and keys every replica sees the same way.
 	Replicas int
@@ -120,6 +131,7 @@ type Config struct {
 // it over HTTP with Handler.
 type Writer struct {
 	inner   *inner.Writer
+	holds   *hold.Watcher
 	stop    context.CancelFunc
 	watcher sync.WaitGroup
 	closed  sync.Once
@@ -170,7 +182,14 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		local.Register(cat)
 	}
 
+	if c.Dedupe != nil && c.Database != nil {
+		return nil, errors.New("writer: a deduplication store and a database are both given: " +
+			"the database is the deduplication store when there is one, so give one of them")
+	}
 	dedupe := inner.Dedupe(&inner.MemoryDedupe{})
+	if c.Dedupe != nil {
+		dedupe = c.Dedupe
+	}
 	var shared *registry.Registry
 	if c.Database != nil {
 		// A writer whose database is at another schema version refuses to
@@ -326,7 +345,7 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		return nil, err
 	}
 
-	out := &Writer{inner: w}
+	out := &Writer{inner: w, holds: holds}
 	watching, stop := context.WithCancel(context.Background())
 	out.stop = stop
 	out.watcher.Add(1)
@@ -367,6 +386,14 @@ func (w *Writer) Handler(a auth.Authenticator) (string, http.Handler) {
 	}
 	return path, handler
 }
+
+// RefreshHolds reads the legal holds now. The writer refreshes them every minute
+// in the background, which a process that is frozen between invocations does
+// not get: its clock keeps running while it is stopped, and the first write
+// after a thaw could act on a list that is older than it looks. A function
+// calls this at the start of each invocation. An error leaves the last answer
+// in force, the way a failed background refresh does.
+func (w *Writer) RefreshHolds(ctx context.Context) error { return w.holds.Refresh(ctx) }
 
 // Close records that the writer stopped, writes whatever is still gathered,
 // and stops watching the legal holds. Nothing is taken after it.

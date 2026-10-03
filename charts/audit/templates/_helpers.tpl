@@ -241,6 +241,40 @@ projects a service-account token. */}}
 {{- end }}
 {{- end -}}
 
+{{/* The OpenTelemetry SDK environment of one pod, as list items, or nothing when
+no endpoint is set: a process exports only when a collector is named (ADR 0021,
+policy 0006), so an empty `telemetry.otlp.endpoint` renders nothing and a
+release that never set it is byte-identical to one before the value existed.
+Takes (dict "root" $ "service" "<service.name>"), the name the binary reports
+itself as (internal/telemetry): audit-writer for the front door, the receiver
+and the consumers, audit-query, audit-observe, audit-notary, and `audit` for the
+toolchain's jobs, which export nothing and carry the variables for
+uniformity. `extraEnv` comes last, sorted, so the file is stable. */}}
+{{- define "audit.otelEnv" -}}
+{{- $o := (.root.Values.telemetry | default dict).otlp | default dict -}}
+{{- if $o.endpoint }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ $o.endpoint | quote }}
+- name: OTEL_EXPORTER_OTLP_PROTOCOL
+  value: {{ $o.protocol | default "http/protobuf" | quote }}
+- name: OTEL_SERVICE_NAME
+  value: {{ .service | quote }}
+{{- range $name := keys ($o.extraEnv | default dict) | sortAlpha }}
+- name: {{ $name }}
+  value: {{ get $o.extraEnv $name | toString | quote }}
+{{- end }}
+{{- end }}
+{{- end -}}
+
+{{/* Everything a container's `env` holds: the component's secrets, then the
+telemetry environment. Takes (dict "root" $ "comp" <the component's values>
+"service" "<service.name>"). Empty, so that the caller omits `env`, when both
+are. */}}
+{{- define "audit.env" -}}
+{{- include "audit.secretEnv" .comp -}}
+{{- include "audit.otelEnv" (dict "root" .root "service" .service) -}}
+{{- end -}}
+
 {{- define "audit.extraMounts" -}}
 {{- range $i, $m := .secretMounts }}
 - name: secret-{{ $i }}

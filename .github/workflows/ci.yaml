@@ -30,7 +30,7 @@ jobs:
       # Required: the component contract (C1-C13) is judged, shown in the job summary, and fails this job when a rule fails.
       policy-conformance: true
       policy-conformance-strict: true
-      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "telemetry", "leak-canary", "sdk-closure", "installable", "sdk-require"]'
+      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "telemetry", "leak-canary", "sdk-closure", "installable", "sdk-require", "pulumi-test"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
   # everything else builds with cgo off — which is what makes the binaries
@@ -116,7 +116,7 @@ jobs:
       s3:
         image: localstack/localstack@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
         env:
-          SERVICES: s3,kms,sqs
+          SERVICES: s3,kms,sqs,dynamodb
         ports: ["4566:4566"]
         options: >-
           --health-cmd "curl -sf http://localhost:4566/_localstack/health"
@@ -124,6 +124,7 @@ jobs:
     env:
       AUDIT_S3_URL: http://localhost:4566
       AUDIT_SQS_URL: http://localhost:4566
+      AUDIT_DYNAMODB_URL: http://localhost:4566
       CGO_ENABLED: "0"
       GOEXPERIMENT: jsonv2
     steps:
@@ -131,8 +132,8 @@ jobs:
       - uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
         with:
           go-version-file: go.mod
-      - name: the archive walks and the bucket contract against real S3, and the queue sink against real SQS
-        run: go test ./internal/s3test/... ./internal/bucketcontract/... ./store/... ./sink/sqssink/...
+      - name: the archive walks and the bucket contract against real S3, the queue sink against real SQS, and the deduplication store against a real DynamoDB API
+        run: go test ./internal/s3test/... ./internal/bucketcontract/... ./store/... ./sink/sqssink/... ./dedupe/...
       - name: the S3 tests must have run, not skipped
         # Same guard as the Postgres job: an endpoint that stopped reaching the
         # tests would turn this green while proving nothing, which is the exact
@@ -143,6 +144,8 @@ jobs:
           go test ./internal/bucketcontract/ -run TestWhatTheWriterWritesConforms -v | tee out.txt
           grep -q -- "--- PASS: TestWhatTheWriterWritesConforms/s3-locked" out.txt
           grep -q -- "--- PASS: TestWhatTheWriterWritesConforms/s3-unlocked" out.txt
+          go test ./dedupe/dynamodbdedupe/ -run TestLocalStackConditionalPut -v | tee out.txt
+          grep -q -- "--- PASS: TestLocalStackConditionalPut" out.txt
           go test ./sink/sqssink/ -run TestLocalStackRoundTrip -v | tee out.txt
           grep -q -- "--- PASS: TestLocalStackRoundTrip/fifo" out.txt
           go test ./internal/s3test/ -run TestTheIndexerOverS3 -v | tee out.txt

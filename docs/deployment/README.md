@@ -18,6 +18,10 @@ bucket.
 Switching between them is a change to the receiver's configuration, not to
 any record.
 
+A third shape is not Kubernetes at all: [AWS](aws.md) runs the writer and the
+notary as Lambda functions behind an SQS queue, built by a Pulumi library. It is
+built and tested and has not run in an account.
+
 There is deliberately **no shape where the writer runs inside the
 application**. The packages the services are built on (`writer.Open`,
 `query.New`) stay public, because the binaries use them and a test may, but

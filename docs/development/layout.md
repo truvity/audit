@@ -6,12 +6,16 @@ additions are made.
 
 ## Where things are
 
-The repository is two Go modules. The root, `github.com/truvity/audit`, is the
+The repository is three Go modules. The root, `github.com/truvity/audit`, is the
 installation: the writer, the query service, their stores and the operator's
 command. `sdk/`, `github.com/truvity/audit/sdk`, is what an application
 imports to emit records, and nothing else: it carries no database driver, no
 stream server, no object-store client and no JWT library. See
-[the SDK module](#the-sdk-module) below.
+[the SDK module](#the-sdk-module) below. `deploy/pulumi/` is the third, the AWS
+shape as a Pulumi library, a module of its own so that Pulumi is in nobody
+else's dependency graph. The committed `go.work` does not list it, for the same
+reason: a workspace's module graph is one graph. Run its tests with
+`just pulumi-test`, which turns the workspace off.
 
 ```
 proto/audit/v1/       the contracts: record, sink, registry, query, seal (seals, delegations, revocations)
@@ -39,6 +43,13 @@ authn/                the JWT authenticator and the access-roster grants preset
 sinkserver/           the SinkService handler and the Receiver (what the writer mounts)
 sink/natssink/        the NATS JetStream publisher
 sink/sqssink/         the SQS publisher
+dedupe/dynamodbdedupe/ the writer's deduplication on DynamoDB, for a writer with no database
+cmd/audit-writer-lambda/, cmd/audit-notary-lambda/
+                      the writer and the notary as AWS Lambda functions
+
+deploy/pulumi/        MODULE github.com/truvity/audit/deploy/pulumi, tagged deploy/pulumi/vX.Y.Z:
+                      the AWS shape as a Pulumi Go library; it imports nothing of this
+                      repository, and `just pulumi-test` runs it against Pulumi's mocks
 preset/               presets, profile composition, the deployment document
 keys/                 pseudonymisation providers (local, OpenBAO transit) and signers, for seals
                       (P-384 key file, AWS KMS ECC_NIST_P384, OpenBAO transit ecdsa-p384)

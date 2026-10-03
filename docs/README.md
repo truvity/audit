@@ -14,7 +14,7 @@ the road you are on.
 | section | pages |
 |---|---|
 | Entry | [architecture](architecture.md), [capabilities](capabilities.md), [why](why.md), [concepts](concepts.md) |
-| Deployment | [the shapes](deployment/README.md), [direct](deployment/direct.md), [stream](deployment/stream.md), [billing](deployment/extensions/billing.md), [usage quotas](deployment/extensions/quotas.md) |
+| Deployment | [the shapes](deployment/README.md), [direct](deployment/direct.md), [stream](deployment/stream.md), [AWS](deployment/aws.md), [billing](deployment/extensions/billing.md), [usage quotas](deployment/extensions/quotas.md) |
 | Guides | [integrating an application](guides/integrate.md), [deploying](guides/deploy.md), [emitting records](guides/emit.md), [reading the trail](guides/read.md) |
 | Design | [split writer](design/split-writer.md), [search](design/search.md), [authentication and authorization](design/authn-authz.md), [integrity](design/integrity.md), [metering](design/metering.md), [the Audit page](design/audit-page.md) |
 | Decisions | [index](decisions/README.md), and the [target architecture](decisions/0016-three-parts-installed-independently.md) |

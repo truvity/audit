@@ -7,8 +7,9 @@
 # The caller grants the permissions because a reusable workflow can
 # narrow them but never widen them.
 #
-# The repository holds two Go modules, the root and sdk/; the `sdk-tag` job
-# below adds the second's tag, `sdk/vX.Y.Z`, beside the first.
+# The repository holds three Go modules, the root, sdk/ and deploy/pulumi/; the
+# `sdk-tag` job below adds the others' tags, `sdk/vX.Y.Z` and
+# `deploy/pulumi/vX.Y.Z`, beside the first.
 name: Release
 
 on:
@@ -60,19 +61,24 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: tag the SDK module at the release commit
+      - name: tag the SDK module and the Pulumi library at the release commit
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          tag="sdk/${GITHUB_REF_NAME}"
-          if existing=$(gh api "repos/$REPO/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
-            if [ "$existing" = "$GITHUB_SHA" ]; then
-              echo "$tag already points at $GITHUB_SHA"
-              exit 0
+          # deploy/pulumi is a module of its own (github.com/truvity/audit/deploy/pulumi),
+          # so that Pulumi is not in the root's dependency graph; it is tagged the
+          # same way, and does not depend on the root or the SDK.
+          for dir in sdk deploy/pulumi; do
+            tag="$dir/${GITHUB_REF_NAME}"
+            if existing=$(gh api "repos/$REPO/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
+              if [ "$existing" = "$GITHUB_SHA" ]; then
+                echo "$tag already points at $GITHUB_SHA"
+                continue
+              fi
+              echo "::error::$tag exists at $existing, not at the release commit $GITHUB_SHA"
+              exit 1
             fi
-            echo "::error::$tag exists at $existing, not at the release commit $GITHUB_SHA"
-            exit 1
-          fi
-          gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA" --jq .ref
+            gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA" --jq .ref
+          done

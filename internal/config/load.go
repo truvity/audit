@@ -48,6 +48,11 @@ func load[T any](file, name string, after func(*T) error) (*T, error) {
 // LoadWriter reads and validates audit-writer's configuration.
 func LoadWriter(file string) (*Writer, error) { return load(file, "audit-writer", (*Writer).finish) }
 
+// LoadWriterLambda reads and validates audit-writer-lambda's configuration.
+func LoadWriterLambda(file string) (*WriterLambda, error) {
+	return load(file, "audit-writer-lambda", (*WriterLambda).finish)
+}
+
 // LoadQuery reads and validates audit-query's configuration.
 func LoadQuery(file string) (*Query, error) { return load(file, "audit-query", (*Query).finish) }
 
@@ -81,6 +86,26 @@ func Secret(name string) (string, error) { return policyconfig.Secret(name) }
 
 // The rest of the contract: what a schema cannot say, or says less clearly than
 // a sentence can. Each of these runs after the schema has accepted the file.
+
+func (w *WriterLambda) finish() error {
+	if w.Require == "" {
+		w.Require = "archived"
+	}
+	if _, err := sink.ParseDurability(w.Require); err != nil {
+		return fmt.Errorf("require: %w", err)
+	}
+	if n := b2i(w.Dedupe.DynamoDB != nil); n != 1 {
+		return fmt.Errorf("dedupe names %d stores and must name exactly one of dynamodb", n)
+	}
+	if err := w.Archive.finish(true); err != nil {
+		return err
+	}
+	if w.Keys.local() && w.Keys.Local.Dir == "" {
+		return errors.New("keys.local with no dir keeps the keys in memory, and every invocation environment would mint " +
+			"its own: the same person would get a different pseudonym in each; use keys.transit")
+	}
+	return nil
+}
 
 func (w *Writer) finish() error {
 	if w.Mode == "" {

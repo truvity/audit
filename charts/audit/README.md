@@ -95,8 +95,10 @@ three of those:
 - `tokens`: a projected service-account token of an audience, a file `token`
   in the `mountPath`, for `tokenFile` and `jwtFile` to name.
 
-Telemetry is the `OTEL_*` environment, which the platform sets on the pods;
-the chart has no telemetry value. The documents a config names by path are
+Telemetry is the `OTEL_*` environment. `telemetry.otlp` (`endpoint`,
+`protocol`, `extraEnv`) renders it on every pod when an endpoint is set and
+renders nothing otherwise ([telemetry](../../docs/operations/telemetry.md#the-chart-sets-the-environment)).
+The documents a config names by path are
 rendered from the chart's own values: `profiles` into
 `/etc/audit/deployment.yaml`, `workloadIdentity` into
 `/etc/audit/workloads.yaml`, `query.grants` into `/etc/audit/grants.yaml`,

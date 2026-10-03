@@ -152,3 +152,39 @@ func TestTheDefaultSamplerKeepsEveryTrace(t *testing.T) {
 		t.Fatalf("default sampler = %s, want %s", got, want)
 	}
 }
+
+// The queue's age is a histogram per transport, in seconds, and a message
+// whose sender's clock ran ahead is counted at zero and not dropped.
+func TestQueueRecordsTheAgeOfAMessageAtReceive(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	q, err := telemetry.NewQueue(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.Received("sqs", 12*time.Second)
+	q.Received("sqs", -3*time.Second)
+
+	var got metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &got); err != nil {
+		t.Fatal(err)
+	}
+	var count uint64
+	var sum float64
+	for _, scope := range got.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if m.Name != "audit.queue.message.age" {
+				continue
+			}
+			for _, p := range m.Data.(metricdata.Histogram[float64]).DataPoints {
+				if v, _ := p.Attributes.Value(telemetry.AttrTransport); v.AsString() != "sqs" {
+					t.Fatalf("transport = %q", v.AsString())
+				}
+				count += p.Count
+				sum += p.Sum
+			}
+		}
+	}
+	if count != 2 || sum != 12 {
+		t.Fatalf("count %d, sum %v; want 2 messages totalling 12s", count, sum)
+	}
+}

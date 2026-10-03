@@ -62,6 +62,7 @@ func TestTheTypesAndTheSchemasDescribeTheSameKeys(t *testing.T) {
 		{"query", "audit-query.full.yaml", &config.Query{}, "audit-query"},
 		{"observe", "audit-observe.full.yaml", &config.Observe{}, "audit-observe"},
 		{"notary", "audit-notary.full.yaml", &config.Notary{}, "audit-notary"},
+		{"writer as a Lambda", "audit-writer-lambda.full.yaml", &config.WriterLambda{}, "audit-writer-lambda"},
 		{"verify with seals", "audit-verify.full.yaml", &config.Verify{}, "audit-verify"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -472,5 +473,30 @@ func TestSealVerificationPinsARoot(t *testing.T) {
 	}
 	if v.Seals.Settle.D() != config.DefaultSettle || v.Seals.Grace.D() != config.DefaultGrace {
 		t.Errorf("defaults not applied: %+v", v.Seals)
+	}
+}
+
+func TestTheLambdaWriterTakesADynamoDBAndRefusesWhatItCannotRun(t *testing.T) {
+	w, err := config.LoadWriterLambda(write(t, "deployment: /d.yaml\narchive: {bucket: {name: b}}\ndedupe: {dynamodb: {table: t}}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Require != "archived" || w.Archive.LockMode != "compliance" {
+		t.Errorf("defaults not applied: %+v", w)
+	}
+	for name, body := range map[string]string{
+		"no dedupe":        "deployment: /d.yaml\narchive: {bucket: {name: b}}\n",
+		"an empty dedupe":  "deployment: /d.yaml\narchive: {bucket: {name: b}}\ndedupe: {}\n",
+		"a database":       "deployment: /d.yaml\narchive: {bucket: {name: b}}\ndedupe: {dynamodb: {table: t}}\ndatabase: {url: 'postgres://u@h/db'}\n",
+		"a listener":       "deployment: /d.yaml\narchive: {bucket: {name: b}}\ndedupe: {dynamodb: {table: t}}\nlisten: {address: ':8080'}\n",
+		"no archive":       "deployment: /d.yaml\ndedupe: {dynamodb: {table: t}}\n",
+		"a key in memory":  "deployment: /d.yaml\narchive: {bucket: {name: b}}\ndedupe: {dynamodb: {table: t}}\nkeys: {provider: local, local: {rootFile: /r}}\n",
+		"a bad durability": "deployment: /d.yaml\narchive: {bucket: {name: b}}\ndedupe: {dynamodb: {table: t}}\nrequire: forever\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := config.LoadWriterLambda(write(t, body)); err == nil {
+				t.Fatal("the file was accepted")
+			}
+		})
 	}
 }

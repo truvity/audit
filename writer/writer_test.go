@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
@@ -146,5 +147,37 @@ func TestTheWriterWritesItsCatalogueAtStartAndRefusesAConflictingOne(t *testing.
 	archive.Replace(key, []byte("another document under the same version"))
 	if _, err := open(); err == nil || !strings.Contains(err.Error(), "different catalogue") {
 		t.Fatalf("a writer started over a conflicting catalogue: %v", err)
+	}
+}
+
+// memoryDedupe is a deduplication store that is not the writer's own in-process
+// one, as dynamodbdedupe is not.
+type memoryDedupe struct{ marked []string }
+
+func (m *memoryDedupe) Seen(context.Context, []string) (map[string]bool, error) {
+	return map[string]bool{}, nil
+}
+func (m *memoryDedupe) Mark(_ context.Context, ids []string) error {
+	m.marked = append(m.marked, ids...)
+	return nil
+}
+func (m *memoryDedupe) Purge(context.Context, time.Time) error { return nil }
+
+// A deduplication store of the deployment's own is what lifts the one-replica
+// limit, as a database does: a writer on a function platform runs as many
+// copies as there are batches in flight, and has no database.
+func TestADeduplicationStoreOfOwnLiftsTheReplicaLimit(t *testing.T) {
+	ctx := context.Background()
+	w, err := writer.Open(ctx, writer.Config{
+		Archive: storetest.NewMemory(), Profiles: opaqueProfiles(t), Replicas: 2, Dedupe: &memoryDedupe{},
+	})
+	if err != nil {
+		t.Fatalf("two replicas over a shared deduplication store: %v", err)
+	}
+	if err := w.RefreshHolds(ctx); err != nil {
+		t.Fatalf("refreshing the holds: %v", err)
+	}
+	if err := w.Close(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

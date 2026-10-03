@@ -1,0 +1,212 @@
+# The stream shape with an OTLP endpoint: every pod carries the OpenTelemetry
+# SDK environment, each with its own service name (telemetry.otlp).
+# Stream mode: a receiver in front, writers consuming behind, an index, one key
+# directory the writers share, and the query service beside them resolving
+# through the same directory. A product's shape.
+mode: stream
+replicas: 2
+profiles:
+  security:
+    presets: [security]
+  billing-nl:
+    presets: [billing-nl]
+  history:
+    presets: [history]
+
+x-database: &database
+  url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full
+  passwordEnv: AUDIT_DATABASE_PASSWORD
+x-stream: &stream
+  nats:
+    url: nats://nats.audit.svc:4222
+    tokenFile: /var/run/audit/stream/token
+  name: AUDIT
+  consumer: audit-writer
+x-archive: &archive
+  bucket:
+    name: audit-archive
+    region: eu-example-1
+  prefix: prod
+x-sink: &sink
+  url: http://audit:8080
+  tokenFile: /var/run/audit/token
+
+receiver:
+  config:
+    mode: receiver
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    database: *database
+    stream: *stream
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-database
+      key: password
+  tokens:
+    - audience: nats
+      mountPath: /var/run/audit/stream
+writer:
+  consumers: 3
+  config:
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    replicas: 3
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      prefix: prod
+      kmsKey: alias/audit
+    database: *database
+    keys:
+      provider: local
+      local:
+        rootFile: /etc/audit/keys/root
+        dir: /var/lib/audit/keys
+    stream: *stream
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-database
+      key: password
+  secretMounts:
+    - secretName: audit-key-root
+      mountPath: /etc/audit/keys
+  tokens:
+    - audience: nats
+      mountPath: /var/run/audit/stream
+keysVolume:
+  enabled: true
+  accessModes: [ReadWriteMany]
+  storageClass: efs
+migrate:
+  enabled: true
+  config:
+    database:
+      url: postgres://audit_owner@db.example.test:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    writer: audit_writer
+    observe: audit_observe
+    reader: audit_query
+    purge: audit_purge
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-owner-database
+      key: password
+observe:
+  enabled: true
+  config:
+    archive: *archive
+    database:
+      url: postgres://audit_observe@db.example.test:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 2m
+    wake:
+      nats:
+        nats:
+          url: nats://nats.audit.svc:4222
+          tokenFile: /var/run/audit/stream/token
+        subject: audit.bucket.created
+  secretEnv:
+    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+      secretName: audit-observe-database
+      key: password
+  tokens:
+    - audience: nats
+      mountPath: /var/run/audit/stream
+  serviceAccount:
+    annotations:
+      iam.example.com/role: audit-observe
+workloadIdentity:
+  issuers:
+    - url: https://oidc.example.com/id/CLUSTER
+  workloads:
+    - subject: system:serviceaccount:wallet:wallet-api
+      source: wallet
+networkPolicy:
+  enabled: true
+query:
+  enabled: true
+  grants:
+    issuers:
+      - url: https://id.example.com
+        audience: audit
+    presets:
+      - name: access-roster
+        issuer: https://id.example.com
+  keysVolume: true
+  config:
+    deployment: /etc/audit/deployment.yaml
+    grants: /etc/audit/grants.yaml
+    sink: *sink
+    database:
+      url: postgres://audit_query@db.example.test:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+    archive: *archive
+    exports:
+      bucket:
+        name: audit-exports
+    keys:
+      provider: local
+      local:
+        rootFile: /etc/audit/keys/root
+        dir: /var/lib/audit/keys
+  secretEnv:
+    - name: AUDIT_QUERY_DATABASE_PASSWORD
+      secretName: audit-query-database
+      key: password
+  secretMounts:
+    - secretName: audit-key-root
+      mountPath: /etc/audit/keys
+  tokens:
+    - audience: audit
+      mountPath: /var/run/audit
+  serviceAccount:
+    annotations:
+      iam.example.com/role: audit-query
+jobs:
+  notary:
+    enabled: true
+    config:
+      archive:
+        bucket:
+          name: audit-archive
+          region: eu-example-1
+        prefix: prod
+      signer:
+        kms:
+          key: alias/audit-seal
+  verify:
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive: *archive
+      sink: *sink
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit
+  purge:
+    config:
+      deployment: /etc/audit/deployment.yaml
+      database:
+        url: postgres://audit_purge@db.example.test:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_DATABASE_PASSWORD
+      dedupeWindow: 336h
+    secretEnv:
+      - name: AUDIT_DATABASE_PASSWORD
+        secretName: audit-purge-database
+        key: password
+  clockSync:
+    config:
+      ntp: [time.cloudflare.com, time.google.com]
+      sink: *sink
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit
+
+telemetry:
+  otlp:
+    endpoint: http://gateway.observability.svc:4318
+    protocol: http/protobuf
+    extraEnv:
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
+      OTEL_METRIC_EXPORT_INTERVAL: "30000"

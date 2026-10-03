@@ -375,3 +375,35 @@ type Migrate struct {
 	Observe string `json:"observe,omitempty"`
 	Purge   string `json:"purge,omitempty"`
 }
+
+type (
+	// DynamoDB is a DynamoDB table the writer keeps its deduplication in. The
+	// credentials are the SDK's ambient ones: on Lambda, the function's role.
+	DynamoDB struct {
+		Table  string `json:"table"`
+		Region string `json:"region,omitempty"`
+		// Window is how long a written record's id is remembered. Unset is
+		// the widest window the profiles ask for.
+		Window Duration `json:"window,omitzero"`
+	}
+
+	// Dedupe is where a writer without a database keeps what it has written:
+	// exactly one of its fields.
+	Dedupe struct {
+		DynamoDB *DynamoDB `json:"dynamodb,omitempty"`
+	}
+)
+
+// WriterLambda is the configuration of audit-writer-lambda: the write path as an
+// AWS Lambda behind an SQS event source mapping. There is no listener, no
+// stream, no registry and no database: the batch is the SQS event, and what the
+// Postgres table does for a writer on Kubernetes is a DynamoDB table.
+type WriterLambda struct {
+	Deployment       string  `json:"deployment"`
+	Catalogues       string  `json:"catalogues,omitempty"`
+	Archive          Archive `json:"archive"`
+	Keys             *Keys   `json:"keys,omitempty"`
+	ForgetIdentities bool    `json:"forgetIdentities,omitempty"`
+	Dedupe           Dedupe  `json:"dedupe"`
+	Require          string  `json:"require,omitempty"`
+}

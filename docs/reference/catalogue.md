@@ -21,6 +21,21 @@ catalogue.
 ## Fields
 
 - `source`, `version`, `locales`.
+- `aliases`: former names of the source, when it was renamed
+  ([0025](../decisions/0025-a-source-keeps-its-former-names-as-aliases.md)).
+  A record under an alias is accepted and described by this catalogue, is
+  indexed under `source` (and its action under the `source` namespace), and a
+  query filtering by either name finds both. The records themselves are never
+  rewritten. A renamed catalogue takes a version the former name never used,
+  because the archive holds it under each name:
+
+  ```yaml
+  source: sluis
+  aliases: [access-roster]
+  version: "2.0.0"
+  actions:
+    sluis.grant.issued: { … }   # access-roster.grant.issued is the same action
+  ```
 - `actor_kinds`: name → category (internal, external, machine),
   attributes schema.
 - `target_types`: name → is_person, attributes schema.

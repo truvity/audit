@@ -86,8 +86,8 @@ Every component runs as a ServiceAccount of its own, named
 release's name (`audit`). Each takes `create`, `name` and `annotations`. In
 stream mode the chart refuses a receiver and a writer that share one
 ServiceAccount name: a receiver must not hold the archive's write identity.
-The purge job deletes from the archive, so it needs a role of its own with that
-right; clock sync needs none.
+The purge job works on the index database only and needs no role; clock sync
+needs none.
 
 ### A database, and a read-only role for the query service
 

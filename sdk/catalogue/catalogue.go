@@ -23,8 +23,12 @@ import (
 
 // Catalogue is what one source emits.
 type Catalogue struct {
-	Source       string                `json:"source"`
-	Version      string                `json:"version"`
+	Source  string `json:"source"`
+	Version string `json:"version"`
+	// Aliases are former names of Source (docs/decisions/0025). A record
+	// written under one is accepted and described by this catalogue, and read
+	// back as Source.
+	Aliases      []string              `json:"aliases,omitempty"`
 	Locales      []string              `json:"locales,omitempty"`
 	ActorKinds   map[string]ActorKind  `json:"actor_kinds,omitempty"`
 	TargetTypes  map[string]TargetType `json:"target_types,omitempty"`
@@ -221,10 +225,65 @@ func (c *Catalogue) Schema(id string) (*Schema, bool) {
 	return s, ok
 }
 
-// Action returns an action by its full name.
+// Names resolves former names across several catalogues: what a query service
+// needs to answer a filter by an alias as it answers one by the source.
+type Names []*Catalogue
+
+// CanonicalSource is the source the name stands for in any of the catalogues.
+func (n Names) CanonicalSource(source string) string {
+	for _, c := range n {
+		if got := c.CanonicalSource(source); got != source {
+			return got
+		}
+	}
+	return source
+}
+
+// CanonicalAction is the action the name stands for in any of the catalogues.
+func (n Names) CanonicalAction(action string) string {
+	for _, c := range n {
+		if got := c.CanonicalAction(action); got != action {
+			return got
+		}
+	}
+	return action
+}
+
+// Action returns an action by its full name, or by the same name under an
+// alias of the source.
 func (c *Catalogue) Action(name string) (Action, bool) {
-	a, ok := c.Actions[name]
+	a, ok := c.Actions[c.CanonicalAction(name)]
 	return a, ok
+}
+
+// Answers reports whether source is this catalogue's source or one of its
+// aliases.
+func (c *Catalogue) Answers(source string) bool {
+	return c.CanonicalSource(source) == c.Source
+}
+
+// CanonicalSource is the source a name stands for: Source for an alias of it,
+// and the name itself for anything else.
+func (c *Catalogue) CanonicalSource(source string) string {
+	for _, a := range c.Aliases {
+		if a == source {
+			return c.Source
+		}
+	}
+	return source
+}
+
+// CanonicalAction is the action a name stands for. An action is named under
+// its source's namespace, so `access-roster.grant` under the alias
+// `access-roster` of `sluis` is `sluis.grant`. A name under no alias is
+// returned as it is.
+func (c *Catalogue) CanonicalAction(action string) string {
+	for _, a := range c.Aliases {
+		if rest, ok := strings.CutPrefix(action, a+"."); ok {
+			return c.Source + "." + rest
+		}
+	}
+	return action
 }
 
 // ActionNames returns every action this catalogue declares, in order.
@@ -284,6 +343,17 @@ func (c *Catalogue) check() error {
 			fail("meter %s has kind %q, which is not count or gauge", name, m.Kind)
 		}
 		useSchema("meter "+name, m.DimensionsSchema)
+	}
+
+	seenAlias := map[string]bool{}
+	for _, alias := range c.Aliases {
+		switch {
+		case alias == c.Source:
+			fail("alias %s is the source itself", alias)
+		case seenAlias[alias]:
+			fail("alias %s is listed twice", alias)
+		}
+		seenAlias[alias] = true
 	}
 
 	for name, a := range c.Actions {

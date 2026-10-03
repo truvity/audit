@@ -36,6 +36,14 @@ func (r *Registry) Register(c *catalogue.Catalogue) {
 	if r.catalogues == nil {
 		r.catalogues = map[string]*catalogue.Catalogue{}
 	}
+	// A former name of the source resolves to the same catalogue, unless a
+	// catalogue of that name was registered itself: that one is exact, and an
+	// alias never shadows it.
+	for _, alias := range c.Aliases {
+		if _, taken := r.catalogues[alias+"@"+c.Version]; !taken {
+			r.catalogues[alias+"@"+c.Version] = c
+		}
+	}
 	r.catalogues[c.Source+"@"+c.Version] = c
 }
 

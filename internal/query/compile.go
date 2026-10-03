@@ -50,6 +50,20 @@ const (
 // an expression. That is what makes a grant expressible as one more term rather
 // than as a rewrite of something arbitrary.
 func Compile(req *auditv1.SearchRequest) (index.Query, error) {
+	return CompileWith(req, nil)
+}
+
+// Renames says which name a former name of a source stands for.
+type Renames interface {
+	CanonicalSource(string) string
+	CanonicalAction(string) string
+}
+
+// CompileWith is Compile with the former names of a source resolved: the index
+// holds a record under the source's current name whatever it was written
+// under, so a predicate naming a former one is rewritten to the current one,
+// and a filter by either finds both.
+func CompileWith(req *auditv1.SearchRequest, names Renames) (index.Query, error) {
 	if req.GetProfile() == "" {
 		return index.Query{}, fmt.Errorf("%w: name a profile", ErrMalformed)
 	}
@@ -68,6 +82,10 @@ func Compile(req *auditv1.SearchRequest) (index.Query, error) {
 		c, err := conjunction(f)
 		if err != nil {
 			return index.Query{}, err
+		}
+		if names != nil {
+			c.Source = renamed(c.Source, names.CanonicalSource)
+			c.Action = renamed(c.Action, names.CanonicalAction)
 		}
 		q.Filter = append(q.Filter, c)
 	}
@@ -292,4 +310,23 @@ func wholeIDs(predicates []index.Predicate) error {
 		}
 	}
 	return nil
+}
+
+// renamed rewrites what a predicate compares with through canon. A prefix is
+// rewritten as a value is: an action prefix under a former name
+// ("access-roster.") becomes the same prefix under the current one.
+func renamed(ps []index.Predicate, canon func(string) string) []index.Predicate {
+	out := make([]index.Predicate, len(ps))
+	for i, p := range ps {
+		p.Value = canon(p.Value)
+		if p.Values != nil {
+			values := make([]string, len(p.Values))
+			for j, v := range p.Values {
+				values[j] = canon(v)
+			}
+			p.Values = values
+		}
+		out[i] = p
+	}
+	return out
 }

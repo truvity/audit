@@ -130,11 +130,41 @@ func (r *Registry) Register(ctx context.Context, e Entry) ([]string, error) {
 		return nil, err
 	}
 
+	// A catalogue is also held under each alias of its source, the same
+	// document, so that a record written under a former name resolves where
+	// its own source and version say. Every alias is checked before anything is
+	// written: an alias whose name already holds this version with another
+	// document is a version that would mean two things.
+	var aliased []Entry
+	for _, alias := range loaded.Aliases {
+		a := e
+		a.Source = alias
+		switch existing, err := r.Store.Get(ctx, alias, e.Version); {
+		case err == nil && !sameDocument(existing, a):
+			return []string{fmt.Sprintf(
+				"alias %s already holds version %s with a different document; "+
+					"an alias does not make a version new, so publish a new version instead",
+				alias, e.Version)}, nil
+		case err == nil:
+			continue
+		case !errors.Is(err, ErrNotFound):
+			return nil, err
+		}
+		aliased = append(aliased, a)
+	}
+
 	e.RegisteredAt = r.now()
 	if err := r.Store.Put(ctx, e); err != nil {
 		return nil, err
 	}
 	r.cache(e.Source, e.Version, loaded)
+	for _, a := range aliased {
+		a.RegisteredAt = e.RegisteredAt
+		if err := r.Store.Put(ctx, a); err != nil {
+			return nil, err
+		}
+		r.cache(a.Source, a.Version, loaded)
+	}
 	r.checkCoverage(ctx)
 	if r.OnRegistered != nil {
 		r.OnRegistered(ctx, e)

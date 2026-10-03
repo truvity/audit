@@ -28,10 +28,12 @@ import (
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
+	"github.com/truvity/audit/internal/observe"
 	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/query"
+	"github.com/truvity/audit/sdk/catalogue"
 	"github.com/truvity/audit/store"
 )
 
@@ -115,6 +117,23 @@ func run() error {
 		}
 	}
 
+	// A source that was renamed is indexed under its current name, so a filter
+	// by the former one needs to be told. The catalogues in the archive say
+	// which names are former ones. Without the archive, or without a way to
+	// read it, a filter by a former name finds only what its own name was
+	// written under: logged, because the answer is then short without saying so.
+	var aliases catalogue.Names
+	//
+	// The s3scan searcher reads the records as they were written and indexes
+	// nothing, so it has no current name to rewrite to: a filter there finds
+	// the name it was written under, and no alias is applied.
+	if archive != nil && cfg.Searcher == "postgres" {
+		var err error
+		if aliases, err = (&observe.ArchiveCatalogues{Store: archive}).Aliased(ctx); err != nil {
+			slog.Warn("the catalogues' aliases could not be read, so a filter by a former source name will not find its records", "error", err)
+		}
+	}
+
 	// Resolve is offered only when this service is given the keys and the
 	// archive. It is a separate privilege from reading: a deployment that
 	// does not mount the keys here has a query service that cannot undo a
@@ -151,6 +170,7 @@ func run() error {
 		Archive:       archive,
 		Keys:          sealer,
 		Exports:       exportTo,
+		Aliases:       aliases,
 		Version:       buildinfo.Version,
 	})
 	if err != nil {

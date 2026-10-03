@@ -28,11 +28,12 @@ type Composed struct {
 
 // Compose resolves an action.
 func (c *Catalogue) Compose(action string) (*Composed, error) {
-	a, ok := c.Actions[action]
+	name := c.CanonicalAction(action)
+	a, ok := c.Actions[name]
 	if !ok {
 		return nil, fmt.Errorf("catalogue %s %s declares no action %s", c.Source, c.Version, action)
 	}
-	x := &Composed{Source: c.Source, Version: c.Version, Name: action, Action: a, catalogue: c}
+	x := &Composed{Source: c.Source, Version: c.Version, Name: name, Action: a, catalogue: c}
 	if a.DataSchema != "" {
 		if s, ok := c.schemas[CanonicalID(a.DataSchema)]; ok {
 			x.Data = s
@@ -128,13 +129,15 @@ func (x *Composed) Validate(r *record.Record) error {
 	var problems []error
 	fail := func(format string, args ...any) { problems = append(problems, fmt.Errorf(format, args...)) }
 
-	if r.GetSource() != x.Source {
+	// A record under a former name of the source is the source's record: it
+	// is accepted as it is, and read back under the name it was written with.
+	if !x.catalogue.Answers(r.GetSource()) {
 		fail("record names source %q but was validated against the catalogue of %q", r.GetSource(), x.Source)
 	}
 	if r.GetCatalogueVersion() != x.Version {
 		fail("record names catalogue version %q but was validated against %q", r.GetCatalogueVersion(), x.Version)
 	}
-	if r.GetAction() != x.Name {
+	if x.catalogue.CanonicalAction(r.GetAction()) != x.Name {
 		fail("record names action %q but was validated against %q", r.GetAction(), x.Name)
 	}
 	if want, ok := operationOf(x.Action.Operation); ok && r.GetOperation() != want {

@@ -94,6 +94,17 @@ func render(doc map[string]any) ([]byte, error) {
 	return b, nil
 }
 
+// extensionEnvPrefix is the prefix of the extension's own settings.
+//
+// TODO(sluis): the extension (github.com/truvity/observability/lambdaext, from
+// access-roster's rename to sluis) accepts SLUIS_* with ACCESS_ROSTER_* as a
+// fallback. This library keeps emitting ACCESS_ROSTER_* until the layer a
+// deployment publishes supports SLUIS_*; then this is the one line to change
+// to "SLUIS_", with the tests and docs/deployment/aws.md that name the
+// variables. Emitting SLUIS_* to a layer that predates it would configure
+// nothing, so the switch waits for the layer and is not made here.
+const extensionEnvPrefix = "ACCESS_ROSTER_"
+
 // telemetryEnv is the environment of a function with the OTLP extension: the
 // extension's own settings (ACCESS_ROSTER_*, see access-roster's
 // docs/integrations/aws-lambda.md) and the SDK's, which points at the
@@ -104,11 +115,11 @@ func telemetryEnv(t *TelemetryArgs, service string) map[string]string {
 		return nil
 	}
 	env := map[string]string{
-		"ACCESS_ROSTER_ISSUER":        t.IssuerURL,
-		"ACCESS_ROSTER_AUDIENCE":      t.STSAudience,
-		"ACCESS_ROSTER_OTLP_ENDPOINT": t.OTLPEndpoint,
+		extensionEnvPrefix + "ISSUER":        t.IssuerURL,
+		extensionEnvPrefix + "AUDIENCE":      t.STSAudience,
+		extensionEnvPrefix + "OTLP_ENDPOINT": t.OTLPEndpoint,
 		// The exchange's audience and client id.
-		"ACCESS_ROSTER_OTLP_AUDIENCE": t.OTLPAudience,
+		extensionEnvPrefix + "OTLP_AUDIENCE": t.OTLPAudience,
 		// The SDK exports to the extension, which holds the credential.
 		"OTEL_EXPORTER_OTLP_ENDPOINT": extensionLoopback,
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",

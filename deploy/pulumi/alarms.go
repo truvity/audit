@@ -8,7 +8,9 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// alarmTargets are what the alarms watch.
+// alarmTargets are what the alarms watch. The ingest side (Queue, Dlq, Writer)
+// is nil when Ingest.Disabled and the notary when Notary.Disabled, and an alarm
+// on a part that is not there is not created.
 type alarmTargets struct {
 	Queue, Dlq     *sqs.Queue
 	Writer, Notary *lambda.Function
@@ -28,12 +30,21 @@ type alarmTargets struct {
 // itself: a function that stops being invoked sends nothing, and an alarm on the
 // platform's own Invocations metric is the one that does not depend on the thing
 // that is broken.
+//
+// With Ingest.Disabled the writer's, the queue's and the dead-letter queue's are
+// not created; with Notary.Disabled the notary's three are not. The list below is
+// the full set.
 var AlarmNames = []string{
 	"writer-throttles", "notary-throttles", "ingest-dlq-not-empty", "ingest-oldest-message-age",
 	"writer-errors", "notary-errors", "notary-silent",
 }
 
+// newAlarms returns a nil topic, and creates nothing, when neither part exists:
+// there is then nothing for an alarm to watch.
 func newAlarms(ctx *pulumi.Context, name string, a *Args, t alarmTargets, tags pulumi.StringMap, opts ...pulumi.ResourceOption) (*sns.Topic, error) {
+	if t.Writer == nil && t.Notary == nil {
+		return nil, nil
+	}
 	// The topic is not encrypted with a customer key: CloudWatch could not publish
 	// to one without a key policy of its own, and an alarm's body names a queue and
 	// a function and carries no record.
@@ -64,27 +75,34 @@ func newAlarms(ctx *pulumi.Context, name string, a *Args, t alarmTargets, tags p
 	}
 	fnDims := func(f *lambda.Function) pulumi.StringMap { return pulumi.StringMap{"FunctionName": f.Name} }
 	queueDims := func(q *sqs.Queue) pulumi.StringMap { return pulumi.StringMap{"QueueName": q.Name} }
-	alarms := []alarm{
-		{"writer-throttles", "The writer was throttled: it is not keeping up, or the account's Lambda concurrency is spent.",
-			"AWS/Lambda", "Throttles", "Sum", "GreaterThanThreshold", fnDims(t.Writer), 0, 300, 1, 1, "notBreaching"},
-		{"notary-throttles", "The notary was throttled.",
-			"AWS/Lambda", "Throttles", "Sum", "GreaterThanThreshold", fnDims(t.Notary), 0, 300, 1, 1, "notBreaching"},
-		{"ingest-dlq-not-empty", "A message reached the dead-letter queue: a record was delivered the allowed number of times and is not in the archive.",
-			"AWS/SQS", "ApproximateNumberOfMessagesVisible", "Maximum", "GreaterThanThreshold", queueDims(t.Dlq), 0, 300, 1, 1, "notBreaching"},
-		{"ingest-oldest-message-age", "The oldest message in the ingest queue is older than the threshold: the writer is behind or not running.",
-			"AWS/SQS", "ApproximateAgeOfOldestMessage", "Maximum", "GreaterThanThreshold", queueDims(t.Queue),
-			float64(a.Alerts.OldestMessageAgeSeconds), 300, 1, 1, "notBreaching"},
-		{"writer-errors", "A writer invocation failed.",
-			"AWS/Lambda", "Errors", "Sum", "GreaterThanThreshold", fnDims(t.Writer), 0, 300, 1, 1, "notBreaching"},
-		// The notary runs once an hour, so an hour is its natural period.
-		{"notary-errors", "A notary run failed: a tenant could not be sealed, or the signer failed.",
-			"AWS/Lambda", "Errors", "Sum", "GreaterThanThreshold", fnDims(t.Notary), 0, 3600, 1, 1, "notBreaching"},
-		// Lambda publishes no Invocations datapoint for an hour with none, so the
-		// missing data IS the signal: treat it as breaching, and every one of the
-		// last NotarySilenceHours hours must be silent.
-		{"notary-silent", "The notary has not been invoked for the silence window: the schedule or the function is gone, and the chain of seals is growing a gap.",
-			"AWS/Lambda", "Invocations", "Sum", "LessThanThreshold", fnDims(t.Notary), 1, 3600,
-			a.Alerts.NotarySilenceHours, a.Alerts.NotarySilenceHours, "breaching"},
+	var alarms []alarm
+	if t.Writer != nil {
+		alarms = append(alarms,
+			alarm{"writer-throttles", "The writer was throttled: it is not keeping up, or the account's Lambda concurrency is spent.",
+				"AWS/Lambda", "Throttles", "Sum", "GreaterThanThreshold", fnDims(t.Writer), 0, 300, 1, 1, "notBreaching"},
+			alarm{"ingest-dlq-not-empty", "A message reached the dead-letter queue: a record was delivered the allowed number of times and is not in the archive.",
+				"AWS/SQS", "ApproximateNumberOfMessagesVisible", "Maximum", "GreaterThanThreshold", queueDims(t.Dlq), 0, 300, 1, 1, "notBreaching"},
+			alarm{"ingest-oldest-message-age", "The oldest message in the ingest queue is older than the threshold: the writer is behind or not running.",
+				"AWS/SQS", "ApproximateAgeOfOldestMessage", "Maximum", "GreaterThanThreshold", queueDims(t.Queue),
+				float64(a.Alerts.OldestMessageAgeSeconds), 300, 1, 1, "notBreaching"},
+			alarm{"writer-errors", "A writer invocation failed.",
+				"AWS/Lambda", "Errors", "Sum", "GreaterThanThreshold", fnDims(t.Writer), 0, 300, 1, 1, "notBreaching"},
+		)
+	}
+	if t.Notary != nil {
+		alarms = append(alarms,
+			alarm{"notary-throttles", "The notary was throttled.",
+				"AWS/Lambda", "Throttles", "Sum", "GreaterThanThreshold", fnDims(t.Notary), 0, 300, 1, 1, "notBreaching"},
+			// The notary runs once an hour, so an hour is its natural period.
+			alarm{"notary-errors", "A notary run failed: a tenant could not be sealed, or the signer failed.",
+				"AWS/Lambda", "Errors", "Sum", "GreaterThanThreshold", fnDims(t.Notary), 0, 3600, 1, 1, "notBreaching"},
+			// Lambda publishes no Invocations datapoint for an hour with none, so the
+			// missing data IS the signal: treat it as breaching, and every one of the
+			// last NotarySilenceHours hours must be silent.
+			alarm{"notary-silent", "The notary has not been invoked for the silence window: the schedule or the function is gone, and the chain of seals is growing a gap.",
+				"AWS/Lambda", "Invocations", "Sum", "LessThanThreshold", fnDims(t.Notary), 1, 3600,
+				a.Alerts.NotarySilenceHours, a.Alerts.NotarySilenceHours, "breaching"},
+		)
 	}
 	for _, al := range alarms {
 		if _, err := cloudwatch.NewMetricAlarm(ctx, name+"-"+al.suffix, &cloudwatch.MetricAlarmArgs{

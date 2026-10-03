@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
@@ -22,11 +23,30 @@ const (
 	Compliance = "COMPLIANCE"
 )
 
+// Encryption of the archive's objects.
+const (
+	// EncryptionKMS is SSE-KMS under a key the library creates (alias
+	// `<name>-archive`). The default.
+	EncryptionKMS = "kms"
+	// EncryptionS3 is SSE-S3 (AES256): no archive key is created and no role is
+	// granted a kms action on one. The notary's seal key is a different key and
+	// is unaffected.
+	EncryptionS3 = "s3"
+)
+
 // Args is everything the library is given. Required fields are named in their
 // comments; everything else has the default stated there.
 type Args struct {
 	// Tags are put on every resource that takes tags.
 	Tags map[string]string
+
+	// AccountID is the AWS account the installation lives in. Empty looks it up
+	// with sts:GetCallerIdentity, as an invoke made through the component's own
+	// provider: the one passed with pulumi.Provider (or pulumi.Providers) to New,
+	// or inherited from New's parent. A stack that disables the default providers
+	// needs one of those; a stack that cannot reach STS, or that would rather not
+	// call it, sets AccountID and no lookup is made at all.
+	AccountID string
 
 	// RolePath is the IAM path of every role the library creates. Default
 	// "/audit/". The roles are `<name>-writer`, `<name>-notary`,
@@ -52,9 +72,13 @@ type Args struct {
 	Notary    NotaryArgs
 	Telemetry *TelemetryArgs
 	Alerts    AlertsArgs
-	// Observe, when given, creates the cross-account read role audit-observe
-	// assumes. Nil creates none.
+	// Observe, when given, creates the read role audit-observe assumes, from
+	// another AWS account or from a Kubernetes workload (IRSA). Nil creates none.
 	Observe *ObserveArgs
+	// ArchiveWriter, when given, creates a role for a workload outside AWS (a
+	// Talos pod) that writes part of the archive itself, by IRSA. Nil creates
+	// none.
+	ArchiveWriter *ArchiveWriterArgs
 }
 
 // ArchiveArgs is the archive bucket and its keys.
@@ -95,6 +119,15 @@ type ArchiveArgs struct {
 	// rule. Refused with NONE, where there is no lock for it to be a rule of.
 	DefaultRetentionDays int
 
+	// Encryption is "kms" (the default: SSE-KMS under an archive key the library
+	// creates) or "s3" (SSE-S3). With "s3" there is no archive key, no
+	// `kms:GenerateDataKey` or `kms:Decrypt` grant for it on any role, no
+	// `kmsKey` in the functions' configuration, and ArchiveKeyArn is empty. The
+	// trade is the key policy and its CloudTrail record of every decrypt. The
+	// encryption of existing objects does not change by editing this: S3 keeps
+	// what each object was written with.
+	Encryption string
+
 	// Profiles are the deployment's profile names. Required: a lifecycle rule is
 	// written for each `records/<profile>/` prefix, and the profile is the first
 	// component of the key for exactly that reason (ADR 0018).
@@ -110,6 +143,12 @@ type ArchiveArgs struct {
 
 // IngestArgs is the queue records arrive on.
 type IngestArgs struct {
+	// Disabled leaves out the whole ingest side: the queue and its dead-letter
+	// queue, the deduplication table, the writer function with its role, log
+	// group and event source mapping, and the writer's and queue's alarms. For a
+	// deployment whose writer runs elsewhere. Writer.BinaryPath and
+	// Writer.DeploymentYAML are then not required and are ignored.
+	Disabled bool
 	// Senders are the principals (role or user ARNs) allowed to send to the
 	// queue, typically the receivers' roles or the application's. Empty adds no
 	// queue policy for senders, so only identity policies in this account grant
@@ -167,6 +206,12 @@ type WriterArgs struct {
 
 // NotaryArgs is the notary function.
 type NotaryArgs struct {
+	// Disabled leaves out the whole notary: the P-384 seal key and its alias, the
+	// notary function with its role and log group, the schedule and the
+	// scheduler's role, and the notary's alarms. For a deployment that seals
+	// elsewhere (OpenBao transit) or not yet. Notary.BinaryPath is then not
+	// required and is ignored.
+	Disabled bool
 	// BinaryPath is the linux/arm64 `bootstrap` built from cmd/audit-notary-lambda.
 	// Required.
 	BinaryPath string
@@ -222,13 +267,47 @@ type AlertsArgs struct {
 }
 
 // ObserveArgs is the role the observe service reads the archive through.
+//
+// At least one of TrustedPrincipalArn and IRSA is required; both may be given,
+// and the role then trusts either.
 type ObserveArgs struct {
 	// TrustedPrincipalArn is the principal that may assume the role: in the
-	// kernel's account, the role audit-observe runs as. Required.
+	// kernel's account, the role audit-observe runs as.
 	TrustedPrincipalArn pulumi.StringInput
 	// ExternalID, when set, is required of the assuming principal
-	// (sts:ExternalId).
+	// (sts:ExternalId). It does not apply to IRSA.
 	ExternalID string
+	// IRSA lets a Kubernetes ServiceAccount assume the role by web identity, for
+	// a cluster that is not EKS (Talos) and has an IAM OIDC provider of its own.
+	IRSA *IRSAArgs
+}
+
+// IRSAArgs names the one ServiceAccount a role trusts through an IAM OIDC
+// provider (sts:AssumeRoleWithWebIdentity). The trust policy pins both
+// `<issuer>:sub` to `system:serviceaccount:<namespace>:<serviceAccount>` and
+// `<issuer>:aud` to the audience: without the sub pin any ServiceAccount of the
+// cluster could assume the role.
+type IRSAArgs struct {
+	// OIDCProviderArn is the IAM OIDC provider of the cluster. Required.
+	OIDCProviderArn pulumi.StringInput
+	// IssuerHost is the provider's URL without the scheme, the prefix of the
+	// condition keys (`k8s.example.com`). Required.
+	IssuerHost string
+	// Namespace and ServiceAccount of the workload. Required.
+	Namespace, ServiceAccount string
+	// Audience is the token's audience. Default "sts.amazonaws.com".
+	Audience string
+}
+
+// ArchiveWriterArgs is an optional role for a workload outside AWS that writes
+// some of the archive itself, for example a notary-equivalent digest job on
+// Talos that writes `seals/` and `keys/` (its signing key being elsewhere). It
+// trusts the one ServiceAccount of IRSA, and may put objects only under Prefixes.
+type ArchiveWriterArgs struct {
+	IRSA IRSAArgs
+	// Prefixes the role may put objects under: any of records/, catalogue/,
+	// schema/, identity/, dlq/, seals/ and keys/. Default seals/ and keys/.
+	Prefixes []string
 }
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
@@ -251,6 +330,9 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 		return nil, fmt.Errorf("auditpulumi: RolePath %q must start and end with /", c.RolePath)
 	}
 	setInt(&c.LogRetentionDays, 30)
+	if c.AccountID != "" && !accountRE.MatchString(c.AccountID) {
+		return nil, fmt.Errorf("auditpulumi: AccountID %q must be the 12 digits of an AWS account id", c.AccountID)
+	}
 
 	ar := &c.Archive
 	if ar.BucketName == "" {
@@ -274,6 +356,13 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	}
 	if ar.ObjectLockMode == None && ar.DefaultRetentionDays > 0 {
 		return nil, errors.New("auditpulumi: Archive.DefaultRetentionDays needs a lock: Archive.ObjectLockMode is NONE")
+	}
+	switch ar.Encryption {
+	case "":
+		ar.Encryption = EncryptionKMS
+	case EncryptionKMS, EncryptionS3:
+	default:
+		return nil, fmt.Errorf("auditpulumi: Archive.Encryption %q must be %q (the default) or %q", ar.Encryption, EncryptionKMS, EncryptionS3)
 	}
 	if len(ar.Profiles) == 0 {
 		return nil, errors.New("auditpulumi: Archive.Profiles is required: a lifecycle rule is written for each profile's prefix")
@@ -302,11 +391,14 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	}
 
 	w := &c.Writer
-	if w.BinaryPath == "" {
-		return nil, errors.New("auditpulumi: Writer.BinaryPath is required: the linux/arm64 bootstrap of cmd/audit-writer-lambda")
-	}
-	if strings.TrimSpace(w.DeploymentYAML) == "" {
-		return nil, errors.New("auditpulumi: Writer.DeploymentYAML is required: the profile configuration")
+	if !in.Disabled {
+		if w.BinaryPath == "" {
+			return nil, errors.New("auditpulumi: Writer.BinaryPath is required: the linux/arm64 bootstrap of cmd/audit-writer-lambda " +
+				"(or set Ingest.Disabled)")
+		}
+		if strings.TrimSpace(w.DeploymentYAML) == "" {
+			return nil, errors.New("auditpulumi: Writer.DeploymentYAML is required: the profile configuration (or set Ingest.Disabled)")
+		}
 	}
 	setInt(&w.MemoryMB, 512)
 	setInt(&w.TimeoutSeconds, 120)
@@ -324,8 +416,9 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	}
 
 	n := &c.Notary
-	if n.BinaryPath == "" {
-		return nil, errors.New("auditpulumi: Notary.BinaryPath is required: the linux/arm64 bootstrap of cmd/audit-notary-lambda")
+	if n.BinaryPath == "" && !n.Disabled {
+		return nil, errors.New("auditpulumi: Notary.BinaryPath is required: the linux/arm64 bootstrap of cmd/audit-notary-lambda " +
+			"(or set Notary.Disabled)")
 	}
 	if n.Schedule == "" {
 		n.Schedule = "cron(15 * * * ? *)"
@@ -368,10 +461,68 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	if c.Alerts.NotarySilenceHours > 24 {
 		return nil, errors.New("auditpulumi: Alerts.NotarySilenceHours is at most 24")
 	}
-	if o := c.Observe; o != nil && o.TrustedPrincipalArn == nil {
-		return nil, errors.New("auditpulumi: Observe.TrustedPrincipalArn is required with Observe")
+	if o := c.Observe; o != nil {
+		if o.TrustedPrincipalArn == nil && o.IRSA == nil {
+			return nil, errors.New("auditpulumi: Observe needs Observe.TrustedPrincipalArn or Observe.IRSA")
+		}
+		if o.IRSA != nil {
+			irsa, err := o.IRSA.withDefaults("Observe.IRSA")
+			if err != nil {
+				return nil, err
+			}
+			oc := *o
+			oc.IRSA = irsa
+			c.Observe = &oc
+		}
+	}
+	if w := c.ArchiveWriter; w != nil {
+		irsa, err := w.IRSA.withDefaults("ArchiveWriter.IRSA")
+		if err != nil {
+			return nil, err
+		}
+		wc := *w
+		wc.IRSA = *irsa
+		if len(wc.Prefixes) == 0 {
+			wc.Prefixes = append([]string{}, sealPrefixes...)
+		}
+		allowed := append(append([]string{}, writerPrefixes...), sealPrefixes...)
+		seen := map[string]bool{}
+		for _, p := range wc.Prefixes {
+			if !slices.Contains(allowed, p) {
+				return nil, fmt.Errorf("auditpulumi: ArchiveWriter.Prefixes has %q: one of %s", p, strings.Join(allowed, ", "))
+			}
+			if seen[p] {
+				return nil, fmt.Errorf("auditpulumi: ArchiveWriter.Prefixes names %q twice", p)
+			}
+			seen[p] = true
+		}
+		c.ArchiveWriter = &wc
 	}
 	return &c, nil
+}
+
+var accountRE = regexp.MustCompile(`^[0-9]{12}$`)
+
+// withDefaults checks one IRSA block; field names the block in the refusal.
+func (i IRSAArgs) withDefaults(field string) (*IRSAArgs, error) {
+	switch {
+	case i.OIDCProviderArn == nil:
+		return nil, fmt.Errorf("auditpulumi: %s.OIDCProviderArn is required", field)
+	case i.IssuerHost == "":
+		return nil, fmt.Errorf("auditpulumi: %s.IssuerHost is required: the OIDC provider's URL without the scheme", field)
+	case strings.Contains(i.IssuerHost, "://") || strings.HasSuffix(i.IssuerHost, "/"):
+		return nil, fmt.Errorf("auditpulumi: %s.IssuerHost %q is the host (and path), with no scheme and no trailing /: "+
+			"it is the prefix of the condition keys", field, i.IssuerHost)
+	case i.Namespace == "" || i.ServiceAccount == "":
+		return nil, fmt.Errorf("auditpulumi: %s.Namespace and %s.ServiceAccount are required: "+
+			"a trust that names no ServiceAccount would be every one in the cluster", field, field)
+	case strings.ContainsAny(i.Namespace+i.ServiceAccount, "*?: "):
+		return nil, fmt.Errorf("auditpulumi: %s.Namespace and .ServiceAccount are names, not patterns", field)
+	}
+	if i.Audience == "" {
+		i.Audience = "sts.amazonaws.com"
+	}
+	return &i, nil
 }
 
 func setInt(p *int, def int) {

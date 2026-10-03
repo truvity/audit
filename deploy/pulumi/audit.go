@@ -65,11 +65,15 @@ type Audit struct {
 	NotaryFunctionArn pulumi.StringOutput
 	// WriterRoleArn and NotaryRoleArn are the roles the functions run as: the
 	// ARNs a roster or gitops grant names, and the identities the OTLP door
-	// sees. ObserveReaderRoleArn is the cross-account read role, empty without
+	// sees. Every output of a part that is turned off (Ingest.Disabled,
+	// Notary.Disabled) or not applicable (ArchiveKeyArn with Encryption "s3") is
+	// the empty string. ObserveReaderRoleArn is the cross-account read role, empty without
 	// Args.Observe.
 	WriterRoleArn        pulumi.StringOutput
 	NotaryRoleArn        pulumi.StringOutput
 	ObserveReaderRoleArn pulumi.StringOutput
+	// ArchiveWriterRoleArn is the IRSA write role, empty without Args.ArchiveWriter.
+	ArchiveWriterRoleArn pulumi.StringOutput
 	// AlarmTopicArn is the SNS topic every alarm publishes to.
 	AlarmTopicArn pulumi.StringOutput
 	// ScheduleArn is the notary's schedule.
@@ -90,32 +94,48 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	}
 	child := pulumi.Parent(out)
 	tags := pulumi.ToStringMap(a.Tags)
+	ingest, notary := !a.Ingest.Disabled, !a.Notary.Disabled
+	kmsArchive := a.Archive.Encryption == EncryptionKMS
 
-	identity, err := aws.GetCallerIdentity(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("auditpulumi: the caller's account: %w", err)
+	// The account is looked up through the component's own provider: the invoke
+	// has the component as its parent, so it resolves the provider the caller
+	// gave New (pulumi.Provider, pulumi.Providers) or inherited. A stack with the
+	// default providers disabled has no other one. AccountID skips the lookup.
+	accountID := a.AccountID
+	if accountID == "" && notary {
+		identity, err := aws.GetCallerIdentity(ctx, nil, child)
+		if err != nil {
+			return nil, fmt.Errorf("auditpulumi: the caller's account (pass the AWS provider with pulumi.Provider, or set Args.AccountID): %w", err)
+		}
+		accountID = identity.AccountId
 	}
-	accountRoot := fmt.Sprintf("arn:%s:iam::%s:root", "aws", identity.AccountId)
+	accountRoot := fmt.Sprintf("arn:%s:iam::%s:root", "aws", accountID)
 
 	// What each function's package holds beside its binary is rendered first, so
 	// an argument that cannot be rendered fails before anything is created.
-	writerPackage, err := writerFiles(name, a)
-	if err != nil {
-		return nil, err
+	var writerPackage, notaryPackage map[string]string
+	if ingest {
+		if writerPackage, err = writerFiles(name, a); err != nil {
+			return nil, err
+		}
 	}
-	notaryPackage, err := notaryFiles(name, a)
-	if err != nil {
-		return nil, err
+	if notary {
+		if notaryPackage, err = notaryFiles(name, a); err != nil {
+			return nil, err
+		}
 	}
 
 	// ---- the roles come first: the seal key's policy names the notary's.
-	writerRole, err := newRole(ctx, name+"-writer", a.RolePath, assumeRoleJSON("lambda.amazonaws.com"), tags, child)
-	if err != nil {
-		return nil, err
+	var writerRole, notaryRole *iam.Role
+	if ingest {
+		if writerRole, err = newRole(ctx, name+"-writer", a.RolePath, assumeRoleJSON("lambda.amazonaws.com"), tags, child); err != nil {
+			return nil, err
+		}
 	}
-	notaryRole, err := newRole(ctx, name+"-notary", a.RolePath, assumeRoleJSON("lambda.amazonaws.com"), tags, child)
-	if err != nil {
-		return nil, err
+	if notary {
+		if notaryRole, err = newRole(ctx, name+"-notary", a.RolePath, assumeRoleJSON("lambda.amazonaws.com"), tags, child); err != nil {
+			return nil, err
+		}
 	}
 
 	// ---- keys
@@ -123,35 +143,47 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	// deletion makes everything it encrypted, or signed, unreadable or
 	// unverifiable.
 	protect := pulumi.Protect(true)
-	archiveKey, err := kms.NewKey(ctx, name+"-archive", &kms.KeyArgs{
-		Description:          pulumi.Sprintf("%s: the key the archive's objects are encrypted with", name),
-		EnableKeyRotation:    pulumi.Bool(true),
-		DeletionWindowInDays: pulumi.Int(30),
-		Tags:                 tags,
-	}, child, protect)
-	if err != nil {
-		return nil, err
+	var archiveKey *kms.Key
+	if kmsArchive {
+		archiveKey, err = kms.NewKey(ctx, name+"-archive", &kms.KeyArgs{
+			Description:          pulumi.Sprintf("%s: the key the archive's objects are encrypted with", name),
+			EnableKeyRotation:    pulumi.Bool(true),
+			DeletionWindowInDays: pulumi.Int(30),
+			Tags:                 tags,
+		}, child, protect)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := kms.NewAlias(ctx, name+"-archive", &kms.AliasArgs{
+			Name: pulumi.String(archiveKeyAlias(name)), TargetKeyId: archiveKey.KeyId,
+		}, child); err != nil {
+			return nil, err
+		}
 	}
-	if _, err := kms.NewAlias(ctx, name+"-archive", &kms.AliasArgs{
-		Name: pulumi.String(archiveKeyAlias(name)), TargetKeyId: archiveKey.KeyId,
-	}, child); err != nil {
-		return nil, err
+	var sealKey *kms.Key
+	if notary {
+		sealKey, err = kms.NewKey(ctx, name+"-seal", &kms.KeyArgs{
+			Description:           pulumi.Sprintf("%s: the P-384 key seals are signed with (ES384)", name),
+			CustomerMasterKeySpec: pulumi.String("ECC_NIST_P384"),
+			KeyUsage:              pulumi.String("SIGN_VERIFY"),
+			DeletionWindowInDays:  pulumi.Int(30),
+			Policy:                notaryRole.Arn.ApplyT(func(arn string) string { return sealKeyPolicy(accountRoot, arn) }).(pulumi.StringOutput),
+			Tags:                  tags,
+		}, child, protect)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := kms.NewAlias(ctx, name+"-seal", &kms.AliasArgs{
+			Name: pulumi.String(sealKeyAlias(name)), TargetKeyId: sealKey.KeyId,
+		}, child); err != nil {
+			return nil, err
+		}
 	}
-	sealKey, err := kms.NewKey(ctx, name+"-seal", &kms.KeyArgs{
-		Description:           pulumi.Sprintf("%s: the P-384 key seals are signed with (ES384)", name),
-		CustomerMasterKeySpec: pulumi.String("ECC_NIST_P384"),
-		KeyUsage:              pulumi.String("SIGN_VERIFY"),
-		DeletionWindowInDays:  pulumi.Int(30),
-		Policy:                notaryRole.Arn.ApplyT(func(arn string) string { return sealKeyPolicy(accountRoot, arn) }).(pulumi.StringOutput),
-		Tags:                  tags,
-	}, child, protect)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := kms.NewAlias(ctx, name+"-seal", &kms.AliasArgs{
-		Name: pulumi.String(sealKeyAlias(name)), TargetKeyId: sealKey.KeyId,
-	}, child); err != nil {
-		return nil, err
+	// archiveKeyArn is the key's ARN, or the empty string with SSE-S3, which is
+	// what every policy builder reads as "no key".
+	archiveKeyArn := pulumi.String("").ToStringOutput()
+	if kmsArchive {
+		archiveKeyArn = archiveKey.Arn
 	}
 
 	// ---- the archive
@@ -161,83 +193,91 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	}
 
 	// ---- the queue, its dead-letter queue and the deduplication table
-	queue, dlq, err := newQueues(ctx, name, a, tags, child)
-	if err != nil {
-		return nil, err
-	}
-	table, err := dynamodb.NewTable(ctx, name+"-dedupe", &dynamodb.TableArgs{
-		Name:        pulumi.String(dedupeTable(name)),
-		BillingMode: pulumi.String("PAY_PER_REQUEST"),
-		HashKey:     pulumi.String("pk"),
-		Attributes:  dynamodb.TableAttributeArray{&dynamodb.TableAttributeArgs{Name: pulumi.String("pk"), Type: pulumi.String("S")}},
-		// The attribute the writer sets on each item; DynamoDB deletes an item
-		// after it, lazily, which is why the store also checks the time itself.
-		Ttl:  &dynamodb.TableTtlArgs{AttributeName: pulumi.String("expires_at"), Enabled: pulumi.Bool(true)},
-		Tags: tags,
-	}, child)
-	if err != nil {
-		return nil, err
-	}
-
-	// ---- the functions
-	writerFn, writerLogs, err := newFunction(ctx, functionSpec{
-		Name: name + "-writer", Service: writerService, Role: writerRole, Binary: a.Writer.BinaryPath,
-		MemoryMB: a.Writer.MemoryMB, TimeoutSeconds: a.Writer.TimeoutSeconds,
-		Files: writerPackage,
-	}, a, tags, child)
-	if err != nil {
-		return nil, err
-	}
-	notaryFn, notaryLogs, err := newFunction(ctx, functionSpec{
-		Name: name + "-notary", Service: notaryService, Role: notaryRole, Binary: a.Notary.BinaryPath,
-		MemoryMB: a.Notary.MemoryMB, TimeoutSeconds: a.Notary.TimeoutSeconds,
-		Files: notaryPackage,
-	}, a, tags, child)
-	if err != nil {
-		return nil, err
+	var queue, dlq *sqs.Queue
+	var table *dynamodb.Table
+	if ingest {
+		if queue, dlq, err = newQueues(ctx, name, a, tags, child); err != nil {
+			return nil, err
+		}
+		table, err = dynamodb.NewTable(ctx, name+"-dedupe", &dynamodb.TableArgs{
+			Name:        pulumi.String(dedupeTable(name)),
+			BillingMode: pulumi.String("PAY_PER_REQUEST"),
+			HashKey:     pulumi.String("pk"),
+			Attributes:  dynamodb.TableAttributeArray{&dynamodb.TableAttributeArgs{Name: pulumi.String("pk"), Type: pulumi.String("S")}},
+			// The attribute the writer sets on each item; DynamoDB deletes an item
+			// after it, lazily, which is why the store also checks the time itself.
+			Ttl:  &dynamodb.TableTtlArgs{AttributeName: pulumi.String("expires_at"), Enabled: pulumi.Bool(true)},
+			Tags: tags,
+		}, child)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	// ---- each role's policy
 	locked := a.Archive.ObjectLockMode != None
 	audience := ""
 	if a.Telemetry != nil {
 		audience = a.Telemetry.STSAudience
 	}
-	if _, err := iam.NewRolePolicy(ctx, name+"-writer", &iam.RolePolicyArgs{
-		Role: writerRole.Name,
-		Policy: pulumi.All(bucket.Arn, archiveKey.Arn, table.Arn, queue.Arn, writerLogs.Arn).ApplyT(func(v []any) string {
-			return writerPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), v[4].(string), audience, locked)
-		}).(pulumi.StringOutput),
-	}, child); err != nil {
-		return nil, err
-	}
-	if _, err := iam.NewRolePolicy(ctx, name+"-notary", &iam.RolePolicyArgs{
-		Role: notaryRole.Name,
-		Policy: pulumi.All(bucket.Arn, archiveKey.Arn, sealKey.Arn, notaryLogs.Arn).ApplyT(func(v []any) string {
-			return notaryPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), audience, locked)
-		}).(pulumi.StringOutput),
-	}, child); err != nil {
-		return nil, err
+
+	// ---- the writer: function, policy, and the queue feeding it
+	var writerFn *lambda.Function
+	if ingest {
+		var writerLogs *cloudwatch.LogGroup
+		writerFn, writerLogs, err = newFunction(ctx, functionSpec{
+			Name: name + "-writer", Service: writerService, Role: writerRole, Binary: a.Writer.BinaryPath,
+			MemoryMB: a.Writer.MemoryMB, TimeoutSeconds: a.Writer.TimeoutSeconds,
+			Files: writerPackage,
+		}, a, tags, child)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := iam.NewRolePolicy(ctx, name+"-writer", &iam.RolePolicyArgs{
+			Role: writerRole.Name,
+			Policy: pulumi.All(bucket.Arn, archiveKeyArn, table.Arn, queue.Arn, writerLogs.Arn).ApplyT(func(v []any) string {
+				return writerPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), v[4].(string), audience, locked)
+			}).(pulumi.StringOutput),
+		}, child); err != nil {
+			return nil, err
+		}
+		if _, err := lambda.NewEventSourceMapping(ctx, name+"-writer", &lambda.EventSourceMappingArgs{
+			EventSourceArn:                 queue.Arn,
+			FunctionName:                   writerFn.Arn,
+			BatchSize:                      pulumi.Int(a.Writer.BatchSize),
+			MaximumBatchingWindowInSeconds: pulumi.Int(a.Writer.MaxBatchingWindowSeconds),
+			// Partial batch responses: a message that was archived is not redelivered
+			// because another in its batch failed.
+			FunctionResponseTypes: pulumi.StringArray{pulumi.String("ReportBatchItemFailures")},
+			ScalingConfig:         &lambda.EventSourceMappingScalingConfigArgs{MaximumConcurrency: pulumi.Int(a.Writer.MaxConcurrency)},
+		}, child); err != nil {
+			return nil, err
+		}
 	}
 
-	// ---- the queue feeds the writer
-	if _, err := lambda.NewEventSourceMapping(ctx, name+"-writer", &lambda.EventSourceMappingArgs{
-		EventSourceArn:                 queue.Arn,
-		FunctionName:                   writerFn.Arn,
-		BatchSize:                      pulumi.Int(a.Writer.BatchSize),
-		MaximumBatchingWindowInSeconds: pulumi.Int(a.Writer.MaxBatchingWindowSeconds),
-		// Partial batch responses: a message that was archived is not redelivered
-		// because another in its batch failed.
-		FunctionResponseTypes: pulumi.StringArray{pulumi.String("ReportBatchItemFailures")},
-		ScalingConfig:         &lambda.EventSourceMappingScalingConfigArgs{MaximumConcurrency: pulumi.Int(a.Writer.MaxConcurrency)},
-	}, child); err != nil {
-		return nil, err
-	}
-
-	// ---- the notary's schedule
-	schedule, err := newSchedule(ctx, name, a, notaryFn, tags, child)
-	if err != nil {
-		return nil, err
+	// ---- the notary: function, policy, and its schedule
+	var notaryFn *lambda.Function
+	var schedule *scheduler.Schedule
+	if notary {
+		var notaryLogs *cloudwatch.LogGroup
+		notaryFn, notaryLogs, err = newFunction(ctx, functionSpec{
+			Name: name + "-notary", Service: notaryService, Role: notaryRole, Binary: a.Notary.BinaryPath,
+			MemoryMB: a.Notary.MemoryMB, TimeoutSeconds: a.Notary.TimeoutSeconds,
+			Files: notaryPackage,
+		}, a, tags, child)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := iam.NewRolePolicy(ctx, name+"-notary", &iam.RolePolicyArgs{
+			Role: notaryRole.Name,
+			Policy: pulumi.All(bucket.Arn, archiveKeyArn, sealKey.Arn, notaryLogs.Arn).ApplyT(func(v []any) string {
+				return notaryPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), audience, locked)
+			}).(pulumi.StringOutput),
+		}, child); err != nil {
+			return nil, err
+		}
+		if schedule, err = newSchedule(ctx, name, a, notaryFn, tags, child); err != nil {
+			return nil, err
+		}
 	}
 
 	// ---- alarms
@@ -248,25 +288,47 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		return nil, err
 	}
 
-	// ---- the cross-account read role
-	observeArn := pulumi.String("").ToStringOutput()
+	// ---- the read role for observe, and the write role for a workload outside AWS
+	empty := pulumi.String("").ToStringOutput()
+	observeArn, archiveWriterArn := empty, empty
 	if a.Observe != nil {
-		role, err := newObserveReader(ctx, name, a, bucket, archiveKey, tags, child)
+		role, err := newObserveReader(ctx, name, a, bucket, archiveKeyArn, tags, child)
 		if err != nil {
 			return nil, err
 		}
 		observeArn = role.Arn
 	}
+	if a.ArchiveWriter != nil {
+		role, err := newArchiveWriter(ctx, name, a, bucket, archiveKeyArn, tags, child)
+		if err != nil {
+			return nil, err
+		}
+		archiveWriterArn = role.Arn
+	}
 
+	// Outputs of a part that is not there are empty strings.
+	pick := func(on bool, o func() pulumi.StringOutput) pulumi.StringOutput {
+		if !on {
+			return empty
+		}
+		return o()
+	}
 	out.BucketName, out.BucketArn = bucket.Bucket, bucket.Arn
-	out.ArchiveKeyArn, out.SealKeyArn = archiveKey.Arn, sealKey.Arn
-	out.SealKeyAlias = pulumi.String(sealKeyAlias(name)).ToStringOutput()
-	out.QueueURL, out.QueueArn, out.DlqURL, out.DlqArn = queue.Url, queue.Arn, dlq.Url, dlq.Arn
-	out.DedupeTableName = table.Name
-	out.WriterFunctionArn, out.NotaryFunctionArn = writerFn.Arn, notaryFn.Arn
-	out.WriterRoleArn, out.NotaryRoleArn, out.ObserveReaderRoleArn = writerRole.Arn, notaryRole.Arn, observeArn
-	out.AlarmTopicArn = topic.Arn
-	out.ScheduleArn = schedule.Arn
+	out.ArchiveKeyArn = archiveKeyArn
+	out.SealKeyArn = pick(notary, func() pulumi.StringOutput { return sealKey.Arn })
+	out.SealKeyAlias = pick(notary, func() pulumi.StringOutput { return pulumi.String(sealKeyAlias(name)).ToStringOutput() })
+	out.QueueURL = pick(ingest, func() pulumi.StringOutput { return queue.Url })
+	out.QueueArn = pick(ingest, func() pulumi.StringOutput { return queue.Arn })
+	out.DlqURL = pick(ingest, func() pulumi.StringOutput { return dlq.Url })
+	out.DlqArn = pick(ingest, func() pulumi.StringOutput { return dlq.Arn })
+	out.DedupeTableName = pick(ingest, func() pulumi.StringOutput { return table.Name })
+	out.WriterFunctionArn = pick(ingest, func() pulumi.StringOutput { return writerFn.Arn })
+	out.NotaryFunctionArn = pick(notary, func() pulumi.StringOutput { return notaryFn.Arn })
+	out.WriterRoleArn = pick(ingest, func() pulumi.StringOutput { return writerRole.Arn })
+	out.NotaryRoleArn = pick(notary, func() pulumi.StringOutput { return notaryRole.Arn })
+	out.ObserveReaderRoleArn, out.ArchiveWriterRoleArn = observeArn, archiveWriterArn
+	out.AlarmTopicArn = pick(topic != nil, func() pulumi.StringOutput { return topic.Arn })
+	out.ScheduleArn = pick(notary, func() pulumi.StringOutput { return schedule.Arn })
 	if err := ctx.RegisterResourceOutputs(out, pulumi.Map{
 		"bucketName": out.BucketName, "bucketArn": out.BucketArn,
 		"archiveKeyArn": out.ArchiveKeyArn, "sealKeyArn": out.SealKeyArn, "sealKeyAlias": out.SealKeyAlias,
@@ -274,7 +336,8 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		"dedupeTableName":   out.DedupeTableName,
 		"writerFunctionArn": out.WriterFunctionArn, "notaryFunctionArn": out.NotaryFunctionArn,
 		"writerRoleArn": out.WriterRoleArn, "notaryRoleArn": out.NotaryRoleArn, "observeReaderRoleArn": out.ObserveReaderRoleArn,
-		"alarmTopicArn": out.AlarmTopicArn, "scheduleArn": out.ScheduleArn,
+		"archiveWriterRoleArn": out.ArchiveWriterRoleArn,
+		"alarmTopicArn":        out.AlarmTopicArn, "scheduleArn": out.ScheduleArn,
 	}); err != nil {
 		return nil, err
 	}
@@ -336,16 +399,26 @@ func newArchive(ctx *pulumi.Context, name string, a *Args, key *kms.Key, tags pu
 			return nil, err
 		}
 	}
-	if _, err := s3.NewBucketServerSideEncryptionConfiguration(ctx, name+"-archive", &s3.BucketServerSideEncryptionConfigurationArgs{
-		Bucket: bucket.ID(),
-		Rules: s3.BucketServerSideEncryptionConfigurationRuleArray{&s3.BucketServerSideEncryptionConfigurationRuleArgs{
+	// SSE-KMS under the archive key, or SSE-S3 (Archive.Encryption "s3"): then
+	// there is no key, and a bucket key has nothing to amortise.
+	sse := &s3.BucketServerSideEncryptionConfigurationRuleArgs{
+		ApplyServerSideEncryptionByDefault: &s3.BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
+			SseAlgorithm: pulumi.String("AES256"),
+		},
+	}
+	if key != nil {
+		sse = &s3.BucketServerSideEncryptionConfigurationRuleArgs{
 			ApplyServerSideEncryptionByDefault: &s3.BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
 				SseAlgorithm: pulumi.String("aws:kms"), KmsMasterKeyId: key.Arn,
 			},
 			// One data key per bucket and period instead of one KMS call per
 			// object: the writer puts an object per batch.
 			BucketKeyEnabled: pulumi.Bool(true),
-		}},
+		}
+	}
+	if _, err := s3.NewBucketServerSideEncryptionConfiguration(ctx, name+"-archive", &s3.BucketServerSideEncryptionConfigurationArgs{
+		Bucket: bucket.ID(),
+		Rules:  s3.BucketServerSideEncryptionConfigurationRuleArray{sse},
 	}, opts...); err != nil {
 		return nil, err
 	}
@@ -611,15 +684,23 @@ func newSchedule(ctx *pulumi.Context, name string, a *Args, fn *lambda.Function,
 	}, opts...)
 }
 
-// newObserveReader is the role audit-observe, in another account, assumes to
-// follow the archive.
-func newObserveReader(ctx *pulumi.Context, name string, a *Args, bucket *s3.Bucket, key *kms.Key, tags pulumi.StringMap,
+// newObserveReader is the role audit-observe assumes to follow the archive: from
+// another account (a principal), from a Kubernetes workload (IRSA), or either.
+func newObserveReader(ctx *pulumi.Context, name string, a *Args, bucket *s3.Bucket, archiveKeyArn pulumi.StringOutput, tags pulumi.StringMap,
 	opts ...pulumi.ResourceOption) (*iam.Role, error) {
 	o := a.Observe
+	principal := pulumi.String("").ToStringOutput()
+	if o.TrustedPrincipalArn != nil {
+		principal = o.TrustedPrincipalArn.ToStringOutput()
+	}
+	provider := pulumi.String("").ToStringOutput()
+	if o.IRSA != nil {
+		provider = o.IRSA.OIDCProviderArn.ToStringOutput()
+	}
 	role, err := iam.NewRole(ctx, name+"-observe-reader", &iam.RoleArgs{
 		Name: pulumi.String(name + "-observe-reader"), Path: pulumi.String(a.RolePath), Tags: tags,
-		AssumeRolePolicy: o.TrustedPrincipalArn.ToStringOutput().ApplyT(func(p string) string {
-			return trustPolicy(p, o.ExternalID)
+		AssumeRolePolicy: pulumi.All(principal, provider).ApplyT(func(v []any) string {
+			return trustPolicy(v[0].(string), o.ExternalID, o.IRSA, v[1].(string))
 		}).(pulumi.StringOutput),
 	}, opts...)
 	if err != nil {
@@ -627,8 +708,34 @@ func newObserveReader(ctx *pulumi.Context, name string, a *Args, bucket *s3.Buck
 	}
 	if _, err := iam.NewRolePolicy(ctx, name+"-observe-reader", &iam.RolePolicyArgs{
 		Role: role.Name,
-		Policy: pulumi.All(bucket.Arn, key.Arn).ApplyT(func(v []any) string {
+		Policy: pulumi.All(bucket.Arn, archiveKeyArn).ApplyT(func(v []any) string {
 			return observeReaderPolicy(v[0].(string), v[1].(string))
+		}).(pulumi.StringOutput),
+	}, opts...); err != nil {
+		return nil, err
+	}
+	return role, nil
+}
+
+// newArchiveWriter is the role a workload outside AWS assumes (IRSA) to write the
+// archive prefixes it is given: `<name>-archive-writer`.
+func newArchiveWriter(ctx *pulumi.Context, name string, a *Args, bucket *s3.Bucket, archiveKeyArn pulumi.StringOutput, tags pulumi.StringMap,
+	opts ...pulumi.ResourceOption) (*iam.Role, error) {
+	w := a.ArchiveWriter
+	role, err := iam.NewRole(ctx, name+"-archive-writer", &iam.RoleArgs{
+		Name: pulumi.String(name + "-archive-writer"), Path: pulumi.String(a.RolePath), Tags: tags,
+		AssumeRolePolicy: w.IRSA.OIDCProviderArn.ToStringOutput().ApplyT(func(p string) string {
+			return trustPolicy("", "", &w.IRSA, p)
+		}).(pulumi.StringOutput),
+	}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	locked := a.Archive.ObjectLockMode != None
+	if _, err := iam.NewRolePolicy(ctx, name+"-archive-writer", &iam.RolePolicyArgs{
+		Role: role.Name,
+		Policy: pulumi.All(bucket.Arn, archiveKeyArn).ApplyT(func(v []any) string {
+			return archiveWriterPolicy(v[0].(string), v[1].(string), w.Prefixes, locked)
 		}).(pulumi.StringOutput),
 	}, opts...); err != nil {
 		return nil, err

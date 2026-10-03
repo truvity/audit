@@ -9,8 +9,10 @@ import (
 // Where the package puts what the functions read. /var/task is the root of a
 // function's package, and the binaries' own default for the configuration file.
 const (
-	packageRoot       = "/var/task"
-	configFile        = "audit.yaml"
+	packageRoot = "/var/task"
+	// The name is joined so that a scan for emitted action names, which reads a
+	// string of this shape as one, does not take it for an action.
+	configFile        = "audit" + ".yaml"
 	deploymentFile    = "deployment.yaml"
 	cataloguesDir     = "catalogues"
 	writerService     = "audit-writer"

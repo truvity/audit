@@ -124,7 +124,7 @@ nothing here needs a registry. The release carries each function as a zip with
 `audit-notary-lambda_<version>_linux_arm64.zip`), and the library builds the
 package it ships from that binary plus the files it renders.
 
-The functions run **outside a VPC** (decision P-INF-99). They reach S3, DynamoDB,
+The functions run **outside a VPC** (a decision of the AWS design). They reach S3, DynamoDB,
 SQS, KMS and STS over the regional public endpoints with the role's credentials,
 and the OTLP door over the internet. That is also why there is no NAT, no
 interface endpoint, and no in-cluster writer for the notary to record through.

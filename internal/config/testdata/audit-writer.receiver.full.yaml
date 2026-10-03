@@ -10,5 +10,5 @@ database:
   passwordEnv: AUDIT_DATABASE_PASSWORD
 forward:
   sqs:
-    queueUrl: https://sqs.eu-example-1.amazonaws.com/123456789012/audit
+    queueUrl: https://sqs.eu-example-1.amazonaws.com/ACCOUNT/audit
     region: eu-example-1

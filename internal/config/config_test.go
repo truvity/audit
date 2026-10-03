@@ -345,7 +345,7 @@ func TestTheDefaultRequireIsTheStrongestTheModeCanGive(t *testing.T) {
 }
 
 func TestEachTransportLoadsAndTheOthersAreRefused(t *testing.T) {
-	const sqs = "{queueUrl: 'https://sqs.example.test/1/audit'}"
+	const sqs = "{queueUrl: 'https://sqs.example.test/ACCOUNT/audit'}"
 	for name, c := range map[string]struct {
 		body string
 		ok   bool
@@ -366,9 +366,9 @@ func TestEachTransportLoadsAndTheOthersAreRefused(t *testing.T) {
 		"writer forwards":       {minimalWriter + "forward: {sqs: " + sqs + "}\n", false},
 		"writer both":           {minimalWriter + "stream: {nats: {url: 'nats://n:4222'}}\nconsume: {sqs: " + sqs + "}\n", false},
 		"writer require logged": {minimalWriter + "require: logged\n", true},
-		"fifo disagrees":        {minimalWriter + "consume: {sqs: {queueUrl: 'https://sqs.example.test/1/audit', fifo: true}}\n", false},
+		"fifo disagrees":        {minimalWriter + "consume: {sqs: {queueUrl: 'https://sqs.example.test/ACCOUNT/audit', fifo: true}}\n", false},
 		"require unknown":       {minimalWriter + "require: durable\n", false},
-		"sqs secret key":        {minimalWriter + "consume: {sqs: {queueUrl: 'https://sqs.example.test/1/audit', accessKey: x}}\n", false},
+		"sqs secret key":        {minimalWriter + "consume: {sqs: {queueUrl: 'https://sqs.example.test/ACCOUNT/audit', accessKey: x}}\n", false},
 	} {
 		_, err := config.LoadWriter(write(t, c.body))
 		if c.ok && err != nil {

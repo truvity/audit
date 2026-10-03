@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/audit
+    eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-AUDIT-ROLE
 
 ---
 # Source: audit/templates/serviceaccount.yaml
@@ -90,7 +90,7 @@ data:
       sqs:
         batch: 10
         fifo: true
-        queueUrl: https://sqs.eu-west-1.amazonaws.com/123456789012/audit.fifo
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit.fifo
         region: eu-west-1
         visibility: 2m
     database:
@@ -129,7 +129,7 @@ data:
     forward:
       sqs:
         fifo: true
-        queueUrl: https://sqs.eu-west-1.amazonaws.com/123456789012/audit.fifo
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit.fifo
         region: eu-west-1
     mode: receiver
     require: queued
@@ -221,7 +221,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: 4bcc5cb3dbbc213950beabbc78de984680f4a3429d69ba2e90b5a94ef226d232
+        checksum/config: d8cd67f0ad14f148ebcae701a2d77531ebd82cbcb33f49fdac53a5f9ca949175
         # Likewise a profile change.
         checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
         # And who may write: a changed issuer or mapping must reach it.
@@ -324,7 +324,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: 5a956d4c60d0f15363dfa5305854c325e4ee49a25aeb55c42f9256cc69ac05a1
+        checksum/config: bad3fc0d5c5ea52ca04c5846c655ba004ecebb0fe77e096037505f7605c0c6a8
         # Likewise a profile change.
         checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
         # And who may write: a changed issuer or mapping must reach it.

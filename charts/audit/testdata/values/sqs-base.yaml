@@ -22,7 +22,7 @@ replicas: 2
 serviceAccount:
   create: true
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/audit
+    eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-AUDIT-ROLE
 
 workloadIdentity:
   issuers:
@@ -56,7 +56,7 @@ receiver:
       passwordEnv: AUDIT_DATABASE_PASSWORD
     forward:
       sqs:
-        queueUrl: https://sqs.eu-west-1.amazonaws.com/123456789012/audit.fifo
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit.fifo
         region: eu-west-1
         fifo: true
   secretEnv:
@@ -85,7 +85,7 @@ writer:
       passwordEnv: AUDIT_DATABASE_PASSWORD
     consume:
       sqs:
-        queueUrl: https://sqs.eu-west-1.amazonaws.com/123456789012/audit.fifo
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit.fifo
         region: eu-west-1
         fifo: true
         batch: 10

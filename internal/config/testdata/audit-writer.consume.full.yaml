@@ -9,7 +9,7 @@ archive:
     name: audit-archive
 consume:
   sqs:
-    queueUrl: https://sqs.eu-example-1.amazonaws.com/123456789012/audit.fifo
+    queueUrl: https://sqs.eu-example-1.amazonaws.com/ACCOUNT/audit.fifo
     region: eu-example-1
     fifo: true
     batch: 10

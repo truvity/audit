@@ -10,6 +10,7 @@ deployment: /etc/audit/deployment.yaml
 sink:
   url: http://audit:8080
   tokenFile: /var/run/audit/token
+  expect: archived
 archive:
   bucket:
     name: audit-archive
@@ -29,3 +30,4 @@ keys:
   local:
     rootFile: /etc/audit/keys/root
     dir: /var/lib/audit/keys
+require: queued

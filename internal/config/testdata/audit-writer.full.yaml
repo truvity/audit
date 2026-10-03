@@ -1,6 +1,7 @@
 # Every key the writer reads, set. The test that decodes this file strictly and
 # writes it back is what holds the Go type to the schema.
 mode: writer
+require: archived
 listen:
   address: ":8080"
 deployment: /etc/audit/deployment.yaml

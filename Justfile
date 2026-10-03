@@ -233,9 +233,11 @@ chart:
         > tests/golden/audit/example-direct.yaml
     helm template audit charts/audit -f charts/audit/examples/stream.yaml \
         > tests/golden/audit/example-stream.yaml
+    helm template audit charts/audit -f charts/audit/examples/sqs.yaml \
+        > tests/golden/audit/example-sqs.yaml
     # A hook Pod whose service account the chart creates normally is admitted
     # and then never scheduled: only an install finds that, so assert it here.
-    for shape in direct stream transit attested example-direct example-stream; do \
+    for shape in direct stream transit attested example-direct example-stream example-sqs; do \
         python3 charts/audit/testdata/hook-order.py \
             < tests/golden/audit/$shape.yaml; \
     done

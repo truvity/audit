@@ -148,9 +148,44 @@ func TransitSignerFrom(ctx context.Context, t config.TransitSigner) (keys.Signer
 // token in the file it names. Every job that records through the writer builds
 // its client here or in WriterClient, so that none of them is the one that
 // forgot.
-func SinkFrom(s config.Sink) *sink.Client {
+//
+// `expect` says what the writer is configured to give, and `require` is the
+// floor the process holds it to: with a require, the client is wrapped in
+// sink.Guard, which refuses at start-up when the expectation is below it and
+// fails any acknowledgement weaker than it afterwards. Without one the client
+// is returned as it is.
+func SinkFrom(s config.Sink, require string) (sink.Sink, error) {
+	var c *sink.Client
 	if s.TokenFile != "" {
-		return sink.NewClient(auth.TokenFile(s.TokenFile), s.URL)
+		c = sink.NewClient(auth.TokenFile(s.TokenFile), s.URL)
+	} else {
+		c = sink.NewClient(nil, s.URL)
 	}
-	return sink.NewClient(nil, s.URL)
+	if s.Expect != "" {
+		d, err := sink.ParseDurability(s.Expect)
+		if err != nil {
+			return nil, fmt.Errorf("sink.expect: %w", err)
+		}
+		c = c.Expecting(d)
+	}
+	if require == "" {
+		return c, nil
+	}
+	least, err := sink.ParseDurability(require)
+	if err != nil {
+		return nil, fmt.Errorf("require: %w", err)
+	}
+	guarded, err := sink.Guard(c, least)
+	if err != nil {
+		return nil, fmt.Errorf("require: %s: the writer at sink.url is configured to give %s: %w",
+			require, orUnspecified(s.Expect), err)
+	}
+	return guarded, nil
+}
+
+func orUnspecified(s string) string {
+	if s == "" {
+		return "nothing it says (set sink.expect)"
+	}
+	return s
 }

@@ -2,6 +2,11 @@
   "$defs": {
     "config-audit-clock-sync": {
       "additionalProperties": false,
+      "dependentRequired": {
+        "require": [
+          "sink"
+        ]
+      },
       "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "maxOffset": {
@@ -18,6 +23,14 @@
           },
           "minItems": 1,
           "type": "array"
+        },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
         },
         "sink": {
           "$ref": "#/$defs/config-audit-clock-sync.sink",
@@ -44,6 +57,14 @@
       "additionalProperties": false,
       "description": "The writer this process records through.",
       "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "tokenFile": {
           "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
           "minLength": 1,
@@ -62,6 +83,11 @@
     },
     "config-audit-digest": {
       "additionalProperties": false,
+      "dependentRequired": {
+        "require": [
+          "sink"
+        ]
+      },
       "description": "The configuration of `audit digest --config`, which seals windows into the signed chain. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "archive": {
@@ -155,6 +181,14 @@
           "description": "How many windows one run may seal when catching up.",
           "minimum": 1,
           "type": "integer"
+        },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
         },
         "signer": {
           "additionalProperties": false,
@@ -331,6 +365,14 @@
       "additionalProperties": false,
       "description": "The writer this process records through.",
       "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "tokenFile": {
           "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
           "minLength": 1,
@@ -683,6 +725,14 @@
           ],
           "type": "object"
         },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "searcher": {
           "default": "postgres",
           "description": "Where answers come from: `postgres` (the index), or `s3scan` (the archive, within a budget) for a deployment with no database.",
@@ -953,6 +1003,14 @@
       "additionalProperties": false,
       "description": "The writer this process records through.",
       "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "tokenFile": {
           "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
           "minLength": 1,
@@ -971,6 +1029,11 @@
     },
     "config-audit-verify": {
       "additionalProperties": false,
+      "dependentRequired": {
+        "require": [
+          "sink"
+        ]
+      },
       "description": "The configuration of `audit verify --config`, which walks digest chains and reports what it finds. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "archive": {
@@ -1085,6 +1148,14 @@
           "description": "Write a verification per window into the archive under verified/, which a record's provenance reads. Needs write access there.",
           "type": "boolean"
         },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "sink": {
           "$ref": "#/$defs/config-audit-verify.sink",
           "description": "The writer this job records what it checked through."
@@ -1107,6 +1178,14 @@
       "additionalProperties": false,
       "description": "The writer this process records through.",
       "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "tokenFile": {
           "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
           "minLength": 1,
@@ -1128,6 +1207,15 @@
       "allOf": [
         {
           "else": {
+            "not": {
+              "required": [
+                "stream",
+                "consume"
+              ]
+            },
+            "properties": {
+              "forward": false
+            },
             "required": [
               "archive"
             ]
@@ -1143,14 +1231,56 @@
             ]
           },
           "then": {
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "forward": {
+                      "required": [
+                        "log"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "forward"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "require": {
+                      "const": "logged"
+                    }
+                  },
+                  "required": [
+                    "require"
+                  ]
+                }
+              }
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "stream"
+                ]
+              },
+              {
+                "required": [
+                  "forward"
+                ]
+              }
+            ],
             "properties": {
               "archive": false,
               "catalogues": false,
-              "keys": false
-            },
-            "required": [
-              "stream"
-            ]
+              "consume": false,
+              "keys": false,
+              "require": {
+                "enum": [
+                  "logged",
+                  "queued"
+                ]
+              }
+            }
           }
         }
       ],
@@ -1270,6 +1400,132 @@
           "minLength": 1,
           "type": "string"
         },
+        "consume": {
+          "additionalProperties": false,
+          "description": "What a writer reads its records from, beside its own sink: exactly one of `nats` and `sqs`.",
+          "oneOf": [
+            {
+              "required": [
+                "nats"
+              ]
+            },
+            {
+              "required": [
+                "sqs"
+              ]
+            }
+          ],
+          "properties": {
+            "nats": {
+              "additionalProperties": false,
+              "description": "A NATS JetStream stream; what `stream` says.",
+              "properties": {
+                "ackWait": {
+                  "$ref": "#/$defs/config-audit-writer.duration",
+                  "default": "2m",
+                  "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+                },
+                "batch": {
+                  "default": 100,
+                  "description": "How many records are taken from the stream at once.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "consumer": {
+                  "default": "audit-writer",
+                  "description": "The durable consumer this installation's writers share.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "default": "AUDIT",
+                  "description": "The stream.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "nats": {
+                  "additionalProperties": false,
+                  "description": "A NATS connection, and nothing else. What a service does with the connection — publish to a subject, bind a durable consumer to a stream — differs per component and is described beside it: a publisher with a `consumer` field it never reads is a field somebody will eventually set.",
+                  "properties": {
+                    "tls": {
+                      "additionalProperties": false,
+                      "description": "Connect over TLS and authenticate with the service's own workload identity instead of a token. The certificate presented is the one the service's own top-level `tls` block loads (its mode must not be `off`); the broker maps the identity in it to a user with its own permissions, so what the service may do is the broker's decision and nothing in this file. The certificate is re-read on every connect, so the platform's rotation is picked up without a restart and a rotation drops no connection already made. Only a service that declares this key in its own schema acts on it.",
+                      "properties": {
+                        "caFile": {
+                          "description": "Path to the trust bundle the BROKER's certificate is verified against. The broker's, not the workload identity's: a broker has a name and no workload identity, and usually a different chain.",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "description": "The name the broker's certificate was issued for, when that is not the host in `url`. Empty verifies the host dialled.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "caFile"
+                      ],
+                      "type": "object"
+                    },
+                    "tokenFile": {
+                      "description": "Path to a file holding the token the client authenticates with, mounted by the platform and re-read on every reconnect so that a rotated token is picked up without a restart. It is the workload's own account token: the broker asks an authorisation service who the bearer is, and that service answers from the account rather than from anything the client claims. Unset with `tls` unset means no authentication, which is a test configuration and not a deployment; unset with `tls` set means the certificate is the credential.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "The server URL, for example nats://nats:4222.",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "nats"
+              ],
+              "type": "object"
+            },
+            "sqs": {
+              "additionalProperties": false,
+              "description": "An SQS queue the writer consumes. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+              "properties": {
+                "batch": {
+                  "default": 10,
+                  "description": "How many messages are received at once, one to ten.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "fifo": {
+                  "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+                  "type": "boolean"
+                },
+                "queueUrl": {
+                  "description": "The queue's URL.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "visibility": {
+                  "$ref": "#/$defs/config-audit-writer.duration",
+                  "default": "1m",
+                  "description": "How long a received message is hidden from other consumers while the writer writes it. It must outlast the write, or the message is delivered twice."
+                }
+              },
+              "required": [
+                "queueUrl"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
         "database": {
           "$ref": "#/$defs/config-audit-writer.postgres",
           "description": "The index and the shared deduplication table. Without it the writer indexes nothing, deduplicates in process, and may only run one replica."
@@ -1282,6 +1538,132 @@
         "forgetIdentities": {
           "description": "Do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it.",
           "type": "boolean"
+        },
+        "forward": {
+          "additionalProperties": false,
+          "description": "Where a receiver sends what it took: exactly one of `nats`, `sqs` and `log`. `log` is allowed only with `require: logged`.",
+          "oneOf": [
+            {
+              "required": [
+                "nats"
+              ]
+            },
+            {
+              "required": [
+                "sqs"
+              ]
+            },
+            {
+              "required": [
+                "log"
+              ]
+            }
+          ],
+          "properties": {
+            "log": {
+              "additionalProperties": false,
+              "description": "The log sink: one JSON line per record on standard output, which survives nothing but the log pipeline. Nothing to configure.",
+              "properties": {},
+              "type": "object"
+            },
+            "nats": {
+              "additionalProperties": false,
+              "description": "A NATS JetStream stream; what `stream` says.",
+              "properties": {
+                "ackWait": {
+                  "$ref": "#/$defs/config-audit-writer.duration",
+                  "default": "2m",
+                  "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+                },
+                "batch": {
+                  "default": 100,
+                  "description": "How many records are taken from the stream at once.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "consumer": {
+                  "default": "audit-writer",
+                  "description": "The durable consumer this installation's writers share.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "default": "AUDIT",
+                  "description": "The stream.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "nats": {
+                  "additionalProperties": false,
+                  "description": "A NATS connection, and nothing else. What a service does with the connection — publish to a subject, bind a durable consumer to a stream — differs per component and is described beside it: a publisher with a `consumer` field it never reads is a field somebody will eventually set.",
+                  "properties": {
+                    "tls": {
+                      "additionalProperties": false,
+                      "description": "Connect over TLS and authenticate with the service's own workload identity instead of a token. The certificate presented is the one the service's own top-level `tls` block loads (its mode must not be `off`); the broker maps the identity in it to a user with its own permissions, so what the service may do is the broker's decision and nothing in this file. The certificate is re-read on every connect, so the platform's rotation is picked up without a restart and a rotation drops no connection already made. Only a service that declares this key in its own schema acts on it.",
+                      "properties": {
+                        "caFile": {
+                          "description": "Path to the trust bundle the BROKER's certificate is verified against. The broker's, not the workload identity's: a broker has a name and no workload identity, and usually a different chain.",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "description": "The name the broker's certificate was issued for, when that is not the host in `url`. Empty verifies the host dialled.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "caFile"
+                      ],
+                      "type": "object"
+                    },
+                    "tokenFile": {
+                      "description": "Path to a file holding the token the client authenticates with, mounted by the platform and re-read on every reconnect so that a rotated token is picked up without a restart. It is the workload's own account token: the broker asks an authorisation service who the bearer is, and that service answers from the account rather than from anything the client claims. Unset with `tls` unset means no authentication, which is a test configuration and not a deployment; unset with `tls` set means the certificate is the credential.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "The server URL, for example nats://nats:4222.",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "nats"
+              ],
+              "type": "object"
+            },
+            "sqs": {
+              "additionalProperties": false,
+              "description": "An SQS queue the receiver publishes to. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+              "properties": {
+                "fifo": {
+                  "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+                  "type": "boolean"
+                },
+                "queueUrl": {
+                  "description": "The queue's URL.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "queueUrl"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
         },
         "keys": {
           "$ref": "#/$defs/config-audit-writer.keys"
@@ -1315,6 +1697,14 @@
           "minimum": 1,
           "type": "integer"
         },
+        "require": {
+          "description": "The weakest durability this process's chain may give. Unset is `archived` for a writer and `queued` for a receiver. At start-up the process refuses to run if what it is configured with can never give that: a receiver, which holds no archive, cannot promise `archived`, and `forward.log` cannot promise more than `logged`. A write acknowledged weaker than this fails. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "roll": {
           "additionalProperties": false,
           "description": "How much a writer gathers from the stream before it writes, which decides how many objects a day of records becomes.",
@@ -1335,7 +1725,7 @@
         },
         "stream": {
           "additionalProperties": false,
-          "description": "The wide stream. Without it the writer only serves its own sink.",
+          "description": "The wide stream, as the NATS shorthand: for a receiver it is `forward.nats`, for a writer `consume.nats`. Give it or the longhand, not both.",
           "properties": {
             "ackWait": {
               "$ref": "#/$defs/config-audit-writer.duration",

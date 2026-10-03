@@ -96,10 +96,14 @@ type (
 		KMSKey   string `json:"kmsKey,omitempty"`
 	}
 
-	// Sink is the writer a process records through.
+	// Sink is the writer a process records through. Expect says what the
+	// writer at that URL is configured to give (logged, queued or archived):
+	// a client cannot know it, so the file says, and the process's `require`
+	// is checked against it at start-up.
 	Sink struct {
 		URL       string `json:"url"`
 		TokenFile string `json:"tokenFile,omitempty"`
+		Expect    string `json:"expect,omitempty"`
 	}
 
 	// OpenBAOLogin is a JWT login: the pod's projected service-account token,
@@ -152,6 +156,41 @@ type (
 		AckWait  Duration `json:"ackWait,omitzero"`
 	}
 
+	// SQS is an Amazon SQS queue. There are no credentials here: they are the
+	// SDK's ambient ones, which on Kubernetes is the pod's workload identity
+	// (EKS Pod Identity or IRSA, bound through the service account).
+	SQS struct {
+		QueueURL string `json:"queueUrl"`
+		Region   string `json:"region,omitempty"`
+		FIFO     bool   `json:"fifo,omitempty"`
+	}
+
+	// ConsumeSQS is a queue a writer consumes, with the two knobs of a consumer.
+	ConsumeSQS struct {
+		SQS
+		Batch      int      `json:"batch,omitempty"`
+		Visibility Duration `json:"visibility,omitzero"`
+	}
+
+	// Log is the log sink, which has nothing to configure: it writes a line per
+	// record to standard output.
+	Log struct{}
+
+	// Forward is where a receiver sends what it took: exactly one of its
+	// fields.
+	Forward struct {
+		NATS *Stream `json:"nats,omitempty"`
+		SQS  *SQS    `json:"sqs,omitempty"`
+		Log  *Log    `json:"log,omitempty"`
+	}
+
+	// Consume is what a writer reads its records from, beside its own sink:
+	// exactly one of its fields.
+	Consume struct {
+		NATS *Stream     `json:"nats,omitempty"`
+		SQS  *ConsumeSQS `json:"sqs,omitempty"`
+	}
+
 	// Roll is how much a writer gathers from the stream before it writes it.
 	Roll struct {
 		Interval   Duration `json:"interval,omitzero"`
@@ -174,9 +213,17 @@ type Writer struct {
 	Keys            *Keys     `json:"keys,omitempty"`
 	// ForgetIdentities turns off keeping the identity behind each pseudonym,
 	// sealed under its key: the default keeps it, so that resolve can find it.
-	ForgetIdentities bool    `json:"forgetIdentities,omitempty"`
-	Stream           *Stream `json:"stream,omitempty"`
-	Roll             Roll    `json:"roll,omitzero"`
+	ForgetIdentities bool `json:"forgetIdentities,omitempty"`
+	// Stream is the NATS shorthand: a receiver's forward.nats, or a writer's
+	// consume.nats. It is kept so that a file written before the two existed
+	// reads as it did; finish() carries it into Forward or Consume.
+	Stream  *Stream  `json:"stream,omitempty"`
+	Forward *Forward `json:"forward,omitempty"`
+	Consume *Consume `json:"consume,omitempty"`
+	// Require is the weakest durability the chain may give. Unset is archived
+	// for a writer and queued for a receiver (see Writer.finish).
+	Require string `json:"require,omitempty"`
+	Roll    Roll   `json:"roll,omitzero"`
 }
 
 // Exports is where the query service puts what it exports: a bucket of its
@@ -195,6 +242,7 @@ type Query struct {
 	Grants     string    `json:"grants"`
 	Deployment string    `json:"deployment,omitempty"`
 	Sink       Sink      `json:"sink"`
+	Require    string    `json:"require,omitempty"`
 	Archive    *Archive  `json:"archive,omitempty"`
 	Exports    *Exports  `json:"exports,omitempty"`
 	Keys       *Keys     `json:"keys,omitempty"`
@@ -224,6 +272,7 @@ type Digest struct {
 	Deployment string   `json:"deployment"`
 	Archive    Archive  `json:"archive"`
 	Sink       *Sink    `json:"sink,omitempty"`
+	Require    string   `json:"require,omitempty"`
 	Signer     Signer   `json:"signer"`
 	Lookback   Duration `json:"lookback,omitzero"`
 	MaxWindows int      `json:"maxWindows,omitempty"`
@@ -234,6 +283,7 @@ type Verify struct {
 	Deployment    string   `json:"deployment"`
 	Archive       Archive  `json:"archive"`
 	Sink          *Sink    `json:"sink,omitempty"`
+	Require       string   `json:"require,omitempty"`
 	PublicKeyFile string   `json:"publicKeyFile"`
 	Profiles      []string `json:"profiles,omitempty"`
 	Last          Duration `json:"last,omitzero"`
@@ -253,6 +303,7 @@ type Purge struct {
 type ClockSync struct {
 	NTP       []string  `json:"ntp"`
 	Sink      *Sink     `json:"sink,omitempty"`
+	Require   string    `json:"require,omitempty"`
 	MaxOffset *Duration `json:"maxOffset,omitempty"`
 	Timeout   Duration  `json:"timeout,omitzero"`
 }

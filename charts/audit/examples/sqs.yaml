@@ -1,0 +1,128 @@
+# An installation on AWS that queues through SQS instead of NATS: a receiver in
+# front publishes to a queue, writers consume it and write the archive.
+#
+# There is no credential in this file or in a Secret for the queue. The pods
+# use the AWS SDK's ambient credentials, which on EKS is the pod's workload
+# identity: bind the release's service account to a role (EKS Pod Identity is an
+# association made outside the chart; IRSA is the annotation below) that may
+# send to and receive from the queue and put to the archive's bucket. Everything
+# not named here has a default. Each `config:` block is the binary's own
+# configuration, key for key (docs/reference/configuration.md).
+mode: stream
+
+profiles:
+  security:
+    presets: [security]
+externalIdentifiersAreOpaque: true
+
+replicas: 2
+
+serviceAccount:
+  create: true
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/audit
+
+workloadIdentity:
+  issuers:
+    - url: https://oidc.example.com/id/CLUSTER
+  workloads:
+    - subject: system:serviceaccount:app:api
+      source: app
+
+migrate:
+  enabled: true
+  config:
+    database:
+      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-db
+      key: password
+
+# The receiver forwards to the queue, and is held to `queued`: it holds no
+# archive, so that is the most it can promise, and a queue that is not there or
+# a log in its place is a refusal at start-up rather than a gap in the trail.
+receiver:
+  config:
+    mode: receiver
+    require: queued
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    database:
+      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    forward:
+      sqs:
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/123456789012/audit.fifo
+        region: eu-west-1
+        fifo: true
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-db
+      key: password
+
+# The writers consume the same queue. A message is deleted only once its
+# records are in the archive, so a writer that is down leaves a backlog and not
+# a hole; `visibility` must outlast a write to the bucket.
+writer:
+  consumers: 3
+  config:
+    require: archived
+    deployment: /etc/audit/deployment.yaml
+    workloads: /etc/audit/workloads.yaml
+    replicas: 3
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+      kmsKey: alias/audit-archive
+    database:
+      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    consume:
+      sqs:
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/123456789012/audit.fifo
+        region: eu-west-1
+        fifo: true
+        batch: 10
+        visibility: 2m
+    roll:
+      interval: 30s
+      maxRecords: 5000
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-db
+      key: password
+
+# The jobs record through the writer's front door, which is the receiver, so
+# what it acknowledges is `queued`: say so, and the job refuses to start against
+# a writer it was not told gives that.
+jobs:
+  digest:
+    enabled: true
+    config:
+      deployment: /etc/audit/deployment.yaml
+      archive:
+        bucket:
+          name: audit-eu-example-1
+          region: eu-west-1
+        prefix: audit/app
+      sink:
+        url: http://audit:8080
+        tokenFile: /var/run/audit/token
+        expect: queued
+      require: queued
+      signer:
+        kmsKey: alias/audit-digest
+    tokens:
+      - audience: audit
+        mountPath: /var/run/audit
+  # Shown on the stream example; off here so that this one stays to the point.
+  verify:
+    enabled: false
+  purge:
+    enabled: false
+  clockSync:
+    enabled: false

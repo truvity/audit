@@ -231,6 +231,15 @@
   "allOf": [
     {
       "else": {
+        "not": {
+          "required": [
+            "stream",
+            "consume"
+          ]
+        },
+        "properties": {
+          "forward": false
+        },
         "required": [
           "archive"
         ]
@@ -246,14 +255,56 @@
         ]
       },
       "then": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "forward": {
+                  "required": [
+                    "log"
+                  ]
+                }
+              },
+              "required": [
+                "forward"
+              ]
+            },
+            "then": {
+              "properties": {
+                "require": {
+                  "const": "logged"
+                }
+              },
+              "required": [
+                "require"
+              ]
+            }
+          }
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "stream"
+            ]
+          },
+          {
+            "required": [
+              "forward"
+            ]
+          }
+        ],
         "properties": {
           "archive": false,
           "catalogues": false,
-          "keys": false
-        },
-        "required": [
-          "stream"
-        ]
+          "consume": false,
+          "keys": false,
+          "require": {
+            "enum": [
+              "logged",
+              "queued"
+            ]
+          }
+        }
       }
     }
   ],
@@ -322,6 +373,96 @@
       "minLength": 1,
       "type": "string"
     },
+    "consume": {
+      "additionalProperties": false,
+      "description": "What a writer reads its records from, beside its own sink: exactly one of `nats` and `sqs`.",
+      "oneOf": [
+        {
+          "required": [
+            "nats"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "nats": {
+          "additionalProperties": false,
+          "description": "A NATS JetStream stream; what `stream` says.",
+          "properties": {
+            "ackWait": {
+              "$ref": "#/$defs/duration",
+              "default": "2m",
+              "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+            },
+            "batch": {
+              "default": 100,
+              "description": "How many records are taken from the stream at once.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "consumer": {
+              "default": "audit-writer",
+              "description": "The durable consumer this installation's writers share.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "default": "AUDIT",
+              "description": "The stream.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "nats": {
+              "$ref": "https://github.com/truvity/policy/schemas/fragments/nats.json"
+            }
+          },
+          "required": [
+            "nats"
+          ],
+          "type": "object"
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "An SQS queue the writer consumes. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "batch": {
+              "default": 10,
+              "description": "How many messages are received at once, one to ten.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "visibility": {
+              "$ref": "#/$defs/duration",
+              "default": "1m",
+              "description": "How long a received message is hidden from other consumers while the writer writes it. It must outlast the write, or the message is delivered twice."
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "database": {
       "$ref": "#/$defs/postgres",
       "description": "The index and the shared deduplication table. Without it the writer indexes nothing, deduplicates in process, and may only run one replica."
@@ -334,6 +475,96 @@
     "forgetIdentities": {
       "description": "Do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it.",
       "type": "boolean"
+    },
+    "forward": {
+      "additionalProperties": false,
+      "description": "Where a receiver sends what it took: exactly one of `nats`, `sqs` and `log`. `log` is allowed only with `require: logged`.",
+      "oneOf": [
+        {
+          "required": [
+            "nats"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        },
+        {
+          "required": [
+            "log"
+          ]
+        }
+      ],
+      "properties": {
+        "log": {
+          "additionalProperties": false,
+          "description": "The log sink: one JSON line per record on standard output, which survives nothing but the log pipeline. Nothing to configure.",
+          "properties": {},
+          "type": "object"
+        },
+        "nats": {
+          "additionalProperties": false,
+          "description": "A NATS JetStream stream; what `stream` says.",
+          "properties": {
+            "ackWait": {
+              "$ref": "#/$defs/duration",
+              "default": "2m",
+              "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+            },
+            "batch": {
+              "default": 100,
+              "description": "How many records are taken from the stream at once.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "consumer": {
+              "default": "audit-writer",
+              "description": "The durable consumer this installation's writers share.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "default": "AUDIT",
+              "description": "The stream.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "nats": {
+              "$ref": "https://github.com/truvity/policy/schemas/fragments/nats.json"
+            }
+          },
+          "required": [
+            "nats"
+          ],
+          "type": "object"
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "An SQS queue the receiver publishes to. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
     },
     "keys": {
       "$ref": "#/$defs/keys"
@@ -355,6 +586,14 @@
       "minimum": 1,
       "type": "integer"
     },
+    "require": {
+      "description": "The weakest durability this process's chain may give. Unset is `archived` for a writer and `queued` for a receiver. At start-up the process refuses to run if what it is configured with can never give that: a receiver, which holds no archive, cannot promise `archived`, and `forward.log` cannot promise more than `logged`. A write acknowledged weaker than this fails. See ADR 0017.",
+      "enum": [
+        "logged",
+        "queued",
+        "archived"
+      ]
+    },
     "roll": {
       "additionalProperties": false,
       "description": "How much a writer gathers from the stream before it writes, which decides how many objects a day of records becomes.",
@@ -375,7 +614,7 @@
     },
     "stream": {
       "additionalProperties": false,
-      "description": "The wide stream. Without it the writer only serves its own sink.",
+      "description": "The wide stream, as the NATS shorthand: for a receiver it is `forward.nats`, for a writer `consume.nats`. Give it or the longhand, not both.",
       "properties": {
         "ackWait": {
           "$ref": "#/$defs/duration",

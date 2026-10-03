@@ -86,10 +86,6 @@ func run() error {
 		return err
 	}
 	version := buildinfo.Version
-	streamURL := ""
-	if cfg.Stream != nil {
-		streamURL = cfg.Stream.NATS.URL
-	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -198,10 +194,7 @@ func run() error {
 		health   = &healthState{}
 	)
 	if cfg.Mode == "receiver" {
-		publisher, stop, err := publisherFor(ctx, streamOptions{
-			URL: streamURL, TokenFile: cfg.Stream.NATS.TokenFile, Stream: cfg.Stream.Name, Durable: cfg.Stream.Consumer,
-			Batch: cfg.Stream.Batch, AckWait: cfg.Stream.AckWait.D(),
-		})
+		publisher, stop, err := forwardTo(ctx, cfg)
 		if err != nil {
 			return err
 		}
@@ -211,6 +204,12 @@ func run() error {
 		// identity not attached here is an identity lost.
 		front = &sink.Receiver{
 			To: publisher, Version: version, Instance: record.InstanceName(),
+		}
+		// What this chain can ever promise is what its onward transport does,
+		// and a receiver that cannot meet `require` does not start: better
+		// here than on the first privileged action.
+		if front, err = guard(front, cfg.Require); err != nil {
+			return err
 		}
 		shutdown = func(context.Context) error { return nil }
 	} else {
@@ -227,25 +226,36 @@ func run() error {
 			// Records reaching this writer over the stream were stamped by a
 			// receiver of this installation, which is the only thing that may
 			// publish to it.
-			FromStream: streamURL != "",
+			FromStream: cfg.Consume != nil,
 		})
 		if err != nil {
 			return err
 		}
 		defer w.Close(context.Background()) //nolint:errcheck // shutting down
-		front, shutdown = w, w.Close
+		shutdown = w.Close
+		if front, err = guard(w, cfg.Require); err != nil {
+			return err
+		}
 
 		// The stream, when there is one. An application that publishes straight
 		// to the writer needs none; a deployment with a stream wants the writer
 		// behind a durable consumer, so that a writer that is down is a backlog
 		// rather than a hole.
-		if cfg.Stream != nil {
+		switch {
+		case cfg.Consume != nil && cfg.Consume.NATS != nil:
+			n := cfg.Consume.NATS
 			stop, err := consume(ctx, streamOptions{
 				OnStopped: health.consumerStopped,
-				URL:       streamURL, TokenFile: cfg.Stream.NATS.TokenFile, Stream: cfg.Stream.Name, Durable: cfg.Stream.Consumer,
-				Batch: cfg.Stream.Batch, AckWait: cfg.Stream.AckWait.D(),
+				URL:       n.NATS.URL, TokenFile: n.NATS.TokenFile, Stream: n.Name, Durable: n.Consumer,
+				Batch: n.Batch, AckWait: n.AckWait.D(),
 				Window: cfg.Roll.Interval.D(), MaxRecords: cfg.Roll.MaxRecords,
 			}, w)
+			if err != nil {
+				return err
+			}
+			defer stop()
+		case cfg.Consume != nil && cfg.Consume.SQS != nil:
+			stop, err := consumeSQS(ctx, cfg.Consume.SQS, w, health.consumerStopped)
 			if err != nil {
 				return err
 			}

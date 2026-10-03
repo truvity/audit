@@ -57,6 +57,8 @@ func TestTheTypesAndTheSchemasDescribeTheSameKeys(t *testing.T) {
 		validate   string
 	}{
 		{"writer", "audit-writer.full.yaml", &config.Writer{}, "audit-writer"},
+		{"writer consuming SQS", "audit-writer.consume.full.yaml", &config.Writer{}, "audit-writer"},
+		{"receiver forwarding to SQS", "audit-writer.receiver.full.yaml", &config.Writer{}, "audit-writer"},
 		{"query", "audit-query.full.yaml", &config.Query{}, "audit-query"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -326,5 +328,92 @@ func TestAnEmptyOrMissingFileIsRefused(t *testing.T) {
 	}
 	if _, err := config.LoadWriter(filepath.Join(t.TempDir(), "absent.yaml")); err == nil {
 		t.Error("a missing file was accepted")
+	}
+}
+
+const receiverHead = "mode: receiver\ndeployment: /d.yaml\nanonymousWrites: true\n"
+
+func TestTheDefaultRequireIsTheStrongestTheModeCanGive(t *testing.T) {
+	w, err := config.LoadWriter(write(t, minimalWriter))
+	if err != nil || w.Require != "archived" {
+		t.Errorf("a writer: %v require=%v", err, w)
+	}
+	r, err := config.LoadWriter(write(t, receiverHead+"forward: {nats: {nats: {url: 'nats://n:4222'}}}\n"))
+	if err != nil || r.Require != "queued" {
+		t.Errorf("a receiver: %v require=%v", err, r)
+	}
+}
+
+func TestEachTransportLoadsAndTheOthersAreRefused(t *testing.T) {
+	const sqs = "{queueUrl: 'https://sqs.example.test/1/audit'}"
+	for name, c := range map[string]struct {
+		body string
+		ok   bool
+	}{
+		"forward nats":          {receiverHead + "forward: {nats: {nats: {url: 'nats://n:4222'}}}\n", true},
+		"forward sqs":           {receiverHead + "forward: {sqs: " + sqs + "}\n", true},
+		"forward log":           {receiverHead + "require: logged\nforward: {log: {}}\n", true},
+		"forward two":           {receiverHead + "forward: {sqs: " + sqs + ", log: {}}\n", false},
+		"forward none":          {receiverHead + "forward: {}\n", false},
+		"log needs require":     {receiverHead + "forward: {log: {}}\n", false},
+		"log with queued":       {receiverHead + "require: queued\nforward: {log: {}}\n", false},
+		"receiver archived":     {receiverHead + "require: archived\nforward: {sqs: " + sqs + "}\n", false},
+		"receiver no forward":   {receiverHead, false},
+		"stream and forward":    {receiverHead + "stream: {nats: {url: 'nats://n:4222'}}\nforward: {sqs: " + sqs + "}\n", false},
+		"receiver consumes":     {receiverHead + "forward: {sqs: " + sqs + "}\nconsume: {sqs: " + sqs + "}\n", false},
+		"writer consume sqs":    {minimalWriter + "consume: {sqs: " + sqs + "}\n", true},
+		"writer consume two":    {minimalWriter + "consume: {sqs: " + sqs + ", nats: {nats: {url: 'nats://n:4222'}}}\n", false},
+		"writer forwards":       {minimalWriter + "forward: {sqs: " + sqs + "}\n", false},
+		"writer both":           {minimalWriter + "stream: {nats: {url: 'nats://n:4222'}}\nconsume: {sqs: " + sqs + "}\n", false},
+		"writer require logged": {minimalWriter + "require: logged\n", true},
+		"fifo disagrees":        {minimalWriter + "consume: {sqs: {queueUrl: 'https://sqs.example.test/1/audit', fifo: true}}\n", false},
+		"require unknown":       {minimalWriter + "require: durable\n", false},
+		"sqs secret key":        {minimalWriter + "consume: {sqs: {queueUrl: 'https://sqs.example.test/1/audit', accessKey: x}}\n", false},
+	} {
+		_, err := config.LoadWriter(write(t, c.body))
+		if c.ok && err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%s: was accepted", name)
+		}
+	}
+}
+
+func TestTheRefusalsSaySWhy(t *testing.T) {
+	_, err := config.LoadWriter(write(t, receiverHead+"require: archived\nforward: {log: {}}\n"))
+	if err == nil {
+		t.Fatal("accepted")
+	}
+	_, err = config.LoadWriter(write(t, receiverHead+"require: queued\nforward: {log: {}}\n"))
+	if err == nil || !strings.Contains(err.Error(), "logged") {
+		t.Errorf("log with queued should name logged: %v", err)
+	}
+}
+
+func TestAnEmitterRequireNeedsWhatTheWriterIsSaidToGive(t *testing.T) {
+	const q = "grants: /g.yaml\ndatabase: {url: 'postgres://u@h/db'}\n"
+	for name, c := range map[string]struct {
+		sink string
+		ok   bool
+	}{
+		"expect meets":   {"sink: {url: 'http://a:8080', expect: archived}\nrequire: queued\n", true},
+		"expect equals":  {"sink: {url: 'http://a:8080', expect: queued}\nrequire: queued\n", true},
+		"expect is weak": {"sink: {url: 'http://a:8080', expect: logged}\nrequire: queued\n", false},
+		"no expect":      {"sink: {url: 'http://a:8080'}\nrequire: queued\n", false},
+		"no require":     {"sink: {url: 'http://a:8080'}\n", true},
+		"expect only":    {"sink: {url: 'http://a:8080', expect: queued}\n", true},
+	} {
+		_, err := config.LoadQuery(write(t, q+c.sink))
+		if c.ok != (err == nil) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// A job without a sink has nothing to hold to a requirement.
+	if _, err := config.LoadClockSync(write(t, "ntp: [t.example.test]\nrequire: queued\n")); err == nil {
+		t.Error("require with no sink was accepted")
+	}
+	if _, err := config.LoadClockSync(write(t, "ntp: [t.example.test]\nrequire: queued\nsink: {url: 'http://a', expect: archived}\n")); err != nil {
+		t.Error(err)
 	}
 }

@@ -1,0 +1,7 @@
+# refuse: 'oneOf' failed, subschemas 1, 2 matched
+# base: sqs-base
+receiver:
+  config:
+    require: logged
+    forward:
+      log: {}

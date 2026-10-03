@@ -56,6 +56,7 @@ without Object Lock it is the `attested` tier of
 |---|---|---|---|
 | v1 layout, written and read ([bucket contract](reference/bucket-contract.md)): one object per ingest batch, keyed by ingest time | 🧪 | 🧪 | 🧪 |
 | `catalogue/<app>/<version>`, written once, compared when present | 🧪 | 🧪 | 🧪 |
+| a renamed source: `aliases` in the catalogue, accepted by the writer, indexed under the current name, a filter by either name finds both, and the catalogue kept under each name ([0025](decisions/0025-a-source-keeps-its-former-names-as-aliases.md)); on the Postgres index only | 🧪 | 🧪 | 🧪 |
 | `audit verify`: key, metadata, sha256 and per-record hashes of every object | 🧪 | 🧪 | 🧪 |
 | `audit verify --root`: the seals of a range, against pinned roots (below) | 🧪 | 🧪 | 🧪 |
 | Object Lock, compliance mode | ✅ | ✅ | — |

@@ -4,6 +4,11 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
+- A source can be renamed without breaking the trail: a catalogue declares `aliases: [<former name>]` ([0025](docs/decisions/0025-a-source-keeps-its-former-names-as-aliases.md)). The writer accepts records under either name and validates them against that catalogue (an action under the alias's namespace is the same action); the records are written as emitted. Observe indexes a record under the current source and action, so search and facets show one name and a rebuild agrees. The query service rewrites an alias in a `source` or `action` filter to the current name, learning the aliases from the catalogues in the archive (Postgres searcher only; `query.Config.Aliases` for the library), so a filter by either name finds both; get returns the record as written. The archive and the registry keep the catalogue under each name, with the same refusal for another document at a version a name already holds, so a renamed source's catalogue takes a new version. New in the SDK: `Catalogue.Aliases`, `Answers`, `CanonicalSource`, `CanonicalAction` and `catalogue.Names`; `index.Fields` gains `Source` and `Action`. The catalogue schema gains `aliases`; nothing existing changes.
+- The Pulumi library names the Lambda extension's settings through one constant, `extensionEnvPrefix`, still `ACCESS_ROSTER_`: the extension (`github.com/truvity/observability/lambdaext`) will accept `SLUIS_*` with `ACCESS_ROSTER_*` as a fallback, and the library switches the prefix once the layer a deployment publishes supports it. The environment emitted is unchanged.
+
 ## v0.7.1
 
 - Fixes the broken v0.7.0 release: `go install github.com/truvity/audit/cmd/audit@v0.7.0` failed with a missing `go.sum` entry for `github.com/truvity/audit/sdk v0.7.0`, and the release's `sdk-tag` job failed on a hand-pushed annotated `sdk/v0.7.0` (so `deploy/pulumi/v0.7.0` was never created). v0.7.1 is installable: the root `go.sum` has the SDK's lines, `sdk-tag` compares the tag's peeled commit, and goreleaser ignores `sdk/*` and `deploy/*` tags when choosing the version.

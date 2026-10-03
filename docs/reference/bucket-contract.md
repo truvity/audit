@@ -84,6 +84,16 @@ application registered it. It is written **once**, with a conditional put
 same bytes are success, different bytes for the same version are an error
 and the writer refuses to run.
 
+A catalogue that declares `aliases` (a renamed source,
+[0025](../decisions/0025-a-source-keeps-its-former-names-as-aliases.md)) is
+written under **each** name: the same bytes at
+`catalogue/<source>/<version>` and at `catalogue/<alias>/<version>`, and its
+schemas under both `schema/` directories, so that a record's own `source` and
+`catalogue_version` find its catalogue whichever name it was written under. The
+same rule holds for each key: another document at an alias's version is a
+conflict, so a renamed source's catalogue takes a version the old name never
+used. A reader takes a catalogue once, from the key of its own `source`.
+
 ## Seals
 
 A seal is a JWS in compact serialisation. Its protected header is

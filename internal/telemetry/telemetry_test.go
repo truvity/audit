@@ -184,7 +184,10 @@ func TestTheIndexLagIsRecordedPerProfile(t *testing.T) {
 
 func TestTheDefaultSamplerKeepsEveryTrace(t *testing.T) {
 	sampler := telemetry.DefaultSampler()
-	if got, want := sampler.Description(), "ParentBased{root:AlwaysOnSampler,remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler,localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}"; got != want {
+	want := "ParentBased{root:AlwaysOnSampler," +
+		"remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler," +
+		"localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}"
+	if got := sampler.Description(); got != want {
 		t.Fatalf("default sampler = %s, want %s", got, want)
 	}
 }

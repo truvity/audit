@@ -74,9 +74,20 @@ the prefix and none of them with a delete:
 | verify job | read, and put under `verified/` |
 | query service | read, and write on the exports bucket if exports are wanted |
 
-Bind each through its ServiceAccount's annotations — `serviceAccount`,
+Bind each through its ServiceAccount's annotations — `serviceAccount` (the
+writer; the consumers in stream mode), `receiver.serviceAccount`,
 `query.serviceAccount`, `jobs.digest.serviceAccount`,
-`jobs.verify.serviceAccount` — with Pod Identity or IRSA.
+`jobs.verify.serviceAccount`, `jobs.purge.serviceAccount`,
+`jobs.clockSync.serviceAccount` — with Pod Identity or IRSA.
+
+Every component runs as a ServiceAccount of its own, named
+`<fullname>-<component>` (`audit-receiver`, `audit-query`, `audit-digest`,
+`audit-verify`, `audit-purge`, `audit-clock-sync`); only the writer keeps the
+release's name (`audit`). Each takes `create`, `name` and `annotations`. In
+stream mode the chart refuses a receiver and a writer that share one
+ServiceAccount name: a receiver must not hold the archive's write identity.
+The purge job deletes from the archive, so it needs a role of its own with that
+right; clock sync needs none.
 
 ### A database, and a read-only role for the query service
 

@@ -213,6 +213,18 @@ per version still walks the whole chain. What must never happen is losing a
 public half: keep every one that ever signed, beside the archive, for as
 long as the archive lives.
 
+## Identities on the platform
+
+On Kubernetes the cloud identity of a component is its ServiceAccount (Pod
+Identity, IRSA), so the chart gives every component one of its own, bindable
+separately through `serviceAccount`, `receiver.serviceAccount`,
+`query.serviceAccount` and `jobs.*.serviceAccount`. This is what keeps the
+separations above true on a cluster: the receiver publishes and holds neither
+the bucket nor a key, so it must not run as the writer, and in stream mode the
+chart refuses a receiver and a writer that share a ServiceAccount name; the
+digest job holds the signing key and the writer does not, and the chart refuses
+a digest job that signs as the writer.
+
 ## What a deployment supplies
 
 | provider | Secret or engine | rights |

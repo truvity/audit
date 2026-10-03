@@ -60,6 +60,51 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 
 ---
+# Source: audit/templates/serviceaccount.yaml
+# The front door publishes and nothing more. It must not hold the archive's
+# write identity: a receiver that shares the writer's service account would
+# reach the bucket through whatever Pod Identity or IRSA role that binds.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-receiver
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Purging deletes from the archive, a different privilege from appending to it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-purge
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Clock sync only records what it measured through the writer's sink. It needs
+# no cloud rights at all.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-clock-sync
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
 # Source: audit/templates/configmap.yaml
 apiVersion: v1
 kind: ConfigMap
@@ -538,7 +583,7 @@ spec:
         # And who may write: a changed issuer or mapping must reach it.
         checksum/workloads: 360c77444ad031953e9da11ab72cb75391704ccd40c9012d4fa616346c75c587
     spec:
-      serviceAccountName: audit
+      serviceAccountName: audit-receiver
       
       securityContext:
         fsGroup: 65532
@@ -927,7 +972,7 @@ spec:
             checksum/config: 2baeac020a5e7be5d89570593691c0b1d02f10e3fc809b3e7c1169b2184505c1
         spec:
           restartPolicy: OnFailure
-          serviceAccountName: audit
+          serviceAccountName: audit-purge
           
           securityContext:
             fsGroup: 65532
@@ -1005,7 +1050,7 @@ spec:
             checksum/config: daef63d99902821782f796e95ec8f70541d47115de96cede065612f85137e5f0
         spec:
           restartPolicy: OnFailure
-          serviceAccountName: audit
+          serviceAccountName: audit-clock-sync
           
           securityContext:
             fsGroup: 65532

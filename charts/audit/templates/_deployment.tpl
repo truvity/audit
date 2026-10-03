@@ -64,7 +64,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      serviceAccountName: {{ include "audit.serviceAccountName" $ }}
+      serviceAccountName: {{ ternary (include "audit.receiverServiceAccountName" $) (include "audit.serviceAccountName" $) (eq $role "receiver") }}
       {{- include "audit.podDefaults" $ | nindent 6 }}
       containers:
         - name: {{ $role }}

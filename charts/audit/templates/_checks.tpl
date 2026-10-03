@@ -102,6 +102,14 @@ two numbers must say the same thing. */}}
 {{- end -}}
 
 
+{{/* A receiver is the front door: it takes records from applications and
+publishes them. It must not hold the identity that writes the archive, or a
+compromised front door writes the archive directly. On AWS the identity is the
+ServiceAccount (Pod Identity, IRSA), so the two must be different accounts. */}}
+{{- if and (eq .Values.mode "stream") (eq (include "audit.receiverServiceAccountName" .) (include "audit.serviceAccountName" .)) -}}
+{{- fail (printf "audit: the receiver and the writer run as the same ServiceAccount, %q. A receiver must not hold the archive's write identity: whatever cloud role is bound to that account (Pod Identity, IRSA) would let a compromised front door write the archive directly. Give the receiver its own: leave `receiver.serviceAccount.create` true with a `receiver.serviceAccount.name` that is not the writer's `serviceAccount`." (include "audit.serviceAccountName" .)) -}}
+{{- end -}}
+
 {{/* Separation of duties. Whoever writes the archive and can also sign its
 digests can choose what to sign, so the digest job and the query service's
 resolve each sign in as themselves, never as the writer. Only the chart sees

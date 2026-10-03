@@ -191,6 +191,10 @@ first two, and `archive.kmsKey` on the third.
 
 Four roles per installation, each bound to its own service account (Pod
 Identity or IRSA); the chart has a `serviceAccount` per component for it.
+The receiver (stream mode) and the clock-sync job get a service account too, and
+no role: they hold no S3 rights. The purge job deletes from the archive, so its
+account (`jobs.purge.serviceAccount`) needs the writer's delete rights, not the
+writer's account.
 Every one of them is scoped **under that installation's prefix** — write
 `arn:aws:s3:::<bucket>/<prefix>/*` in the resource, and condition
 `s3:ListBucket` on `s3:prefix` being `<prefix>/*` — so that an application

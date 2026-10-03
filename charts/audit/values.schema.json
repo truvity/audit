@@ -2157,7 +2157,7 @@
     },
     "serviceAccount": {
       "additionalProperties": false,
-      "description": "A service account the chart creates for this component.",
+      "description": "The service account this component runs as.",
       "properties": {
         "annotations": {
           "additionalProperties": {
@@ -2167,8 +2167,12 @@
           "type": "object"
         },
         "create": {
-          "description": "Create it. Otherwise the release's own is used.",
+          "description": "Create `<fullname>-<component>`. Otherwise the release's own `serviceAccount` is used.",
           "type": "boolean"
+        },
+        "name": {
+          "description": "Override the name: the created account's, or, with `create: false`, the existing account to run as. Empty is `<fullname>-<component>` when created and the release's own when not.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -2922,6 +2926,9 @@
             "secretMounts": {
               "$ref": "#/$defs/secretMounts"
             },
+            "serviceAccount": {
+              "$ref": "#/$defs/serviceAccount"
+            },
             "tokens": {
               "$ref": "#/$defs/tokens"
             }
@@ -2982,6 +2989,9 @@
             },
             "secretMounts": {
               "$ref": "#/$defs/secretMounts"
+            },
+            "serviceAccount": {
+              "$ref": "#/$defs/serviceAccount"
             }
           },
           "type": "object"
@@ -3181,6 +3191,9 @@
         "secretMounts": {
           "$ref": "#/$defs/secretMounts"
         },
+        "serviceAccount": {
+          "$ref": "#/$defs/serviceAccount"
+        },
         "tokens": {
           "$ref": "#/$defs/tokens"
         }
@@ -3223,7 +3236,7 @@
     },
     "serviceAccount": {
       "additionalProperties": false,
-      "description": "The release's own service account.",
+      "description": "The release's own service account: the writer's identity (the consumers', in stream mode), and what a component with `create: false` falls back to.",
       "properties": {
         "annotations": {
           "additionalProperties": {

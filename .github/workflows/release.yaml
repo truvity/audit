@@ -51,9 +51,11 @@ jobs:
   # job adds the SDK's at the same commit, once the release itself succeeded:
   # the release contract has one tag stamp everything, at one version.
   #
-  # Idempotent, so that a re-run of a release does not fail on its own tag. It
-  # refuses a tag that already exists at another commit: a tag fetched once
-  # cannot be taken back, and the proxy remembers the first.
+  # Idempotent, so that a re-run of a release does not fail on its own tag, and
+  # a tag a person pushed by hand (signed, annotated) counts when it peels to
+  # the release commit. It refuses a tag that already exists at another
+  # commit: a tag fetched once cannot be taken back, and the proxy remembers
+  # the first.
   sdk-tag:
     needs: release
     runs-on: ubuntu-latest
@@ -72,12 +74,19 @@ jobs:
           # same way, and does not depend on the root or the SDK.
           for dir in sdk deploy/pulumi; do
             tag="$dir/${GITHUB_REF_NAME}"
-            if existing=$(gh api "repos/$REPO/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
-              if [ "$existing" = "$GITHUB_SHA" ]; then
+            if ref=$(gh api "repos/$REPO/git/ref/tags/$tag" --jq '.object.type + " " + .object.sha' 2>/dev/null); then
+              read -r otype existing <<<"$ref"
+              # A signed or annotated tag is an object of its own: the ref
+              # points at the tag object and only its peeled target is the
+              # commit. Compare the commit, never the tag object.
+              while [ "$otype" = "tag" ]; do
+                read -r otype existing < <(gh api "repos/$REPO/git/tags/$existing" --jq '.object.type + " " + .object.sha')
+              done
+              if [ "$otype" = "commit" ] && [ "$existing" = "$GITHUB_SHA" ]; then
                 echo "$tag already points at $GITHUB_SHA"
                 continue
               fi
-              echo "::error::$tag exists at $existing, not at the release commit $GITHUB_SHA"
+              echo "::error::$tag exists at $existing ($otype), not at the release commit $GITHUB_SHA"
               exit 1
             fi
             gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA" --jq .ref

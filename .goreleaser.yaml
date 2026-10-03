@@ -12,6 +12,15 @@
 version: 2
 project_name: audit
 
+# The version comes from the root `vX.Y.Z` tag only. The sdk/ and
+# deploy/pulumi/ module tags sit at the same commit and must never be
+# picked as the version (an annotated `sdk/v0.7.0` once was, and ko refused
+# it as an image tag).
+git:
+  ignore_tags:
+    - "sdk/*"
+    - "deploy/*"
+
 builds:
   - id: audit
     main: ./cmd/audit

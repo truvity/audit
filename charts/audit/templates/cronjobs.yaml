@@ -58,6 +58,7 @@ spec:
             {{- include "audit.trustVolume" $ | nindent 12 }}
             {{- include "audit.extraVolumes" .comp | nindent 12 }}
 {{- end -}}
+{{- if eq .Values.renders "app" -}}
 {{- if .Values.jobs.digest.enabled }}
 # Hourly. Seals the windows since the last digest into the signed chain. It
 # resumes past a missed run on its own, so a failed hour needs no operator: a
@@ -92,4 +93,4 @@ spec:
 {{ include "audit.configMap" (dict "root" . "name" "clock-sync" "config" .Values.jobs.clockSync.config) }}
 ---
 {{ include "audit.cronjob" (dict "root" . "name" "clock-sync" "command" "clock-sync" "comp" .Values.jobs.clockSync "account" (include "audit.serviceAccountName" .) "profiles" false) }}
-{{- end }}
+{{- end }}{{ end }}

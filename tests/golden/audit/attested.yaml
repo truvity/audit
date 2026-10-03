@@ -10,7 +10,6 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
-
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Reading is a different privilege from writing: this identity reads the
@@ -26,7 +25,6 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
-
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Sealing is a different privilege from writing: whoever can write the archive
@@ -42,7 +40,6 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
-
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Verification needs to read the archive and nothing else. An auditor running
@@ -85,7 +82,6 @@ data:
       security:
         presets:
         - security
-
 ---
 # Source: audit/templates/configmap.yaml
 apiVersion: v1
@@ -156,7 +152,6 @@ data:
         path: /etc/audit/signing/key.pem
     sink:
       url: http://audit:8080
-
 ---
 # Source: audit/templates/cronjobs.yaml
 # Nightly. Walks each profile's chain and reports what it finds; a non-zero
@@ -191,7 +186,6 @@ data:
       prefix: audit/app
     deployment: /etc/audit/deployment.yaml
     publicKeyFile: /etc/audit/public/public.pem
-
 ---
 # Source: audit/templates/cronjobs.yaml
 # Daily. Compares this cluster's clock with UTC and records the answer, which is
@@ -215,7 +209,6 @@ data:
   config.yaml: |
     ntp:
     - time.example.test
-
 ---
 # Source: audit/templates/query.yaml
 # Who may sign in to the query service, and what each caller may read. A
@@ -236,7 +229,6 @@ data:
     issuers:
     - audience: audit
       url: https://id.example.test
-
 ---
 # Source: audit/templates/query.yaml
 apiVersion: v1
@@ -278,7 +270,6 @@ data:
     searcher: s3scan
     sink:
       url: http://audit:8080
-
 ---
 # Source: audit/templates/query.yaml
 apiVersion: v1
@@ -449,7 +440,6 @@ spec:
         
         - name: tmp
           emptyDir: {}
-
 ---
 # Source: audit/templates/writer.yaml
 apiVersion: apps/v1
@@ -553,7 +543,6 @@ spec:
         
         - name: tmp
           emptyDir: {}
-
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -642,7 +631,6 @@ spec:
             - name: secret-0
               secret:
                 secretName: audit-signing-key
-
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -731,7 +719,6 @@ spec:
             - name: secret-0
               secret:
                 secretName: audit-signing-public
-
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1

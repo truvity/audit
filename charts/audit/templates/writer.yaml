@@ -1,3 +1,4 @@
+{{- if eq .Values.renders "app" -}}
 {{/*
 The front door: in direct mode the writer itself, in stream mode a receiver
 that publishes and holds neither the bucket nor a key. It keeps the same name
@@ -25,4 +26,4 @@ spec:
   ports:
     - name: http
       port: {{ .Values.service.port }}
-      targetPort: http
+      targetPort: http{{ end }}

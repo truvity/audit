@@ -1,3 +1,4 @@
+{{- if eq .Values.renders "app" -}}
 {{- if and .Values.keysVolume.enabled (not .Values.keysVolume.existingClaim) }}
 # Data keys are random and wrapped into this directory, so it is the only copy
 # of them. In stream mode the writers share it, which is why it needs an access
@@ -17,4 +18,4 @@ spec:
   resources:
     requests:
       storage: {{ .Values.keysVolume.size }}
-{{- end }}
+{{- end }}{{ end }}

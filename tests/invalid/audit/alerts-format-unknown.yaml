@@ -1,0 +1,4 @@
+# refuse: /alerts/format
+renders: alerts
+alerts:
+  format: configmap

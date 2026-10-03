@@ -19,7 +19,7 @@ the road you are on.
 | Design | [split writer](design/split-writer.md), [search](design/search.md), [authentication and authorization](design/authn-authz.md), [integrity](design/integrity.md), [metering](design/metering.md), [the Audit page](design/audit-page.md) |
 | Decisions | [index](decisions/README.md), and the [target architecture](decisions/0016-three-parts-installed-independently.md) |
 | Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [extension points](reference/extension-points.md), [presets](reference/presets.md), [API](reference/api.md), [configuration](reference/configuration.md), [bucket contract](reference/bucket-contract.md) |
-| Operations | [which presets to compose](operations/presets-policy.md), [S3 guide](operations/s3-guide.md), [verification](operations/verify.md), [runbook](operations/runbook.md), [key custody](operations/key-custody.md), [OpenBAO keys](operations/openbao-keys.md) |
+| Operations | [which presets to compose](operations/presets-policy.md), [S3 guide](operations/s3-guide.md), [verification](operations/verify.md), [runbook](operations/runbook.md), [telemetry](operations/telemetry.md), [key custody](operations/key-custody.md), [OpenBAO keys](operations/openbao-keys.md) |
 | Development | [layout, and how to add to it](development/layout.md) |
 | Roadmap | [to do](roadmap.md) |
 

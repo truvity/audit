@@ -1,3 +1,4 @@
+{{- if eq .Values.renders "app" -}}
 {{- if .Values.query.enabled }}
 # Who may sign in to the query service, and what each caller may read. A
 # changed file must reach a running service, so the pods carry its checksum.
@@ -122,4 +123,4 @@ spec:
     - name: http
       port: {{ .Values.query.service.port }}
       targetPort: http
-{{- end }}
+{{- end }}{{ end }}

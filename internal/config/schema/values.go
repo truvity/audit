@@ -171,6 +171,9 @@ func Values() []byte {
 		"tolerations":        m{"type": "array"},
 		"affinity":           m{"type": "object"},
 	}
+	for k, v := range telemetryValues() {
+		props[k] = v
+	}
 	// The purge job reads no token and mounts only what a config names; the
 	// others are as the job helper above gave them.
 	jobs := props["jobs"].(m)["properties"].(m)
@@ -220,7 +223,7 @@ func Values() []byte {
 		"patternProperties": m{"^x-": m{}},
 		"properties":        props,
 		"$defs":             defs,
-		"allOf":             all,
+		"allOf":             []any{appOnly(all)},
 	}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)

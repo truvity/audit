@@ -2215,261 +2215,282 @@
   "additionalProperties": false,
   "allOf": [
     {
-      "properties": {
-        "writer": {
+      "if": {
+        "not": {
           "properties": {
-            "config": {
-              "$ref": "#/$defs/config-audit-writer"
+            "renders": {
+              "enum": [
+                "alerts",
+                "dashboards"
+              ]
             }
-          }
+          },
+          "required": [
+            "renders"
+          ]
         }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "mode": {
-            "const": "stream"
-          }
-        },
-        "required": [
-          "mode"
-        ]
       },
       "then": {
-        "properties": {
-          "receiver": {
+        "allOf": [
+          {
             "properties": {
-              "config": {
-                "$ref": "#/$defs/config-audit-writer"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "query": {
-            "properties": {
-              "enabled": {
-                "const": true
-              }
-            },
-            "required": [
-              "enabled"
-            ]
-          }
-        },
-        "required": [
-          "query"
-        ]
-      },
-      "then": {
-        "properties": {
-          "query": {
-            "properties": {
-              "config": {
-                "$ref": "#/$defs/config-audit-query"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "migrate": {
-            "properties": {
-              "enabled": {
-                "const": true
-              }
-            },
-            "required": [
-              "enabled"
-            ]
-          }
-        },
-        "required": [
-          "migrate"
-        ]
-      },
-      "then": {
-        "properties": {
-          "migrate": {
-            "properties": {
-              "config": {
-                "$ref": "#/$defs/config-audit-migrate"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "digest": {
-                "properties": {
-                  "enabled": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "enabled"
-                ]
-              }
-            },
-            "required": [
-              "digest"
-            ]
-          }
-        },
-        "required": [
-          "jobs"
-        ]
-      },
-      "then": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "digest": {
+              "writer": {
                 "properties": {
                   "config": {
-                    "$ref": "#/$defs/config-audit-digest"
+                    "$ref": "#/$defs/config-audit-writer"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "stream"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            },
+            "then": {
+              "properties": {
+                "receiver": {
+                  "properties": {
+                    "config": {
+                      "$ref": "#/$defs/config-audit-writer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "query": {
+                  "properties": {
+                    "enabled": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                }
+              },
+              "required": [
+                "query"
+              ]
+            },
+            "then": {
+              "properties": {
+                "query": {
+                  "properties": {
+                    "config": {
+                      "$ref": "#/$defs/config-audit-query"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "migrate": {
+                  "properties": {
+                    "enabled": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                }
+              },
+              "required": [
+                "migrate"
+              ]
+            },
+            "then": {
+              "properties": {
+                "migrate": {
+                  "properties": {
+                    "config": {
+                      "$ref": "#/$defs/config-audit-migrate"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "digest": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "digest"
+                  ]
+                }
+              },
+              "required": [
+                "jobs"
+              ]
+            },
+            "then": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "digest": {
+                      "properties": {
+                        "config": {
+                          "$ref": "#/$defs/config-audit-digest"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "verify": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "verify"
+                  ]
+                }
+              },
+              "required": [
+                "jobs"
+              ]
+            },
+            "then": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "verify": {
+                      "properties": {
+                        "config": {
+                          "$ref": "#/$defs/config-audit-verify"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "purge": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "purge"
+                  ]
+                }
+              },
+              "required": [
+                "jobs"
+              ]
+            },
+            "then": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "purge": {
+                      "properties": {
+                        "config": {
+                          "$ref": "#/$defs/config-audit-purge"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "clockSync": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "clockSync"
+                  ]
+                }
+              },
+              "required": [
+                "jobs"
+              ]
+            },
+            "then": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "clockSync": {
+                      "properties": {
+                        "config": {
+                          "$ref": "#/$defs/config-audit-clock-sync"
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
           }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "verify": {
-                "properties": {
-                  "enabled": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "enabled"
-                ]
-              }
-            },
-            "required": [
-              "verify"
-            ]
-          }
-        },
-        "required": [
-          "jobs"
         ]
-      },
-      "then": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "verify": {
-                "properties": {
-                  "config": {
-                    "$ref": "#/$defs/config-audit-verify"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "purge": {
-                "properties": {
-                  "enabled": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "enabled"
-                ]
-              }
-            },
-            "required": [
-              "purge"
-            ]
-          }
-        },
-        "required": [
-          "jobs"
-        ]
-      },
-      "then": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "purge": {
-                "properties": {
-                  "config": {
-                    "$ref": "#/$defs/config-audit-purge"
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "clockSync": {
-                "properties": {
-                  "enabled": {
-                    "const": true
-                  }
-                },
-                "required": [
-                  "enabled"
-                ]
-              }
-            },
-            "required": [
-              "clockSync"
-            ]
-          }
-        },
-        "required": [
-          "jobs"
-        ]
-      },
-      "then": {
-        "properties": {
-          "jobs": {
-            "properties": {
-              "clockSync": {
-                "properties": {
-                  "config": {
-                    "$ref": "#/$defs/config-audit-clock-sync"
-                  }
-                }
-              }
-            }
-          }
-        }
       }
     }
   ],
@@ -2481,11 +2502,315 @@
     "affinity": {
       "type": "object"
     },
+    "alerts": {
+      "additionalProperties": false,
+      "description": "Alert rules, rendered with `renders: alerts`.",
+      "properties": {
+        "clusterLabel": {
+          "description": "The label that names the cluster on a store that holds several.",
+          "type": "string"
+        },
+        "emitterNamespace": {
+          "description": "A regex of the namespaces the emitters run in.",
+          "type": "string"
+        },
+        "emitterSelector": {
+          "description": "Extra matchers for the emitters' series.",
+          "type": "string"
+        },
+        "format": {
+          "description": "The kind of object.",
+          "enum": [
+            "vmrule",
+            "prometheusrule"
+          ]
+        },
+        "interval": {
+          "description": "How often the ruler evaluates the group.",
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels on the rule object.",
+          "type": "object"
+        },
+        "name": {
+          "description": "The object's name. Empty: <release>-alerts.",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The namespace the write path runs in, whose series the writer rules read. Empty: the release's.",
+          "type": "string"
+        },
+        "objectNamespace": {
+          "description": "Where the rule object goes. Empty: the release's namespace.",
+          "type": "string"
+        },
+        "ruleLabels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels added to every rule, for Alertmanager routing, such as `k8s_cluster_name`.",
+          "type": "object"
+        },
+        "rules": {
+          "additionalProperties": false,
+          "description": "The rules.",
+          "properties": {
+            "consumerFailing": {
+              "additionalProperties": false,
+              "description": "A queue consumer's target keeps failing its batches.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "deadLettered": {
+              "additionalProperties": false,
+              "description": "Records the writer dead-lettered.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "digestStale": {
+              "additionalProperties": false,
+              "description": "The newest digest is older than `maxAgeSeconds`.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "maxAgeSeconds": {
+                  "description": "The age, in seconds.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "emitterDrops": {
+              "additionalProperties": false,
+              "description": "Records an emitter's queue gave up.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "indexDeferred": {
+              "additionalProperties": false,
+              "description": "Rows reached the archive and not the index.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "indexLag": {
+              "additionalProperties": false,
+              "description": "The index is behind the archive.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                },
+                "thresholdSeconds": {
+                  "description": "The p99 lag, in seconds.",
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "writerRejections": {
+              "additionalProperties": false,
+              "description": "The writer refuses a share of the records it is sent.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "minRecords": {
+                  "description": "The fewest refusals in the window that count.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "ratio": {
+                  "description": "The share refused.",
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "runbookBaseUrl": {
+          "description": "Where the runbook is; the alert's name, lower-cased, is the anchor. Empty renders no link.",
+          "type": "string"
+        },
+        "selector": {
+          "description": "Extra matchers for the writer's series.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "catalogues": {
       "additionalProperties": {
         "type": "string"
       },
       "description": "Catalogue documents mounted for the writer, as name to document, for the `catalogues` key of its config.",
+      "type": "object"
+    },
+    "dashboards": {
+      "additionalProperties": false,
+      "description": "Grafana dashboards, rendered with `renders: dashboards`.",
+      "properties": {
+        "folder": {
+          "description": "The Grafana folder, for a sidecar that reads the folder annotation.",
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Extra labels on each ConfigMap.",
+          "type": "object"
+        },
+        "namespace": {
+          "description": "Grafana's namespace. Empty: the release's.",
+          "type": "string"
+        },
+        "sidecarLabel": {
+          "description": "The label Grafana's sidecar selects ConfigMaps by.",
+          "type": "string"
+        },
+        "sidecarLabelValue": {
+          "description": "Its value.",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "extensions": {
@@ -2861,6 +3186,14 @@
         }
       },
       "type": "object"
+    },
+    "renders": {
+      "description": "What this release renders: `app`, the write path (the default); `alerts`, only the alert rules; `dashboards`, only the Grafana dashboard ConfigMaps. In the last two nothing else is validated or rendered.",
+      "enum": [
+        "app",
+        "alerts",
+        "dashboards"
+      ]
     },
     "replicas": {
       "description": "Pods of the front door: the writer in direct mode, the receiver in stream mode.",

@@ -235,6 +235,14 @@ chart:
         > tests/golden/audit/example-stream.yaml
     helm template audit charts/audit -f charts/audit/examples/sqs.yaml \
         > tests/golden/audit/example-sqs.yaml
+    # The two other things the chart renders, each alone: the alert rules and
+    # the Grafana dashboards (`renders: alerts`, `renders: dashboards`).
+    helm lint charts/audit -f charts/audit/testdata/values/alerts.yaml
+    helm lint charts/audit -f charts/audit/testdata/values/dashboards.yaml
+    helm template audit charts/audit -f charts/audit/testdata/values/alerts.yaml \
+        > tests/golden/audit/alerts.yaml
+    helm template audit charts/audit -f charts/audit/testdata/values/dashboards.yaml \
+        > tests/golden/audit/dashboards.yaml
     # A hook Pod whose service account the chart creates normally is admitted
     # and then never scheduled: only an install finds that, so assert it here.
     for shape in direct stream transit attested example-direct example-stream example-sqs; do \
@@ -242,6 +250,52 @@ chart:
             < tests/golden/audit/$shape.yaml; \
     done
     git diff --exit-code -- tests/golden/audit
+
+# The release of VictoriaMetrics' vmutils whose `vmalert-tool` runs the rule
+# tests: the one truvity/observability's stack chart pins for its ruler, so the
+# rules are proven on the engine that will evaluate them. Fetched with its
+# published checksum verified, as truvity/observability's rulecheck fetches its
+# parsers.
+vmutils_version := "v1.152.0"
+
+# The release of truvity/observability whose `dashboardlint` is the dashboard
+# contract (docs/dashboards.md there), run by `go run` at this pinned version.
+observability_version := "v0.43.3"
+
+# The alert rules and the dashboard, held to the observability contract: the
+# generated dashboard is the committed one, passes the dashboard lint (and the
+# lint is shown to refuse a dashboard pinned to a datasource, so it is not a
+# check that passes whatever it is given), and every rule fires on what it
+# should and stays silent on what it should not, on vmalert-tool. Needs the
+# network for the two pinned tools. CI runs this as its own recipe.
+telemetry:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python3 hack/dashboards/audit-overview.py | diff - charts/audit/dashboards/audit-overview.json
+
+    tools=$(mktemp -d); trap 'rm -rf "$tools"' EXIT
+    GOBIN="$tools" go install github.com/truvity/observability/cmd/dashboardlint@{{observability_version}}
+    "$tools/dashboardlint" charts/audit/dashboards/*.json
+    # The refusal is real: the same dashboard with a literal datasource must fail.
+    sed 's/"uid": "${datasource}"/"uid": "a-literal-uid"/' charts/audit/dashboards/audit-overview.json > "$tools/pinned.json"
+    if "$tools/dashboardlint" "$tools/pinned.json" 2>"$tools/pinned.err"; then
+        echo "dashboardlint accepted a dashboard pinned to one datasource" >&2; exit 1
+    fi
+    grep -q "literal datasource" "$tools/pinned.err"
+
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+    case "$(uname -m)" in x86_64) arch=amd64 ;; aarch64|arm64) arch=arm64 ;; *) echo "no vmutils for $(uname -m)" >&2; exit 1 ;; esac
+    tarball="vmutils-$os-$arch-{{vmutils_version}}.tar.gz"
+    base="https://github.com/VictoriaMetrics/VictoriaMetrics/releases/download/{{vmutils_version}}"
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/audit/vmutils-{{vmutils_version}}-$os-$arch"
+    if [ ! -x "$cache/vmalert-tool-prod" ]; then
+        mkdir -p "$cache"
+        curl -fsSL "$base/$tarball" -o "$tools/$tarball"
+        curl -fsSL "$base/${tarball%.tar.gz}_checksums.txt" -o "$tools/sums.txt"
+        (cd "$tools" && grep " $tarball\$" sums.txt | sha256sum -c -)
+        tar -xzf "$tools/$tarball" -C "$cache" vmalert-tool-prod
+    fi
+    AUDIT_REQUIRE_HELM=1 AUDIT_REQUIRE_VMALERT=1 AUDIT_VMALERT_TOOL="$cache/vmalert-tool-prod" go test -count=1 ./charts/audit/
 
 # The TypeScript package: install, typecheck, test, build, and check what a
 # publish would ship. Not part of `check`, which needs nothing but the
@@ -346,4 +400,4 @@ e2e-all: e2e-snapshot e2e-fixture e2e-install e2e-smoke
 # Everything CI runs. `vuln` is deliberately not here: a new CVE in a
 # dependency must not turn this gate red on a PR that never touched it. Run
 # `just vuln` on its own to check.
-check: build test lint proto drift schemas chart leak-canary pages
+check: build test lint proto drift schemas chart telemetry leak-canary pages

@@ -1,0 +1,177 @@
+---
+# Source: audit/templates/alerts.yaml
+apiVersion: operator.victoriametrics.com/v1beta1
+kind: VMRule
+metadata:
+  name: audit-alerts
+  namespace: default
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: alerts
+spec:
+  groups:
+    - name: audit.write-path
+      interval: 1m
+      rules:
+        # A record the writer could not process is kept aside and counted. There
+        # is no healthy non-zero range: the writer accepts every well-formed
+        # record, so each one is a record somebody sent that it could not read
+        # (a catalogue it was never given, a schema it does not know) or a
+        # fault in the writer. The window is 15m so one is seen however
+        # slowly the metric is collected.
+        - alert: AuditRecordsDeadLettered
+          expr: >-
+            sum by (k8s_cluster_name, namespace) (increase(audit_writer_dead_lettered_total{namespace="audit"}[15m])) > 0
+          for: 0m
+          labels:
+            k8s_cluster_name: example
+            severity: critical
+            team: platform
+          annotations:
+            summary: 'The audit writer in {{ $labels.namespace }} dead-lettered {{ $value | printf "%.0f" }} record(s)'
+            description: >-
+              Records the writer could not process were kept aside in the
+              archive's dead-letter prefix and counted. Each is a record a
+              producer sent that is not in the trail in its proper form. Read the
+              writer's log for the reason, then the dead-letter objects.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditrecordsdeadlettered"
+        # An async emitter gives a record up only when its queue overflows, and
+        # nothing else counts it. A record dropped never exists, so there is no
+        # healthy non-zero range either. Selected in every application
+        # namespace (`alerts.emitterNamespace`), not the writer's.
+        - alert: AuditEmitterDroppingRecords
+          expr: >-
+            sum by (k8s_cluster_name, namespace) (increase(audit_emit_records_dropped_total{namespace=~".+"}[15m])) > 0
+          for: 0m
+          labels:
+            k8s_cluster_name: example
+            severity: critical
+            team: platform
+          annotations:
+            summary: 'An emitter in {{ $labels.namespace }} dropped {{ $value | printf "%.0f" }} audit record(s)'
+            description: >-
+              The application's async queue overflowed and gave records up. They
+              are not in the trail and cannot be recovered from here. The sink was
+              away longer than the queue is deep: see audit_emit_queue_pending for
+              the climb, and the sink's own health.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditemitterdroppingrecords"
+        # The hourly job seals the hour that has just closed, so the newest
+        # window's age runs from 0 to about 1h05m before the next run. Two hours
+        # tolerates one missed run (a node drain, a slow KMS) and fires on two,
+        # which is when the chain has a gap nothing later can fill. The age is
+        # observed by the writer, not pushed by the job, so a job that never
+        # runs still shows. A profile with no digest at all reports the 24h
+        # lookback, so a chain that never started fires too.
+        - alert: AuditDigestStale
+          expr: >-
+            max by (k8s_cluster_name, namespace, profile) (audit_digest_age_seconds{namespace="audit"}) > 7200
+          for: 10m
+          labels:
+            k8s_cluster_name: example
+            severity: critical
+            team: platform
+          annotations:
+            summary: 'The newest audit digest of profile {{ $labels.profile }} is {{ $value | humanizeDuration }} old'
+            description: >-
+              No digest window has been sealed for profile {{ $labels.profile }}
+              for longer than 7200s. An hour with no
+              digest cannot be told from one whose digest was removed. Check the
+              digest CronJob (`kubectl get cronjob`), its last Job's log and
+              the signing key it uses.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditdigeststale"
+        # The lag is from an object being in the archive to its rows being in the
+        # index, so it is the insert's own time: milliseconds when healthy (the
+        # p99 sits well under a second on a database in the same cluster). Thirty
+        # seconds is two orders of magnitude over that and still short enough
+        # that search is not visibly behind.
+        - alert: AuditIndexLagHigh
+          expr: >-
+            histogram_quantile(0.99, sum by (k8s_cluster_name, namespace, profile, le) (rate(audit_writer_index_lag_seconds_bucket{namespace="audit"}[10m]))) > 30
+          for: 10m
+          labels:
+            k8s_cluster_name: example
+            severity: warning
+            team: platform
+          annotations:
+            summary: 'The audit index of profile {{ $labels.profile }} is {{ $value | humanizeDuration }} behind (p99)'
+            description: >-
+              Writing rows into the index takes longer than
+              30s at the 99th percentile. The archive
+              is unaffected; search answers from an index that is behind. Look at
+              the database's load and its connection pool.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexlaghigh"
+        # Rows of an object that reached the archive and not the index. Any is
+        # a day of search that answers wrongly until `audit reindex` repairs it,
+        # and nobody notices an index that is quietly behind. Zero is the only
+        # healthy count.
+        - alert: AuditIndexRowsDeferred
+          expr: >-
+            sum by (k8s_cluster_name, namespace, profile) (increase(audit_writer_index_deferred_total{namespace="audit"}[15m])) > 0
+          for: 0m
+          labels:
+            k8s_cluster_name: example
+            severity: warning
+            team: platform
+          annotations:
+            summary: '{{ $value | printf "%.0f" }} audit row(s) of profile {{ $labels.profile }} are in the archive and not the index'
+            description: >-
+              The index refused or could not take rows of objects the archive
+              holds. Repair the day with
+              `audit reindex --profile <name> --from <day> --to <day>` once the
+              database is back.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexrowsdeferred"
+        # The share of records refused for their own sake. A producer with a bug
+        # is refused at a steady few percent of ITS traffic and the rest of the
+        # installation is unaffected, so the threshold is on the share of the
+        # whole and not on a count, with a floor of `minRecords` refusals in the
+        # window so that one bad record in a quiet hour is not a page.
+        - alert: AuditWriterRejectingRecords
+          expr: >-
+            (
+              sum by (k8s_cluster_name, namespace) (increase(audit_sink_records_rejected_total{namespace="audit"}[15m]))
+              /
+              (
+                sum by (k8s_cluster_name, namespace) (increase(audit_sink_records_rejected_total{namespace="audit"}[15m]))
+                +
+                sum by (k8s_cluster_name, namespace) (increase(audit_sink_records_acknowledged_total{namespace="audit"}[15m]))
+              )
+            ) > 0.05
+            and
+            sum by (k8s_cluster_name, namespace) (increase(audit_sink_records_rejected_total{namespace="audit"}[15m])) >= 10
+          for: 10m
+          labels:
+            k8s_cluster_name: example
+            severity: warning
+            team: platform
+          annotations:
+            summary: 'The audit writer in {{ $labels.namespace }} is refusing {{ $value | humanizePercentage }} of the records it is sent'
+            description: >-
+              More than 0.05 of the records sent in the
+              last 15 minutes were refused as invalid. The refusals name the
+              record and the reason in the writer's log. A producer is sending
+              what its catalogue does not allow, or a catalogue changed under it.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditwriterrejectingrecords"
+        # A consumer that fails once is a writer restarting or a broker
+        # electing a leader, and the queue delivers the batch again. A failure
+        # rate that is still above zero fifteen minutes later is not that: the
+        # batches go round and none go through. `for` is the whole threshold.
+        - alert: AuditQueueConsumerFailing
+          expr: >-
+            sum by (k8s_cluster_name, namespace, transport) (rate(audit_sink_consume_failures_total{namespace="audit",transport=~"nats|sqs"}[5m])) > 0
+          for: 15m
+          labels:
+            k8s_cluster_name: example
+            severity: critical
+            team: platform
+          annotations:
+            summary: 'The audit {{ $labels.transport }} consumer in {{ $labels.namespace }} keeps failing its batches'
+            description: >-
+              The consumer's target refused or failed its batches for longer than
+              15m. Records are accumulating on the queue
+              and are delivered again. Read the writer's log for the refusal, and
+              the queue's own backlog and age of the oldest message.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditqueueconsumerfailing"

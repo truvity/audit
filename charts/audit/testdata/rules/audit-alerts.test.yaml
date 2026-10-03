@@ -1,0 +1,295 @@
+# Unit tests for the alert rules charts/audit renders with `renders: alerts`
+# (testdata/values/alerts.yaml): run by charts/audit/alerts_test.go through
+# vmalert-tool, the engine of the estate's own ruler, against the rules the
+# chart renders into rules.yaml.
+#
+# Every rule has a test that fires it, with its labels and text, and at least
+# one that must NOT fire: a rule is proven by the series that leave it silent
+# as much as by the one that wakes it. alerts_test.go refuses a rule without
+# both. Series are what the writer and emitters publish over OTLP, named as the
+# metrics gateway names them, with the cluster and namespace labels the
+# gateway adds; the write path runs in namespace "audit".
+rule_files:
+  - rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # ---------------------------------------------------------------- dead letters
+  - name: a dead-lettered record fires at once
+    interval: 1m
+    input_series:
+      - series: 'audit_writer_dead_lettered_total{namespace="audit",k8s_cluster_name="example"}'
+        values: '0 0 0 3 3 3 3 3'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AuditRecordsDeadLettered
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform
+              namespace: audit
+              k8s_cluster_name: example
+            exp_annotations:
+              summary: 'The audit writer in audit dead-lettered 3 record(s)'
+              description: >-
+                Records the writer could not process were kept aside in the
+                archive's dead-letter prefix and counted. Each is a record a
+                producer sent that is not in the trail in its proper form. Read the
+                writer's log for the reason, then the dead-letter objects.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditrecordsdeadlettered
+
+  - name: a flat dead-letter counter, and another namespace's, do not fire
+    interval: 1m
+    input_series:
+      - series: 'audit_writer_dead_lettered_total{namespace="audit",k8s_cluster_name="example"}'
+        values: '5x30'
+      # The same counter rising in a namespace that is not this install's.
+      - series: 'audit_writer_dead_lettered_total{namespace="other",k8s_cluster_name="example"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: AuditRecordsDeadLettered
+        exp_alerts: []
+
+  # ---------------------------------------------------------------- emitter drops
+  - name: an emitter in any namespace that drops a record fires, and names the namespace
+    interval: 1m
+    input_series:
+      - series: 'audit_emit_records_dropped_total{namespace="shop",k8s_cluster_name="example",action="shop.order.placed"}'
+        values: '0 0 0 2 4 4 4'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AuditEmitterDroppingRecords
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform
+              namespace: shop
+              k8s_cluster_name: example
+            exp_annotations:
+              summary: 'An emitter in shop dropped 4 audit record(s)'
+              description: >-
+                The application's async queue overflowed and gave records up. They
+                are not in the trail and cannot be recovered from here. The sink was
+                away longer than the queue is deep: see audit_emit_queue_pending for
+                the climb, and the sink's own health.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditemitterdroppingrecords
+
+  - name: an emitter with a deep queue and nothing dropped does not fire
+    interval: 1m
+    input_series:
+      - series: 'audit_emit_records_dropped_total{namespace="shop",k8s_cluster_name="example",action="shop.order.placed"}'
+        values: '0x30'
+      - series: 'audit_emit_queue_pending{namespace="shop",k8s_cluster_name="example"}'
+        values: '0+50x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AuditEmitterDroppingRecords
+        exp_alerts: []
+
+  # ---------------------------------------------------------------- digest age
+  - name: a digest older than two hours for ten minutes fires
+    interval: 1m
+    input_series:
+      - series: 'audit_digest_age_seconds{namespace="audit",k8s_cluster_name="example",profile="security"}'
+        values: '8000x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: AuditDigestStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform
+              namespace: audit
+              k8s_cluster_name: example
+              profile: security
+            exp_annotations:
+              summary: 'The newest audit digest of profile security is 2h 13m 20s old'
+              description: >-
+                No digest window has been sealed for profile security
+                for longer than 7200s. An hour with no
+                digest cannot be told from one whose digest was removed. Check the
+                digest CronJob (`kubectl get cronjob`), its last Job's log and
+                the signing key it uses.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditdigeststale
+
+  - name: a healthy sawtooth, and a stale value that recovers inside the window, do not fire
+    interval: 1m
+    input_series:
+      # An hourly job: the age climbs to about 1h05m and resets.
+      - series: 'audit_digest_age_seconds{namespace="audit",k8s_cluster_name="example",profile="security"}'
+        values: '0+60x65 0+60x65'
+      # One missed run that the next run repairs within five minutes.
+      - series: 'audit_digest_age_seconds{namespace="audit",k8s_cluster_name="example",profile="billing"}'
+        values: '8000x5 100x40'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: AuditDigestStale
+        exp_alerts: []
+      - eval_time: 100m
+        alertname: AuditDigestStale
+        exp_alerts: []
+
+  # ---------------------------------------------------------------- index lag
+  - name: an index whose p99 is above thirty seconds fires
+    interval: 1m
+    input_series:
+      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="0.5"}'
+        values: '0x40'
+      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="30"}'
+        values: '0x40'
+      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="60"}'
+        values: '0+10x40'
+      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="+Inf"}'
+        values: '0+10x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AuditIndexLagHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: platform
+              namespace: audit
+              k8s_cluster_name: example
+              profile: security
+            exp_annotations:
+              summary: 'The audit index of profile security is 59.7s behind (p99)'
+              description: >-
+                Writing rows into the index takes longer than
+                30s at the 99th percentile. The archive
+                is unaffected; search answers from an index that is behind. Look at
+                the database's load and its connection pool.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexlaghigh
+
+  - name: an index that answers in milliseconds does not fire
+    interval: 1m
+    input_series:
+      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="0.5"}'
+        values: '0+10x40'
+      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="30"}'
+        values: '0+10x40'
+      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="+Inf"}'
+        values: '0+10x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AuditIndexLagHigh
+        exp_alerts: []
+
+  # ---------------------------------------------------------------- rows deferred
+  - name: rows the index did not take fire, by profile
+    interval: 1m
+    input_series:
+      - series: 'audit_writer_index_deferred_total{namespace="audit",k8s_cluster_name="example",profile="history"}'
+        values: '0 0 40 40 40 40'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: AuditIndexRowsDeferred
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: platform
+              namespace: audit
+              k8s_cluster_name: example
+              profile: history
+            exp_annotations:
+              summary: '40 audit row(s) of profile history are in the archive and not the index'
+              description: >-
+                The index refused or could not take rows of objects the archive
+                holds. Repair the day with
+                `audit reindex --profile <name> --from <day> --to <day>` once the
+                database is back.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexrowsdeferred
+
+  - name: a deferred counter that stopped rising an hour ago does not fire
+    interval: 1m
+    input_series:
+      - series: 'audit_writer_index_deferred_total{namespace="audit",k8s_cluster_name="example",profile="history"}'
+        values: '40x80'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: AuditIndexRowsDeferred
+        exp_alerts: []
+
+  # ---------------------------------------------------------------- rejections
+  - name: a tenth of the records refused fires
+    interval: 1m
+    input_series:
+      - series: 'audit_sink_records_rejected_total{namespace="audit",k8s_cluster_name="example",transport="connect-server"}'
+        values: '0+10x40'
+      - series: 'audit_sink_records_acknowledged_total{namespace="audit",k8s_cluster_name="example",transport="connect-server",durability="archived"}'
+        values: '0+100x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AuditWriterRejectingRecords
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: platform
+              namespace: audit
+              k8s_cluster_name: example
+            exp_annotations:
+              summary: 'The audit writer in audit is refusing 9.091% of the records it is sent'
+              description: >-
+                More than 0.05 of the records sent in the
+                last 15 minutes were refused as invalid. The refusals name the
+                record and the reason in the writer's log. A producer is sending
+                what its catalogue does not allow, or a catalogue changed under it.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditwriterrejectingrecords
+
+  - name: a small share refused, and a high share of a handful of records, do not fire
+    interval: 1m
+    input_series:
+      # One percent of a busy stream.
+      - series: 'audit_sink_records_rejected_total{namespace="audit",k8s_cluster_name="example",transport="connect-server"}'
+        values: '0+1x40'
+      - series: 'audit_sink_records_acknowledged_total{namespace="audit",k8s_cluster_name="example",transport="connect-server",durability="archived"}'
+        values: '0+100x40'
+      # Three of twenty on a quiet install: a high share, under the floor.
+      - series: 'audit_sink_records_rejected_total{namespace="quiet",k8s_cluster_name="example",transport="connect-server"}'
+        values: '0 0 0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3'
+      - series: 'audit_sink_records_acknowledged_total{namespace="quiet",k8s_cluster_name="example",transport="connect-server",durability="archived"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 17 17 17 17 17 17 17 17 17'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AuditWriterRejectingRecords
+        exp_alerts: []
+
+  # ---------------------------------------------------------------- consumers
+  - name: a queue consumer that keeps failing for fifteen minutes fires
+    interval: 1m
+    input_series:
+      - series: 'audit_sink_consume_failures_total{namespace="audit",k8s_cluster_name="example",transport="nats"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: AuditQueueConsumerFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform
+              namespace: audit
+              k8s_cluster_name: example
+              transport: nats
+            exp_annotations:
+              summary: 'The audit nats consumer in audit keeps failing its batches'
+              description: >-
+                The consumer's target refused or failed its batches for longer than
+                15m. Records are accumulating on the queue
+                and are delivered again. Read the writer's log for the refusal, and
+                the queue's own backlog and age of the oldest message.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditqueueconsumerfailing
+
+  - name: two failures around a restart, and a failing front door, do not fire
+    interval: 1m
+    input_series:
+      # A writer restart: two failed batches, then nothing.
+      - series: 'audit_sink_consume_failures_total{namespace="audit",k8s_cluster_name="example",transport="sqs"}'
+        values: '0 1 2 2x40'
+      # Only the queue consumers are this rule's: a transport that is not one is not.
+      - series: 'audit_sink_consume_failures_total{namespace="audit",k8s_cluster_name="example",transport="connect-server"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: AuditQueueConsumerFailing
+        exp_alerts: []

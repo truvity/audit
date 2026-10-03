@@ -11,6 +11,7 @@ import (
 	"github.com/truvity/audit/internal/pgtest"
 	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/keys"
+	"github.com/truvity/audit/sdk/catalogue"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/sdk/sink"
@@ -55,10 +56,14 @@ func TestReplicasShareTheDatabaseAndItsKeyDirectory(t *testing.T) {
 		t.Fatalf("a replica with its own key directory was let in: %v", err)
 	}
 
+	common, err := catalogue.Common()
+	if err != nil {
+		t.Fatal(err)
+	}
 	r := &record.Record{
 		Id:               record.NewID(),
-		Source:           "audit",
-		CatalogueVersion: "1.0.0",
+		Source:           common.Source,
+		CatalogueVersion: common.Version,
 		SchemaVersion:    record.SchemaVersion,
 		Action:           "audit.writer.started",
 		Operation:        auditv1.Operation_OPERATION_CREATE,

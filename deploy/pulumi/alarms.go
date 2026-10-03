@@ -99,7 +99,8 @@ func newAlarms(ctx *pulumi.Context, name string, a *Args, t alarmTargets, tags p
 			// Lambda publishes no Invocations datapoint for an hour with none, so the
 			// missing data IS the signal: treat it as breaching, and every one of the
 			// last NotarySilenceHours hours must be silent.
-			alarm{"notary-silent", "The notary has not been invoked for the silence window: the schedule or the function is gone, and the chain of seals is growing a gap.",
+			alarm{"notary-silent", "The notary has not been invoked for the silence window: the schedule or the function is gone, " +
+				"and the chain of seals is growing a gap.",
 				"AWS/Lambda", "Invocations", "Sum", "LessThanThreshold", fnDims(t.Notary), 1, 3600,
 				a.Alerts.NotarySilenceHours, a.Alerts.NotarySilenceHours, "breaching"},
 		)

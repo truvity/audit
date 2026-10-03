@@ -20,7 +20,7 @@ require (
 	github.com/nats-io/nats.go v1.53.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/truvity/access-roster v1.27.1
-	github.com/truvity/audit/sdk v0.0.0-00010101000000-000000000000
+	github.com/truvity/audit/sdk v0.0.0
 	github.com/truvity/gateway-auth v0.7.1
 	github.com/truvity/gemaal v0.24.0
 	github.com/truvity/policy v1.37.0

@@ -17,7 +17,7 @@ func TestValidateAcceptsThisRepository(t *testing.T) {
 	var out bytes.Buffer
 	v := Validate{
 		PresetDirs:   []string{filepath.Join(root, "presets")},
-		CatalogueDoc: []string{filepath.Join(root, "catalogue", "common.yaml")},
+		CatalogueDoc: []string{filepath.Join(root, "sdk", "catalogue", "common.yaml")},
 		Out:          &out,
 	}
 	if problems := v.Run(); problems != 0 {
@@ -39,7 +39,7 @@ func TestValidateReportsUncoveredCategories(t *testing.T) {
 	}
 	var out bytes.Buffer
 	v := Validate{
-		CatalogueDoc: []string{filepath.Join(root, "catalogue", "common.yaml")},
+		CatalogueDoc: []string{filepath.Join(root, "sdk", "catalogue", "common.yaml")},
 		Deployment:   deployment,
 		Out:          &out,
 	}
@@ -81,7 +81,7 @@ const (
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	c := CheckEmitters{Root: dir, Catalogue: filepath.Join(root, "catalogue", "common.yaml"), Out: &out}
+	c := CheckEmitters{Root: dir, Catalogue: filepath.Join(root, "sdk", "catalogue", "common.yaml"), Out: &out}
 	if problems := c.Run(); problems != 1 {
 		t.Fatalf("problems = %d, want 1:\n%s", problems, out.String())
 	}
@@ -97,7 +97,7 @@ const (
 // it excuses, and unable to cover a missing emitter somewhere else in the file.
 func TestCheckEmittersLeavesAMarkedLineAlone(t *testing.T) {
 	root := repoRoot(t)
-	catalogue := filepath.Join(root, "catalogue", "common.yaml")
+	catalogue := filepath.Join(root, "sdk", "catalogue", "common.yaml")
 	run := func(code string) (int, string) {
 		dir := t.TempDir()
 		if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte(code), 0o600); err != nil {

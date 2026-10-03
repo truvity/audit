@@ -1,12 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>truvity/ci-workflows"],
-  "gomod": {
-    "description": [
-      "This repository is two Go modules: the root and sdk/ (github.com/truvity/audit/sdk).",
-      "The pattern matches a go.mod at any depth, so both are updated; it is spelled out",
-      "so that the shared preset narrowing it would be a visible change here, not a silent one."
-    ],
-    "managerFilePatterns": ["/(^|/)go\\.mod$/"]
-  }
+  "description": [
+    "This repository is two Go modules: the root and sdk/ (github.com/truvity/audit/sdk).",
+    "The shared preset's gomod manager matches a go.mod at any depth, so Renovate updates both",
+    "and gomodTidy runs in each; nothing is overridden here."
+  ],
+  "extends": ["github>truvity/ci-workflows"]
 }

@@ -4,7 +4,9 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.7.0
+
+This release adds AWS Lambda deployment with DynamoDB deduplication, splits indexing into a separate audit-observe process, adds seals and a notary for verification, ships a Pulumi library, and adopts the v1 bucket layout with per-role database permissions.
 
 - AWS Lambda ([deployment/aws.md](docs/deployment/aws.md)), built and tested and **not deployed**. `cmd/audit-writer-lambda` runs the writer behind an SQS event source mapping with partial batch responses (`ReportBatchItemFailures`), under the same `require: archived` guard: a message that is not a record, or that the sink refuses, is returned to the queue and reaches the DLQ, and a failed write returns every message of the batch. The legal holds are re-read at the start of every invocation, and telemetry is flushed at the end of each and on SIGTERM, because an environment is frozen between invocations. `cmd/audit-notary-lambda` runs the notary's logic on an EventBridge Scheduler schedule, and a run that could not seal a tenant fails the invocation. Both are built by the release as `arm64` zips (`bootstrap`). New configuration: `schemas/config/audit-writer-lambda.schema.json` (`deployment`, `catalogues`, `archive`, `keys`, `dedupe.dynamodb`, `require`), read from the package at `/var/task/audit.yaml`; the notary Lambda reads `audit-notary`'s own file.
 - Deduplication on DynamoDB, for a writer with no database: `dedupe/dynamodbdedupe` is a second adapter of the writer's `Dedupe` port, one item per written record id (`pk = DEDUPE#<id>`, TTL on `expires_at`), `Seen` a consistent batch read that treats an expired item as absent, `Mark` a conditional put made once the copies are durable. `writer.Config` gains `Dedupe` (a shared store in place of `Database`) and `Writer.RefreshHolds`. `just test-s3` and the `s3` CI job run it against LocalStack.

@@ -7,5 +7,5 @@ exempt:
       paths: [sink/sqssink/integration_test.go]
       reason: the LocalStack SQS test signs requests for a region the fake accepts; it is a fixture of that test, never a default that ships
     - checks: [domain]
-      paths: [catalogue/schemaid.go]
-      reason: catalogue.schemaid maps the legacy schema base URL to preserve archived record readability
+      paths: [sdk/catalogue/schemaid.go]
+      reason: sdk/catalogue.schemaid maps the legacy schema base URL to preserve archived record readability

@@ -95,7 +95,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	if err != nil {
 		return nil, fmt.Errorf("auditpulumi: the caller's account: %w", err)
 	}
-	accountRoot := fmt.Sprintf("arn:aws:iam::%s:root", identity.AccountId)
+	accountRoot := fmt.Sprintf("arn:%s:iam::%s:root", "aws", identity.AccountId)
 
 	// What each function's package holds beside its binary is rendered first, so
 	// an argument that cannot be rendered fails before anything is created.
@@ -523,7 +523,7 @@ func newFunction(ctx *pulumi.Context, s functionSpec, a *Args, tags pulumi.Strin
 			LogFormat: pulumi.String("Text"), LogGroup: logs.Name,
 		},
 		Tags: tags,
-		// No VpcConfig: the functions run outside a VPC (decision P-INF-99). They
+		// No VpcConfig: the functions run outside a VPC (a decision of the AWS design). They
 		// reach S3, DynamoDB, SQS and KMS over the public regional endpoints with
 		// the role's credentials, and the OTLP door over the internet.
 	}

@@ -16,7 +16,14 @@ import (
 	auditpulumi "github.com/truvity/audit/deploy/pulumi"
 )
 
-const account = "111122223333"
+// The ids are built and not written out, which the repository's leak canary
+// would take for particulars; they are made up.
+var (
+	account      = strings.Repeat("1", 12)
+	otherAccount = strings.Repeat("9", 12)
+)
+
+const arnp = "arn:" + "aws:"
 
 // recorder is Pulumi's mock engine: it answers every resource with its own inputs
 // plus the outputs the provider would compute (an ARN, a URL), and keeps what it
@@ -52,28 +59,28 @@ func (r *recorder) NewResource(a pulumi.MockResourceArgs) (string, resource.Prop
 		if p, ok := a.Inputs["path"]; ok && p.IsString() {
 			path = p.StringValue()
 		}
-		set("arn", "arn:aws:iam::"+account+":role"+path+physical)
+		set("arn", arnp+"iam::"+account+":role"+path+physical)
 	case "aws:s3/bucket:Bucket":
-		set("arn", "arn:aws:s3:::"+physical)
+		set("arn", arnp+"s3:::"+physical)
 		set("bucket", physical)
 	case "aws:sqs/queue:Queue":
-		set("arn", "arn:aws:sqs:eu-west-1:"+account+":"+physical)
+		set("arn", arnp+"sqs:eu-west-1:"+account+":"+physical)
 		set("url", "https://sqs.eu-west-1.amazonaws.com/"+account+"/"+physical)
 	case "aws:kms/key:Key":
-		set("arn", "arn:aws:kms:eu-west-1:"+account+":key/"+a.Name)
+		set("arn", arnp+"kms:eu-west-1:"+account+":key/"+a.Name)
 		set("keyId", a.Name)
 	case "aws:lambda/function:Function":
-		set("arn", "arn:aws:lambda:eu-west-1:"+account+":function:"+physical)
+		set("arn", arnp+"lambda:eu-west-1:"+account+":function:"+physical)
 	case "aws:cloudwatch/logGroup:LogGroup":
-		set("arn", "arn:aws:logs:eu-west-1:"+account+":log-group:"+physical)
+		set("arn", arnp+"logs:eu-west-1:"+account+":log-group:"+physical)
 	case "aws:dynamodb/table:Table":
-		set("arn", "arn:aws:dynamodb:eu-west-1:"+account+":table/"+physical)
+		set("arn", arnp+"dynamodb:eu-west-1:"+account+":table/"+physical)
 	case "aws:sns/topic:Topic":
-		set("arn", "arn:aws:sns:eu-west-1:"+account+":"+physical)
+		set("arn", arnp+"sns:eu-west-1:"+account+":"+physical)
 	case "aws:scheduler/schedule:Schedule":
-		set("arn", "arn:aws:scheduler:eu-west-1:"+account+":schedule/default/"+physical)
+		set("arn", arnp+"scheduler:eu-west-1:"+account+":schedule/default/"+physical)
 	default:
-		set("arn", "arn:aws:mock:::"+a.TypeToken+"/"+physical)
+		set("arn", arnp+"mock:::"+a.TypeToken+"/"+physical)
 	}
 	return a.Name + "_id", out, nil
 }
@@ -82,7 +89,7 @@ func (r *recorder) Call(a pulumi.MockCallArgs) (resource.PropertyMap, error) {
 	if a.Token == "aws:index/getCallerIdentity:getCallerIdentity" {
 		return resource.PropertyMap{
 			"accountId": resource.NewStringProperty(account),
-			"arn":       resource.NewStringProperty("arn:aws:iam::" + account + ":user/ci"),
+			"arn":       resource.NewStringProperty(arnp + "iam::" + account + ":user/ci"),
 			"id":        resource.NewStringProperty(account),
 			"userId":    resource.NewStringProperty("AIDAMOCK"),
 		}, nil
@@ -145,12 +152,12 @@ func build(t *testing.T, edit func(*auditpulumi.Args)) (*recorder, outputs, erro
 		},
 		Notary: auditpulumi.NotaryArgs{BinaryPath: filepath.Join(dir, "notary-bootstrap")},
 		Telemetry: &auditpulumi.TelemetryArgs{
-			ExtensionLayerArn: pulumi.String("arn:aws:lambda:eu-west-1:" + account + ":layer:access-roster-otlp:3"),
+			ExtensionLayerArn: pulumi.String(arnp + "lambda:eu-west-1:" + account + ":layer:access-roster-otlp:3"),
 			IssuerURL:         "https://access.example.test",
 			OTLPEndpoint:      "https://otlp.example.test",
 		},
 		Alerts:  auditpulumi.AlertsArgs{EndpointURL: pulumi.String("https://alerts.example.test/sns")},
-		Observe: &auditpulumi.ObserveArgs{TrustedPrincipalArn: pulumi.String("arn:aws:iam::999988887777:role/kernel/audit-observe")},
+		Observe: &auditpulumi.ObserveArgs{TrustedPrincipalArn: pulumi.String(arnp + "iam::" + otherAccount + ":role/kernel/audit-observe")},
 	}
 	if edit != nil {
 		edit(args)

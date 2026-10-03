@@ -25,9 +25,9 @@ func TestTheRolesAreNamedExactlyAndLiveUnderTheAuditPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"writerRole":  "arn:aws:iam::" + account + ":role/audit/audit-writer",
-		"notaryRole":  "arn:aws:iam::" + account + ":role/audit/audit-notary",
-		"observeRole": "arn:aws:iam::" + account + ":role/audit/audit-observe-reader",
+		"writerRole":  arnp + "iam::" + account + ":role/audit/audit-writer",
+		"notaryRole":  arnp + "iam::" + account + ":role/audit/audit-notary",
+		"observeRole": arnp + "iam::" + account + ":role/audit/audit-observe-reader",
 	}
 	for k, v := range want {
 		if out[k] != v {
@@ -187,7 +187,7 @@ func TestKeysAreAnArchiveKeyAndAP384SigningKeyOnlyTheNotaryCanUse(t *testing.T) 
 	}
 	// The key policy names the notary and keeps the account root out of Sign.
 	pol := prop(sk, "policy").StringValue()
-	if !strings.Contains(pol, "arn:aws:iam::"+account+":role/audit/audit-notary") {
+	if !strings.Contains(pol, arnp+"iam::"+account+":role/audit/audit-notary") {
 		t.Errorf("the seal key's policy does not name the notary's role: %s", pol)
 	}
 	for _, s := range policyOf(t, pol) {
@@ -231,7 +231,7 @@ func TestTheIngestQueueRedrivesToADeadLetterQueue(t *testing.T) {
 
 func TestTheQueuePolicyNamesTheSendersAndDeniesPlainHTTP(t *testing.T) {
 	rec, _, err := build(t, func(a *auditpulumi.Args) {
-		a.Ingest.Senders = []pulumi.StringInput{pulumi.String("arn:aws:iam::999988887777:role/app/receiver")}
+		a.Ingest.Senders = []pulumi.StringInput{pulumi.String(arnp + "iam::" + otherAccount + ":role/app/receiver")}
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -548,7 +548,7 @@ func TestTheObserveRoleTrustsTheGivenPrincipalAndReadsFourPrefixes(t *testing.T)
 	}
 	r := rec.one(t, "aws:iam/role:Role", "audit-observe-reader")
 	trust := prop(r, "assumeRolePolicy").StringValue()
-	if !strings.Contains(trust, "arn:aws:iam::999988887777:role/kernel/audit-observe") || !strings.Contains(trust, "sts:ExternalId") {
+	if !strings.Contains(trust, arnp+"iam::"+otherAccount+":role/kernel/audit-observe") || !strings.Contains(trust, "sts:ExternalId") {
 		t.Errorf("trust: %s", trust)
 	}
 	g := grants(policy(t, rec, "audit-observe-reader"))

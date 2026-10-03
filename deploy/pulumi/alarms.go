@@ -15,7 +15,7 @@ type alarmTargets struct {
 }
 
 // AlarmNames lists the CloudWatch alarms the library creates, as the suffix after
-// `<name>-`: the D13 set (Linear P-INF-99). Each publishes to the alarm topic on
+// `<name>-`: the alarm set the AWS design calls for. Each publishes to the alarm topic on
 // ALARM and on OK, and the topic is subscribed to alert-ingress over HTTPS.
 //
 //	writer-throttles, notary-throttles   Lambda throttled an invocation: the writer is not keeping up, or the account's concurrency is spent

@@ -9,10 +9,15 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-// Lock modes of the archive bucket. GOVERNANCE is the trial; COMPLIANCE is the
-// target of every record-tier archive and cannot be shortened by anyone,
-// including the account's root (docs/decisions/0023-archive-retention-and-lifecycle.md).
+// Lock modes of the archive bucket. NONE is a bucket with no Object Lock at all,
+// for a period while formats and layout settle; GOVERNANCE is the trial of the
+// lock; COMPLIANCE is the target of every record-tier archive and cannot be
+// shortened by anyone, including the account's root
+// (docs/decisions/0023-archive-retention-and-lifecycle.md). A bucket moves
+// NONE -> GOVERNANCE -> COMPLIANCE by editing this field; Object Lock, once
+// enabled on a bucket, cannot be disabled.
 const (
+	None       = "NONE"
 	Governance = "GOVERNANCE"
 	Compliance = "COMPLIANCE"
 )
@@ -59,12 +64,25 @@ type ArchiveArgs struct {
 	// bucket name is global.
 	BucketName string
 
-	// ObjectLockMode is GOVERNANCE (default) or COMPLIANCE. GOVERNANCE is for the
-	// trial: a role holding s3:BypassGovernanceRetention can shorten it.
-	// COMPLIANCE cannot be shortened or removed by anyone until each object's
-	// retention date, and a retention wrong in the long direction is paid for
-	// until then. The switch is a new bucket, not an edit of this one: see
-	// docs/deployment/aws.md. COMPLIANCE needs AcknowledgeCompliance.
+	// ObjectLockMode is NONE, GOVERNANCE or COMPLIANCE. Required: there is no
+	// default, so that every caller chooses and nobody gets a lock, or no lock,
+	// by omission.
+	//
+	// NONE creates no Object Lock configuration and renders `lockMode: none` for
+	// the functions, which then send no retention or legal-hold header and are
+	// not granted the permissions for one. The bucket is versioned all the same,
+	// so that the lock can be turned on later: moving to GOVERNANCE adds the
+	// Object Lock configuration to the existing bucket and replaces nothing.
+	// Objects written before that stay unlocked.
+	//
+	// GOVERNANCE is the trial of the lock: a role holding
+	// s3:BypassGovernanceRetention can shorten it. COMPLIANCE cannot be shortened
+	// or removed by anyone until each object's retention date, and a retention
+	// wrong in the long direction is paid for until then. GOVERNANCE to
+	// COMPLIANCE is an edit of the lock configuration of the same bucket, but it
+	// is the step nothing undoes: see docs/deployment/aws.md. COMPLIANCE needs
+	// AcknowledgeCompliance. Once the lock is on, NONE is refused by AWS, not by
+	// this library: Object Lock cannot be disabled on a bucket.
 	ObjectLockMode string
 	// AcknowledgeCompliance is the deliberate step before COMPLIANCE: true says
 	// the retentions were seen working in a governance trial and the deployer has
@@ -74,7 +92,7 @@ type ArchiveArgs struct {
 	// DefaultRetentionDays is the bucket's default retention, which applies to an
 	// object put with none. The writer sets each object's retention itself, from
 	// its profile, so this is a floor and not the policy. Default 0: no default
-	// rule.
+	// rule. Refused with NONE, where there is no lock for it to be a rule of.
 	DefaultRetentionDays int
 
 	// Profiles are the deployment's profile names. Required: a lifecycle rule is
@@ -240,10 +258,10 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	}
 	switch ar.ObjectLockMode {
 	case "":
-		ar.ObjectLockMode = Governance
-	case Governance, Compliance:
+		return nil, errors.New("auditpulumi: Archive.ObjectLockMode is required: NONE, GOVERNANCE or COMPLIANCE (docs/deployment/aws.md)")
+	case None, Governance, Compliance:
 	default:
-		return nil, fmt.Errorf("auditpulumi: Archive.ObjectLockMode %q must be GOVERNANCE or COMPLIANCE", ar.ObjectLockMode)
+		return nil, fmt.Errorf("auditpulumi: Archive.ObjectLockMode %q must be NONE, GOVERNANCE or COMPLIANCE", ar.ObjectLockMode)
 	}
 	if ar.ObjectLockMode == Compliance && !ar.AcknowledgeCompliance {
 		return nil, errors.New("auditpulumi: Archive.ObjectLockMode is COMPLIANCE and Archive.AcknowledgeCompliance is false: " +
@@ -253,6 +271,9 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	}
 	if ar.DefaultRetentionDays < 0 {
 		return nil, errors.New("auditpulumi: Archive.DefaultRetentionDays is not negative")
+	}
+	if ar.ObjectLockMode == None && ar.DefaultRetentionDays > 0 {
+		return nil, errors.New("auditpulumi: Archive.DefaultRetentionDays needs a lock: Archive.ObjectLockMode is NONE")
 	}
 	if len(ar.Profiles) == 0 {
 		return nil, errors.New("auditpulumi: Archive.Profiles is required: a lifecycle rule is written for each profile's prefix")

@@ -1,7 +1,7 @@
 # AWS
 
 The audit trail on AWS without Kubernetes: the writer and the notary as Lambda
-functions, an SQS queue in front of the writer, an S3 bucket with Object Lock,
+functions, an SQS queue in front of the writer, an S3 bucket (with Object Lock, once it is turned on),
 two KMS keys, and the alarms that say when any of it stops. All of it is built
 by a Pulumi Go library, `github.com/truvity/audit/deploy/pulumi`, which is a
 module of its own so that Pulumi is not in the root module's dependency graph.
@@ -138,7 +138,9 @@ a, err := auditpulumi.New(ctx, "audit", &auditpulumi.Args{
 	Archive: auditpulumi.ArchiveArgs{
 		BucketName: "acme-audit-trial",
 		Profiles:   []string{"security", "billing-nl"},
-		// ObjectLockMode defaults to GOVERNANCE: the trial.
+		// ObjectLockMode is required: NONE, GOVERNANCE or COMPLIANCE.
+		// A trial bucket starts with NONE and gets the lock later.
+		ObjectLockMode: auditpulumi.None,
 	},
 	Ingest: auditpulumi.IngestArgs{
 		Senders: []pulumi.StringInput{receiverRoleArn},
@@ -172,9 +174,9 @@ Required inputs are marked. Anything not listed has the default stated.
 | `RolePath` | `/audit/` | the IAM path of every role the library creates |
 | `LogRetentionDays` | 30 | each function's log group |
 | `Archive.BucketName` | **required** | the bucket; it is in the functions' configuration, so it has to be known before anything is created |
-| `Archive.ObjectLockMode` | `GOVERNANCE` | `GOVERNANCE` or `COMPLIANCE`, see [the switch](#governance-to-compliance) |
+| `Archive.ObjectLockMode` | **required** | `NONE`, `GOVERNANCE` or `COMPLIANCE`; there is no default, so every caller chooses. See [the lock modes](#the-lock-modes) |
 | `Archive.AcknowledgeCompliance` | false | the deliberate step before `COMPLIANCE`; without it the library builds nothing |
-| `Archive.DefaultRetentionDays` | 0 | the bucket's default retention, a floor: the writer sets each object's own. 0 sets no default rule |
+| `Archive.DefaultRetentionDays` | 0 | the bucket's default retention, a floor: the writer sets each object's own. 0 sets no default rule; refused with `NONE` |
 | `Archive.Profiles` | **required** | one lifecycle rule per `records/<profile>/` prefix |
 | `Archive.GlacierIRDays`, `.DeepArchiveDays` | 30, 365 | [0023](../decisions/0023-archive-retention-and-lifecycle.md) |
 | `Ingest.Senders` | none | principals allowed to send to the queue; none adds no sender statement, so only identity policies in the account grant sending |
@@ -223,9 +225,9 @@ Required inputs are marked. Anything not listed has the default stated.
 
 | resource | notes |
 |---|---|
-| S3 bucket | Object Lock on, versioning enabled, SSE-KMS under the archive key with bucket keys, all four public-access blocks, bucket-owner-enforced ownership, a policy that denies plain HTTP, a lifecycle rule per profile prefix and one that aborts incomplete multipart uploads after 7 days. `ForceDestroy` is never set |
-| KMS archive key | symmetric, rotation on, alias `alias/<name>-archive` |
-| KMS seal key | `ECC_NIST_P384`, `SIGN_VERIFY`, alias `alias/<name>-seal`, and a key policy of its own (below) |
+| S3 bucket | versioning enabled in every mode, protected from a stack destroy in every mode, the bucket's own `objectLockEnabled` never set (it forces replacement), and Object Lock as a separate configuration resource that exists unless the mode is `NONE`; SSE-KMS SSE-KMS under the archive key with bucket keys, all four public-access blocks, bucket-owner-enforced ownership, a policy that denies plain HTTP, a lifecycle rule per profile prefix and one that aborts incomplete multipart uploads after 7 days. `ForceDestroy` is never set |
+| KMS archive key | symmetric, rotation on, protected, alias `alias/<name>-archive` |
+| KMS seal key | `ECC_NIST_P384`, `SIGN_VERIFY`, protected, alias `alias/<name>-seal`, and a key policy of its own (below) |
 | SQS ingest queue and DLQ | SSE-SQS, visibility timeout six times the writer's timeout, a redrive policy to the DLQ and a redrive-allow policy on the DLQ, a queue policy that denies plain HTTP and allows the named senders |
 | DynamoDB table `<name>-dedupe` | on-demand, hash key `pk` (string), TTL on `expires_at` |
 | Lambda `<name>-writer`, `<name>-notary` | `provided.al2023`, `arm64`, no VPC, a log group each, the extension layer when there is one |
@@ -270,7 +272,8 @@ What each role may do, and nothing more:
 
 `PutObjectRetention` and `PutObjectLegalHold` are listed beside `PutObject`
 because S3 refuses a put that carries an Object Lock header unless the caller also
-holds the matching permission. No role has a delete: nothing in the archive is
+holds the matching permission. With `ObjectLockMode: NONE` the functions send no
+lock header, so both grants are left out. No role has a delete: nothing in the archive is
 deleted by anything in this stack.
 
 **The seal key has a policy of its own.** The default key policy hands a key to
@@ -363,20 +366,69 @@ signature. The topic is not encrypted with a customer key, which CloudWatch coul
 not publish to without a key policy of its own: an alarm's body names a queue and
 a function and carries no record.
 
-## GOVERNANCE to COMPLIANCE
+## The lock modes
 
-The mode is a parameter. **GOVERNANCE is first, for the trial; COMPLIANCE only
-after sign-off** ([0023](../decisions/0023-archive-retention-and-lifecycle.md)).
+The mode is a parameter, and it is required. **The order is NONE, then
+GOVERNANCE, and COMPLIANCE only after sign-off**
+([0023](../decisions/0023-archive-retention-and-lifecycle.md)).
 
-- In GOVERNANCE a principal holding `s3:BypassGovernanceRetention` can shorten or
-  remove a retention. No role in this stack holds it. It is a rehearsal for the
-  retention values, the key layout and the lifecycle, not a destination.
-- In COMPLIANCE **nobody can shorten or remove a retention, including the
-  account's root**, until each object's retention date. A retention wrong in the
-  long direction is paid for until it expires, and one set on the wrong bucket
-  cannot be undone. **The switch is irreversible**, and it is a **new bucket**,
-  not an edit of the trial one: an existing object keeps the mode it was written
-  with whatever the bucket's rule says later.
+- **NONE** creates no Object Lock configuration. `archive.lockMode` is `none` in
+  both functions' configuration, so the writer and the notary send no retention
+  and no legal-hold header, and their roles are not granted
+  `PutObjectRetention` or `PutObjectLegalHold`. The bucket is versioned all the
+  same, which is what lets the lock be turned on later. Every profile in the
+  deployment must then be satisfied by no lock (the attested tier,
+  [0014](../decisions/0014-lock-modes-and-store-tiers.md)): the writer refuses
+  to start when a profile's frameworks demand a stricter mode, and the first
+  rollout is where that shows. A NONE bucket is for a period while formats,
+  seals and layout settle; whatever is written during it is not locked, and
+  stays unlocked after the lock is turned on.
+- **GOVERNANCE** adds the Object Lock configuration. A principal holding
+  `s3:BypassGovernanceRetention` can shorten or remove a retention. No role in
+  this stack holds it. It is a rehearsal for the retention values, the key
+  layout and the lifecycle, not a destination.
+- **COMPLIANCE** is the one where **nobody can shorten or remove a retention,
+  including the account's root**, until each object's retention date. A retention
+  wrong in the long direction is paid for until it expires, and one set on the
+  wrong bucket cannot be undone. It needs `AcknowledgeCompliance: true`; without
+  it the library refuses to build anything, and says why.
+
+The bucket, its versioning and both KMS keys are protected (Pulumi's `protect`)
+in every mode, `NONE` included. A trial bucket can still be destroyed, but only
+by lifting the protection by hand first, which is cheap insurance against an
+accidental `pulumi destroy` and costs a trial one extra step.
+
+### Turning the lock on: NONE to GOVERNANCE
+
+AWS allows Object Lock to be enabled on an existing bucket that has versioning,
+and **it can never be disabled again**. The library never sets the bucket's own
+`objectLockEnabled` (changing it forces the provider to replace the bucket);
+Object Lock is a separate resource, so the switch is one edit and the bucket is
+not replaced.
+
+1. Change `ObjectLockMode` from `auditpulumi.None` to `auditpulumi.Governance`
+   (and set `DefaultRetentionDays` if there is to be a floor).
+2. `pulumi preview`. It should show: one resource created, the Object Lock
+   configuration (`aws:s3/bucketObjectLockConfiguration`); the two functions
+   updated in place (their `archive.lockMode` is now `governance`); the two role
+   policies updated in place (the retention and legal-hold grants appear). The
+   bucket, its versioning and the keys show no change, and nothing is replaced
+   or deleted. A replace of the bucket means something other than the mode was
+   edited: stop.
+3. `pulumi up`. From then on the writer writes each object with the retention
+   its profile demands. Objects written before stay unlocked; they can be locked
+   by hand with `PutObjectRetention` or an S3 Batch Operations job if that is
+   wanted.
+
+The switch to Object Lock is one-way. Setting `ObjectLockMode` back to `NONE`
+removes the resource from the program, but S3 will not turn the lock off, so do
+not.
+
+### GOVERNANCE to COMPLIANCE
+
+COMPLIANCE is a **new bucket**, not an edit of the governance one: an existing
+object keeps the mode it was written with whatever the bucket's rule says later,
+and the step cannot be undone.
 
 The way across:
 
@@ -384,10 +436,7 @@ The way across:
    retentions, the keys and the lifecycle behave, and sign the retentions off.
 2. Create a second installation (a new component name, and a new `BucketName`)
    with `ObjectLockMode: auditpulumi.Compliance` **and**
-   `AcknowledgeCompliance: true`. Without the acknowledgement the library refuses
-   to build anything, and says why. A COMPLIANCE bucket is created with Pulumi's
-   `protect`, so a stack destroy refuses to delete it until the protection is
-   lifted by hand (S3 would refuse anyway, once the first object is locked).
+   `AcknowledgeCompliance: true`.
 3. Point the receivers and observe at the new queue and bucket. The trial bucket
    is emptied, or kept until its own retentions lapse; the trial doubles the
    storage for its length.

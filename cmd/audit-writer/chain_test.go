@@ -45,7 +45,9 @@ func (*queue) DeleteMessageBatch(context.Context, *sqs.DeleteMessageBatchInput, 
 	return &sqs.DeleteMessageBatchOutput{}, nil
 }
 
-func (*queue) ChangeMessageVisibilityBatch(context.Context, *sqs.ChangeMessageVisibilityBatchInput, ...func(*sqs.Options)) (*sqs.ChangeMessageVisibilityBatchOutput, error) {
+func (*queue) ChangeMessageVisibilityBatch(
+	context.Context, *sqs.ChangeMessageVisibilityBatchInput, ...func(*sqs.Options),
+) (*sqs.ChangeMessageVisibilityBatchOutput, error) {
 	return &sqs.ChangeMessageVisibilityBatchOutput{}, nil
 }
 
@@ -78,7 +80,8 @@ func chain(t *testing.T, cfg *config.Writer) (sink.Sink, error) {
 }
 
 func oneRecord() *sink.Request {
-	return &sink.Request{Delivery: sink.Block, Records: []*record.Record{registrationRecord(registry.Entry{Source: "app", Version: "1"}, "test")}}
+	entry := registry.Entry{Source: "app", Version: "1"}
+	return &sink.Request{Delivery: sink.Block, Records: []*record.Record{registrationRecord(entry, "test")}}
 }
 
 func TestAReceiverForwardsToSQSAndReportsQueued(t *testing.T) {
@@ -89,7 +92,7 @@ func TestAReceiverForwardsToSQSAndReportsQueued(t *testing.T) {
 		}
 		return q, nil
 	}
-	cfg := load(t, receiverHead+"forward: {sqs: {queueUrl: 'https://sqs.eu-west-1.amazonaws.com/1/audit.fifo', region: eu-west-1, fifo: true}}\n")
+	cfg := load(t, receiverHead+"forward: {sqs: {queueUrl: 'https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit.fifo', region: eu-west-1, fifo: true}}\n")
 	if cfg.Require != "queued" {
 		t.Fatalf("a receiver's default require is queued, got %q", cfg.Require)
 	}
@@ -132,7 +135,7 @@ func TestTheLogSinkIsOnlyForRequireLogged(t *testing.T) {
 
 func TestTheGuardRefusesAReceiverThatCannotGiveWhatIsRequired(t *testing.T) {
 	newSQS = func(context.Context, string) (sqssink.API, error) { return &queue{}, nil }
-	cfg := load(t, receiverHead+"forward: {sqs: {queueUrl: 'https://sqs.example.test/1/audit'}}\n")
+	cfg := load(t, receiverHead+"forward: {sqs: {queueUrl: 'https://sqs.example.test/ACCOUNT/audit'}}\n")
 	to, stop, err := forwardTo(context.Background(), cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +160,8 @@ func TestAWriterIsArchivedAndTheGuardHoldsIt(t *testing.T) {
 }
 
 func TestAWriterConsumesFromSQSOrNATSAsConfigured(t *testing.T) {
-	cfg := load(t, "deployment: /d.yaml\nanonymousWrites: true\narchive: {bucket: {name: b}}\nconsume: {sqs: {queueUrl: 'https://sqs.example.test/1/audit', batch: 5, visibility: 2m}}\n")
+	cfg := load(t, "deployment: /d.yaml\nanonymousWrites: true\narchive: {bucket: {name: b}}\n"+
+		"consume: {sqs: {queueUrl: 'https://sqs.example.test/ACCOUNT/audit', batch: 5, visibility: 2m}}\n")
 	if cfg.Consume == nil || cfg.Consume.SQS == nil || cfg.Consume.SQS.Batch != 5 || cfg.Consume.SQS.Visibility.D().Minutes() != 2 {
 		t.Fatalf("consume.sqs did not load: %+v", cfg.Consume)
 	}

@@ -156,7 +156,7 @@ func (w *Writer) finishTransports() error {
 		}
 		nats = w.Consume.NATS
 		if q := w.Consume.SQS; q != nil {
-			if err := q.SQS.check("consume.sqs"); err != nil {
+			if err := q.check("consume.sqs"); err != nil {
 				return err
 			}
 		}

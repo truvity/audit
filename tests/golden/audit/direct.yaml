@@ -10,6 +10,7 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
+
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Sealing is a different privilege from writing: whoever can write the archive
@@ -25,6 +26,7 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
+
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Verification needs to read the archive and nothing else. An auditor running
@@ -64,6 +66,7 @@ data:
       security:
         presets:
         - security
+
 ---
 # Source: audit/templates/configmap.yaml
 apiVersion: v1
@@ -118,6 +121,7 @@ data:
         path: /etc/audit/signing/key.pem
     sink:
       url: http://audit:8080
+
 ---
 # Source: audit/templates/cronjobs.yaml
 # Nightly. Walks each profile's chain and reports what it finds; a non-zero
@@ -146,6 +150,7 @@ data:
     publicKeyFile: /etc/audit/public/public.pem
     sink:
       url: http://audit:8080
+
 ---
 # Source: audit/templates/cronjobs.yaml
 # Daily. Compares this cluster's clock with UTC and records the answer, which is
@@ -171,6 +176,7 @@ data:
     - time.cloudflare.com
     sink:
       url: http://audit:8080
+
 ---
 # Source: audit/templates/writer.yaml
 apiVersion: v1
@@ -285,6 +291,7 @@ spec:
         
         - name: tmp
           emptyDir: {}
+
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -361,6 +368,7 @@ spec:
             - name: secret-0
               secret:
                 secretName: audit-signing-key
+
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -437,6 +445,7 @@ spec:
             - name: secret-0
               secret:
                 secretName: audit-signing-public
+
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1

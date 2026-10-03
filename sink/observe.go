@@ -77,7 +77,7 @@ func Observe(ctx context.Context, transport string, kind trace.SpanKind, req *Re
 
 		m := otel.Meter(instrumentation)
 		on := metric.WithAttributes(attribute.String("transport", transport))
-		if h, e := m.Float64Histogram("audit.sink.write.duration", metric.WithUnit("s"),
+		if h, e := m.Float64Histogram("audit.sink.write.duration", metric.WithUnit("s"), // audit:not-an-action — a metric name
 			metric.WithDescription("Seconds one write took at this hop, by transport and outcome."),
 			metric.WithExplicitBucketBoundaries(0.005, 0.025, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)); e == nil {
 			h.Record(ctx, time.Since(start).Seconds(), on, metric.WithAttributes(attribute.String("outcome", outcome)))
@@ -85,11 +85,11 @@ func Observe(ctx context.Context, transport string, kind trace.SpanKind, req *Re
 		if res == nil {
 			return
 		}
-		if c, e := m.Int64Counter("audit.sink.records.acknowledged", metric.WithUnit("{record}"),
+		if c, e := m.Int64Counter("audit.sink.records.acknowledged", metric.WithUnit("{record}"), // audit:not-an-action — a metric name
 			metric.WithDescription("Records a hop acknowledged, by the durability it promised and the transport.")); e == nil && res.Accepted > 0 {
 			c.Add(ctx, int64(res.Accepted), on, metric.WithAttributes(attribute.String("durability", durabilityName(res.Durability))))
 		}
-		if c, e := m.Int64Counter("audit.sink.records.rejected", metric.WithUnit("{record}"),
+		if c, e := m.Int64Counter("audit.sink.records.rejected", metric.WithUnit("{record}"), // audit:not-an-action — a metric name
 			metric.WithDescription("Records a hop refused for the record's own sake, by transport.")); e == nil && len(res.Rejected) > 0 {
 			c.Add(ctx, int64(len(res.Rejected)), on)
 		}
@@ -100,7 +100,7 @@ func Observe(ctx context.Context, transport string, kind trace.SpanKind, req *Re
 // which the queue will deliver again. It is the number to alert on for a
 // consumer that is going round in circles.
 func ConsumeFailed(ctx context.Context, transport string) {
-	if c, err := otel.Meter(instrumentation).Int64Counter("audit.sink.consume.failures", metric.WithUnit("{batch}"),
+	if c, err := otel.Meter(instrumentation).Int64Counter("audit.sink.consume.failures", metric.WithUnit("{batch}"), // audit:not-an-action — a metric name
 		metric.WithDescription("Batches a queue consumer's target refused or failed, to be delivered again, by transport.")); err == nil {
 		c.Add(ctx, 1, metric.WithAttributes(attribute.String("transport", transport)))
 	}

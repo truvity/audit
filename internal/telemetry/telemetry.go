@@ -130,12 +130,10 @@ func Start(ctx context.Context, service, version string, log *slog.Logger) (func
 // Writer is what the writer counts.
 //
 // Each instrument answers a question an operator would otherwise have to ask
-// the logs. The one worth an alert is IndexDeferred: the archive is fine when
-// it rises, but the index a reader searches is behind it, and nobody notices an
-// index that is quietly behind until it answers wrongly.
+// the logs. The writer does not index (observe does, and counts that in
+// Observe); what is worth an alert here is a dead letter.
 type Writer struct {
-	objects, records, deferred, deadLettered, metaDropped, duplicatesLikely, notExtended metric.Int64Counter
-	indexLag                                                                             metric.Float64Histogram
+	objects, records, deadLettered, metaDropped, duplicatesLikely, notExtended metric.Int64Counter
 }
 
 // NewWriter makes the writer's instruments on the given provider, normally the
@@ -148,10 +146,8 @@ func NewWriter(provider metric.MeterProvider) (*Writer, error) {
 		name, unit  string
 		description string
 	}{
-		{&w.objects, "audit.writer.objects.written", "{object}", "Objects put into the archive."},     // audit:not-an-action — a metric name
-		{&w.records, "audit.writer.records.written", "{record}", "Record copies in the objects put."}, // audit:not-an-action — a metric name
-		{&w.deferred, "audit.writer.index.deferred", "{row}", // audit:not-an-action — a metric name
-			"Rows of objects written to the archive but not to the index; repaired by audit reindex."},
+		{&w.objects, "audit.writer.objects.written", "{object}", "Objects put into the archive."},                  // audit:not-an-action — a metric name
+		{&w.records, "audit.writer.records.written", "{record}", "Record copies in the objects put."},              // audit:not-an-action — a metric name
 		{&w.deadLettered, "audit.writer.dead_lettered", "{record}", "Records the writer could not process."},       // audit:not-an-action — a metric name
 		{&w.metaDropped, "audit.writer.meta.dropped", "{record}", "The writer's own records it could not record."}, // audit:not-an-action — a metric name
 		{&w.duplicatesLikely, "audit.writer.duplicates.likely", "{record}", // audit:not-an-action — a metric name
@@ -165,22 +161,7 @@ func NewWriter(provider metric.MeterProvider) (*Writer, error) {
 		}
 		*c.into = counter
 	}
-	lag, err := m.Float64Histogram("audit.writer.index.lag", metric.WithUnit("s"), // audit:not-an-action — a metric name
-		metric.WithDescription("Seconds from an object's put into the archive to its rows being in the index, per profile. "+
-			"Rows that never reach the index are in audit.writer.index.deferred instead."),
-		metric.WithExplicitBucketBoundaries(0.005, 0.025, 0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 300))
-	if err != nil {
-		return nil, fmt.Errorf("telemetry: audit.writer.index.lag: %w", err)
-	}
-	w.indexLag = lag
 	return &w, nil
-}
-
-// IndexLag records how long the rows of one object took to reach the index
-// after the object was in the archive. A profile is a handful of names, so it
-// is the only label; a tenant would be thousands.
-func (w *Writer) IndexLag(key string, d time.Duration) {
-	w.indexLag.Record(context.Background(), d.Seconds(), metric.WithAttributes(attribute.String("profile", ProfileOf(key))))
 }
 
 // Written counts one object put.
@@ -188,11 +169,6 @@ func (w *Writer) Written(key string, records int) {
 	at := metric.WithAttributes(attribute.String("profile", ProfileOf(key)))
 	w.objects.Add(context.Background(), 1, at)
 	w.records.Add(context.Background(), int64(records), at)
-}
-
-// IndexDeferred counts the rows of one object the index did not take.
-func (w *Writer) IndexDeferred(key string, rows int) {
-	w.deferred.Add(context.Background(), int64(rows), metric.WithAttributes(attribute.String("profile", ProfileOf(key))))
 }
 
 // DeadLettered counts one record the writer could not process.
@@ -225,4 +201,67 @@ func ProfileOf(key string) string {
 		return ""
 	}
 	return profile
+}
+
+// Observe is what the indexer counts.
+//
+// The one to alert on is Deferred: the archive is fine when it rises, but the
+// index a reader searches is behind it, and nobody notices an index that is
+// quietly behind until it answers wrongly.
+type Observe struct {
+	objects, records, deferred metric.Int64Counter
+	indexLag                   metric.Float64Histogram
+}
+
+// NewObserve makes the indexer's instruments on the given provider.
+func NewObserve(provider metric.MeterProvider) (*Observe, error) {
+	m := provider.Meter("github.com/truvity/audit/observe")
+	var o Observe
+	for _, c := range []struct {
+		into        *metric.Int64Counter
+		name, unit  string
+		description string
+	}{
+		{&o.objects, "audit.observe.objects.indexed", "{object}", "Objects whose rows are in the index."},  // audit:not-an-action — a metric name
+		{&o.records, "audit.observe.records.indexed", "{record}", "Record copies in the objects indexed."}, // audit:not-an-action — a metric name
+		{&o.deferred, "audit.observe.index.deferred", "{object}", // audit:not-an-action — a metric name
+			"Objects the indexer could not index: reason=unreadable were skipped, for they will not read later either; " +
+				"reason=retry will be tried again by the next pass."},
+	} {
+		counter, err := m.Int64Counter(c.name, metric.WithUnit(c.unit), metric.WithDescription(c.description))
+		if err != nil {
+			return nil, fmt.Errorf("telemetry: %s: %w", c.name, err)
+		}
+		*c.into = counter
+	}
+	lag, err := m.Float64Histogram("audit.observe.index.lag", metric.WithUnit("s"), // audit:not-an-action — a metric name
+		metric.WithDescription("Seconds from an object's put into the archive to its rows being in the index, per profile. "+
+			"The settle window is its floor: the indexer does not look at an object younger than that."),
+		metric.WithExplicitBucketBoundaries(5, 15, 30, 60, 120, 180, 300, 600, 1800, 3600))
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: audit.observe.index.lag: %w", err)
+	}
+	o.indexLag = lag
+	return &o, nil
+}
+
+// Indexed counts one object whose rows are in the index, and records how long
+// after the object reached the archive that was. A profile is a handful of
+// names, so it is the only label; a tenant would be thousands.
+func (o *Observe) Indexed(profile string, rows int, lag time.Duration) {
+	at := metric.WithAttributes(attribute.String("profile", profile))
+	o.objects.Add(context.Background(), 1, at)
+	o.records.Add(context.Background(), int64(rows), at)
+	o.indexLag.Record(context.Background(), lag.Seconds(), at)
+}
+
+// Deferred counts one object the indexer did not take. Permanent is an object
+// that will never read and has been skipped; otherwise it is retried.
+func (o *Observe) Deferred(profile string, permanent bool) {
+	reason := "retry"
+	if permanent {
+		reason = "unreadable"
+	}
+	o.deferred.Add(context.Background(), 1,
+		metric.WithAttributes(attribute.String("profile", profile), attribute.String("reason", reason)))
 }

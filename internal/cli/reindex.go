@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -14,8 +15,7 @@ import (
 	"github.com/truvity/audit/sdk/catalogue"
 
 	"github.com/truvity/audit/index"
-	"github.com/truvity/audit/internal/recobj"
-	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/internal/observe"
 	"github.com/truvity/audit/store"
 )
 
@@ -28,6 +28,12 @@ import (
 // index is unreachable, lets a deployment change the shape of the index without
 // a migration of the trail, and lets an operator throw the database away.
 //
+// It is a batch over a range of ingest days, for repairing one without waiting
+// for the cursor to come round, and it shares what turns an object into rows
+// with the indexer that follows the bucket (internal/observe): the two cannot
+// disagree about what an object holds. The other repair is to reset the cursor
+// (Reset) and let that indexer catch up.
+//
 // It is safe to run over a range that is already indexed: an index counts a
 // record once, and the line a row points at is the line the object has, so a
 // second pass over the same objects changes nothing.
@@ -38,8 +44,9 @@ type Reindex struct {
 	// the catalogue's answer, resolved the same way the writer resolved it. A
 	// reindex without it would quietly produce an index missing its data
 	// columns, and because indexing is idempotent, a later run with the
-	// catalogue would not repair it.
-	Fields   func(ctx context.Context, r *record.Record) (index.Fields, error)
+	// catalogue would not repair it. Unset, the catalogues are read from the
+	// archive, where the writer put each before any record that names it.
+	Fields   observe.Fields
 	Profile  string
 	From, To time.Time
 	// Batch is how many rows are indexed at a time. Default 500.
@@ -76,10 +83,9 @@ func (r Reindex) Run(ctx context.Context) (ReindexReport, error) {
 		out = os.Stdout
 	}
 	report := ReindexReport{Profile: r.Profile}
-	if r.Fields == nil {
-		return report, fmt.Errorf(
-			"reindex: a catalogue is required, or the index would be rebuilt without " +
-				"the data columns and a later run could not repair it")
+	fields := r.Fields
+	if fields == nil {
+		fields = observe.FieldsFrom(&observe.ArchiveCatalogues{Store: r.Store})
 	}
 
 	keys, err := r.objects(ctx)
@@ -100,31 +106,21 @@ func (r Reindex) Run(ctx context.Context) (ReindexReport, error) {
 	}
 
 	for _, key := range keys {
-		body, err := r.Store.Get(ctx, key)
-		if err != nil {
+		rows, unreadable, err := observe.ReadObject(ctx, r.Store, key, fields)
+		report.Unreadable = append(report.Unreadable, unreadable...)
+		switch {
+		case errors.Is(err, observe.ErrFetch):
 			report.Unreadable = append(report.Unreadable, key)
 			continue
+		case err != nil:
+			return report, fmt.Errorf("reindex: %w", err)
 		}
-		lines, err := recobj.Decode(body)
-		if err != nil {
-			report.Unreadable = append(report.Unreadable, key)
+		if len(unreadable) == 1 && unreadable[0] == key {
 			continue
 		}
 		report.Objects++
-
-		// The line number is the row's address in the object, counted from one
-		// as a person counts them.
-		for n, line := range lines {
-			copied, err := line.Decoded()
-			if err != nil {
-				report.Unreadable = append(report.Unreadable, fmt.Sprintf("%s:%d", key, n+1))
-				continue
-			}
-			fields, err := r.Fields(ctx, copied)
-			if err != nil {
-				return report, fmt.Errorf("reindex: %s:%d: %w", key, n+1, err)
-			}
-			batch = append(batch, index.RowOf(copied, index.ObjectAt{Key: key, Line: n + 1}, fields))
+		for _, row := range rows {
+			batch = append(batch, row)
 			report.Records++
 			if len(batch) >= r.batch() {
 				if err := flush(); err != nil {
@@ -174,46 +170,28 @@ func (r Reindex) batch() int {
 	return 500
 }
 
-// CatalogueFields loads catalogues and returns the Fields a reindex needs.
-//
-// It resolves a record the way the writer did: by the source and version the
-// record itself carries, never by whatever catalogue happens to be newest. A
-// record written against version 1.2.0 is rebuilt against 1.2.0, so an index
-// rebuilt today has the columns the record had when it was written.
-func CatalogueFields(documents []string) (func(context.Context, *record.Record) (index.Fields, error), error) {
-	catalogues := map[string]*catalogue.Catalogue{}
+// CatalogueFields loads catalogue documents and returns the Fields a reindex
+// needs, falling back to the archive's own copy of a catalogue the files do not
+// include. See observe.FieldsFrom for how a record is resolved.
+func CatalogueFields(documents []string, from store.Store) (observe.Fields, error) {
+	given := observe.Given{}
 	for _, doc := range documents {
 		c, err := catalogue.LoadFS(os.DirFS(filepath.Dir(doc)), filepath.Base(doc))
 		if err != nil {
 			return nil, fmt.Errorf("catalogue %s: %w", doc, err)
 		}
-		catalogues[c.Source+"@"+c.Version] = c
+		given.With(c)
 	}
+	chain := observe.Chain{given}
+	if from != nil {
+		chain = append(chain, &observe.ArchiveCatalogues{Store: from})
+	}
+	return observe.FieldsFrom(chain), nil
+}
 
-	// One action's composed shape is the same for every record of it, and a
-	// reindex walks millions, so the answer is worked out once.
-	composed := map[string]index.Fields{}
-	return func(_ context.Context, r *record.Record) (index.Fields, error) {
-		key := r.GetSource() + "@" + r.GetCatalogueVersion()
-		cached, ok := composed[key+"/"+r.GetAction()]
-		if ok {
-			return cached, nil
-		}
-		c, ok := catalogues[key]
-		if !ok {
-			return index.Fields{}, fmt.Errorf(
-				"no catalogue %s version %s was given, and %s was written against it",
-				r.GetSource(), r.GetCatalogueVersion(), r.GetAction())
-		}
-		x, err := c.Compose(r.GetAction())
-		if err != nil {
-			return index.Fields{}, fmt.Errorf("%s: %w", r.GetAction(), err)
-		}
-		fields := index.Fields{}
-		if x.Data != nil {
-			fields = index.Fields{Filter: x.Data.Filterable(), Facet: x.Data.Facets()}
-		}
-		composed[key+"/"+r.GetAction()] = fields
-		return fields, nil
-	}, nil
+// Reset forgets where the indexer had read a profile to (or one tenant of it),
+// so that it reads that prefix again from the start and catches up. The index
+// keeps what it has: a row that is there is left alone.
+func Reset(ctx context.Context, cursors observe.Cursors, profile, tenant string) error {
+	return cursors.ResetCursor(ctx, profile, tenant)
 }

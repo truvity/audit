@@ -1,0 +1,17 @@
+# refuse: the indexer and the query service run as the same ServiceAccount
+# base: stream
+query:
+  serviceAccount:
+    create: true
+    name: audit-shared
+observe:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: audit-shared
+  config:
+    archive:
+      bucket:
+        name: audit-archive
+    database:
+      url: postgres://audit_observe@db.example.test:5432/audit?sslmode=verify-full

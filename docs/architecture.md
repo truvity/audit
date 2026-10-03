@@ -32,9 +32,11 @@ flowchart LR
   R -- "stream mode: publish, ack when replicated" --> NATS[("JetStream<br/>the application's stream")]
   NATS --> W["writer<br/>(audit-writer, consumer mode, N pods)"]
   W -- "locked objects" --> S3[("the environment's bucket<br/>audit/app/ — THE RECORD")]
-  W -- "rows, dedupe, rollups" --> PG[("index database<br/>in the application's Postgres")]
+  W -- "dedupe, registry" --> PG[("database<br/>in the application's Postgres")]
+  O["indexer<br/>(audit-observe)"] -- "lists from a cursor, reads" --> S3
+  O -- "index rows, cursors" --> PG
   V["verify CronJob, nightly"] --> S3
-  Q["query service<br/>(audit-query)"] --> PG
+  Q["query service<br/>(audit-query)"] -- "reads the index" --> PG
   Q --> S3
   UI["Audit page<br/>in the application's console"] -- "the console's own token" --> Q
 ```
@@ -43,12 +45,13 @@ flowchart LR
 |---|---|---|---|
 | **emit** | a library in the application (`emit`) | the compiled-in catalogue, a bounded in-memory queue | credentials for the bucket, the index or the stream |
 | **receiver** | `audit-writer`, one or two pods, the application's front door over Connect | the stream's credentials in stream mode, and it serves `RegisterCatalogue` | — |
-| **writer** | the same image in consumer mode, N pods (stream mode); the receiver itself (direct mode) | write rights on its prefix, the index owner's credentials | any way to hand a record back to a caller |
+| **writer** | the same image in consumer mode, N pods (stream mode); the receiver itself (direct mode) | write rights on its prefix, a database role for the dedupe table and the registry | the index, and any way to hand a record back to a caller |
 | **stream** | one JetStream stream on the application's own account (stream mode only) | records not yet archived, replicated | — |
 | **bucket** | one per environment, Object Lock in compliance mode where a profile demands it | every record, one copy per profile, locked where the profile demands it | — |
-| **index** | one database in the application's existing Postgres | rows, facet counts, the dedupe table, rollups | anything that is not rebuildable |
+| **indexer** | `audit-observe`, one pod ([0020](decisions/0020-observe-follows-the-bucket.md), [0024](decisions/0024-indexer-and-query-are-separate-processes.md)) | read on the archive, its own database role: the index and its cursors | write on the archive, the dedupe table |
+| **index** | one database in the application's existing Postgres | rows, facet counts, cursors, rollups, and the writer's dedupe table and registry beside them under another role | anything that is not rebuildable |
 | **verify** | a CronJob | read on the prefix, and nothing else | write rights on the archive |
-| **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive |
+| **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive or the index |
 | **Audit page** | a React component in the application's console | nothing — it calls the query service with the console's own token | credentials of its own |
 | **usage consumer** | a small Deployment, [quotas](deployment/extensions/quotas.md) only | the counter cache | — |
 
@@ -177,8 +180,11 @@ them is the record.
    the record is about expires. Nothing is acknowledged before the object is in
    the bucket. A record the writer cannot take goes to the dead-letter prefix,
    never nowhere.
-5. **It indexes** each copy's row and facet counts, and marks the record's id so
-   that a redelivery is absorbed exactly once.
+5. **It marks** the record's id as written, so that a redelivery is absorbed
+   exactly once. The writer does not index: the indexer finds the object by
+   listing the bucket from its cursor once it is older than the settle window,
+   and writes each copy's row and facet counts a couple of minutes later
+   ([0020](decisions/0020-observe-follows-the-bucket.md)).
 6. **Every night the verify job** checks the previous day's objects against the
    [bucket contract](reference/bucket-contract.md) — each object's key, metadata
    and bytes, and the hash of every record — and records what it checked. Seals

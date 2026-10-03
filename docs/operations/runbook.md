@@ -8,7 +8,7 @@ between the two:
 
 | | [direct](../deployment/direct.md) | [stream](../deployment/stream.md) |
 |---|---|---|
-| receiver | is the writer: one process validates, puts the object and indexes it | publishes to the stream and acknowledges when it is replicated |
+| receiver | is the writer: one process validates and puts the object | publishes to the stream and acknowledges when it is replicated |
 | writer | the receiver's own pods | `audit-writer` in consumer mode, N pods, scaled apart |
 | "behind" looks like | `audit.emit.queue.pending` climbing in the application | the stream consumer's pending count |
 | a writer rollout is | a pause | a backlog |
@@ -183,21 +183,48 @@ leaves nothing in the archive to notice.
 
 ## The index is behind
 
-The writer logs `object written but not indexed` with the object's key when it
-puts an object it could not index. The records are safe and the object is in
-the archive under its lock; what is behind is the projection.
+The index is `audit-observe`'s, not the writer's: it follows the archive by
+listing from a cursor per profile and tenant
+([0020](../decisions/0020-observe-follows-the-bucket.md)), and the writer does
+not know whether it is there. A put that the indexer has not reached yet is not
+a fault. The indexer does not look at an object younger than its settle window
+(`settle`, default 2 minutes), so **an index is always at least that far
+behind**, by design.
 
-It also counts the rows in `audit.writer.index.deferred`, labelled by profile,
-when a collector is named (`OTEL_EXPORTER_OTLP_ENDPOINT`, set on the pod by
-the platform; there is no setting for it in the file or the chart). Alert on any increase: nothing else notices an index
-that is quietly behind until it answers a search wrongly. With the usual
-OTLP-to-Prometheus naming:
+What is a fault is a lag far above the window, and the indexer says so in two
+ways, when a collector is named (`OTEL_EXPORTER_OTLP_ENDPOINT`, set on the pod
+by the platform; there is no setting for it in the file or the chart):
+
+- `audit.observe.index.lag`, a histogram by profile: seconds from an object's
+  put to its rows being in the index. `AuditIndexLagHigh` is its p99 above
+  ten minutes.
+- `audit.observe.index.deferred`, a counter by profile and `reason`: objects it
+  could not index. Alert on any increase: nothing else notices an index that
+  is quietly behind until it answers a search wrongly. With the usual
+  OTLP-to-Prometheus naming:
 
 ```
-increase(audit_writer_index_deferred_total[15m]) > 0
+increase(audit_observe_index_deferred_total[15m]) > 0
 ```
 
-The writer's other counters: `audit.writer.objects.written`,
+Look first at whether `audit-observe` is running and at its log. It logs
+`an indexing pass failed; the next one resumes from the cursors` and goes on
+retrying, tenant by tenant, so one tenant's trouble does not hold back the
+others:
+
+- `reason=retry`: the archive could not be read, the database refused a write,
+  or a record names a catalogue that is not in the archive. The cursor of that
+  tenant stays at the last object it indexed, and the next pass resumes there
+  with nothing lost. Fix the cause: the bucket's permissions, the database, or
+  the missing `catalogue/<app>/<version>`.
+- `reason=unreadable`: an object that does not decode. It is skipped, because
+  it will not read later either, and it is the thing to look at: an object in
+  the archive that nothing can read is a finding. The log names its key.
+
+Notifications only shorten the wait (`wake`), so an installation without them,
+or with a lost one, is not behind by more than `interval`.
+
+The writer's counters: `audit.writer.objects.written`,
 `audit.writer.records.written`, `audit.writer.dead_lettered` (alert on this
 too: a fault upstream is otherwise silent), `audit.writer.meta.dropped`,
 `audit.writer.duplicates.likely` and `audit.writer.retention.not_extended`.
@@ -205,8 +232,8 @@ too: a fault upstream is otherwise silent), `audit.writer.meta.dropped`,
 The last is an addendum that could not lengthen the lock on an earlier
 record. The addendum is written; the earlier record keeps its old date. The
 `audit.retention.extended` record with outcome failure says which record,
-which object and why — typically the record was not found (no index, and it is
-older than the scan's horizon) or the role lacks `s3:PutObjectRetention`. Fix
+which object and why — typically the record was not found (the writer scans the
+archive for it, and it is older than the scan's horizon) or the role lacks `s3:PutObjectRetention`. Fix
 the cause and lengthen it by hand, which is safe to repeat:
 
 ```
@@ -214,16 +241,26 @@ aws s3api put-object-retention --bucket <b> --key <object> \
     --retention Mode=COMPLIANCE,RetainUntilDate=<retain_until from the record>
 ```
 
+Two repairs, and both are safe at any time and over a range already indexed,
+which is the usual case: a record is counted once however many times it is
+read. To make the indexer read a profile again from the start and catch up:
+
 ```
-audit reindex --profile <p> --from <day> --to <day> \
-    --database <url> --bucket <b> --catalogue <file>...
+audit reindex --profile <p> [--tenant <t>] --reset-cursor --database <url>
 ```
 
-The range is of ingest days. Safe at any time and over a range already indexed, which is the usual case: a
-record is counted once however many times it is read. The catalogues are
-required — without them the rebuild would omit the data columns and a later run
-could not repair it. The tail cursor advances on recorded order, so pollers
-catch up on their own.
+To read a range of ingest days directly, with the same code the indexer uses:
+
+```
+audit reindex --profile <p> --from <day> --to <day> \
+    --database <url> --bucket <b> [--catalogue <file>...]
+```
+
+A record's catalogue is read from the archive's own `catalogue/<app>/<version>`
+unless a file is given for it; without a catalogue the rebuild would omit the
+data columns and a later run could not repair it, so one that cannot be found
+is an error. The tail cursor advances on recorded order, so pollers catch up on
+their own.
 
 If the index is not merely behind but wrong — a bad migration, a partial
 restore — drop it, run `audit migrate`, and reindex the range. Nothing in the
@@ -243,24 +280,25 @@ both objects are in the archive, and a reader sees the record
 once. Not one record is lost. `audit verify` reads the archive
 only, so the trail can still be checked while the index is being rebuilt.
 
-Recreate the schema and the reader role, then rebuild, oldest range first,
-one profile at a time. The range is of ingest days: the rebuild reads each
-day's hours tenant by tenant, in key order.
+Recreate the schema and the roles, and let the indexer rebuild: with no cursors
+it reads every profile and tenant from the first key.
 
 ```
-audit migrate --database "$OWNER_URL" --reader audit_query
-audit reindex --profile <p> --from <day> --to <day> \
-    --database <url> --bucket <b> --catalogue <file>...
+audit migrate --database "$OWNER_URL" --writer audit_writer \
+    --observe audit_observe --reader audit_query --purge audit_purge
 ```
 
-The catalogues must be every version the range was written under; the
-archive keeps a copy of each under `catalogue/<app>/<version>`. A rebuild is asserted to
-produce the same rows and the same counts the writer produced, which is why
-this is a rebuild and not a reconstruction.
+That is the whole recovery: start `audit-observe`, and it catches up from the
+bucket alone, with no event history, oldest first. The catalogues are read from
+the archive, which keeps a copy of each version under
+`catalogue/<app>/<version>`. A rebuild is asserted to produce the same rows and
+the same counts as following the bucket does, which is why this is a rebuild
+and not a reconstruction. To rebuild a range sooner, or one profile first, use
+`audit reindex --from/--to`.
 
-Writers keep writing the archive throughout. Start them against the new
-database once `audit migrate` has run — a writer whose database is at
-another schema version refuses to start — and reindex the days behind them.
+Writers keep writing the archive throughout, and need only the deduplication
+table. Start them against the new database once `audit migrate` has run — a
+writer whose database is at another schema version refuses to start.
 
 ## The index or the deduplication table is growing without end
 

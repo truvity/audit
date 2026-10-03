@@ -51,6 +51,11 @@ func LoadWriter(file string) (*Writer, error) { return load(file, "audit-writer"
 // LoadQuery reads and validates audit-query's configuration.
 func LoadQuery(file string) (*Query, error) { return load(file, "audit-query", (*Query).finish) }
 
+// LoadObserve reads and validates audit-observe's configuration.
+func LoadObserve(file string) (*Observe, error) {
+	return load(file, "audit-observe", (*Observe).finish)
+}
+
 // LoadVerify reads and validates the configuration of `audit verify`.
 func LoadVerify(file string) (*Verify, error) { return load(file, "audit-verify", (*Verify).finish) }
 
@@ -323,6 +328,30 @@ func (q *Query) finish() error {
 		}
 	}
 	return checkDatabase(q.Database)
+}
+
+func (o *Observe) finish() error {
+	if o.Listen.Address == "" {
+		o.Listen.Address = ":8080"
+	}
+	if o.Settle == 0 {
+		o.Settle = Duration(2 * 60 * time.Second)
+	}
+	if o.Interval == 0 {
+		o.Interval = Duration(30 * time.Second)
+	}
+	if o.Batch == 0 {
+		o.Batch = 500
+	}
+	if o.Wake != nil && o.Wake.SQS != nil {
+		if err := o.Wake.SQS.check("wake.sqs"); err != nil {
+			return err
+		}
+	}
+	if err := o.Archive.finish(false); err != nil {
+		return err
+	}
+	return checkDatabase(&o.Database)
 }
 
 func (v *Verify) finish() error {

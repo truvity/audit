@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/sdk/catalogue"
 	"github.com/truvity/audit/sdk/emit"
 	"github.com/truvity/audit/sdk/record"
@@ -328,28 +327,16 @@ func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension
 		// but the record has nowhere to go and must not disappear.
 		return w.deadLetter(ctx, r, "no configured profile keeps this action")
 	}
-	fields := indexFields(x)
 	profiles := make([]string, 0, len(copies))
 	for _, copied := range copies {
 		profile := w.Splitter.Profiles[copied.GetProfile()]
-		if err := w.Roller.AddExpiring(ctx, profile, copied, fields, expiry); err != nil {
+		if err := w.Roller.AddExpiring(ctx, profile, copied, expiry); err != nil {
 			return err
 		}
 		profiles = append(profiles, copied.GetProfile())
 	}
 	*pending = append(*pending, w.addenda(r, earlier, expiry, profiles)...)
 	return nil
-}
-
-// indexFields is what the action's catalogue says about its data slot: which
-// properties a query may name, and which a searcher may count. The index takes
-// the answer rather than the catalogue, so that an implementation of the
-// Indexer interface needs neither.
-func indexFields(x *catalogue.Composed) index.Fields {
-	if x.Data == nil {
-		return index.Fields{}
-	}
-	return index.Fields{Filter: x.Data.Filterable(), Facet: x.Data.Facets()}
 }
 
 func (w *Writer) deadLetter(ctx context.Context, r *record.Record, reason string) error {

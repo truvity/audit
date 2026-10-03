@@ -1,0 +1,6 @@
+# refuse: connects as the migration's role, which owns the tables
+# base: stream
+observe:
+  config:
+    database:
+      url: postgres://audit_owner@db.example.test:5432/audit?sslmode=verify-full

@@ -31,18 +31,25 @@ workloadIdentity:
     - subject: system:serviceaccount:app:api
       source: app
 
-# The index schema, applied before the writer rolls. `reader` is the query
-# service's role.
+# The schema, applied before the parts roll, and what each part's database
+# role is granted. The migration connects as the OWNER of the tables, which no
+# part does: an owner is bound by no grant and no row-level security. Each role
+# named here must exist, and gets what its part needs and nothing else: the
+# writer the deduplication table and the registry, the indexer the index, the
+# query service a read of it, the purge job the deletes.
 migrate:
   enabled: true
   config:
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
+    writer: audit_writer
+    observe: audit_observe
     reader: audit_query
+    purge: audit_purge
   secretEnv:
     - name: AUDIT_DATABASE_PASSWORD
-      secretName: audit-db
+      secretName: audit-db-owner
       key: password
 
 writer:
@@ -59,11 +66,35 @@ writer:
       prefix: audit/app
       kmsKey: alias/audit-archive
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
   secretEnv:
     - name: AUDIT_DATABASE_PASSWORD
       secretName: audit-db
+      key: password
+
+# The indexer: follows the archive by listing and writes the index the query
+# service reads. A Deployment of its own, as a database role of its own
+# (`migrate.config.observe`) and under its own ServiceAccount, because the
+# writer holds neither the index nor this identity. `settle` is how far
+# behind now it stays: longer than a put can take, and the least time between
+# a record's acknowledgement and its appearance in search.
+observe:
+  enabled: true
+  config:
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-example-1
+      prefix: audit/app
+    database:
+      url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 2m
+    interval: 30s
+  secretEnv:
+    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+      secretName: audit-db-observe
       key: password
 
 query:
@@ -116,11 +147,11 @@ jobs:
     config:
       deployment: /etc/audit/deployment.yaml
       database:
-        url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+        url: postgres://audit_purge@db.example.com:5432/audit?sslmode=verify-full
         passwordEnv: AUDIT_DATABASE_PASSWORD
     secretEnv:
       - name: AUDIT_DATABASE_PASSWORD
-        secretName: audit-db
+        secretName: audit-db-purge
         key: password
   clockSync:
     enabled: true

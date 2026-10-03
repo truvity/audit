@@ -3,7 +3,7 @@
 What each platform can do today and what is designed. The
 [architecture](architecture.md) says how the parts fit; the decisions
 [0016](decisions/0016-three-parts-installed-independently.md) to
-[0023](decisions/0023-archive-retention-and-lifecycle.md) say where it is
+[0024](decisions/0024-indexer-and-query-are-separate-processes.md) say where it is
 going.
 
 | mark | means |
@@ -14,7 +14,7 @@ going.
 | — | does not apply to that platform |
 
 Today's state is that the ingest path writes the v1 layout (🧪), the
-readers around it follow it, and the rest of the target architecture is 📄. The
+readers around it follow it, observe follows the bucket by cursor (🧪), and the rest of the target architecture is 📄. The
 v0 archive is not read or written by anything in this release: it is readable
 only with the previous release's CLI (v0.6.x).
 
@@ -79,10 +79,11 @@ built yet. The signers stay for them.
 
 | feature | Kubernetes | AWS | self-hosted |
 |---|---|---|---|
-| index and search on Postgres, fed by the writer | ✅ | 📄 | 📄 |
-| cursor listing over the bucket, settle window | 📄 | 📄 | 📄 |
-| notifications as a wake-up | 📄 | 📄 | 📄 |
-| reindex from the archive (v1) | 🧪 | 🧪 | 🧪 |
+| index and search on Postgres | ✅ | 📄 | 📄 |
+| cursor observe: `audit-observe` lists the bucket from a durable cursor per profile and tenant, behind a settle window ([0020](decisions/0020-observe-follows-the-bucket.md)) | 🧪 | 🧪 | 🧪 |
+| notifications as a wake-up (a NATS subject or an SQS queue that only shortens the poll) | 🧪 | 🧪 | 🧪 |
+| one database role per part: the writer's has no index, observe's writes it, the query service's reads it ([0024](decisions/0024-indexer-and-query-are-separate-processes.md)) | 🧪 | 🧪 | 🧪 |
+| reindex from the archive (v1), and a cursor reset | 🧪 | 🧪 | 🧪 |
 | usage quotas | 📄 | 📄 | 📄 |
 | billing statements | 📄 | 📄 | 📄 |
 

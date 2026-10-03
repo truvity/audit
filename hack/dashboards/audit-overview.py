@@ -11,7 +11,7 @@ its `dashboardlint` enforces: a `datasource` variable that every panel uses, a
 `namespace` variable chained off `cluster`, `$cluster` in the title, and
 `$cluster` in every query.
 
-Series are the ones the writer, the receiver and the emitters publish over
+Series are the ones the writer, the receiver, the indexer and the emitters publish over
 OTLP, as the metrics gateway names them (dots to underscores, `_total` on
 counters, the unit as a suffix). Only the cluster, namespace and tier become
 labels from the resource, so every dimension used below (transport,
@@ -89,9 +89,10 @@ stat("Rejected (1h)",
      "Records a hop refused for the record's own sake: an invalid record, a catalogue mismatch, a message too large. A steady count is a "
      "producer sending something it should not; the share of all writes is the alert.",
      "sum(increase(audit_sink_records_rejected_total{%s}[1h]))" % W, 4, y, steps=[(None, GREEN), (1, ORANGE)])
-stat("Index rows deferred (1h)",
-     "Rows of objects that reached the archive and not the index. The archive is fine; search is behind until `audit reindex` repairs the day.",
-     "sum(increase(audit_writer_index_deferred_total{%s}[1h]))" % W, 8, y)
+stat("Index objects deferred (1h)",
+     "Objects the archive holds and the indexer (audit-observe) could not index: a fetch or a catalogue it will try again, or an object that "
+     "does not decode and was skipped. The archive is fine; search is behind or missing it until the cause is fixed or `audit reindex` reads the range.",
+     "sum(increase(audit_observe_index_deferred_total{%s}[1h]))" % W, 8, y)
 stat("Emitters dropping (1h)",
      "Records emitters gave up because their queue overflowed, across every namespace of the cluster. Healthy is zero: a drop is a record "
      "that will never exist. Look at the per-application panel below for who.",
@@ -138,14 +139,16 @@ y += 8
 row("Index and writes", y)
 y += 1
 series("Index lag, p50 and p99",
-       "Seconds from an object being in the archive to its rows being searchable. Healthy is well under a second; rows that never arrive are "
-       "counted as deferred instead and do not appear here.",
-       [('histogram_quantile(0.5, sum by (le) (rate(audit_writer_index_lag_seconds_bucket{%s}[$__rate_interval])))' % W, "p50"),
-        ('histogram_quantile(0.99, sum by (le) (rate(audit_writer_index_lag_seconds_bucket{%s}[$__rate_interval])))' % W, "p99")],
+       "Seconds from an object being put into the archive to its rows being searchable, as the indexer measures it. The indexer does not look at an "
+       "object younger than its settle window (default 2 minutes), so that window is the floor; a lag far above it is an indexer that is "
+       "stopped or stuck. Objects that never arrive are counted as deferred instead and do not appear here.",
+       [('histogram_quantile(0.5, sum by (le) (rate(audit_observe_index_lag_seconds_bucket{%s}[$__rate_interval])))' % W, "p50"),
+        ('histogram_quantile(0.99, sum by (le) (rate(audit_observe_index_lag_seconds_bucket{%s}[$__rate_interval])))' % W, "p99")],
        0, y, 12, "s")
-series("Index rows deferred, by profile",
-       "Rows written to the archive and not to the index, by profile. Repair with `audit reindex` for the day; see the runbook.",
-       [('sum by (profile) (increase(audit_writer_index_deferred_total{%s}[$__rate_interval]))' % W, "{{profile}}")],
+series("Index objects deferred, by profile and reason",
+       "Objects the indexer could not index, by profile. reason=retry is tried again by the next pass; reason=unreadable was skipped for good. "
+       "See the runbook; `audit reindex` reads a range again.",
+       [('sum by (profile, reason) (increase(audit_observe_index_deferred_total{%s}[$__rate_interval]))' % W, "{{profile}} {{reason}}")],
        12, y, 12, "short")
 y += 8
 series("Objects and records written per second",

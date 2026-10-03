@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/index/s3scan"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
@@ -80,17 +80,18 @@ type extending struct {
 	failed  []string
 }
 
-// buildExtending is a writer with an after_expiry evidence profile, the index
-// as the way to find earlier records, and its own account turned on so that
-// what it extends is in the trail.
+// buildExtending is a writer with an after_expiry evidence profile, a scan of
+// the archive as the way to find earlier records (the writer has no index: that
+// is observe's), and its own account turned on so that what it extends is in
+// the trail.
 func buildExtending(t *testing.T) *extending {
 	t.Helper()
-	memory := index.NewMemory()
-	return buildExtendingOn(t, memory, memory)
+	archive := storetest.NewMemory()
+	return buildExtendingOn(t, archive, &s3scan.Scanner{Store: archive})
 }
 
-// buildExtendingOn is buildExtending over the given index.
-func buildExtendingOn(t *testing.T, indexer index.Indexer, records writer.Locator) *extending {
+// buildExtendingOn is buildExtending over the given archive and locator.
+func buildExtendingOn(t *testing.T, archive *storetest.Memory, records writer.Locator) *extending {
 	t.Helper()
 	issuer, err := catalogue.Load([]byte(issuerDoc), [][]byte{[]byte(issuerSchema)})
 	if err != nil {
@@ -128,12 +129,12 @@ func buildExtendingOn(t *testing.T, indexer index.Indexer, records writer.Locato
 	at := day(t, "2026-09-17T10:30:00Z")
 	var mu sync.Mutex
 	now := func() time.Time { mu.Lock(); defer mu.Unlock(); return at }
-	b := &extending{store: storetest.NewMemory(), records: records,
+	b := &extending{store: archive, records: records,
 		setNow: func(t time.Time) { mu.Lock(); defer mu.Unlock(); at = t }}
 	w, err := writer.New(&writer.Writer{
 		Catalogues: registry,
 		Splitter:   &writer.Splitter{Profiles: all, Keys: provider},
-		Roller:     &writer.Roller{Store: b.store, Instance: "writer-1", Indexer: indexer, Now: now},
+		Roller:     &writer.Roller{Store: b.store, Instance: "writer-1", Now: now},
 		DeadLetter: &writer.StoreDeadLetter{Store: b.store, Instance: "writer-1", Now: now},
 		Records:    records,
 		Meta:       common,

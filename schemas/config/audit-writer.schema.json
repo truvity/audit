@@ -465,7 +465,7 @@
     },
     "database": {
       "$ref": "#/$defs/postgres",
-      "description": "The index and the shared deduplication table. Without it the writer indexes nothing, deduplicates in process, and may only run one replica."
+      "description": "The shared deduplication table and the catalogue registry, as the writer's own database role: it holds those and none of the index, which audit-observe writes. Without it the writer deduplicates in process and may only run one replica."
     },
     "deployment": {
       "description": "Path to the profile configuration: which presets each profile is composed from.",

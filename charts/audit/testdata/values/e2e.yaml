@@ -9,8 +9,10 @@
 # file and fails if the chart stops honouring a name it names.
 #
 # `mode: stream` — a product's shape, and the one with the most to prove: a
-# receiver publishes to JetStream, a pool of writers consumes it, and the
-# query role is separate from the writer's. See docs/decisions/0011 and
+# receiver publishes to JetStream, a pool of writers consumes it, an indexer
+# follows the archive into the index, and the writer's, the indexer's and the
+# query service's database roles are separate from one another and from the
+# owner's. See docs/decisions/0011 and
 # 0014 for why direct mode and stream mode are otherwise configured alike.
 mode: stream
 
@@ -26,6 +28,8 @@ profiles:
     presets: [security]
 
 # What the receiver and the writers share, written once and reused below.
+# The writer's role: the deduplication table and the registry, none of the
+# index. The tables' OWNER is the migration's, and nothing else connects as it.
 x-database: &database
   url: postgres://audit_e2e_writer@postgres.postgres.svc:5432/audit_e2e?sslmode=require
   passwordEnv: AUDIT_DATABASE_PASSWORD
@@ -96,10 +100,42 @@ writer:
 migrate:
   enabled: true
   config:
-    database: *database
-    # The query service's role, granted usage and select by the migration.
+    database:
+      url: postgres://audit_e2e_owner@postgres.postgres.svc:5432/audit_e2e?sslmode=require
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    # What the migration grants each part's role: the writer the deduplication
+    # table and the registry, the indexer the index, the query service a read.
+    writer: audit_e2e_writer
+    observe: audit_e2e_observe
     reader: audit_e2e_query
-  secretEnv: *database-secret
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-e2e-owner-database
+      key: password
+
+# The indexer follows the archive into the index. The settle window is short
+# here so that the suite does not wait minutes for what a real installation
+# would: a put cannot take ten seconds on this box.
+observe:
+  enabled: true
+  config:
+    archive:
+      bucket: *bucket
+    database:
+      url: postgres://audit_e2e_observe@postgres.postgres.svc:5432/audit_e2e?sslmode=require
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 10s
+    interval: 5s
+  secretEnv:
+    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+      secretName: audit-e2e-observe-database
+      key: password
+    - name: AUDIT_S3_ACCESS_KEY_ID
+      secretName: audit-e2e-s3-credentials
+      key: AWS_ACCESS_KEY_ID
+    - name: AUDIT_S3_SECRET_ACCESS_KEY
+      secretName: audit-e2e-s3-credentials
+      key: AWS_SECRET_ACCESS_KEY
 
 query:
   enabled: false

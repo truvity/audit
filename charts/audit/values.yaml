@@ -40,6 +40,11 @@ images:
     repository: ""
     tag: ""
     digest: ""
+  audit-observe:
+    registry: ""
+    repository: ""
+    tag: ""
+    digest: ""
   audit:
     registry: ""
     repository: ""
@@ -58,6 +63,9 @@ image:
     tag: ""
   query:
     repository: ghcr.io/truvity/audit/audit-query
+    tag: ""
+  observe:
+    repository: ghcr.io/truvity/audit/audit-observe
     tag: ""
   pullPolicy: IfNotPresent
 imagePullSecrets: []
@@ -131,7 +139,9 @@ alerts:
       enabled: true
       severity: warning
       # p99 of the time from an object in the archive to its rows in the index.
-      thresholdSeconds: 30
+      # The indexer's settle window (default 2m) is the floor of that time, so
+      # the threshold has to be well above it: raise this with `settle`.
+      thresholdSeconds: 600
       for: 10m
       labels: {}
     indexDeferred:
@@ -301,6 +311,37 @@ query:
     name: ""
     annotations: {}
 
+# The indexer: follows the archive by listing, keeps a cursor per profile and
+# tenant in Postgres, and writes the index the query service reads
+# (docs/decisions/0020). It is its own Deployment, with its own ServiceAccount
+# and its own database role, because it holds the index's WRITE credential and
+# the writer must not: the writer's role has the deduplication table and the
+# registry and none of the index, and the query service's can only read it.
+# The chart refuses an observer that runs as the writer's or the query
+# service's ServiceAccount or connects as their database role.
+#
+# It is not on the write path: absent, paused or rolling, ingest does not notice
+# and the index catches up from its cursors. Several replicas are safe and one
+# is enough. Without it nothing feeds the index, and search answers nothing.
+observe:
+  enabled: false
+  replicas: 1
+  # The audit-observe configuration: schemas/config/audit-observe.schema.json.
+  # `archive` is read only (no lock mode), `database` is the role
+  # `migrate.config.observe` granted, `settle` is the settle window and `wake`
+  # an optional subject or queue of bucket notifications that only shortens the
+  # poll.
+  config: {}
+  secretEnv: []
+  secretMounts: []
+  tokens: []
+  # Its own identity: get and list on the archive, and nothing else. Pod
+  # Identity or IRSA binds here.
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
 # Who is calling the writer.
 #
 # A workload presents its projected service-account token, and the writer
@@ -350,13 +391,21 @@ extensions:
 # application registers its own over RegisterCatalogue.
 catalogues: {}
 
-# The index schema, applied by a hook Job before the writer rolls. The writer
-# refuses to start against a schema version it does not know, and must never
-# migrate itself: several replicas would race. Turn it on with a database.
+# The schema, applied by a hook Job before the parts roll, and what each part's
+# database role is granted. The parts refuse to start against a schema version
+# they do not know, and must never migrate themselves: several replicas would
+# race. Turn it on with a database.
 migrate:
   enabled: false
   # The `audit migrate` configuration: schemas/config/audit-migrate.schema.json.
-  # `reader` is the query service's role, granted usage and select.
+  # `database` is the OWNER of the tables, a role of its own: an owner is bound
+  # by no grant and no row-level security, so none of the parts connects as it.
+  # The roles each part connects as, which must exist, are named here and
+  # granted what the part needs and nothing else:
+  #   writer    the deduplication table, the registry, the key directory
+  #   observe   the index and its cursors (read and write)
+  #   reader    select on the index, bound by row-level security (the query)
+  #   purge     delete from the index and the deduplication table
   config: {}
   secretEnv: []
 
@@ -443,7 +492,8 @@ jobs:
 
 # The writer's identity: the one pod in direct mode, the consumers in stream
 # mode. It is the one identity that writes the archive, and the account every
-# other component falls back to with `create: false`. Each other component has
+# other component falls back to with `create: false` (except observe and the
+# receiver, which the chart refuses to run as it). Each other component has
 # its own `serviceAccount` beside its configuration.
 serviceAccount:
   create: true

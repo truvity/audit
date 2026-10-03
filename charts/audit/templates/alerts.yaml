@@ -98,44 +98,48 @@ spec:
             {{- include "audit.runbook" (dict "root" $ "alert" "AuditEmitterDroppingRecords") | nindent 12 }}
         {{- end }}
         {{- if $r.indexLag.enabled }}
-        # The lag is from an object being in the archive to its rows being in the
-        # index, so it is the insert's own time: milliseconds when healthy (the
-        # p99 sits well under a second on a database in the same cluster). Thirty
-        # seconds is two orders of magnitude over that and still short enough
-        # that search is not visibly behind.
+        # The lag is from an object being put into the archive to its rows being
+        # in the index, as audit-observe measures it. The indexer does not look at
+        # an object younger than its settle window (default 2m), so that window is
+        # the floor and a healthy p99 sits just above it, a little more than the
+        # window plus a poll. The threshold is for an indexer that has stopped,
+        # is starved or is stuck, and has to be raised with `settle`.
         - alert: AuditIndexLagHigh
           expr: >-
-            histogram_quantile(0.99, sum by ({{ $c }}, namespace, profile, le) (rate(audit_writer_index_lag_seconds_bucket{ {{- $w -}} }[10m]))) > {{ $r.indexLag.thresholdSeconds }}
+            histogram_quantile(0.99, sum by ({{ $c }}, namespace, profile, le) (rate(audit_observe_index_lag_seconds_bucket{ {{- $w -}} }[10m]))) > {{ $r.indexLag.thresholdSeconds }}
           for: {{ $r.indexLag.for }}
           labels:
             {{- include "audit.ruleLabels" (dict "root" $ "cfg" $r.indexLag) | nindent 12 }}
           annotations:
             summary: 'The audit index of profile {{ "{{ $labels.profile }}" }} is {{ "{{ $value | humanizeDuration }}" }} behind (p99)'
             description: >-
-              Writing rows into the index takes longer than
-              {{ $r.indexLag.thresholdSeconds }}s at the 99th percentile. The archive
-              is unaffected; search answers from an index that is behind. Look at
-              the database's load and its connection pool.
+              Objects reach the index more than
+              {{ $r.indexLag.thresholdSeconds }}s after they were put, at the 99th
+              percentile. The archive is unaffected; search answers from an index
+              that is behind. Look at whether audit-observe is running, at its log,
+              and at the database's load.
             {{- include "audit.runbook" (dict "root" $ "alert" "AuditIndexLagHigh") | nindent 12 }}
         {{- end }}
         {{- if $r.indexDeferred.enabled }}
-        # Rows of an object that reached the archive and not the index. Any is
-        # a day of search that answers wrongly until `audit reindex` repairs it,
-        # and nobody notices an index that is quietly behind. Zero is the only
-        # healthy count.
+        # Objects the archive holds and the indexer could not index: a fetch or a
+        # catalogue it will try again (reason=retry), or an object that does not
+        # decode and has been skipped (reason=unreadable). Any is search that
+        # answers wrongly or late, and nobody notices an index that is quietly
+        # behind. Zero is the only healthy count.
         - alert: AuditIndexRowsDeferred
           expr: >-
-            sum by ({{ $c }}, namespace, profile) (increase(audit_writer_index_deferred_total{ {{- $w -}} }[15m])) > 0
+            sum by ({{ $c }}, namespace, profile) (increase(audit_observe_index_deferred_total{ {{- $w -}} }[15m])) > 0
           for: {{ $r.indexDeferred.for }}
           labels:
             {{- include "audit.ruleLabels" (dict "root" $ "cfg" $r.indexDeferred) | nindent 12 }}
           annotations:
-            summary: '{{ "{{ $value | printf \"%.0f\" }}" }} audit row(s) of profile {{ "{{ $labels.profile }}" }} are in the archive and not the index'
+            summary: '{{ "{{ $value | printf \"%.0f\" }}" }} audit object(s) of profile {{ "{{ $labels.profile }}" }} are in the archive and not the index'
             description: >-
-              The index refused or could not take rows of objects the archive
-              holds. Repair the day with
-              {{ "`audit reindex --profile <name> --from <day> --to <day>`" }} once the
-              database is back.
+              The indexer could not index objects the archive holds. Its log names
+              each. A retry resumes by itself once the cause (the bucket, a
+              catalogue, the database) is fixed; an unreadable object is skipped and
+              {{ "`audit reindex --profile <name> --from <day> --to <day>`" }} is
+              how a range is read again.
             {{- include "audit.runbook" (dict "root" $ "alert" "AuditIndexRowsDeferred") | nindent 12 }}
         {{- end }}
         {{- if $r.writerRejections.enabled }}

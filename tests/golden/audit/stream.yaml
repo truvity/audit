@@ -66,6 +66,25 @@ metadata:
 
 ---
 # Source: audit/templates/serviceaccount.yaml
+# The indexer reads the archive and writes the index. It holds the index's
+# write credential, which the writer must not, and reads what the writer wrote
+# without being able to write it: a different identity from either. Pod
+# Identity or IRSA binds here, with get and list on the archive and nothing more.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    iam.example.com/role: audit-observe
+
+---
+# Source: audit/templates/serviceaccount.yaml
 # Verification needs to read the archive and nothing else. An auditor running
 # the same command must get the same answer, which is what makes the answer
 # worth having.
@@ -190,7 +209,7 @@ data:
       prefix: prod
     database:
       passwordEnv: AUDIT_DATABASE_PASSWORD
-      url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full
     deployment: /etc/audit/deployment.yaml
     keys:
       local:
@@ -226,7 +245,7 @@ data:
   config.yaml: |
     database:
       passwordEnv: AUDIT_DATABASE_PASSWORD
-      url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full
     deployment: /etc/audit/deployment.yaml
     mode: receiver
     stream:
@@ -293,7 +312,7 @@ data:
   config.yaml: |
     database:
       passwordEnv: AUDIT_DATABASE_PASSWORD
-      url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
+      url: postgres://audit_purge@db.example.test:5432/audit?sslmode=verify-full
     dedupeWindow: 336h
     deployment: /etc/audit/deployment.yaml
 
@@ -324,6 +343,40 @@ data:
     sink:
       tokenFile: /var/run/audit/token
       url: http://audit:8080
+
+---
+# Source: audit/templates/observe.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-observe-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      prefix: prod
+    database:
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      url: postgres://audit_observe@db.example.test:5432/audit?sslmode=verify-full
+    settle: 2m
+    wake:
+      nats:
+        nats:
+          tokenFile: /var/run/audit/stream/token
+          url: nats://nats.audit.svc:4222
+        subject: audit.bucket.created
 
 ---
 # Source: audit/templates/query.yaml
@@ -458,6 +511,108 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+
+---
+# Source: audit/templates/observe.yaml
+# The indexer. It follows the archive's listing from a cursor per profile and
+# tenant kept in Postgres, indexes what is older than the settle window, and
+# writes the index the query service reads. It reads the archive and never
+# writes it; it writes the index as a role of its own, which holds neither the
+# deduplication table nor the registry. Nothing calls it, so it has no Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: observe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: observe
+      annotations:
+        checksum/config: 3da288dc4661e6d36501ab88b1fbf2cb1770eefcd00203e6eae11e097f240a5b
+    spec:
+      serviceAccountName: audit-observe
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: observe
+          image: ghcr.io/truvity/audit/audit-observe:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-observe-database
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+            
+            - name: token-0
+              mountPath: /var/run/audit/stream
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-observe-config
+        
+        
+        - name: token-0
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "nats"
+                  expirationSeconds: 3600
+        - name: tmp
+          emptyDir: {}
 
 ---
 # Source: audit/templates/query.yaml
@@ -619,7 +774,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: c0e3ecce7a0916a003d03526043168553743b7f75917c844595a502cd3bb1213
+        checksum/config: 7eddce2977643fee9a4f1fd136ddcf3fe01f1333d9d824b1a03d76a65a080360
         # Likewise a profile change.
         checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
         # And who may write: a changed issuer or mapping must reach it.
@@ -732,7 +887,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: 8a35a8aa725b21e9c1d872cc3fea449a89c0925f6ff1d28c0422bbc332ab29dc
+        checksum/config: b8cedb82bb0df065af2739591dae67727e9b951335a73be55d8976f59f20abf0
         # Likewise a profile change.
         checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
         # And who may write: a changed issuer or mapping must reach it.
@@ -935,7 +1090,7 @@ spec:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
           annotations:
-            checksum/config: fd4b32edad20422332fc197dc03ac598e301255bbc1ea7cff78b2ac069178187
+            checksum/config: fce36fe6972f94512175c62cf2be437dcfbde89016cb11585b8bfa35938ee763
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit-purge
@@ -958,7 +1113,7 @@ spec:
                 - name: AUDIT_DATABASE_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      name: audit-database
+                      name: audit-purge-database
                       key: password
               securityContext:
                 allowPrivilegeEscalation: false
@@ -1112,8 +1267,11 @@ data:
   config.yaml: |
     database:
       passwordEnv: AUDIT_DATABASE_PASSWORD
-      url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
+      url: postgres://audit_owner@db.example.test:5432/audit?sslmode=verify-full
+    observe: audit_observe
+    purge: audit_purge
     reader: audit_query
+    writer: audit_writer
 
 ---
 # Source: audit/templates/migrate.yaml
@@ -1167,7 +1325,7 @@ spec:
             - name: AUDIT_DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: audit-database
+                  name: audit-owner-database
                   key: password
           securityContext:
             allowPrivilegeEscalation: false

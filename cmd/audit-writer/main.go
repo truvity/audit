@@ -133,10 +133,12 @@ func run() error {
 		}
 	}
 
-	// The index and the deduplication table live in the same database on
-	// purpose: both sit on the write path, and it is having them that turns
-	// the writer from a single instance into a deployment. Without a database
-	// the writer still writes the archive, which is the part that is evidence.
+	// The deduplication table and the catalogue registry are what the writer
+	// keeps in a database: it is having them that turns the writer from a
+	// single instance into a deployment. The index is in the same database
+	// and is not the writer's: observe writes it by following the bucket, and
+	// this connection's role has no grant on it. Without a database the writer
+	// still writes the archive, which is the part that is evidence.
 	var pool *pgxpool.Pool
 	if cfg.Database != nil {
 		poolConfig, err := cfg.Database.PoolConfig()
@@ -181,7 +183,7 @@ func run() error {
 	}
 
 	// Metrics, pushed over OTLP when a collector is named in the environment
-	// and a no-op otherwise. The one to alert on is index.deferred.
+	// and a no-op otherwise. The one to alert on is dead_lettered.
 	stopTelemetry, err := telemetry.Start(ctx, "audit-writer", version, slog.Default())
 	if err != nil {
 		return err
@@ -277,8 +279,8 @@ func run() error {
 	// belongs to one application, so a registry of its own would be a
 	// Deployment, a ServiceAccount and a network policy for one call at
 	// start-up: docs/decisions/0011-one-installation-per-service-or-product.md.
-	// It needs the database the index is in, because a registered catalogue
-	// lives beside the rows it describes and shares their migration chain.
+	// It needs the database, because a registered catalogue is kept in it and
+	// shares the index's migration chain.
 	if pool != nil {
 		common, err := catalogue.Common()
 		if err != nil {
@@ -304,7 +306,7 @@ func run() error {
 		mux.Handle(regPath, auth.Middleware(authenticated, regHandler))
 	} else {
 		slog.Warn("no database: this writer serves no catalogue registration, " +
-			"because a registered catalogue is kept beside the index it describes")
+			"because a registered catalogue is kept in the database")
 	}
 
 	mux.Handle("/healthz", health)

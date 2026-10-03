@@ -32,12 +32,16 @@ workloadIdentity:
 migrate:
   enabled: true
   config:
+    # The OWNER of the tables, which no part connects as. Each role below must
+    # exist, and is granted what its part needs and nothing else.
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
+    writer: audit_writer
+    observe: audit_observe
   secretEnv:
     - name: AUDIT_DATABASE_PASSWORD
-      secretName: audit-db
+      secretName: audit-db-owner
       key: password
 
 # The receiver forwards to the queue, and is held to `queued`: it holds no
@@ -50,7 +54,7 @@ receiver:
     deployment: /etc/audit/deployment.yaml
     workloads: /etc/audit/workloads.yaml
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
     forward:
       sqs:
@@ -79,7 +83,7 @@ writer:
       prefix: audit/app
       kmsKey: alias/audit-archive
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
     consume:
       sqs:
@@ -94,6 +98,27 @@ writer:
   secretEnv:
     - name: AUDIT_DATABASE_PASSWORD
       secretName: audit-db
+      key: password
+
+# The indexer: follows the archive by listing and writes the index the query
+# service reads. A Deployment of its own, as a database role of its own
+# (`migrate.config.observe`) and under its own ServiceAccount, because the
+# writer holds neither the index nor this identity.
+observe:
+  enabled: true
+  config:
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+    database:
+      url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 2m
+  secretEnv:
+    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+      secretName: audit-db-observe
       key: password
 
 # The jobs record through the writer's front door, which is the receiver, so

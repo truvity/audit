@@ -22,16 +22,19 @@ flowchart TB
     end
     RW["audit-writer ×2<br/>receiver = writer"]
     Q["audit-query ×1"]
-    PG[("index database")]
+    OB["audit-observe ×1<br/>the indexer"]
+    PG[("database")]
     CJ["CronJobs<br/>verify, purge, clock-sync"]
     E --> RW
     E2 --> RW
-    RW --> PG
-    Q --> PG
+    RW -- "dedupe, registry" --> PG
+    OB -- "index, cursors" --> PG
+    Q -- "reads" --> PG
     E -- "the console's Audit page" --> Q
   end
   S3[("the environment's bucket<br/>audit/app/")]
   RW --> S3
+  OB -- "lists, reads" --> S3
   Q --> S3
   CJ --> S3
 ```
@@ -50,7 +53,7 @@ sequenceDiagram
   participant A as the application
   participant R as receiver = writer
   participant S3 as bucket
-  participant PG as index
+  participant PG as database
 
   P->>A: sign in, good proof
   A->>A: validate against the catalogue
@@ -58,7 +61,7 @@ sequenceDiagram
   R->>R: verify the caller, stamp the observer, split per profile
   R->>S3: put object, retention from the profile
   S3-->>R: stored
-  R->>PG: row, and mark the id
+  R->>PG: mark the id
   R-->>A: durable
   A-->>P: signed in
   Note over A,S3: the bucket refuses, so the sign-in is refused
@@ -163,16 +166,24 @@ its own part of the prefix, and none of them with a delete.
 
 ## The index
 
-The writer owns a database; the query service reads it as a separate role so
-that the tenant row-level policies bind it. Create the role and grant it in
-the same migration:
+One database, three parts that use it, and a role for each: the migration
+owns the tables and nothing else connects as it; the writer's role holds the
+deduplication table and the registry and none of the index; the indexer's
+(`audit-observe`, which follows the bucket and writes the index) holds the
+index; and the query service's reads it, so that the tenant row-level policies
+bind it. Create the roles and grant them in the same migration:
 
 ```console
-$ audit migrate --database "$OWNER_URL" --reader audit_query
+$ audit migrate --database "$OWNER_URL" --writer audit_writer \
+    --observe audit_observe --reader audit_query
 ```
 
 In the chart this is the `migrate` hook above, which runs `audit migrate
---config` with the same two settings in its file.
+--config` with the same settings in its file, and `observe.enabled` runs the
+indexer as a Deployment of its own. The index is behind the archive by the
+indexer's settle window (two minutes by default,
+[0020](../decisions/0020-observe-follows-the-bucket.md)); anything that must
+see a record sooner reads the sink's acknowledgement, not the index.
 
 If the application already runs a Postgres cluster, this is one more
 database in it. If it does not, a single-instance cluster is enough: the

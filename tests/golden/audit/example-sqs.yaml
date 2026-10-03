@@ -15,6 +15,23 @@ metadata:
 
 ---
 # Source: audit/templates/serviceaccount.yaml
+# The indexer reads the archive and writes the index. It holds the index's
+# write credential, which the writer must not, and reads what the writer wrote
+# without being able to write it: a different identity from either. Pod
+# Identity or IRSA binds here, with get and list on the archive and nothing more.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
 # The front door publishes and nothing more. It must not hold the archive's
 # write identity: a receiver that shares the writer's service account would
 # reach the bucket through whatever Pod Identity or IRSA role that binds.
@@ -95,7 +112,7 @@ data:
         visibility: 2m
     database:
       passwordEnv: AUDIT_DATABASE_PASSWORD
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
     deployment: /etc/audit/deployment.yaml
     replicas: 3
     require: archived
@@ -124,7 +141,7 @@ data:
   config.yaml: |
     database:
       passwordEnv: AUDIT_DATABASE_PASSWORD
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
     deployment: /etc/audit/deployment.yaml
     forward:
       sqs:
@@ -134,6 +151,34 @@ data:
     mode: receiver
     require: queued
     workloads: /etc/audit/workloads.yaml
+
+---
+# Source: audit/templates/observe.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-observe-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+    database:
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+    settle: 2m
 
 ---
 # Source: audit/templates/writer.yaml
@@ -157,6 +202,98 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+
+---
+# Source: audit/templates/observe.yaml
+# The indexer. It follows the archive's listing from a cursor per profile and
+# tenant kept in Postgres, indexes what is older than the settle window, and
+# writes the index the query service reads. It reads the archive and never
+# writes it; it writes the index as a role of its own, which holds neither the
+# deduplication table nor the registry. Nothing calls it, so it has no Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: observe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: observe
+      annotations:
+        checksum/config: 019d4fcd9905ca953913003aa45347e4ae059379469500f3d3ea148594b21102
+    spec:
+      serviceAccountName: audit-observe
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: observe
+          image: ghcr.io/truvity/audit/audit-observe:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-db-observe
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+            
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-observe-config
+        
+        
+        - name: tmp
+          emptyDir: {}
 
 ---
 # Source: audit/templates/writer.yaml
@@ -186,7 +323,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: d8cd67f0ad14f148ebcae701a2d77531ebd82cbcb33f49fdac53a5f9ca949175
+        checksum/config: 63e21243ac7af24828da670137d88b1de7234e5af158a50591ba21448a3c26b7
         # Likewise a profile change.
         checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
         # And who may write: a changed issuer or mapping must reach it.
@@ -289,7 +426,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: bad3fc0d5c5ea52ca04c5846c655ba004ecebb0fe77e096037505f7605c0c6a8
+        checksum/config: e611715e0797be869d603e61e09c3866c417b63b681530241e3060605350df6a
         # Likewise a profile change.
         checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
         # And who may write: a changed issuer or mapping must reach it.
@@ -415,7 +552,9 @@ data:
   config.yaml: |
     database:
       passwordEnv: AUDIT_DATABASE_PASSWORD
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
+    observe: audit_observe
+    writer: audit_writer
 
 ---
 # Source: audit/templates/migrate.yaml
@@ -469,7 +608,7 @@ spec:
             - name: AUDIT_DATABASE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: audit-db
+                  name: audit-db-owner
                   key: password
           securityContext:
             allowPrivilegeEscalation: false

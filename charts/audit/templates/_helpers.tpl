@@ -47,6 +47,10 @@ one `image` names, at the chart's appVersion unless given a tag. Takes (dict
 {{ include "audit.image" (dict "root" . "name" "audit-query" "image" .Values.image.query) }}
 {{- end -}}
 
+{{- define "audit.observeImage" -}}
+{{ include "audit.image" (dict "root" . "name" "audit-observe" "image" .Values.image.observe) }}
+{{- end -}}
+
 {{/* The writer's pods. Every component carries the release's labels, so the
 writer names itself too: a selector of the release's labels alone would take
 the query service's and the jobs' pods into the writer's Service. */}}
@@ -90,6 +94,12 @@ before it had one of its own. */}}
 
 {{- define "audit.queryServiceAccountName" -}}
 {{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.query "suffix" "query") -}}
+{{- end -}}
+
+{{/* The indexer's. It holds the index's write credential and reads the
+archive: it must not be the writer's identity, which writes the archive. */}}
+{{- define "audit.observeServiceAccountName" -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.observe "suffix" "observe") -}}
 {{- end -}}
 
 {{- define "audit.verifyServiceAccountName" -}}

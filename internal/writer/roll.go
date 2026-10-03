@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/preset"
@@ -44,11 +43,6 @@ type Roller struct {
 	// MaxBytes rolls an object that has grown this large, measured before
 	// compression. Default 8 MiB.
 	MaxBytes int
-	// Indexer, when set, receives the rows of every object after it is
-	// written. The index is a projection: it may be behind, be rebuilt from the
-	// prefixes, or be a different implementation entirely, and none of that
-	// changes what the trail says.
-	Indexer index.Indexer
 	// Held reports whether a profile and tenant are under a legal hold. An
 	// object written under a held prefix is put with the hold already on it: a
 	// hold is placed on a prefix, objects keep arriving under it, and one held
@@ -58,15 +52,6 @@ type Roller struct {
 	Now func() time.Time
 	// OnPut is called after each object is written.
 	OnPut func(key string, records int)
-	// OnIndexDeferred is called when an object was written but its rows were
-	// not. The object is durable and the records are safe; the index is behind
-	// until a reindex of that hour repairs it. A deployment alerts on this,
-	// because an index nobody notices is behind is one that quietly answers
-	// wrongly.
-	OnIndexDeferred func(key string, rows int, err error)
-	// OnIndexed is called when an object's rows are in the index, with how long
-	// that took after the object was in the archive.
-	OnIndexed func(key string, rows int, lag time.Duration)
 
 	mu   sync.Mutex
 	open map[partition]*batch
@@ -84,11 +69,7 @@ type batch struct {
 	bytes   int
 	// lines are the object's lines, hash and record, in the order the copies
 	// were added.
-	lines [][]byte
-	// rows are the index rows of the same copies, in the same order, built
-	// where the record is still in hand. They carry no object key yet: the
-	// object does not have one until it is put.
-	rows     []index.Row
+	lines    [][]byte
 	retainAt time.Time
 }
 
@@ -99,10 +80,10 @@ var ErrKeyComponent = errors.New("writer: not usable in a key")
 // Add puts one copy into the object being gathered for its profile and tenant,
 // rolling that object first if it is full or old.
 //
-// The fields are the action's indexed extension properties, which only the
-// caller's catalogue knows.
-func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record, fields index.Fields) error {
-	return r.AddExpiring(ctx, p, c, fields, nil)
+// Nothing here indexes: the index is observe's, which follows the bucket
+// (docs/decisions/0020), so an object is complete when it is put.
+func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record) error {
+	return r.AddExpiring(ctx, p, c, nil)
 }
 
 // AddExpiring is Add for a record that says when the credential it is about
@@ -112,7 +93,7 @@ func (r *Roller) Add(ctx context.Context, p *preset.Profile, c *record.Record, f
 // record in it must outlive what relies on it. Under any other profile the
 // expiry changes nothing.
 func (r *Roller) AddExpiring(
-	ctx context.Context, p *preset.Profile, c *record.Record, fields index.Fields, expiry *time.Time,
+	ctx context.Context, p *preset.Profile, c *record.Record, expiry *time.Time,
 ) error {
 	line, err := record.Canonical(c)
 	if err != nil {
@@ -153,9 +134,6 @@ func (r *Roller) AddExpiring(
 		}
 	}
 	b.lines = append(b.lines, recobj.EncodeLine(line))
-	if r.Indexer != nil {
-		b.rows = append(b.rows, index.RowOf(c, index.ObjectAt{}, fields))
-	}
 	b.bytes += len(line) + 1
 	return nil
 }
@@ -247,7 +225,6 @@ func (r *Roller) put(ctx context.Context, key partition, b *batch) error {
 	if r.OnPut != nil {
 		r.OnPut(objectKey, len(b.lines))
 	}
-	r.index(ctx, b, objectKey, r.now())
 	delete(r.open, key)
 	return nil
 }
@@ -287,33 +264,4 @@ func tenantOf(c *record.Record) string {
 	// A copy whose profile drops the tenant still has to land somewhere, and
 	// the platform partition is where records with no customer belong.
 	return record.TenantPlatform
-}
-
-// index writes the object's rows, after the object and before the caller is
-// told the batch is safe.
-//
-// A failure here is not a failure of the write. The object is in the archive
-// under its lock, with its own sha256 and a hash on every record, which is what
-// the trail rests on; the index is a projection that a reindex of the hour
-// rebuilds from the objects themselves. Failing the put instead would mean an outage of
-// the search database could stop the audit trail, which is the wrong way round.
-func (r *Roller) index(ctx context.Context, b *batch, objectKey string, putAt time.Time) {
-	if r.Indexer == nil || len(b.rows) == 0 {
-		return
-	}
-	rows := make([]index.Row, len(b.rows))
-	for i, row := range b.rows {
-		// Lines are numbered from one, as a person counts them.
-		row.ObjectKey, row.Line = objectKey, i+1
-		rows[i] = row
-	}
-	if err := r.Indexer.Index(ctx, b.profile.Name, rows); err != nil {
-		if r.OnIndexDeferred != nil {
-			r.OnIndexDeferred(objectKey, len(rows), err)
-		}
-		return
-	}
-	if r.OnIndexed != nil {
-		r.OnIndexed(objectKey, len(rows), r.now().Sub(putAt))
-	}
 }

@@ -28,13 +28,14 @@ backlog rather than a hole.
 
 {{ with .Values.writer.config.archive -}}
 The archive is {{ .bucket.name }}{{ with .prefix }} under {{ . }}/{{ end }}.
-{{- if .prefix }} Three identities need rights beneath that prefix, and none of
+{{- if .prefix }} Four identities need rights beneath that prefix, and none of
 them may delete anything:
 
   writer   put objects, under records/ and catalogue/ among others; put and get
            retention; put legal holds; get and list under the prefix; encrypt
            with the bucket's key
   verify   get and list under the prefix; decrypt
+  observe  get and list under the prefix; decrypt
   query    get and list under the prefix; decrypt
 
 Scope each to the objects under {{ .prefix }}/ in {{ .bucket.name }}, and
@@ -48,14 +49,23 @@ keeps two applications' archives apart and what their IAM is scoped to.
 {{- end }}
 
 {{ if not .Values.writer.config.database -}}
-No database is configured. The writer indexes nothing, deduplicates in process,
-and may run only one replica. Searching what it writes needs `database`.
+No database is configured. The writer deduplicates in process and may run only
+one replica. Searching what it writes needs `database`, and the indexer
+(`observe.enabled`) that follows the archive into it.
 {{- end }}
 
 {{ if .Values.keysVolume.enabled -}}
 Pseudonymisation keys are wrapped into {{ include "audit.keysClaim" . }}.
 They are random, not derived: back that claim up, and never delete it to
 reclaim space. Losing it is losing every tenant's pseudonyms.
+{{- end }}
+
+{{ if .Values.observe.enabled -}}
+The indexer ({{ include "audit.fullname" . }}-observe) follows the archive and writes the index,
+about {{ dig "settle" "2m" (.Values.observe.config | default dict) }} behind it. Without it, search answers nothing.
+{{- else if .Values.query.enabled -}}
+The query service is enabled and the indexer is not in this release: it reads an
+index that nothing here feeds.
 {{- end }}
 
 {{ if .Values.query.enabled -}}

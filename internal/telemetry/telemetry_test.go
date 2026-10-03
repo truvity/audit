@@ -18,17 +18,18 @@ import (
 	"github.com/truvity/audit/internal/telemetry"
 )
 
-// The alert a deployment needs is on rows the index did not take, labelled by
-// profile — so the counter has to exist under that name and count rows.
-func TestTheWriterCountsWhatTheIndexDidNotTake(t *testing.T) {
+// The alert a deployment needs is on objects the indexer did not take, labelled
+// by profile and by whether a retry will help.
+func TestObserveCountsWhatItDidNotIndex(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
-	w, err := telemetry.NewWriter(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	o, err := telemetry.NewObserve(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Written("records/security/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW02", 40)
-	w.IndexDeferred("records/security/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW02", 40)
-	w.IndexDeferred("records/history/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW03", 2)
+	o.Deferred("security", true)
+	o.Deferred("security", false)
+	o.Deferred("security", false)
+	o.Deferred("history", false)
 
 	var got metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &got); err != nil {
@@ -37,17 +38,18 @@ func TestTheWriterCountsWhatTheIndexDidNotTake(t *testing.T) {
 	deferred := map[string]int64{}
 	for _, scope := range got.ScopeMetrics {
 		for _, m := range scope.Metrics {
-			if m.Name != "audit.writer.index.deferred" {
+			if m.Name != "audit.observe.index.deferred" {
 				continue
 			}
 			for _, p := range m.Data.(metricdata.Sum[int64]).DataPoints {
 				profile, _ := p.Attributes.Value("profile")
-				deferred[profile.AsString()] += p.Value
+				reason, _ := p.Attributes.Value("reason")
+				deferred[profile.AsString()+"/"+reason.AsString()] += p.Value
 			}
 		}
 	}
-	if deferred["security"] != 40 || deferred["history"] != 2 {
-		t.Fatalf("deferred rows by profile: %v", deferred)
+	if deferred["security/unreadable"] != 1 || deferred["security/retry"] != 2 || deferred["history/retry"] != 1 {
+		t.Fatalf("deferred objects by profile and reason: %v", deferred)
 	}
 }
 
@@ -117,28 +119,28 @@ func TestTheExporterDropsWhatIsNotAllowlisted(t *testing.T) {
 
 func TestTheIndexLagIsRecordedPerProfile(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
-	w, err := telemetry.NewWriter(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	o, err := telemetry.NewObserve(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.IndexLag("records/security/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW04", 1500*time.Millisecond)
+	o.Indexed("security", 3, 150*time.Second)
 	var got metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &got); err != nil {
 		t.Fatal(err)
 	}
 	for _, sc := range got.ScopeMetrics {
 		for _, m := range sc.Metrics {
-			if m.Name != "audit.writer.index.lag" {
+			if m.Name != "audit.observe.index.lag" {
 				continue
 			}
 			p := m.Data.(metricdata.Histogram[float64]).DataPoints[0]
-			if profile, _ := p.Attributes.Value("profile"); profile.AsString() != "security" || p.Count != 1 || p.Sum != 1.5 {
+			if profile, _ := p.Attributes.Value("profile"); profile.AsString() != "security" || p.Count != 1 || p.Sum != 150 {
 				t.Fatalf("%+v", p)
 			}
 			return
 		}
 	}
-	t.Fatal("no audit.writer.index.lag")
+	t.Fatal("no audit.observe.index.lag")
 }
 
 func TestTheDefaultSamplerKeepsEveryTrace(t *testing.T) {

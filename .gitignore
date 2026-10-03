@@ -5,6 +5,7 @@ bin/
 /dist/
 /audit
 /audit-query
+/audit-observe
 /audit-registry
 /audit-writer
 /embed

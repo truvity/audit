@@ -51,8 +51,11 @@ wire/                 the Connect JSON codec (snake_case)
 writer/               the writer as a library: Open(Config)
 query/                the query service as a library: New(Config)
 
-internal/writer/      split, identity treatment, roll, put, index, dead letters, dedupe,
+internal/writer/      split, identity treatment, roll, put, dead letters, dedupe,
                       retention addenda, the writer's own account of itself
+internal/observe/     the cursor indexer: list from a cursor behind a settle window, read objects,
+                      index and advance in one transaction; wake-ups; observetest/ the cases it
+                      is held to over memory, S3 and Postgres
 internal/query/       search, facets, get, export, resolve, behind grants
 internal/recobj/      a record object: the key, the metadata, the body, encoded and decoded
 internal/bucketcontract/
@@ -78,11 +81,12 @@ cmd/audit/            the operator's command: validate, check-emitters, messages
                       clock-sync, hold, key
 cmd/audit-writer/     the receiver and the writer (one binary, two modes), and
                       RegisterCatalogue
+cmd/audit-observe/    the indexer
 cmd/audit-query/      the query service
 cmd/protoc-gen-audit-jsonschema/   the buf plugin for the record's JSON Schema
 
 charts/audit/         the installation an application's own chart instantiates:
-                      receiver, writer, query service, the four jobs
+                      receiver, writer, indexer, query service, the four jobs
 ts/                   @truvity/audit: client, qualifier box, sentences, React hooks and view
 examples/             emit, read — compiled and tested by the gate
 testdata/             the record corpus; the template fixture both scanners share

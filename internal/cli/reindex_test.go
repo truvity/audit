@@ -184,15 +184,18 @@ func TestReindexReportsWhatItCouldNotRead(t *testing.T) {
 
 // Rebuilding without the catalogue would produce an index missing its data
 // columns, and because indexing counts a record once, a later run with the
-// catalogue could not repair it. Refusing is the only honest answer.
-func TestReindexRefusesWithoutACatalogue(t *testing.T) {
+// catalogue could not repair it. With none given the archive's own copy is
+// read, and where that is not there either, refusing is the only honest answer.
+func TestReindexRefusesWhereNoCatalogueIsToBeFound(t *testing.T) {
+	s := storetest.NewMemory()
 	day := at(t, "2026-09-17T10:17:00Z")
+	object(t, s, "security", "acme", day, indexed(t, "018f0000-0000-7000-8000-00000000000a", day))
 	_, err := cli.Reindex{
-		Store: storetest.NewMemory(), Index: index.NewMemory(),
+		Store: s, Index: index.NewMemory(),
 		Profile: "security", From: day, To: day, Out: &strings.Builder{},
 	}.Run(context.Background())
 	if err == nil {
-		t.Fatal("a reindex without a catalogue must be refused")
+		t.Fatal("a reindex that cannot find a record's catalogue must be refused")
 	}
 	if !strings.Contains(err.Error(), "catalogue") {
 		t.Errorf("the refusal should say what is missing: %v", err)

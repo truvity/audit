@@ -92,14 +92,19 @@ usage:
         record who did and why. A hold keeps objects undeletable whatever
         their retention says, until somebody takes it off.
 
-  audit migrate --database <url> [--reader <role>]
-        Apply the index schema. Run it before the writers that will use it,
-        and run it from one place: several replicas migrating at once is a
-        race the writers cannot see.
+  audit migrate --database <url> [--writer <role>] [--observe <role>] [--reader <role>] [--purge <role>]
+        Apply the index schema and grant each named role what its part needs:
+        the write path the deduplication table and the registry, the indexer
+        the index and its cursors, the query service select on the index.
+        Run it before the parts that will use it, and from one place: several
+        replicas migrating at once is a race they cannot see.
 
   audit reindex --profile <name> --from <date> --to <date> [flags]
-        Rebuild a profile's index from the archive. Safe to run over a range
-        that is already indexed, and the way an index is repaired or replaced.
+  audit reindex --profile <name> --reset-cursor [--tenant <id>] --database <url>
+        Repair a profile's index from the archive: a batch over a range of
+        ingest days, or, with --reset-cursor, a rewind that makes audit-observe
+        read the profile again from the start. Safe over a range that is
+        already indexed.
 
   audit version
 
@@ -428,7 +433,10 @@ func migrate(args []string) error {
 	var (
 		database = flags.String("database", "", "the Postgres URL of the index")
 		printSQL = flags.Bool("print", false, "print the schema and apply nothing")
-		reader   = flags.String("reader", "", "a role to grant what the query service needs: usage and select, nothing else")
+		reader   = flags.String("reader", "", "a role to grant what the query service needs: select on the index, nothing else")
+		writer   = flags.String("writer", "", "a role to grant what the write path needs: the deduplication table and the registry, none of the index")
+		observer = flags.String("observe", "", "a role to grant what the indexer needs: read and write on the index and its cursors")
+		purger   = flags.String("purge", "", "a role to grant what the purge job needs: to delete from the index and the deduplication table")
 		cfgFile  = flags.String("config", "", configUsage)
 	)
 	if _, err := parse(flags, args); err != nil {
@@ -455,30 +463,41 @@ func migrate(args []string) error {
 	}
 	defer pool.Close()
 
-	return applyMigration(ctx, pool, *reader)
+	return applyMigration(ctx, pool, postgres.Roles{Writer: *writer, Observe: *observer, Reader: *reader, Purge: *purger})
 }
 
-// applyMigration applies the index schema and, when a reader is named, grants
-// it what the query service needs.
-func applyMigration(ctx context.Context, pool *pgxpool.Pool, reader string) error {
+// applyMigration applies the schema and grants each named role what its part
+// needs and no more.
+func applyMigration(ctx context.Context, pool *pgxpool.Pool, roles postgres.Roles) error {
 	if err := postgres.Migrate(ctx, pool); err != nil {
 		return err
 	}
 	fmt.Printf("index schema version %d applied\n", postgres.Version)
-	if reader != "" {
-		if err := postgres.GrantReader(ctx, pool, reader); err != nil {
-			return err
+	if err := postgres.GrantRoles(ctx, pool, roles); err != nil {
+		return err
+	}
+	for part, role := range map[string]string{
+		"the write path (deduplication and registry, not the index)": roles.Writer,
+		"the indexer (the index and its cursors)":                    roles.Observe,
+		"the query service (select on the index)":                    roles.Reader,
+		"the purge job (forget index rows and deduplication)":        roles.Purge,
+	} {
+		if role != "" {
+			fmt.Printf("%s is granted what %s needs\n", role, part)
 		}
-		fmt.Printf("%s may read the index\n", reader)
 	}
 	return nil
 }
 
-// reindex rebuilds a profile's index from the archive.
+// reindex repairs a profile's index from the archive: a batch over a range of
+// days, or, with --reset-cursor, a rewind of the indexer's cursor so that
+// audit-observe reads the prefix again and catches up.
 func reindex(args []string) error {
 	flags := flag.NewFlagSet("reindex", flag.ContinueOnError)
 	var (
 		profile   = flags.String("profile", "", "the profile to rebuild")
+		tenant    = flags.String("tenant", "", "with --reset-cursor, one tenant of the profile; unset is every tenant")
+		reset     = flags.Bool("reset-cursor", false, "forget where audit-observe had read the profile to, so that it reads it again; needs no range and no archive")
 		from      = flags.String("from", "", "start of the range, a date or a timestamp")
 		to        = flags.String("to", "", "end of the range, a date or a timestamp")
 		database  = flags.String("database", "", "the Postgres URL of the index")
@@ -488,7 +507,8 @@ func reindex(args []string) error {
 	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Reads)
 	var catalogueFiles repeated
 	flags.Var(&catalogueFiles, "catalogue",
-		"a catalogue document, repeatable; the index takes its indexed properties from these")
+		"a catalogue document, repeatable; the index takes its indexed properties from these, "+
+			"and from the archive's own copy of any catalogue they do not include")
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
@@ -497,32 +517,9 @@ func reindex(args []string) error {
 		return errors.New("name a profile with --profile")
 	case *database == "":
 		return errors.New("give the index's Postgres URL with --database")
-	case *archiveFlags.Bucket == "":
-		return errors.New("name the archive's bucket with --bucket")
-	case len(catalogueFiles) == 0:
-		return errors.New(
-			"give the catalogues with --catalogue: without them the index would be " +
-				"rebuilt without its data columns, and a later run could not repair it")
-	}
-	start, err := cli.ParseDay(*from)
-	if err != nil {
-		return fmt.Errorf("--from: %w", err)
-	}
-	end, err := cli.ParseDay(*to)
-	if err != nil {
-		return fmt.Errorf("--to: %w", err)
-	}
-	fields, err := cli.CatalogueFields(catalogueFiles)
-	if err != nil {
-		return err
 	}
 
 	ctx := context.Background()
-	archive, err := archiveFlags.Open(ctx)
-	if err != nil {
-		return err
-	}
-
 	pool, err := pgxpool.New(ctx, *database)
 	if err != nil {
 		return err
@@ -532,6 +529,33 @@ func reindex(args []string) error {
 		return err
 	}
 	target, err := postgres.New(pool)
+	if err != nil {
+		return err
+	}
+
+	if *reset {
+		if err := cli.Reset(ctx, target, *profile, *tenant); err != nil {
+			return err
+		}
+		fmt.Printf("the cursor of %s is reset: audit-observe reads it again from the start\n", *profile)
+		return nil
+	}
+	if *archiveFlags.Bucket == "" {
+		return errors.New("name the archive's bucket with --bucket")
+	}
+	start, err := cli.ParseDay(*from)
+	if err != nil {
+		return fmt.Errorf("--from: %w", err)
+	}
+	end, err := cli.ParseDay(*to)
+	if err != nil {
+		return fmt.Errorf("--to: %w", err)
+	}
+	archive, err := archiveFlags.Open(ctx)
+	if err != nil {
+		return err
+	}
+	fields, err := cli.CatalogueFields(catalogueFiles, archive)
 	if err != nil {
 		return err
 	}

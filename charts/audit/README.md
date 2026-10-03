@@ -21,9 +21,19 @@ the application. The deployment pages show the values each shape takes:
   the objects and acknowledges once they are stored. With `mode: stream` it
   publishes to JetStream, and the same image runs again in consumer mode as
   the writer.
-- **`audit migrate`**, a pre-install/pre-upgrade hook Job applying the index
-  schema before the writer rolls. The writer refuses to start against a schema
-  it does not know and never migrates itself.
+- **`audit migrate`**, a pre-install/pre-upgrade hook Job applying the schema
+  before the parts roll, and granting each part's database role what the part
+  needs (`migrate.config.writer`, `.observe`, `.reader`, `.purge`). It connects
+  as the owner of the tables, which no part does. The parts refuse to start
+  against a schema they do not know and never migrate themselves.
+- **`audit-observe`** (`observe.enabled`), the indexer: a Deployment of its own
+  that follows the archive by listing from a cursor per profile and tenant, and
+  writes the index. It reads the archive and never writes it, under its own
+  ServiceAccount and its own database role (`observe.config.database`), which
+  must be neither the writer's, the query service's nor the owner's: the chart
+  refuses them. It is the only writer of the index; the writer's role has none
+  of it. `observe.config.wake` is an optional NATS subject or SQS queue of
+  bucket notifications that only shortens the poll.
 - **`audit-query`** (`query.enabled`), search, facets, get, export, tail and —
   given the keys — resolve, behind the grants in `query.grants`. Every read is
   recorded through the writer. It reads the index as **its own database
@@ -99,15 +109,17 @@ The chart takes references; it creates none of these.
 | **a prefix of its own within it**, required wherever the bucket is shared: it is what keeps two applications' archives apart, and what each role's IAM is scoped to | `archive.prefix` |
 | a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `records/`, `catalogue/` and `holds/` | the writer's ServiceAccount annotation |
 | a reference clock the clock-synchronisation job can reach | `jobs.clockSync.config.ntp` |
-| **a database in the application's existing Postgres**, owned by the writer, in a Secret. It holds the index, the dedupe table and the rollups, all rebuildable with `audit reindex`, so it needs no backup | `writer.config.database` and `passwordEnv`, with `secretEnv` |
-| **a separate read-only role** for the query service: `usage` on the schema, `select` on its tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.config.database` and `passwordEnv`, with `query.secretEnv`; `migrate.config.reader` names the role |
+| **a database in the application's existing Postgres**, owned by a role of the migration's own and used by no part. It holds the index, its cursors and the rollups (rebuildable by following the archive again, so no backup) and the writer's dedupe table and registry | `migrate.config.database` and `passwordEnv`, with `migrate.secretEnv` |
+| **a role for the writer**: the dedupe table, the registry and the key directory, and none of the index | `writer.config.database` and `passwordEnv`, with `secretEnv`; `migrate.config.writer` names the role |
+| **a role for the indexer**: read and write on the index and its cursors | `observe.config.database` and `passwordEnv`, with `observe.secretEnv`; `migrate.config.observe` names the role |
+| **a separate read-only role** for the query service: `usage` on the schema, `select` on the index's tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.config.database` and `passwordEnv`, with `query.secretEnv`; `migrate.config.reader` names the role |
 | the JetStream stream, already created, with `mode: stream` | `writer.config.stream`, `receiver.config.stream` |
 | **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.nats.tokenFile` and a `tokens` entry of the broker's audience |
 | the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
 | an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsEnv` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
-| the images | `image.writer`, `image.query`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
-| a role per component — writer, query and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
+| the images | `image.writer`, `image.query`, `image.observe`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
+| a role per component — writer, indexer, query and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver, and the indexer, sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `observe.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
 | **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/operations/openbao-keys.md#what-the-engine-needs)) | `keys.local.rootFile` with `secretMounts`, or `keys.provider: transit` with `keys.transit.openbao.login` and a `tokens` entry |
 | a CA bundle, if OpenBAO or Postgres serve from a private chain (e.g. trust-manager's) | `trust.configMap` |
 | a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keysVolume` |

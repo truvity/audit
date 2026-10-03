@@ -256,8 +256,8 @@ data:
         {
           "id": 4,
           "type": "stat",
-          "title": "Index rows deferred (1h)",
-          "description": "Rows of objects that reached the archive and not the index. The archive is fine; search is behind until `audit reindex` repairs the day.",
+          "title": "Index objects deferred (1h)",
+          "description": "Objects the archive holds and the indexer (audit-observe) could not index: a fetch or a catalogue it will try again, or an object that does not decode and was skipped. The archive is fine; search is behind or missing it until the cause is fixed or `audit reindex` reads the range.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -275,7 +275,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum(increase(audit_writer_index_deferred_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[1h]))",
+              "expr": "sum(increase(audit_observe_index_deferred_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[1h]))",
               "legendFormat": "",
               "range": false,
               "instant": true,
@@ -893,7 +893,7 @@ data:
           "id": 15,
           "type": "timeseries",
           "title": "Index lag, p50 and p99",
-          "description": "Seconds from an object being in the archive to its rows being searchable. Healthy is well under a second; rows that never arrive are counted as deferred instead and do not appear here.",
+          "description": "Seconds from an object being put into the archive to its rows being searchable, as the indexer measures it. The indexer does not look at an object younger than its settle window (default 2 minutes), so that window is the floor; a lag far above it is an indexer that is stopped or stuck. Objects that never arrive are counted as deferred instead and do not appear here.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -911,7 +911,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.5, sum by (le) (rate(audit_writer_index_lag_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(audit_observe_index_lag_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[$__rate_interval])))",
               "legendFormat": "p50",
               "range": true,
               "instant": false,
@@ -923,7 +923,7 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "histogram_quantile(0.99, sum by (le) (rate(audit_writer_index_lag_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(audit_observe_index_lag_seconds_bucket{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[$__rate_interval])))",
               "legendFormat": "p99",
               "range": true,
               "instant": false,
@@ -972,8 +972,8 @@ data:
         {
           "id": 16,
           "type": "timeseries",
-          "title": "Index rows deferred, by profile",
-          "description": "Rows written to the archive and not to the index, by profile. Repair with `audit reindex` for the day; see the runbook.",
+          "title": "Index objects deferred, by profile and reason",
+          "description": "Objects the indexer could not index, by profile. reason=retry is tried again by the next pass; reason=unreadable was skipped for good. See the runbook; `audit reindex` reads a range again.",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -991,8 +991,8 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "sum by (profile) (increase(audit_writer_index_deferred_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[$__rate_interval]))",
-              "legendFormat": "{{profile}}",
+              "expr": "sum by (profile, reason) (increase(audit_observe_index_deferred_total{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"}[$__rate_interval]))",
+              "legendFormat": "{{profile}} {{reason}}",
               "range": true,
               "instant": false,
               "refId": "A"

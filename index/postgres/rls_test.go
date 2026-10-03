@@ -3,7 +3,9 @@ package postgres_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/indextest"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/pgtest"
@@ -167,26 +169,45 @@ func share(corpus []indextest.Placed, tenant string) int {
 	return n
 }
 
-// The grant the migration job makes reaches a table created after it (a new
-// month's partition), and is refused to the owner, whom row-level security
-// would not bind.
-func TestGrantReaderCoversLaterTablesAndRefusesTheOwner(t *testing.T) {
+// The grant the migration job makes reaches a month's partition made after it,
+// through its parent, gives no table that is not the index's, and is refused to
+// the owner, whom row-level security would not bind.
+func TestGrantReaderCoversLaterPartitionsAndRefusesTheOwner(t *testing.T) {
 	pool := pgtest.Open(t)
 	ctx := context.Background()
 	reader := pgtest.AsReader(t, pool)
 
-	if _, err := pool.Exec(ctx, `create table later_table (x int)`); err != nil {
+	idx, err := postgres.New(pool)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `insert into later_table values (1)`); err != nil {
+	// A month the grant never saw: observe makes its partitions as it indexes.
+	if err := idx.Index(ctx, "security", []index.Row{{
+		ID: indextest.ID(1), TenantID: "acme", RecordedAt: time.Date(2031, 1, 5, 0, 0, 0, 0, time.UTC),
+		OccurredAt: time.Date(2031, 1, 5, 0, 0, 0, 0, time.UTC), Source: "wallet", Action: "a",
+		Operation: "create", Outcome: "success", ObjectKey: "k", Line: 1,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := reader.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, `select set_config('audit.all_tenants', 'on', false)`); err != nil {
 		t.Fatal(err)
 	}
 	var n int
-	if err := reader.QueryRow(ctx, `select count(*) from later_table`).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("the reader cannot read a table created after the grant: %v", err)
+	if err := conn.QueryRow(ctx, `select count(*) from events_core where recorded_at >= '2031-01-01'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the reader cannot read a month's partition made after the grant: %d %v", n, err)
 	}
-	if _, err := reader.Exec(ctx, `insert into later_table values (2)`); err == nil {
-		t.Fatal("the reader could write")
+
+	// Only the index: a table that is not its is not given.
+	if _, err := pool.Exec(ctx, `create table later_table (x int)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := reader.QueryRow(ctx, `select count(*) from later_table`).Scan(&n); err == nil {
+		t.Fatal("the reader could read a table that is not the index's")
 	}
 
 	var owner string

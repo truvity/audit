@@ -65,53 +65,64 @@ bucket's lifecycle rule. Each application then writes under a **prefix of its ow
 (`audit/<application>/…`), which is what keeps two installations apart in one
 bucket. [Sharing a bucket](../operations/s3-guide.md#sharing-a-bucket) has the
 policy, and [IAM per component](../operations/s3-guide.md#iam-per-component)
-has the statements for each of the three roles, each scoped to its own part of
+has the statements for each of the roles, each scoped to its own part of
 the prefix and none of them with a delete:
 
 | role | on the prefix |
 |---|---|
 | writer | put objects under `records/`, `catalogue/` and the other prefixes it writes, put and read their retention, put a legal hold, read `holds/` |
 | verify job | read; it puts nothing |
+| indexer (`audit-observe`) | read, and list under `records/` and `catalogue/` and `schema/`; it puts nothing |
 | query service | read, and write on the exports bucket if exports are wanted |
 
 Bind each through its ServiceAccount's annotations — `serviceAccount` (the
 writer; the consumers in stream mode), `receiver.serviceAccount`,
-`query.serviceAccount`,
+`query.serviceAccount`, `observe.serviceAccount`,
 `jobs.verify.serviceAccount`, `jobs.purge.serviceAccount`,
 `jobs.clockSync.serviceAccount` — with Pod Identity or IRSA.
 
 Every component runs as a ServiceAccount of its own, named
-`<fullname>-<component>` (`audit-receiver`, `audit-query`,
+`<fullname>-<component>` (`audit-receiver`, `audit-query`, `audit-observe`,
 `audit-verify`, `audit-purge`, `audit-clock-sync`); only the writer keeps the
 release's name (`audit`). Each takes `create`, `name` and `annotations`. In
 stream mode the chart refuses a receiver and a writer that share one
-ServiceAccount name: a receiver must not hold the archive's write identity.
+ServiceAccount name: a receiver must not hold the archive's write identity. It
+refuses the indexer, too, under the writer's or the query service's name.
 The purge job works on the index database only and needs no role; clock sync
-needs none.
+needs none. The indexer needs read on the archive and nothing else.
 
-### A database, and a read-only role for the query service
+### A database, and a role for each part
 
 One Postgres database, in the application's existing cluster if it has one.
-The writer owns it. The query service reads it as a **separate role**, because
-the tenant row-level policies bind a role that does not own the tables, and it
-is what still holds if a query forgets its tenant term. The chart refuses the
-writer's URL under the query service's `database`.
+The migration owns it and nothing else connects as the owner. Each part has a
+**role of its own**: the writer's holds the deduplication table and the
+registry and none of the index, the indexer's (`audit-observe`) reads and
+writes the index, and the query service's can only read it. The tenant
+row-level policies bind a role that does not own the tables, and it is what
+still holds if a query forgets its tenant term. The chart refuses the writer's,
+the indexer's or the query service's URL under another's `database`, and the
+owner's under any of them.
 
-Create the role — the chart creates none — and let the migration grant it:
+Create the roles — the chart creates none — and let the migration grant them:
 
 ```sh
+psql "$OWNER_URL" -c "create role audit_writer login password '…'"
+psql "$OWNER_URL" -c "create role audit_observe login password '…'"
 psql "$OWNER_URL" -c "create role audit_query login password '…'"
-audit migrate --database "$OWNER_URL" --reader audit_query
+audit migrate --database "$OWNER_URL" --writer audit_writer \
+    --observe audit_observe --reader audit_query
 ```
 
-`--reader` grants that role usage on the schema and select on every table, now
-and later, and nothing else. The chart runs the same migration as a hook Job
-before the writer rolls when `migrate.enabled` is true, with
-`migrate.config.reader` as the reader; the password is named by
+Each flag grants that role what its part needs and nothing else (the
+[migrate reference](../reference/configuration.md#audit-migrate) says what
+each holds). The chart runs the same migration as a hook Job
+before the parts roll when `migrate.enabled` is true, with
+`migrate.config.writer`, `.observe` and `.reader` as the roles; the password is named by
 `passwordEnv` and supplied by `secretEnv`.
 
-The index is a projection: `audit reindex` rebuilds it from the archive. It
-needs no backup and no replica, and losing it costs search until the rebuild
+The index is a projection: `audit-observe` rebuilds it from the archive by
+following the bucket from the start, and `audit reindex` reads a range sooner.
+It needs no backup and no replica, and losing it costs search until the rebuild
 finishes, not evidence.
 
 ### A reference clock
@@ -190,7 +201,8 @@ reason lives. What every installation sets, whichever shape:
 | `writer.config.archive.lockMode` | `compliance` (the default), `governance` or `none`: which tier the bucket is. The writer refuses to start if a profile demands more |
 | `bucket.endpoint`, `.pathStyle`, `.credentialsEnv` | only on an S3-compatible store that is not AWS: where it is, how the bucket is addressed, and the names of the variables holding static keys if it has no pod identity |
 | `profiles` | what copies are kept, each composed from presets |
-| `writer.config.database`, `writer.secretEnv` | the index: its URL, and the Secret holding the password |
+| `writer.config.database`, `writer.secretEnv` | the dedupe table and registry: the writer's own role's URL, and the Secret holding the password |
+| `migrate.config`, `observe.enabled`, `observe.config` | the schema and each part's database role (`writer`, `observe`, `reader`, `purge`), and the indexer that follows the archive and writes the index |
 | `query.enabled`, `query.config`, `query.grants` | the read path, its own database role, and who may read what |
 | `jobs.*.config` | verify, purge and clock-sync |
 
@@ -258,8 +270,8 @@ and both modes, and the first rollout is where it shows.
 
 7. **Alerts.** With the `OTEL_EXPORTER_OTLP_ENDPOINT` environment set on the
    pods by the platform, page on
-   `audit.writer.index.deferred` (the index is behind the archive) and the
-   dead-letter counter (records the writer could not take), and — in the
+   `audit.observe.index.deferred` and `audit.observe.index.lag` (the index is
+   behind the archive) and the dead-letter counter (records the writer could not take), and — in the
    application — on `audit.emit.records.dropped`. The
    [runbook](../operations/runbook.md) says what to do about each.
 
@@ -273,8 +285,8 @@ consumer's pending count in [stream](../deployment/stream.md#checking-it-works).
   clock out of tolerance, a gap in the chain.
 - [Legal holds](../operations/s3-guide.md#legal-hold):
   `audit hold place|release|list`.
-- Rebuilding the index:
-  `audit reindex --profile <p> --from <day> --to <day>`.
+- Rebuilding the index: `audit reindex --profile <p> --reset-cursor`, and the
+  indexer catches up; or `audit reindex --profile <p> --from <day> --to <day>`.
 - [Verification](../operations/verify.md), which an auditor performs against
   the archive and nothing else.
 - Extensions, switched on per installation and neither in the request path:

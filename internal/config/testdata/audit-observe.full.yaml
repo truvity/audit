@@ -1,0 +1,23 @@
+listen:
+  address: ":8080"
+archive:
+  bucket:
+    name: audit-archive
+    region: eu-west-1
+  prefix: app
+database:
+  url: postgres://audit_observe@db.example.test:5432/audit
+  passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+  maxConnections: 5
+settle: 2m0s
+interval: 30s
+batch: 500
+profiles:
+  - security
+  - history
+wake:
+  nats:
+    nats:
+      url: nats://nats.example.test:4222
+      tokenFile: /var/run/audit/token
+    subject: audit.bucket.created

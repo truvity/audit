@@ -14,7 +14,6 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/bucketcontract"
 	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/internal/s3test"
@@ -142,7 +141,7 @@ func written(t *testing.T, s store.Store, held func(profile, tenant string) bool
 		for _, c := range []struct{ profile, tenant string }{
 			{"security", "acme"}, {"security", "acme"}, {"security", "globex"}, {"billing", "acme"},
 		} {
-			if err := roller.AddExpiring(ctx, all[c.profile], copyOf(t, c.profile, c.tenant), index.Fields{}, nil); err != nil {
+			if err := roller.AddExpiring(ctx, all[c.profile], copyOf(t, c.profile, c.tenant), nil); err != nil {
 				t.Fatal(err)
 			}
 		}

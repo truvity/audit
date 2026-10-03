@@ -97,6 +97,9 @@ jobs:
         run: |
           go test ./index/postgres/ -run TestMigrateIsIdempotent -v | tee out.txt
           grep -q -- "--- PASS: TestMigrateIsIdempotent" out.txt
+          go test ./internal/observe/ ./index/postgres/ -run 'TestTheIndexerOverPostgres|TestTheObserveRoleHasTheIndexAndNothingElse' -v | tee out.txt
+          grep -q -- "--- PASS: TestTheIndexerOverPostgres" out.txt
+          grep -q -- "--- PASS: TestTheObserveRoleHasTheIndexAndNothingElse" out.txt
 
   # The archive walks against a real S3. Two bugs reached master because
   # storetest.Memory returns everything, in any layout, on one page; this is
@@ -142,6 +145,8 @@ jobs:
           grep -q -- "--- PASS: TestWhatTheWriterWritesConforms/s3-unlocked" out.txt
           go test ./sink/sqssink/ -run TestLocalStackRoundTrip -v | tee out.txt
           grep -q -- "--- PASS: TestLocalStackRoundTrip/fifo" out.txt
+          go test ./internal/s3test/ -run TestTheIndexerOverS3 -v | tee out.txt
+          grep -q -- "--- PASS: TestTheIndexerOverS3/indexes_every_tenant_and_profile_it_finds_by_listing" out.txt
 
   # The transit key provider and signer against a real OpenBAO. A provider
   # tested against a stand-in would prove only that it called the API it

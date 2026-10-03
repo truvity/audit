@@ -9,7 +9,6 @@ import (
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/preset"
@@ -52,7 +51,7 @@ func TestObjectKeysAreTheV1GrammarProfileFirst(t *testing.T) {
 	r := roller(t, s, func() time.Time { return at })
 	p := profiles(t)["security"]
 
-	if err := r.Add(context.Background(), p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+	if err := r.Add(context.Background(), p, copyFor(t, "security", "acme", at)); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Flush(context.Background()); err != nil {
@@ -93,7 +92,7 @@ func TestTheKeyIsTheIngestTimeAndNotTheRecordsOwn(t *testing.T) {
 	ctx := context.Background()
 
 	for _, occurred := range []time.Time{at, at.AddDate(0, 0, -7), at.Add(-26 * time.Hour)} {
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", occurred), index.Fields{}); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", occurred)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -118,7 +117,7 @@ func TestKeysSortInTheOrderBatchesWereTaken(t *testing.T) {
 	var taken []string
 	for i, step := range []time.Duration{0, 0, time.Second, -5 * time.Second, 0, 2 * time.Minute} {
 		now = now.Add(step)
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
 			t.Fatal(err)
 		}
 		if err := r.Flush(ctx); err != nil {
@@ -158,7 +157,7 @@ func TestRollerSeparatesProfilesAndTenants(t *testing.T) {
 		// Another day's record is another day's event and the same batch.
 		{"security", "acme", at.AddDate(0, 0, -1)},
 	} {
-		if err := r.Add(ctx, all[c.profile], copyFor(t, c.profile, c.tenant, c.at), index.Fields{}); err != nil {
+		if err := r.Add(ctx, all[c.profile], copyFor(t, c.profile, c.tenant, c.at)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -177,7 +176,7 @@ func TestARecordWhoseTenantCannotBeAKeyComponentIsRefused(t *testing.T) {
 	r := roller(t, s, func() time.Time { return at })
 	p := profiles(t)["security"]
 
-	err := r.Add(context.Background(), p, copyFor(t, "security", "acme/eu", at), index.Fields{})
+	err := r.Add(context.Background(), p, copyFor(t, "security", "acme/eu", at))
 	if !errors.Is(err, writer.ErrKeyComponent) {
 		t.Fatalf("a tenant with a slash was accepted: %v", err)
 	}
@@ -196,7 +195,7 @@ func TestObjectsCarryTheProfilesRetention(t *testing.T) {
 	ctx := context.Background()
 
 	for name := range all {
-		if err := r.Add(ctx, all[name], copyFor(t, name, "acme", at), index.Fields{}); err != nil {
+		if err := r.Add(ctx, all[name], copyFor(t, name, "acme", at)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -238,7 +237,7 @@ func TestRollerNeverReusesAKey(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 20; i++ {
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
 			t.Fatal(err)
 		}
 		if err := r.Flush(ctx); err != nil {
@@ -259,7 +258,7 @@ func TestRollerRollsOnSize(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -280,7 +279,7 @@ func TestRollerRollsOnTime(t *testing.T) {
 	p := profiles(t)["security"]
 	ctx := context.Background()
 
-	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
 		t.Fatal(err)
 	}
 	if r.Due() {
@@ -290,7 +289,7 @@ func TestRollerRollsOnTime(t *testing.T) {
 	if !r.Due() {
 		t.Fatal("an object open past the interval is due")
 	}
-	if err := r.Add(ctx, p, copyFor(t, "security", "acme", now), index.Fields{}); err != nil {
+	if err := r.Add(ctx, p, copyFor(t, "security", "acme", now)); err != nil {
 		t.Fatal(err)
 	}
 	if s.Len() != 1 {
@@ -308,7 +307,7 @@ func TestObjectHoldsTheCopies(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 3; i++ {
-		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -363,7 +362,7 @@ func TestAFailedPutKeepsTheCopies(t *testing.T) {
 	p := profiles(t)["security"]
 	ctx := context.Background()
 
-	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+	if err := r.Add(ctx, p, copyFor(t, "security", "acme", at)); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.Flush(ctx); err == nil {
@@ -423,7 +422,7 @@ func TestAnEvidenceObjectIsLockedUntilItsLatestExpiryPlusTheYears(t *testing.T) 
 			r := roller(t, s, func() time.Time { return written })
 			for _, expiry := range c.expiries {
 				if err := r.AddExpiring(context.Background(), c.profile,
-					copyFor(t, c.profile.Name, "acme", written), index.Fields{}, expiry); err != nil {
+					copyFor(t, c.profile.Name, "acme", written), expiry); err != nil {
 					t.Fatal(err)
 				}
 			}

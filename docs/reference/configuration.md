@@ -49,7 +49,7 @@ anything was lost:
 
 ## The configuration file
 
-`audit-writer` and `audit-query` take one flag, `--config <file>` (and
+`audit-writer`, `audit-observe` and `audit-query` take one flag, `--config <file>` (and
 `--version`, `--help`). `audit verify`, `audit purge`,
 `audit clock-sync` and `audit migrate` take `--config <file>` in place of every
 other flag of the command; only `--json`, which changes how the report is
@@ -66,6 +66,7 @@ or command, and ship in the release:
 | binary or command | schema |
 |---|---|
 | `audit-writer` | `audit-writer.schema.json` |
+| `audit-observe` | `audit-observe.schema.json` |
 | `audit-query` | `audit-query.schema.json` |
 | `audit verify`, `purge`, `clock-sync`, `migrate` | `audit-verify.schema.json`, `audit-purge.schema.json`, `audit-clock-sync.schema.json`, `audit-migrate.schema.json` |
 
@@ -205,7 +206,7 @@ the application registers its catalogue with the address it writes to.
 | `anonymousWrites` | `true` | | accept writes from callers nobody verified, stamped with no observer. For a trial install only |
 | `catalogues` | path | none | a directory of catalogues registered at start-up. An application that registers its own over `RegisterCatalogue` needs none. Not in a receiver |
 | `archive` | `archive` | | required in `writer` mode, refused in `receiver` mode |
-| `database` | `database` | none | the index and the shared deduplication table, one database in the application's Postgres. Without it the writer indexes nothing, deduplicates in process and may run one replica only. The writer refuses to start on a schema version it does not know and never migrates itself |
+| `database` | `database` | none | the shared deduplication table and the catalogue registry, in the application's Postgres, as the writer's **own** role (`audit migrate --writer`): it holds those tables and none of the index, which `audit-observe` writes. Without it the writer deduplicates in process and may run one replica only. The writer refuses to start on a schema version it does not know and never migrates itself |
 | `replicas` | integer, at least 1 | 1 | how many writers share this stream: the number of writer pods, which the writer cannot see for itself |
 | `keys` | `keys` | none, which is provider `none` | pseudonymisation keys. Not in a receiver |
 | `forgetIdentities` | boolean | false | do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it |
@@ -279,6 +280,41 @@ carry no verified observer: the stream's own authentication is what admits a
 publisher there. The observer version stamped on records is the build's
 version and is not configurable.
 
+## Indexer
+
+`audit-observe` follows the archive and writes the index
+([0020](../decisions/0020-observe-follows-the-bucket.md),
+[0024](../decisions/0024-indexer-and-query-are-separate-processes.md)). It
+lists `records/<profile>/<tenant>/` from a cursor kept in Postgres, indexes the
+objects older than the settle window, and moves the cursor in the transaction
+that writes their rows. It reads the archive and never writes it, and it serves
+only `/healthz`: the query service is `audit-query`, a process of its own under
+a role that can only read.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `listen` | `listen` | `:8080` | the address `/healthz` is served on |
+| `archive` | `archive`, required | | the archive to follow (`bucket`, `prefix`). It has no `lockMode`: this process reads. The catalogues and their extension schemas are read from it too |
+| `database` | `database`, required | | the index, as the indexer's **own** role (`audit migrate --observe`): read and write on the index and its cursors, nothing of the deduplication table, not the owner, and not the writer's or the query service's |
+| `settle` | duration | `2m` | how far behind now the cursor stays. An object's key is fixed when its put starts and it is visible when it ends, so it must be longer than a put can take and than the clocks of the writers and of this process can disagree. It is the least time between a record's acknowledgement and its appearance in search |
+| `interval` | duration | `30s` | the poll: how often a pass runs when nothing woke it. A lost wake-up costs at most this |
+| `batch` | integer, at least 1 | `500` | rows written in one transaction; a transaction ends at an object's end |
+| `profiles` | list of strings, at least one, unique | every profile the archive has | the profiles to follow. Profiles and tenants are discovered by listing |
+| `wake.nats.nats`, `wake.nats.subject` | `nats` (url, `tokenFile`), string | | a subject carrying the bucket's notifications. Their content is never read |
+| `wake.sqs` | `sqs` | | a queue of the bucket's notifications that is the indexer's own: each message wakes a pass and is deleted. Credentials are the SDK's ambient ones |
+
+Exactly one of `wake.nats` and `wake.sqs`, or neither. A wake-up only makes the
+next pass come sooner: nothing a pass does depends on it, so a notification
+that is lost, repeated or reordered costs latency and nothing else, and the
+poll finds what it missed.
+
+An object that does not decode is skipped and counted (`reason=unreadable`):
+it will not read later either. One that cannot be fetched, or whose
+catalogue cannot be found, stops that tenant's cursor where it is and is tried
+again by the next pass (`reason=retry`); the other tenants carry on.
+`audit reindex --reset-cursor` makes the indexer read a profile again from the
+start, which changes nothing it has already indexed.
+
 ## Query service
 
 `audit-query` serves search, facets, get, export, tail and resolve, behind
@@ -292,7 +328,7 @@ the grants. Every read it serves is recorded through the writer.
 | `require` | `logged`, `queued` or `archived` | none: checks nothing | the weakest durability the writer's acknowledgements may carry. Needs `sink.expect` at least as strong ([durability](#durability-require-forward-consume)) |
 | `deployment` | path | none | the profile configuration. A grant preset needs it, because a preset turns roles into the deployment's own profiles |
 | `searcher` | `postgres` or `s3scan` | `postgres` | `postgres` is the index; `s3scan` is the archive, within a budget, for a deployment with no database. The scan orders by `occurred_at` only and refuses `recorded_at`, so a deployment on it can search the trail but cannot follow it: there is no live tail ([search](../design/search.md#tail)) |
-| `database` | `database` | | the index, as the query service's **own** role: `usage` on the schema, `select` on its tables, not the owner. Tenant row-level security binds only a non-owner. Required unless `searcher` is `s3scan` |
+| `database` | `database` | | the index, as the query service's **own** role (`audit migrate --reader`): `usage` on the schema, `select` on the index's tables, not the owner. Tenant row-level security binds only a non-owner. Required unless `searcher` is `s3scan` |
 | `archive.bucket`, `archive.prefix` | `bucket`, string | | what `s3scan` reads, and where Get finds a record's object. Required with `s3scan`. Without it Get still answers, with where the copy is and nothing about whether it has been verified (nothing yet sets that: it is for seals). The service's region is `archive.bucket.region` |
 | `exports.bucket` | `bucket`, required with `exports` | | a separate bucket with no Object Lock, which clears it. Without `exports` the export operation is refused. It inherits nothing from the archive: name its endpoint, path style and `credentialsEnv` here |
 | `exports.expiry` | duration | `168h` | how long an export is kept before the bucket clears it |
@@ -435,7 +471,7 @@ chart. It never touches the archive.
 | key | type | default | meaning |
 |---|---|---|---|
 | `deployment` | path, required | | the profile configuration |
-| `database` | `database`, required | | the index, as its owner |
+| `database` | `database`, required | | the index and the deduplication table, as the purge job's **own** role (`audit migrate --purge`): delete from both, and add nothing to either |
 | `identifyingAfter` | duration | unset: nothing is forgotten early | how long the index keeps who an event happened to. No shipped preset states one, so it is the deployment's own policy |
 | `dedupeWindow` | duration | the widest window the profiles ask for | how long a written identifier is remembered |
 
@@ -453,13 +489,21 @@ Compares the clock with UTC and records the answer. Daily in the chart.
 
 ### audit migrate
 
-Applies the index schema. In the chart it is a pre-install and pre-upgrade
-hook Job; run it by hand from one place otherwise.
+Applies the schema and grants each part's database role what the part needs
+and takes back the rest. In the chart it is a pre-install and pre-upgrade hook
+Job; run it by hand from one place otherwise.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `database` | `database`, required | | the index, as its owner |
-| `reader` | string | none | a role to grant usage on the schema and select on its tables, now and on tables created later, and nothing else. The role must already exist. It is the query service's role |
+| `database` | `database`, required | | the database, as the **owner** of the tables. No part connects as the owner: an owner is bound by no grant and no row-level security, so the migration refuses to grant a role that is the owner |
+| `writer` | string | none | the write path's role: the deduplication table, the catalogue registry and the key directory, and none of the index |
+| `observe` | string | none | the indexer's role: read and write on the index and its cursors, and `execute` on `audit_ensure_month(date)`, the function that creates a month's partition as the owner |
+| `reader` | string | none | the query service's role: `select` on the index's tables, bound by row-level security to the tenants of each request, and nothing else |
+| `purge` | string | none | the purge job's role: delete from the index and the deduplication table |
+
+Each role must already exist, and no role may be named for two parts: the
+separation is that they are different. A part left unnamed is not granted
+anything, and one that connects as the owner has no separation at all.
 
 ## Refusals
 
@@ -558,6 +602,7 @@ none of it.
 | `writer` | `audit-writer` | direct mode: the one pod. Stream mode: the consumers, `writer.consumers` of them |
 | `receiver` | `audit-writer` with `mode: receiver` | stream mode only |
 | `query` | `audit-query` | `query.enabled` |
+| `observe` | `audit-observe` | `observe.enabled`: one Deployment, `<fullname>-observe`, with a ServiceAccount of its own and no Service |
 | `migrate` | `audit migrate` | `migrate.enabled`, a pre-install and pre-upgrade hook Job |
 | `jobs.verify`, `jobs.purge`, `jobs.clockSync` | `audit verify`, `purge`, `clock-sync` | one CronJob each. The verify job is one CronJob (`<fullname>-verify`) covering the `profiles` its config lists, or every profile |
 
@@ -631,6 +676,11 @@ The chart checks what only the platform can see, in
 - `query.grants.issuers` empty when the query service is enabled, and a query
   `database.url` equal to the writer's, because an owner bypasses the tenant
   policies;
+- the indexer (`observe.enabled`) running as the writer's, the query service's
+  or the receiver's ServiceAccount, or connecting to the database as the
+  writer's, the query service's or the migration's role (an owner), and a
+  writer that connects as the migration's role: each part's identity is its
+  own, at the cloud role and at the database role;
 - `extensions.billing` without a profile composed from a metering preset, and
   `extensions.quotas` without `mode: stream`.
 
@@ -662,12 +712,15 @@ workloadIdentity:
 migrate:
   enabled: true
   config:
-    database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+    database:                            # the OWNER of the tables; no part connects as it
+      url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
+    writer: audit_writer                 # each role is granted what its part needs
+    observe: audit_observe
     reader: audit_query
+    purge: audit_purge
   secretEnv:
-    - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db, key: password}
+    - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db-owner, key: password}
 
 writer:
   config:
@@ -678,11 +731,24 @@ writer:
       bucket: {name: audit-eu-example-1, region: eu-example-1}
       prefix: audit/app
       kmsKey: alias/audit-archive
-    database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+    database:                            # the deduplication table and the registry only
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
   secretEnv:
     - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db, key: password}
+
+observe:                                 # follows the archive and writes the index
+  enabled: true
+  config:
+    archive:
+      bucket: {name: audit-eu-example-1, region: eu-example-1}
+      prefix: audit/app
+    database:
+      url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 2m
+  secretEnv:
+    - {name: AUDIT_OBSERVE_DATABASE_PASSWORD, secretName: audit-db-observe, key: password}
 
 query:
   enabled: true
@@ -714,7 +780,7 @@ jobs:
 ```
 
 `verify` and `purge` follow the same pattern: `jobs.verify` names the
-archive to read, and `jobs.purge` names the owner's `database` and
+archive to read, and `jobs.purge` names the purge role's `database` and
 `passwordEnv`. The full file, and a stream-mode one
 that adds `receiver` and the stream, are `charts/audit/examples/direct.yaml`
 and `charts/audit/examples/stream.yaml`. The sink URL names the writer's
@@ -803,7 +869,7 @@ variable of its own is listed with its flag only.
 | purge `--database` | `database.url` and `database.passwordEnv` |
 | purge `--identifying-after`, `--dedupe-window` | `identifyingAfter`, `dedupeWindow` |
 | clock-sync `--ntp` (repeatable), `--max-offset`, `--timeout` | `ntp`, `maxOffset`, `timeout` |
-| migrate `--database`, `--reader` | `database`, `reader` |
+| migrate `--database`, `--reader` | `database`, `reader` (and `writer`, `observe`, `purge`, new) |
 
 `--dry-run` of `audit purge`, and `--from` and `--to` of `audit verify`, remain
 on the command line for a person: they are not scheduled work and have no key.

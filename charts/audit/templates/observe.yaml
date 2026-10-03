@@ -1,0 +1,73 @@
+{{- if eq .Values.renders "app" -}}
+{{- if .Values.observe.enabled }}
+{{ include "audit.configMap" (dict "root" . "name" "observe" "config" .Values.observe.config) }}
+---
+# The indexer. It follows the archive's listing from a cursor per profile and
+# tenant kept in Postgres, indexes what is older than the settle window, and
+# writes the index the query service reads. It reads the archive and never
+# writes it; it writes the index as a role of its own, which holds neither the
+# deduplication table nor the registry. Nothing calls it, so it has no Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "audit.fullname" . }}-observe
+  labels:
+    {{- include "audit.labels" . | nindent 4 }}
+    app.kubernetes.io/component: observe
+spec:
+  replicas: {{ .Values.observe.replicas }}
+  selector:
+    matchLabels:
+      {{- include "audit.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: observe
+  template:
+    metadata:
+      labels:
+        {{- include "audit.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: observe
+      annotations:
+        checksum/config: {{ toYaml .Values.observe.config | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "audit.observeServiceAccountName" . }}
+      {{- include "audit.podDefaults" . | nindent 6 }}
+      containers:
+        - name: observe
+          image: {{ include "audit.observeImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --config=/etc/audit/config.yaml
+          {{- with include "audit.secretEnv" .Values.observe }}
+          env:
+            {{- . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ include "audit.port" .Values.observe.config }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- include "audit.configMount" . | nindent 12 }}
+            {{- include "audit.trustMount" . | nindent 12 }}
+            {{- include "audit.extraMounts" .Values.observe | nindent 12 }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- include "audit.configVolume" (dict "root" . "name" "observe") | nindent 8 }}
+        {{- include "audit.trustVolume" . | nindent 8 }}
+        {{- include "audit.extraVolumes" .Values.observe | nindent 8 }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}{{ end }}

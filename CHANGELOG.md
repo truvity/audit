@@ -4,9 +4,14 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
+- The Pulumi library's archive bucket can run with no Object Lock, and have it turned on later without being replaced. `Archive.ObjectLockMode` accepts `NONE` as well as `GOVERNANCE` and `COMPLIANCE`, and is now **required**: there is no default, so a caller that left it empty (it used to mean `GOVERNANCE`) must now say which. With `NONE` no Object Lock configuration is created, both functions are configured with `lockMode: none` and send no retention or legal-hold header, and their roles are not granted `PutObjectRetention` or `PutObjectLegalHold`. The bucket's own `objectLockEnabled` is no longer set, because it forces replacement; Object Lock is the separate `BucketObjectLockConfiguration` resource, which AWS accepts on an existing versioned bucket, so `NONE` to `GOVERNANCE` creates that one resource and updates the functions and role policies in place. Versioning is on in every mode. The bucket and both KMS keys are protected from a stack destroy in every mode, where only a `COMPLIANCE` bucket was. A `DefaultRetentionDays` with `NONE` is refused. Object Lock, once on, cannot be turned off. See [deployment/aws.md](docs/deployment/aws.md#the-lock-modes).
+
 ## v0.7.1
 
 - Fixes the broken v0.7.0 release: `go install github.com/truvity/audit/cmd/audit@v0.7.0` failed with a missing `go.sum` entry for `github.com/truvity/audit/sdk v0.7.0`, and the release's `sdk-tag` job failed on a hand-pushed annotated `sdk/v0.7.0` (so `deploy/pulumi/v0.7.0` was never created). v0.7.1 is installable: the root `go.sum` has the SDK's lines, `sdk-tag` compares the tag's peeled commit, and goreleaser ignores `sdk/*` and `deploy/*` tags when choosing the version.
+
 
 ## v0.7.0
 

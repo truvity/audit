@@ -14,14 +14,14 @@ import (
 
 // Span attribute keys this repository sets itself.
 const (
-	AttrTransport  = "audit.transport"
-	AttrDelivery   = "audit.delivery"
-	AttrDurability = "audit.durability"
-	AttrOutcome    = "audit.outcome"
-	AttrRecords    = "audit.records"
-	AttrRejected   = "audit.rejected"
-	AttrTenant     = "audit.tenant.id"
-	AttrAction     = "audit.action"
+	AttrTransport  = "audit.transport"  // audit:not-an-action — a span attribute name
+	AttrDelivery   = "audit.delivery"   // audit:not-an-action — a span attribute name
+	AttrDurability = "audit.durability" // audit:not-an-action — a span attribute name
+	AttrOutcome    = "audit.outcome"    // audit:not-an-action — a span attribute name
+	AttrRecords    = "audit.records"    // audit:not-an-action — a span attribute name
+	AttrRejected   = "audit.rejected"   // audit:not-an-action — a span attribute name
+	AttrTenant     = "audit.tenant.id"  // audit:not-an-action — a span attribute name
+	AttrAction     = "audit.action"     // audit:not-an-action — a span attribute name
 )
 
 // SpanAttributeAllowlist is every attribute a span leaving this process may

@@ -161,7 +161,7 @@ func NewWriter(provider metric.MeterProvider) (*Writer, error) {
 		}
 		*c.into = counter
 	}
-	lag, err := m.Float64Histogram("audit.writer.index.lag", metric.WithUnit("s"),
+	lag, err := m.Float64Histogram("audit.writer.index.lag", metric.WithUnit("s"), // audit:not-an-action — a metric name
 		metric.WithDescription("Seconds from an object's put into the archive to its rows being in the index, per profile. "+
 			"Rows that never reach the index are in audit.writer.index.deferred instead."),
 		metric.WithExplicitBucketBoundaries(0.005, 0.025, 0.1, 0.5, 1, 2.5, 5, 10, 30, 60, 300))
@@ -234,7 +234,7 @@ func DigestAge(provider metric.MeterProvider, profiles []string, lookback, refre
 		ends = map[string]time.Time{} // zero: none within the lookback
 	)
 	m := provider.Meter("github.com/truvity/audit/digest")
-	_, err := m.Float64ObservableGauge("audit.digest.age", metric.WithUnit("s"),
+	_, err := m.Float64ObservableGauge("audit.digest.age", metric.WithUnit("s"), // audit:not-an-action — a metric name
 		metric.WithDescription("Seconds since the end of the newest sealed digest window, per profile."),
 		metric.WithFloat64Callback(func(ctx context.Context, o metric.Float64Observer) error {
 			mu.Lock()

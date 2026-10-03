@@ -116,6 +116,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/truvity/access-roster v1.27.1 h1:92AJcaG5Vl+55tY7lbY+KvmSTsb1s7acpdGOjFLaZVQ=
 github.com/truvity/access-roster v1.27.1/go.mod h1:lOK1TimFr6PxEFvvtVX7vY3/FuiRXltfD5lfVqDnl/o=
+github.com/truvity/audit/sdk v0.6.0 h1:LPQfifn0sKVL6jZqdquRZ0p/Ab2GhkFc0nWO99Uksi0=
+github.com/truvity/audit/sdk v0.6.0/go.mod h1:jZxW78L/6GqoQNQyhBTBxcDaZ3DNjq+p2FcsZKkPdm8=
 github.com/truvity/gateway-auth v0.7.1 h1:jSoeB+u9aergNMeNHW3c7g291RxdCED6TaOflwJNSak=
 github.com/truvity/gateway-auth v0.7.1/go.mod h1:5ZrYGw0qmVo+Xgpa/Au5BiDVkxSKcz+ZUil4JlQo+eU=
 github.com/truvity/gemaal v0.24.0 h1:rEwcwMwAX0C4niHQxEZk0IfR0r7KGXarrNe4Re1Na4E=

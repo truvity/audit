@@ -105,6 +105,37 @@ SDK, OpenBAO, Helm, gRPC, the OpenTelemetry SDK and exporters, `lestrrat-go`,
 and the root module's own server packages). It also refuses to pass on a list
 too short to be a real closure. CI runs it as its own job.
 
+#### How the two modules are joined, and how an SDK change ships
+
+The root's `go.mod` requires `github.com/truvity/audit/sdk` at a released
+version and carries no `replace`: Go refuses `go run` and `go install` of a
+package from a module whose `go.mod` has one, and consumers run the CLI by
+version (`go run github.com/truvity/audit/cmd/audit@vX.Y.Z`). For development a
+committed `go.work` (`use . ./sdk`) makes the root see `sdk/` as it is on disk,
+so an edit to `sdk/` and the root code that uses it build and test together,
+locally and in CI. Every Justfile recipe uses the workspace except two, which
+turn it off to speak for a consumer:
+
+- `just installable` builds the root and runs `go run ./cmd/audit version` with
+  `GOWORK=off`, against the SDK version the root requires, fetched from the
+  proxy. It also fails on a `replace` in `go.mod`.
+- `just sdk-require` is the guard on the flow below.
+
+How an SDK change flows:
+
+1. A change to `sdk/` that the root depends on is released with the root's
+   `require` of the SDK bumped to the upcoming version (`go mod edit
+   -require=github.com/truvity/audit/sdk@vX.Y.Z`, then `GOWORK=off go mod
+   tidy`), in the same release PR. A change to `sdk/` that the root does not
+   need needs no bump.
+2. The release job tags `sdk/vX.Y.Z` at the same commit as `vX.Y.Z`, so
+   `go run .../cmd/audit@vX.Y.Z` resolves the SDK at `sdk/vX.Y.Z`.
+3. `just sdk-require` fails when `sdk/` differs from the last `sdk/v*` tag and
+   the root's required version is not newer than that tag, and says what to
+   do. Until the release job tags the new version it cannot be fetched, so
+   `just installable` says it is skipping rather than failing; it runs for
+   real on every PR that does not change `sdk/`, and on the next one after.
+
 Where each piece went, and why:
 
 - **The Connect client stays the emitter's default and is in the SDK.**

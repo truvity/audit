@@ -1,7 +1,10 @@
 # Development commands for audit. Tools come from devbox (`devbox shell`, or
 # direnv); CI runs each recipe as its own job.
 
-export GOWORK := "off"
+# The repository is two Go modules joined by the committed go.work, so a build,
+# a test or a lint here sees an edit to sdk/ in the root at once. The recipes
+# `installable` and `sdk-require` below are the ones that turn the workspace
+# off, because they speak for what a consumer sees.
 
 # Format all Go files
 fmt:
@@ -66,8 +69,9 @@ proto:
     fi
 
 # Build (compile check). The repository is two Go modules: the root, and the
-# consumer SDK in sdk/. Each is built on its own, which is how a consumer of the
-# SDK builds it: with no sight of the root.
+# consumer SDK in sdk/. With the workspace on, `go build ./...` at the root does
+# not cover sdk/, so each is built on its own; `installable` is the build that
+# has no sight of the workspace.
 build: fmt
     go build ./...
     cd sdk && go build ./...
@@ -200,6 +204,72 @@ lint:
     # A `;` inside a mermaid sequenceDiagram is a statement separator: it
     # splits the message and GitHub renders nothing. Keep them out of docs.
     ! grep -rn --include=*.md -E '^[[:space:]]*[A-Za-z][A-Za-z0-9_]*[[:space:]]*-?->>?.*;' docs/
+
+# The root module as a consumer's `go run github.com/truvity/audit/cmd/audit@<tag>`
+# sees it: no go.work, and the SDK at the version the root's go.mod requires,
+# fetched rather than read from sdk/. Go refuses `go run` and `go install` of a
+# package from a module whose go.mod has a `replace`, so this also fails if one
+# comes back. When the required SDK version is one this release has yet to tag
+# (sdk/ changed, see `sdk-require`), it cannot resolve until the release job
+# tags it, and the recipe says so rather than failing.
+installable:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if grep -q '^replace' go.mod; then
+        echo "installable: go.mod has a replace directive; \`go run ...@version\` refuses that" >&2
+        exit 1
+    fi
+    want=$(awk '$1 == "github.com/truvity/audit/sdk" {print $2}' go.mod)
+    if [ -z "$want" ]; then
+        echo "installable: go.mod does not require github.com/truvity/audit/sdk" >&2
+        exit 1
+    fi
+    if ! git ls-remote --exit-code --tags https://github.com/truvity/audit "refs/tags/sdk/$want" >/dev/null 2>&1; then
+        echo "installable: sdk/$want is not tagged yet, so the root cannot resolve it; skipping." >&2
+        echo "installable: this is expected only on a release PR that changes sdk/; the release job tags it." >&2
+        exit 0
+    fi
+    export GOWORK=off
+    go build ./...
+    out=$(go run ./cmd/audit version)
+    echo "$out"
+    grep -q '^audit, record schema' <<<"$out"
+
+# A change to sdk/ that the root depends on ships with the root's `require` of
+# the SDK bumped to the version being released. The release job tags sdk/vX.Y.Z
+# at the release commit, and `go run .../cmd/audit@vX.Y.Z` resolves the SDK at
+# that tag; a root that still required the previous SDK would build against
+# code that is not what the tree holds. This fails when sdk/ differs from the
+# last sdk/v* tag and the root's required version is not newer than that tag.
+sdk-require:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # A shallow CI checkout has no tags, and a guard with nothing to compare
+    # against must say so, not pass.
+    git fetch --quiet --force --depth=1 https://github.com/truvity/audit 'refs/tags/sdk/v*:refs/tags/sdk/v*' 2>/dev/null || true
+    last=$(git tag --list 'sdk/v*' | sed 's#^sdk/##' | sort -V | tail -n 1)
+    if [ -z "$last" ]; then
+        echo "sdk-require: no sdk/v* tag found; the guard compared nothing" >&2
+        exit 1
+    fi
+    want=$(awk '$1 == "github.com/truvity/audit/sdk" {print $2}' go.mod)
+    if [ -z "$want" ]; then
+        echo "sdk-require: go.mod does not require github.com/truvity/audit/sdk" >&2
+        exit 1
+    fi
+    if git diff --quiet "sdk/$last" HEAD -- sdk/; then
+        echo "sdk-require: sdk/ is unchanged since sdk/$last; the root requires $want"
+        exit 0
+    fi
+    newest=$(printf '%s\n%s\n' "$last" "$want" | sort -V | tail -n 1)
+    if [ "$want" = "$last" ] || [ "$newest" != "$want" ]; then
+        echo "sdk-require: sdk/ has changed since sdk/$last, but go.mod still requires $want." >&2
+        echo "sdk-require: bump the root's require to the version this release will carry:" >&2
+        echo "    go mod edit -require=github.com/truvity/audit/sdk@vX.Y.Z   (and go mod tidy with GOWORK=off)" >&2
+        echo "    The release job tags sdk/vX.Y.Z at the same commit. See docs/development/layout.md." >&2
+        exit 1
+    fi
+    echo "sdk-require: sdk/ changed since sdk/$last; the root requires $want, newer"
 
 # The consumer SDK must stay small. It is a module of its own (sdk/) so that
 # an emitter's dependency graph holds what an emitter needs and not what the
@@ -441,4 +511,4 @@ e2e-all: e2e-snapshot e2e-fixture e2e-install e2e-smoke
 # Everything CI runs. `vuln` is deliberately not here: a new CVE in a
 # dependency must not turn this gate red on a PR that never touched it. Run
 # `just vuln` on its own to check.
-check: build test lint proto drift schemas chart telemetry leak-canary pages sdk-closure
+check: build test lint proto drift schemas chart telemetry leak-canary pages sdk-closure installable sdk-require

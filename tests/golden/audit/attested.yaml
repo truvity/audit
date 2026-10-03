@@ -60,6 +60,21 @@ metadata:
     app.kubernetes.io/managed-by: Helm
 
 ---
+# Source: audit/templates/serviceaccount.yaml
+# Clock sync only records what it measured through the writer's sink. It needs
+# no cloud rights at all.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-clock-sync
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
 # Source: audit/templates/configmap.yaml
 apiVersion: v1
 kind: ConfigMap
@@ -761,7 +776,7 @@ spec:
             checksum/config: 5ae491b43225b50127ed2fbda817e7351498d56f3ff662614a3c6873de6002aa
         spec:
           restartPolicy: OnFailure
-          serviceAccountName: audit
+          serviceAccountName: audit-clock-sync
           
           securityContext:
             fsGroup: 65532

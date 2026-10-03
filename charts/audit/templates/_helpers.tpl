@@ -74,28 +74,44 @@ app.kubernetes.io/component: consumer
 {{- end -}}
 {{- end -}}
 
-{{- define "audit.queryServiceAccountName" -}}
-{{- if .Values.query.serviceAccount.create -}}
-{{- printf "%s-query" (include "audit.fullname" .) -}}
+{{/* One component's service account. Takes a dict: root, comp (the values
+block that holds its `serviceAccount`) and suffix. Created, it is
+`<fullname>-<suffix>` unless `name` says otherwise. Not created, it is `name`
+or, when that is empty, the release's own: the identity the component ran as
+before it had one of its own. */}}
+{{- define "audit.componentServiceAccountName" -}}
+{{- $sa := .comp.serviceAccount | default dict -}}
+{{- if $sa.create -}}
+{{- default (printf "%s-%s" (include "audit.fullname" .root) .suffix) $sa.name -}}
 {{- else -}}
-{{- include "audit.serviceAccountName" . -}}
+{{- default (include "audit.serviceAccountName" .root) $sa.name -}}
 {{- end -}}
+{{- end -}}
+
+{{- define "audit.queryServiceAccountName" -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.query "suffix" "query") -}}
 {{- end -}}
 
 {{- define "audit.digestServiceAccountName" -}}
-{{- if .Values.jobs.digest.serviceAccount.create -}}
-{{- printf "%s-digest" (include "audit.fullname" .) -}}
-{{- else -}}
-{{- include "audit.serviceAccountName" . -}}
-{{- end -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.jobs.digest "suffix" "digest") -}}
 {{- end -}}
 
 {{- define "audit.verifyServiceAccountName" -}}
-{{- if .Values.jobs.verify.serviceAccount.create -}}
-{{- printf "%s-verify" (include "audit.fullname" .) -}}
-{{- else -}}
-{{- include "audit.serviceAccountName" . -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.jobs.verify "suffix" "verify") -}}
 {{- end -}}
+
+{{- define "audit.purgeServiceAccountName" -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.jobs.purge "suffix" "purge") -}}
+{{- end -}}
+
+{{- define "audit.clockSyncServiceAccountName" -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.jobs.clockSync "suffix" "clock-sync") -}}
+{{- end -}}
+
+{{/* The receiver's, in stream mode. It publishes and holds nothing of the
+archive, so on AWS it must not be the writer's identity. */}}
+{{- define "audit.receiverServiceAccountName" -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.receiver "suffix" "receiver") -}}
 {{- end -}}
 
 {{- define "audit.podDefaults" -}}

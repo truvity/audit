@@ -232,6 +232,12 @@ writer:
 
 # Stream mode only: the receiver's configuration, with `mode: receiver`.
 receiver:
+  # The front door publishes and holds nothing of the archive: it must not run
+  # as the writer. The chart refuses a receiver and a writer with one name.
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
   config: {}
   secretEnv: []
   secretMounts: []
@@ -293,6 +299,7 @@ query:
   # with transit — decrypt. None of the writer's rights.
   serviceAccount:
     create: true
+    name: ""
     annotations: {}
 
 # Who is calling the writer.
@@ -398,6 +405,7 @@ jobs:
     # of its own.
     serviceAccount:
       create: true
+      name: ""
       annotations: {}
     # schemas/config/audit-digest.schema.json. Its `signer` is a key file, an
     # AWS KMS key (the private half never leaves KMS) or an OpenBAO transit
@@ -412,6 +420,7 @@ jobs:
     # Credentials that read the archive, and the public half of the signing key.
     serviceAccount:
       create: true
+      name: ""
       annotations: {}
     # schemas/config/audit-verify.schema.json. One job checks every profile it
     # names, or every profile the deployment composes.
@@ -422,6 +431,13 @@ jobs:
   purge:
     enabled: true
     schedule: "41 4 * * *"
+    # Its own identity, `<fullname>-purge`. Purging deletes from the archive, so
+    # bind the role it needs here; `create: false` runs as the release's own
+    # `serviceAccount`, which is what it did before it had one.
+    serviceAccount:
+      create: true
+      name: ""
+      annotations: {}
     # schemas/config/audit-purge.schema.json.
     config: {}
     secretEnv: []
@@ -429,12 +445,23 @@ jobs:
   clockSync:
     enabled: true
     schedule: "13 2 * * *"
+    # Its own identity, `<fullname>-clock-sync`. Clock sync needs no cloud
+    # rights. `create: false` runs as the release's own `serviceAccount`, which
+    # is what it did before it had one.
+    serviceAccount:
+      create: true
+      name: ""
+      annotations: {}
     # schemas/config/audit-clock-sync.schema.json.
     config: {}
     secretEnv: []
     secretMounts: []
     tokens: []
 
+# The writer's identity: the one pod in direct mode, the consumers in stream
+# mode. It is the one identity that writes the archive, and the account every
+# other component falls back to with `create: false`. Each other component has
+# its own `serviceAccount` beside its configuration.
 serviceAccount:
   create: true
   # Pod Identity or IRSA goes here.

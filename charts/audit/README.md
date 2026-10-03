@@ -109,7 +109,7 @@ The chart takes references; it creates none of these.
 | an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsEnv` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
 | the images | `image.writer`, `image.query`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
-| a role per component — writer, query, digest, verify — bound through its ServiceAccount's annotations | `serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
+| a role per component — writer, query, digest, verify, and purge if it runs — bound through its ServiceAccount's annotations. The receiver has an account and no role; the chart refuses it sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
 | **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/operations/openbao-keys.md#what-the-engine-needs)) | `keys.local.rootFile` with `secretMounts`, or `keys.provider: transit` with `keys.transit.openbao.login` and a `tokens` entry |
 | a CA bundle, if OpenBAO or Postgres serve from a private chain (e.g. trust-manager's) | `trust.configMap` |
 | a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keysVolume` |

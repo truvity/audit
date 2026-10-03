@@ -181,3 +181,45 @@ func enabled(values map[string]any, path []string) bool {
 	}
 	return true
 }
+
+// In stream mode the receiver and the consumers are different Deployments
+// with different ServiceAccounts, and each ServiceAccount exists: on AWS the
+// ServiceAccount is the cloud identity, and a receiver must not hold the one
+// that writes the archive.
+func TestTheReceiverAndTheConsumerRunAsDifferentServiceAccounts(t *testing.T) {
+	for _, values := range []string{"testdata/values/stream.yaml", "examples/stream.yaml"} {
+		docs := render(t, values)
+		accounts := map[string]string{}
+		created := map[string]bool{}
+		for _, doc := range docs {
+			kind, _ := doc["kind"].(string)
+			name, _ := dig(doc, "metadata", "name")
+			switch kind {
+			case "Deployment":
+				sa, _ := dig(doc, "spec", "template", "spec", "serviceAccountName")
+				accounts[name.(string)] = sa.(string)
+			case "ServiceAccount":
+				created[name.(string)] = true
+			}
+		}
+		var receiver, consumer string
+		for name, sa := range accounts {
+			if strings.HasSuffix(name, "-consumer") {
+				consumer = sa
+			} else if !strings.HasSuffix(name, "-query") {
+				receiver = sa
+			}
+		}
+		if receiver == "" || consumer == "" {
+			t.Fatalf("%s: wanted a receiver and a consumer Deployment, got %v", values, accounts)
+		}
+		if receiver == consumer {
+			t.Errorf("%s: the receiver and the consumer both run as %q", values, receiver)
+		}
+		for _, sa := range []string{receiver, consumer} {
+			if !created[sa] {
+				t.Errorf("%s: ServiceAccount %q is used but not rendered", values, sa)
+			}
+		}
+	}
+}

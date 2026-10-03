@@ -83,7 +83,7 @@ spec:
 # their object lock, which is what makes a retention a retention.
 {{ include "audit.configMap" (dict "root" . "name" "purge" "config" .Values.jobs.purge.config) }}
 ---
-{{ include "audit.cronjob" (dict "root" . "name" "purge" "command" "purge" "comp" .Values.jobs.purge "account" (include "audit.serviceAccountName" .) "profiles" true) }}
+{{ include "audit.cronjob" (dict "root" . "name" "purge" "command" "purge" "comp" .Values.jobs.purge "account" (include "audit.purgeServiceAccountName" .) "profiles" true) }}
 {{- end }}
 {{- if .Values.jobs.clockSync.enabled }}
 ---
@@ -92,5 +92,5 @@ spec:
 # the tolerance fails the run, so the job going red is the alert.
 {{ include "audit.configMap" (dict "root" . "name" "clock-sync" "config" .Values.jobs.clockSync.config) }}
 ---
-{{ include "audit.cronjob" (dict "root" . "name" "clock-sync" "command" "clock-sync" "comp" .Values.jobs.clockSync "account" (include "audit.serviceAccountName" .) "profiles" false) }}
+{{ include "audit.cronjob" (dict "root" . "name" "clock-sync" "command" "clock-sync" "comp" .Values.jobs.clockSync "account" (include "audit.clockSyncServiceAccountName" .) "profiles" false) }}
 {{- end }}{{ end }}

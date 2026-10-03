@@ -1,0 +1,5 @@
+# refuse: A receiver must not hold the archive's write identity
+# base: stream
+receiver:
+  serviceAccount:
+    create: false

@@ -50,8 +50,9 @@ func Values() []byte {
 				"expirationSeconds": integer("How long it lives.", 600, 3600),
 			}, "audience", "mountPath"),
 		},
-		"serviceAccount": obj("A service account the chart creates for this component.", m{
-			"create":      boolean("Create it. Otherwise the release's own is used."),
+		"serviceAccount": obj("The service account this component runs as.", m{
+			"create":      boolean("Create `<fullname>-<component>`. Otherwise the release's own `serviceAccount` is used."),
+			"name":        m{"type": "string", "description": "Override the name: the created account's, or, with `create: false`, the existing account to run as. Empty is `<fullname>-<component>` when created and the release's own when not."},
 			"annotations": m{"type": "object", "additionalProperties": m{"type": "string"}, "description": "Pod Identity, IRSA or an OpenBAO role binds here."},
 		}),
 		"image": obj("One of the chart's images.", m{
@@ -112,7 +113,7 @@ func Values() []byte {
 		"writer": obj("The writer: the one pod in direct mode, the consumers in stream mode.",
 			with(platform("audit-writer", true, true), m{"consumers": integer("In stream mode, how many writers consume the stream.", 0, nil)})),
 		"receiver": obj("Stream mode: the receiver, which serves the sink and publishes to the stream.",
-			platform("audit-writer", true, true)),
+			with(platform("audit-writer", true, true), m{"serviceAccount": def("serviceAccount")})),
 		"profiles":                     m{"type": "object", "description": "The profile document a config names as `deployment`: each profile composed from presets.", "additionalProperties": m{"type": "object"}},
 		"externalIdentifiersAreOpaque": boolean("The identifiers received for people outside the organisation already mean nothing outside the application's own database."),
 		"query": obj("The query service.", with(platform("audit-query", true, true), m{
@@ -154,10 +155,10 @@ func Values() []byte {
 		"jobs": obj("The scheduled jobs.", m{
 			"digest":    job("audit-digest", true, m{"serviceAccount": def("serviceAccount")}),
 			"verify":    job("audit-verify", true, m{"serviceAccount": def("serviceAccount")}),
-			"purge":     job("audit-purge", false, nil),
-			"clockSync": job("audit-clock-sync", true, nil),
+			"purge":     job("audit-purge", false, m{"serviceAccount": def("serviceAccount")}),
+			"clockSync": job("audit-clock-sync", true, m{"serviceAccount": def("serviceAccount")}),
 		}),
-		"serviceAccount": obj("The release's own service account.", m{
+		"serviceAccount": obj("The release's own service account: the writer's identity (the consumers', in stream mode), and what a component with `create: false` falls back to.", m{
 			"create": boolean("Create it."), "annotations": m{"type": "object", "additionalProperties": m{"type": "string"}}, "name": m{"type": "string"},
 		}),
 		"networkPolicy": obj("Who may reach each component.", m{

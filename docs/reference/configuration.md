@@ -102,8 +102,10 @@ Secret or a projected token.
 Telemetry is the OpenTelemetry SDK's own environment, and the file has nothing
 about it: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` and the rest of
 `OTEL_*`. The platform decides where signals go, so the same file runs in
-every environment. The chart has no telemetry value; set the variables on the
-pods from the application's chart or a collector configuration.
+every environment. The chart's `telemetry.otlp` value renders those variables
+on every pod ([telemetry](../operations/telemetry.md#the-chart-sets-the-environment));
+on AWS Lambda they are the function's environment
+([AWS](../deployment/aws.md#telemetry)).
 
 ### Documents the file points at
 
@@ -279,6 +281,34 @@ unless given `anonymousWrites: true`. Records that arrive over the stream
 carry no verified observer: the stream's own authentication is what admits a
 publisher there. The observer version stamped on records is the build's
 version and is not configurable.
+
+### audit-writer-lambda
+
+The write path as an AWS Lambda function behind an SQS event source mapping
+([AWS](../deployment/aws.md)). It runs the same writer under the same
+`require: archived` guard as `audit-writer`, and has none of the rest of it: no
+listener, no registry, no stream, no database, no HTTP front door. A function has
+no process that stays up, so there is nothing to serve and no replica count to
+state; what the Postgres table does for `audit-writer` is a DynamoDB table here.
+The file is in the function's package at `/var/task/audit.yaml` (the one flag,
+`--config`, defaults to it), rendered by the Pulumi library from the stack's own
+arguments.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `deployment` | path, required | | the profile configuration, in the package at `/var/task/deployment.yaml` |
+| `catalogues` | path | none | a directory of catalogues registered at start-up, `/var/task/catalogues` in the package. There is no registry service to register one with |
+| `archive` | `archive`, required | | the bucket, `lockMode` (default `compliance`; the library sets the bucket's own) and `kmsKey` |
+| `keys` | `keys` | none | pseudonymisation keys. Only a provider a function outside a VPC can reach is usable: `transit` over a public address |
+| `forgetIdentities` | boolean | false | as in `audit-writer` |
+| `dedupe.dynamodb.table` | string, required | | the table: a string hash key `pk`, TTL on `expires_at` |
+| `dedupe.dynamodb.region` | string | the SDK's (`AWS_REGION`) | the table's region |
+| `dedupe.dynamodb.window` | duration | the widest window any profile asks for | how long a written record's id is remembered. It wants to be at least as long as the queue keeps a message (SQS: 14 days at most) |
+| `require` | `logged`, `queued` or `archived` | `archived` | the weakest durability the chain may give; the writer gives `archived` at best |
+
+The notary Lambda reads `audit-notary`'s file, unchanged
+([audit-notary](#audit-notary)), from the same place; its `signer.kms` names the
+seal key by alias.
 
 ## Indexer
 

@@ -122,7 +122,8 @@ stop-postgres:
 s3_image := "localstack/localstack@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
 
 # Run the archive-walk tests and the bucket-contract conformance suite against a
-# real S3, and the SQS sink against a real SQS: LocalStack serves both.
+# real S3, the SQS sink against a real SQS, and the DynamoDB deduplication store
+# against a real DynamoDB API: LocalStack serves all three.
 #
 # These are the tests that would have caught the two bugs the memory store hid:
 # a walk covering one tenant, and a listing stopping at the first thousand
@@ -131,13 +132,14 @@ test-s3:
     #!/usr/bin/env bash
     set -euo pipefail
     docker rm -f audit-s3 >/dev/null 2>&1 || true
-    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms,sqs {{s3_image}} >/dev/null
+    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms,sqs,dynamodb {{s3_image}} >/dev/null
     trap 'docker rm -f audit-s3 >/dev/null 2>&1 || true' EXIT
     for i in $(seq 1 40); do
         curl -sf -m 3 http://localhost:4566/_localstack/health >/dev/null 2>&1 && break
         sleep 3
     done
-    AUDIT_S3_URL=http://localhost:4566 AUDIT_SQS_URL=http://localhost:4566 go test ./internal/s3test/... ./internal/bucketcontract/... ./store/... ./sink/sqssink/...
+    AUDIT_S3_URL=http://localhost:4566 AUDIT_SQS_URL=http://localhost:4566 AUDIT_DYNAMODB_URL=http://localhost:4566 \
+        go test ./internal/s3test/... ./internal/bucketcontract/... ./store/... ./sink/sqssink/... ./dedupe/...
 
 # The OpenBAO the transit key provider and signer are tested against. Pinned
 # by digest for the reason the S3 image is: a moving tag changes the test.
@@ -163,7 +165,7 @@ conformance:
 
     docker rm -f audit-s3 audit-bao >/dev/null 2>&1 || true
     trap 'docker rm -f audit-s3 audit-bao >/dev/null 2>&1 || true' EXIT
-    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms,sqs {{s3_image}} >/dev/null
+    docker run -d --name audit-s3 -p 4566:4566 -e SERVICES=s3,kms,sqs,dynamodb {{s3_image}} >/dev/null
     docker run -d --name audit-bao -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=root \
         {{openbao_image}} server -dev -dev-listen-address=0.0.0.0:8200 >/dev/null
     for i in $(seq 1 40); do
@@ -173,7 +175,7 @@ conformance:
     done
 
     AUDIT_POSTGRES_URL="postgres://postgres@/audit_test?host=$PGHOST" \
-    AUDIT_S3_URL=http://localhost:4566 \
+    AUDIT_S3_URL=http://localhost:4566 AUDIT_DYNAMODB_URL=http://localhost:4566 \
     AUDIT_OPENBAO_URL=http://localhost:8200 AUDIT_OPENBAO_TOKEN=root \
         go test -count=1 ./...
 
@@ -196,6 +198,7 @@ lint:
     golangci-lint config verify
     golangci-lint run ./...
     cd sdk && golangci-lint run ./...
+    cd deploy/pulumi && GOWORK=off golangci-lint run ./...
     goreleaser check
     # Nothing built is committed. A binary in a public repository's history
     # is in every clone forever, and carries the build machine's paths. The
@@ -311,6 +314,15 @@ schemas:
     go run ./cmd/audit validate --presets presets sdk/catalogue/common.yaml
     go run ./cmd/audit check-emitters . --catalogue sdk/catalogue/common.yaml
 
+# The Pulumi library (deploy/pulumi) is a module of its own so that Pulumi is
+# not in the root's dependency graph, and the committed go.work does not list
+# it for the same reason: a workspace's module graph is one graph. Its tests use
+# Pulumi's mocks, so they create nothing and need no credentials, and the
+# rendered function configuration is validated against the schemas in
+# schemas/config, so the library cannot drift from the binaries it deploys.
+pulumi-test:
+    cd deploy/pulumi && GOWORK=off go vet ./... && GOWORK=off go test -count=1 ./...
+
 # Hold the chart to what the binaries will accept.
 #
 # The golden renders are committed, so a template change that alters a manifest
@@ -345,6 +357,12 @@ chart:
         > tests/golden/audit/example-stream.yaml
     helm template audit charts/audit -f charts/audit/examples/sqs.yaml \
         > tests/golden/audit/example-sqs.yaml
+    # The OTLP endpoint value (decision N4a): with it set, every pod carries the
+    # OpenTelemetry SDK environment, each with its own service name. The goldens
+    # above, which set none, are what holds "empty renders nothing".
+    helm lint charts/audit -f charts/audit/testdata/values/telemetry.yaml
+    helm template audit charts/audit -f charts/audit/testdata/values/telemetry.yaml \
+        > tests/golden/audit/telemetry.yaml
     # The two other things the chart renders, each alone: the alert rules and
     # the Grafana dashboards (`renders: alerts`, `renders: dashboards`).
     helm lint charts/audit -f charts/audit/testdata/values/alerts.yaml
@@ -355,7 +373,7 @@ chart:
         > tests/golden/audit/dashboards.yaml
     # A hook Pod whose service account the chart creates normally is admitted
     # and then never scheduled: only an install finds that, so assert it here.
-    for shape in direct stream transit attested example-direct example-stream example-sqs; do \
+    for shape in direct stream transit attested telemetry example-direct example-stream example-sqs; do \
         python3 charts/audit/testdata/hook-order.py \
             < tests/golden/audit/$shape.yaml; \
     done

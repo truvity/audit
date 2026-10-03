@@ -58,7 +58,7 @@ spec:
           args:
             - migrate
             - --config=/etc/audit/config.yaml
-          {{- with include "audit.secretEnv" .Values.migrate }}
+          {{- with include "audit.env" (dict "root" . "comp" .Values.migrate "service" "audit") }}
           env:
             {{- . | nindent 12 }}
           {{- end }}

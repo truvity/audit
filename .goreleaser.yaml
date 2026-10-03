@@ -54,6 +54,28 @@ builds:
     flags: [-trimpath]
     ldflags: ["-s -w -X github.com/truvity/audit/internal/buildinfo.Version={{ .Version }}"]
 
+  # The two Lambda functions, as the zip a function's package is built from:
+  # `bootstrap` is the name the provided.al2023 runtime runs. arm64 only, which
+  # is what the Pulumi library (deploy/pulumi) creates the functions as. The
+  # package the library ships holds this binary and the function's rendered
+  # configuration; the zip here is the binary alone.
+  - id: audit-writer-lambda
+    main: ./cmd/audit-writer-lambda
+    binary: bootstrap
+    env: [CGO_ENABLED=0, GOEXPERIMENT=jsonv2]
+    goos: [linux]
+    goarch: [arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X github.com/truvity/audit/internal/buildinfo.Version={{ .Version }}"]
+  - id: audit-notary-lambda
+    main: ./cmd/audit-notary-lambda
+    binary: bootstrap
+    env: [CGO_ENABLED=0, GOEXPERIMENT=jsonv2]
+    goos: [linux]
+    goarch: [arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X github.com/truvity/audit/internal/buildinfo.Version={{ .Version }}"]
+
 # One archive shape for every platform. Mixed formats are what breaks the
 # download step of whatever installs these.
 archives:
@@ -61,6 +83,17 @@ archives:
     ids: [audit]
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  # A Lambda package is a zip with the binary at its root.
+  - id: audit-writer-lambda
+    ids: [audit-writer-lambda]
+    formats: [zip]
+    name_template: "audit-writer-lambda_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
+  - id: audit-notary-lambda
+    ids: [audit-notary-lambda]
+    formats: [zip]
+    name_template: "audit-notary-lambda_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: false
 
 kos:
   - id: audit-writer

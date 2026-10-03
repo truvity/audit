@@ -1,7 +1,8 @@
 {{/*
 A scheduled job: `audit <command> --config`, in the toolchain's image, with the
 configuration of its own. Takes (dict "root" $ "name" "verify" "command"
-"verify" "comp" <the job's values> "account" <service account> "profiles" bool).
+"verify" "comp" <the job's values> "account" <service account> "profiles" bool,
+"service" <the service.name its telemetry carries, default audit>).
 `profiles` mounts the profile document, for a job whose config names it. A job
 with an image of its own (the notary) passes "image" and no "command": the
 image's one binary takes `--config`.
@@ -41,7 +42,7 @@ spec:
                 - {{ . }}
                 {{- end }}
                 - --config=/etc/audit/config.yaml
-              {{- with include "audit.secretEnv" .comp }}
+              {{- with include "audit.env" (dict "root" $ "comp" .comp "service" (.service | default "audit")) }}
               env:
                 {{- . | nindent 16 }}
               {{- end }}
@@ -73,7 +74,7 @@ spec:
 # to sign.
 {{ include "audit.configMap" (dict "root" . "name" "notary" "config" .Values.jobs.notary.config) }}
 ---
-{{ include "audit.cronjob" (dict "root" . "name" "notary" "image" (include "audit.notaryImage" .) "comp" .Values.jobs.notary "account" (include "audit.notaryServiceAccountName" .) "profiles" false) }}
+{{ include "audit.cronjob" (dict "root" . "name" "notary" "service" "audit-notary" "image" (include "audit.notaryImage" .) "comp" .Values.jobs.notary "account" (include "audit.notaryServiceAccountName" .) "profiles" false) }}
 {{- end }}
 {{- if .Values.jobs.verify.enabled }}
 ---

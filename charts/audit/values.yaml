@@ -562,6 +562,25 @@ networkPolicy:
   # Selectors for what may reach the query service.
   queryIngressFrom: []
 
+# Telemetry is the OpenTelemetry SDK's own environment (ADR 0021), never the
+# config file. With `otlp.endpoint` set, every pod this chart renders gets
+# OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL and an
+# OTEL_SERVICE_NAME of its own (`audit-writer` for the front door, the receiver
+# and the consumers, `audit-query`, `audit-observe`, `audit-notary`, and `audit`
+# for the toolchain's jobs), then each `extraEnv` entry. Unset, nothing is
+# rendered and the pods export nothing.
+telemetry:
+  otlp:
+    # The collector or metrics gateway, an http(s) URL, for example
+    # http://gateway.observability.svc:4318. Empty: no export.
+    endpoint: ""
+    # `http/protobuf` (the estate's convention) or `http/json`. The exporters
+    # here are OTLP/HTTP; gRPC is not one of them.
+    protocol: http/protobuf
+    # Other OpenTelemetry SDK variables, OTEL_* only, such as
+    # OTEL_METRIC_EXPORT_INTERVAL or OTEL_TRACES_SAMPLER. Values are strings.
+    extraEnv: {}
+
 podAnnotations: {}
 podSecurityContext:
   runAsNonRoot: true

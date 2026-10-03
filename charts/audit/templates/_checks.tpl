@@ -13,6 +13,24 @@ or to a trail that looks fine and is not.
 */}}
 {{- define "audit.checks" -}}
 
+{{- /* telemetry.otlp: an http(s) URL naming the collector, and OTEL_* variables
+only. The endpoint has a value of its own so that one place sets it, and a
+secret reaches a pod through secretEnv, never through a value rendered into the
+manifest. */ -}}
+{{- $otlp := (.Values.telemetry | default dict).otlp | default dict -}}
+{{- $endpoint := $otlp.endpoint | default "" -}}
+{{- if and $endpoint (not (regexMatch "^https?://[^/?#[:space:]]+" $endpoint)) -}}
+{{- fail (printf "audit: telemetry.otlp.endpoint must be an http(s) URL naming the collector or gateway, such as http://gateway.observability.svc:4318 (got %q)." $endpoint) -}}
+{{- end -}}
+{{- range $name, $_ := ($otlp.extraEnv | default dict) -}}
+{{- if eq $name "OTEL_EXPORTER_OTLP_ENDPOINT" -}}
+{{- fail "audit: telemetry.otlp.extraEnv must not carry OTEL_EXPORTER_OTLP_ENDPOINT: set telemetry.otlp.endpoint, which is where the chart takes it from." -}}
+{{- end -}}
+{{- if not (hasPrefix "OTEL_" $name) -}}
+{{- fail (printf "audit: telemetry.otlp.extraEnv holds OpenTelemetry SDK variables only: %q does not start with OTEL_. A secret reaches a pod through secretEnv, and the rest through config." $name) -}}
+{{- end -}}
+{{- end -}}
+
 {{- if not (has .Values.mode (list "direct" "stream")) -}}
 {{- fail (printf "audit: `mode` is `direct` or `stream`, not %q." .Values.mode) -}}
 {{- end -}}

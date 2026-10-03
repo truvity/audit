@@ -133,7 +133,7 @@ curl -s …/audit.v1.QueryService/Facets -H "Authorization: Bearer $TOKEN" -H 'C
   -d '{"profile": "security", "fields": ["action", "outcome"], "limit_per_field": 10}'
 ```
 
-**Get** one record, with where its copy is and whether the digest chain
+**Get** one record, with where its copy is and, once seals exist, whether one
 vouches for it:
 
 ```sh
@@ -142,9 +142,9 @@ curl -s …/audit.v1.QueryService/Get -H "Authorization: Bearer $TOKEN" -H 'Cont
 ```
 
 `provenance.object_key` and `line` locate the copy in the archive;
-`digest_id` names the digest that accounts for it; `verified_at` is when that
-digest was last verified clean. An empty `verified_at` means not verified yet
-— the current hour is never sealed — or that the last check found a problem.
+`digest_id` and `verified_at` are empty for now: they are for seals
+([0019](../decisions/0019-seals.md)), which are not built yet, and the
+digest chain that used to set them was removed with the v0 layout.
 
 **Export** starts a job, **GetExport** polls it and returns a short-lived
 download link:
@@ -238,7 +238,7 @@ It has:
 - the qualifier box and a time range, and counts to narrow by;
 - records as sentences, newest first;
 - a row that opens to the record, with a chip per value to narrow to it or
-  away from it, a link, and whether a verified digest covers it;
+  away from it, a link, and whether a verified seal covers it;
 - live updates, which need a searcher that orders by recorded time: the index
   does, the archive scan does not.
 
@@ -258,19 +258,20 @@ application, so there is nothing for a console of its own to front.
 ## For an auditor
 
 An auditor does not have to trust the operator, the database or this service.
-With read-only access to the archive and the public half of the signing key:
+With read-only access to the archive and nothing else:
 
 ```sh
-audit key public --kms-key alias/audit-digest > public.pem   # or --transit-key, or --key
 audit verify --profile security --from 2026-09-01 --to 2026-09-18 \
-  --bucket example-audit --prefix audit/app --public-key public.pem
+  --bucket example-audit --prefix audit/app
 ```
 
-It walks the signed chain and reports any object changed, taken away or
-slipped in beside it, any gap in the chain, and any lock shorter than the
-profile requires. Exit status zero means nothing was found. Both shapes write
-the same archive, so the same command verifies either. See
-[verification](../operations/verify.md).
+It checks every record object ingested in the range: its key, its metadata, the
+SHA-256 of its bytes and the hash of every record in it, and with
+`--deployment` any lock shorter than the profile requires. Exit status zero
+means nothing was found. Both shapes write the same archive, so the same
+command verifies either. It does not show that nothing was removed; seals will.
+An archive written before the v1 layout needs the previous release's CLI
+(v0.6.x). See [verification](../operations/verify.md).
 
 The query service can be held to its contract the same way, from outside, with
 nothing but a sign-in that may read:
@@ -288,7 +289,7 @@ It walks each profile's records and checks what the search contract promises:
 - a filter on id, action, tenant or time returns only what matches;
 - a cursor is refused with another query, and an unknown id is not found;
 - with `--verified-before`, a record older than that is covered by a verified
-  digest.
+  seal (until seals exist, no record is).
 
 It reads and never writes: a run that wrote test records would leave them in a
 locked archive for years. Its reads are recorded like anyone's. A non-zero

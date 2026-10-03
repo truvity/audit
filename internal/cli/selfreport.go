@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"google.golang.org/protobuf/types/known/structpb"
-
 	"github.com/truvity/audit/sdk/catalogue"
 	"github.com/truvity/audit/sdk/emit"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
@@ -103,16 +101,6 @@ func failed(rec *record.Record, operation auditv1.Operation, reason string) *rec
 	rec.Operation = operation
 	rec.Outcome = &record.Outcome{Result: auditv1.Outcome_RESULT_FAILURE, Reason: reason}
 	return rec
-}
-
-// with attaches the action's extension data.
-func with(rec *record.Record, data map[string]any) (*record.Record, error) {
-	value, err := structpb.NewStruct(data)
-	if err != nil {
-		return nil, err
-	}
-	rec.Data = value
-	return rec, nil
 }
 
 // confirm records an operator's act and waits until the writer has taken it.

@@ -30,7 +30,7 @@ import (
 // returns what Search returned, with its provenance; a filter returns only
 // what matches it and the record it was built from; a cursor is refused with
 // another query; an unknown id is not found. With VerifiedBefore, a record
-// older than that must be covered by a verified digest.
+// older than that must carry a verified_at, which seals set.
 type Conformance struct {
 	Client   auditv1connect.QueryServiceClient
 	Profiles []string

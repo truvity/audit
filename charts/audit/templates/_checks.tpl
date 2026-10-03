@@ -110,23 +110,11 @@ ServiceAccount (Pod Identity, IRSA), so the two must be different accounts. */}}
 {{- fail (printf "audit: the receiver and the writer run as the same ServiceAccount, %q. A receiver must not hold the archive's write identity: whatever cloud role is bound to that account (Pod Identity, IRSA) would let a compromised front door write the archive directly. Give the receiver its own: leave `receiver.serviceAccount.create` true with a `receiver.serviceAccount.name` that is not the writer's `serviceAccount`." (include "audit.serviceAccountName" .)) -}}
 {{- end -}}
 
-{{/* Separation of duties. Whoever writes the archive and can also sign its
-digests can choose what to sign, so the digest job and the query service's
-resolve each sign in as themselves, never as the writer. Only the chart sees
-both configurations. */}}
+{{/* Separation of duties. Whoever writes the archive and can also open what it
+sealed can read what the writer must not, so the query service's resolve signs
+in as itself, never as the writer. Only the chart sees both configurations. */}}
 {{- $writerBao := dig "transit" "openbao" nil (dig "keys" nil $writer | default dict) -}}
 {{- $writerWho := include "audit.baoIdentity" (dict "bao" $writerBao "env" .Values.writer.secretEnv) -}}
-{{- $digest := .Values.jobs.digest.config | default dict -}}
-{{- $digestSigner := dig "signer" nil $digest | default dict -}}
-{{- if and .Values.jobs.digest.enabled $digestSigner -}}
-  {{- $digestWho := include "audit.baoIdentity" (dict "bao" (dig "transit" "openbao" nil $digestSigner) "env" .Values.jobs.digest.secretEnv) -}}
-  {{- if and $digestWho $writerWho (eq $digestWho $writerWho) -}}
-  {{- fail "audit: the digest job signs in as the writer. Whoever writes the archive and can also sign its digests can choose what to sign; give the job its own role." -}}
-  {{- end -}}
-  {{- if and (or (hasKey $digestSigner "kmsKey") (hasKey $digestSigner "transit")) (not .Values.jobs.digest.serviceAccount.create) -}}
-  {{- fail "audit: the digest job signs in as the writer: `jobs.digest.serviceAccount.create` is false, so it runs as the release's own service account. Whoever writes the archive and can also sign its digests can choose what to sign; give the job its own service account." -}}
-  {{- end -}}
-{{- end -}}
 {{- if and .Values.query.enabled .Values.query.config -}}
   {{- $queryKeys := dig "keys" nil .Values.query.config | default dict -}}
   {{- $queryWho := include "audit.baoIdentity" (dict "bao" (dig "transit" "openbao" nil $queryKeys) "env" .Values.query.secretEnv) -}}

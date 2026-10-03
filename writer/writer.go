@@ -27,7 +27,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"sync"
 	"time"
 
@@ -40,7 +39,6 @@ import (
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
-	"github.com/truvity/audit/internal/digest"
 	"github.com/truvity/audit/internal/hold"
 	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/internal/registry"
@@ -95,7 +93,8 @@ type Config struct {
 	// ForgetIdentities keeps no sealed identities, which makes resolve
 	// impossible for everything this writer writes.
 	ForgetIdentities bool
-	// Instance names this writer in object keys and in its own records.
+	// Instance names this writer in its own records. It is not in any object
+	// key: the key's ULID is what keeps two writers apart.
 	// Default: the host name and process id.
 	Instance string
 	// RollInterval is how long an object stays open within a batch. Default
@@ -237,21 +236,6 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		return nil, err
 	}
 
-	// How old the newest sealed digest is, per profile. The writer runs all
-	// day; the job that seals exits in seconds and could not be scraped.
-	names := make([]string, 0, len(c.Profiles))
-	for name := range c.Profiles {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	const digestLookback = 24 * time.Hour
-	if err := telemetry.DigestAge(meter, names, digestLookback, 5*time.Minute,
-		func(ctx context.Context, profile string) (time.Time, bool, error) {
-			return digest.NewestEnd(ctx, c.Archive, profile, time.Now(), digestLookback)
-		}, nil); err != nil {
-		return nil, err
-	}
-
 	// The way back from a pseudonym, sealed under the same key, for resolve.
 	var identities inner.Remembering
 	if sealer, ok := c.Keys.(keys.Sealer); ok && !c.ForgetIdentities {
@@ -263,6 +247,18 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 	var records inner.Locator = &s3scan.Scanner{Store: c.Archive}
 	if located, ok := indexer.(inner.Locator); ok {
 		records = located
+	}
+
+	// The catalogues this writer runs with are written to the bucket now, once
+	// each, and compared when they are already there: a catalogue version that
+	// means something else than what the archive holds under it is a writer
+	// that refuses to run, not one that finds out on its first record
+	// (docs/reference/bucket-contract.md, Catalogue).
+	described := &inner.SchemaArchive{Store: c.Archive, RetainUntil: keep}
+	for _, cat := range append([]*catalogue.Catalogue{common}, c.Catalogues...) {
+		if err := described.EnsureCatalogue(ctx, cat); err != nil {
+			return nil, fmt.Errorf("writer: catalogue %s %s: %w", cat.Source, cat.Version, err)
+		}
 	}
 
 	self := c.Self
@@ -296,7 +292,7 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		Dedupe:     dedupe,
 		DeadLetter: &inner.StoreDeadLetter{Store: c.Archive, Instance: instance, RetainUntil: keep},
 		// What describes records outlives the longest of them.
-		Archive: &inner.SchemaArchive{Store: c.Archive, RetainUntil: keep},
+		Archive: described,
 		Meta:    common,
 		Version: c.Version,
 		Hooks: inner.Hooks{

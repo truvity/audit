@@ -11,20 +11,6 @@ writer:
       bucket:
         name: audit-archive
 jobs:
-  digest:
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive:
-        bucket:
-          name: audit-archive
-      sink:
-        url: http://audit:8080
-      signer:
-        keyFile:
-          path: /etc/audit/signing/key.pem
-    secretMounts:
-      - secretName: audit-signing-key
-        mountPath: /etc/audit/signing
   verify:
     config:
       deployment: /etc/audit/deployment.yaml
@@ -33,10 +19,6 @@ jobs:
           name: audit-archive
       sink:
         url: http://audit:8080
-      publicKeyFile: /etc/audit/public/public.pem
-    secretMounts:
-      - secretName: audit-signing-public
-        mountPath: /etc/audit/public
   purge:
     enabled: false
   clockSync:

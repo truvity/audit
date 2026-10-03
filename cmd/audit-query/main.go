@@ -106,9 +106,8 @@ func run() error {
 		return err
 	}
 
-	// The archive, when named, is where a record's standing in the digest
-	// chain is read for Get. Without it Get still answers, with where the copy
-	// is and nothing about whether it has been verified.
+	// The archive, when named, is where the sealed identities are read for
+	// resolve. Without it resolve is not offered.
 	var archive store.Store
 	if cfg.Archive != nil {
 		if archive, err = cli.OpenArchiveFrom(ctx, *cfg.Archive); err != nil {

@@ -23,11 +23,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/recobj"
+	"github.com/truvity/audit/internal/ulid"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
@@ -59,17 +60,21 @@ func FieldsOf(context.Context, *record.Record) (index.Fields, error) { return Fi
 type Placed struct {
 	Record *record.Record
 	Tenant string
-	// Object is the name within the day's prefix, and Line is which line of it,
-	// counting from one.
+	// Object names the object within the tenant's hour ("a", "b"), and Line is
+	// which line of it, counting from one.
 	Object string
 	Line   int
 }
 
 // Key is the archive key of the object this record is in.
+//
+// The corpus has no late records, so each was ingested in the hour it happened
+// in, and the object's name orders the objects of a tenant's hour by the
+// ULID's own seconds.
 func (p Placed) Key() string {
-	day := p.Record.GetOccurredAt().AsTime().UTC()
-	return fmt.Sprintf("profile=%s/tenant=%s/year=%s/month=%s/day=%s/%s",
-		Profile, p.Tenant, day.Format("2006"), day.Format("01"), day.Format("02"), p.Object)
+	hour := p.Record.GetOccurredAt().AsTime().UTC().Truncate(time.Hour)
+	n := time.Duration(p.Object[0]-'a'+1) * time.Second
+	return store.RecordKey(Profile, p.Tenant, hour, ulid.From(hour.Add(n), 0))
 }
 
 // The corpus's two days and two tenants. They are named here because the cases
@@ -108,31 +113,31 @@ func Corpus(t *testing.T) []Placed {
 		expires   string
 		renewable bool
 	}{
-		{Early.Add(0 * time.Minute), 5 * time.Minute, "initech", "a.ndjson.zst", 1,
+		{Early.Add(0 * time.Minute), 5 * time.Minute, "initech", "a", 1,
 			"wallet.credential.issued", false, "olga", "operator", "pid", 1,
 			"2027-01-01T00:00:00Z", true},
-		{Early.Add(1 * time.Minute), 1 * time.Minute, "initech", "a.ndjson.zst", 2,
+		{Early.Add(1 * time.Minute), 1 * time.Minute, "initech", "a", 2,
 			"wallet.credential.revoked", false, "olga", "operator", "pid", 1,
 			"2027-01-01T00:00:00Z", false},
-		{Early.Add(2 * time.Minute), 9 * time.Minute, "initech", "b.ndjson.zst", 1,
+		{Early.Add(2 * time.Minute), 9 * time.Minute, "initech", "b", 1,
 			"wallet.credential.issued", true, "ivan", "operator", "mdl", 2,
 			"2027-01-01T00:00:00Z", true},
-		{Early.Add(3 * time.Minute), 4 * time.Minute, "globex", "a.ndjson.zst", 1,
+		{Early.Add(3 * time.Minute), 4 * time.Minute, "globex", "a", 1,
 			"wallet.credential.issued", false, "svc-issuer", "service", "mdl", 2,
 			"2027-01-01T00:00:00Z", false},
-		{Late.Add(0 * time.Minute), 7 * time.Minute, "globex", "a.ndjson.zst", 1,
+		{Late.Add(0 * time.Minute), 7 * time.Minute, "globex", "a", 1,
 			"wallet.credential.revoked", false, "svc-issuer", "service", "pid", 3,
 			"2027-06-01T00:00:00Z", true},
-		{Late.Add(1 * time.Minute), 3 * time.Minute, "globex", "a.ndjson.zst", 2,
+		{Late.Add(1 * time.Minute), 3 * time.Minute, "globex", "a", 2,
 			"wallet.credential.issued", true, "olga", "operator", "pid", 3,
 			"2027-06-01T00:00:00Z", false},
-		{Late.Add(2 * time.Minute), 11 * time.Minute, "initech", "a.ndjson.zst", 1,
+		{Late.Add(2 * time.Minute), 11 * time.Minute, "initech", "a", 1,
 			"wallet.credential.issued", false, "ivan", "operator", "mdl", 4,
 			"2027-06-01T00:00:00Z", true},
-		{Late.Add(3 * time.Minute), 6 * time.Minute, "initech", "b.ndjson.zst", 1,
+		{Late.Add(3 * time.Minute), 6 * time.Minute, "initech", "b", 1,
 			"wallet.credential.revoked", false, "ivan", "operator", "pid", 4,
 			"2027-06-01T00:00:00Z", false},
-		{Late.Add(4 * time.Minute), 2 * time.Minute, "initech", "b.ndjson.zst", 2,
+		{Late.Add(4 * time.Minute), 2 * time.Minute, "initech", "b", 2,
 			"wallet.credential.issued", false, "olga", "operator", "mdl", 5,
 			"2027-06-01T00:00:00Z", true},
 	}
@@ -199,7 +204,7 @@ func Index(t *testing.T, idx index.Indexer, corpus []Placed) {
 }
 
 // Archive writes the corpus into a store, as the writer's roller does: one
-// object per key, zstd-compressed NDJSON, lines in order.
+// object per key, in the v1 format, lines in order.
 func Archive(t *testing.T, s store.Store, corpus []Placed) {
 	t.Helper()
 	// Group by key first: a record's Line is its position in its object, so the
@@ -213,13 +218,8 @@ func Archive(t *testing.T, s store.Store, corpus []Placed) {
 		}
 		lines[key] = append(lines[key], p)
 	}
-	encoder, err := zstd.NewWriter(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = encoder.Close() }()
 	for _, key := range order {
-		var body []byte
+		var encoded [][]byte
 		for want := 1; want <= len(lines[key]); want++ {
 			var found *record.Record
 			for _, p := range lines[key] {
@@ -230,14 +230,16 @@ func Archive(t *testing.T, s store.Store, corpus []Placed) {
 			if found == nil {
 				t.Fatalf("indextest: %s has no line %d; the corpus is inconsistent", key, want)
 			}
-			line, err := record.Canonical(found)
+			canonical, err := record.Canonical(found)
 			if err != nil {
 				t.Fatal(err)
 			}
-			body = append(append(body, line...), '\n')
+			encoded = append(encoded, recobj.EncodeLine(canonical))
 		}
+		body, meta := recobj.Encode(encoded)
 		if err := s.Put(context.Background(), store.Object{
-			Key: key, Body: encoder.EncodeAll(body, nil),
+			Key: key, Body: body, Metadata: meta,
+			ContentType: recobj.ContentType, Encoding: recobj.Encoding,
 			RetainUntil: time.Now().AddDate(1, 0, 0).UTC(),
 		}); err != nil {
 			t.Fatal(err)

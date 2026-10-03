@@ -50,8 +50,7 @@ type Config struct {
 	// records none is half a service.
 	Sink sink.Sink
 
-	// Archive, when given, lets Get say which digest covers a record and when
-	// it was last verified, and is where resolve finds sealed identities.
+	// Archive, when given, is where resolve finds sealed identities.
 	Archive store.Store
 	// Keys, when given together with Archive, offers resolve: the way back
 	// from a pseudonym to the identity behind it. It must open what the
@@ -112,7 +111,6 @@ func New(c Config) (*Service, error) {
 		Authorizer: c.Authorizer,
 		Sink:       c.Sink,
 		Catalogue:  common,
-		Archive:    c.Archive,
 		Version:    c.Version,
 		Instance:   c.Instance,
 		OnUnrecorded: func(action string, err error) {

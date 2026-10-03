@@ -1,6 +1,7 @@
 package writer
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,11 +11,19 @@ import (
 	"time"
 
 	"github.com/truvity/audit"
+	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/internal/schemagen"
 	"github.com/truvity/audit/sdk/catalogue"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
 )
+
+// ErrCatalogueConflict is returned when the archive holds a catalogue at a
+// version whose bytes are not the ones the writer is about to run with. A
+// catalogue version is immutable by construction, and a writer whose version
+// means something else than what the archive holds would write records that
+// name a description they do not follow: it refuses to run.
+var ErrCatalogueConflict = errors.New("writer: the archive holds a different catalogue under this version")
 
 // SchemaArchive copies into the archive whatever is needed to read it.
 //
@@ -24,9 +33,16 @@ import (
 // their data, the record's own JSON Schema with the proto's comments carried
 // as descriptions, and the proto itself for what a schema cannot say.
 //
+// The catalogue is the bucket contract's: catalogue/<app>/<version>, exactly as
+// the application registered it, written once with a conditional put. The
+// rest — the extension schemas and the record's schema and proto, under
+// schema/ — is not in the contract, which says nothing against it: no part
+// reads another's and a reader that wants only the contract ignores it.
+//
 // Copies are made on first use and never again. A catalogue version is
 // immutable by construction — a changed catalogue is a new version — so a key
-// already taken is the right answer and not a collision.
+// already taken by the same bytes is the right answer and not a collision, and
+// one taken by other bytes is a conflict.
 type SchemaArchive struct {
 	Store store.Store
 	// RetainUntil is how long a schema is kept. It must be at least as long as
@@ -43,16 +59,22 @@ type SchemaArchive struct {
 // records themselves so that a policy can keep them for longer.
 const SchemaPrefix = "schema"
 
-// EnsureCatalogue copies a catalogue version and its extension schemas.
+// EnsureCatalogue writes the catalogue at catalogue/<app>/<version>, and its
+// extension schemas beside the record's under schema/.
 func (a *SchemaArchive) EnsureCatalogue(ctx context.Context, c *catalogue.Catalogue) error {
 	mark := "catalogue/" + c.Source + "@" + c.Version
 	if _, seen := a.done.Load(mark); seen {
 		return nil
 	}
-	base := fmt.Sprintf("%s/%s/%s", SchemaPrefix, c.Source, c.Version)
-	if err := a.put(ctx, base+"/catalogue.yaml", c.Document(), "application/yaml"); err != nil {
+	for what, part := range map[string]string{"source": c.Source, "version": c.Version} {
+		if why := store.KeyComponent(part); why != "" {
+			return fmt.Errorf("writer: the catalogue's %s %q %s, so it has no key", what, part, why)
+		}
+	}
+	if err := a.putCatalogue(ctx, c); err != nil {
 		return err
 	}
+	base := fmt.Sprintf("%s/%s/%s", SchemaPrefix, c.Source, c.Version)
 	for id, raw := range c.Schemas() {
 		if err := a.put(ctx, base+"/"+schemaFileName(id), raw, "application/schema+json"); err != nil {
 			return err
@@ -108,6 +130,29 @@ func (a *SchemaArchive) retainUntil() time.Time {
 		return a.RetainUntil(now)
 	}
 	return now.AddDate(10, 0, 0)
+}
+
+// putCatalogue writes the catalogue document once. A key already present with
+// the same bytes is success; with other bytes, a conflict.
+func (a *SchemaArchive) putCatalogue(ctx context.Context, c *catalogue.Catalogue) error {
+	key := store.CatalogueKey(c.Source, c.Version)
+	body := c.Document()
+	err := a.Store.Put(ctx, store.Object{
+		Key: key, Body: body, RetainUntil: a.retainUntil(), ContentType: "application/yaml",
+		Metadata: map[string]string{store.MetaSHA256: recobj.SHA256(body)},
+	})
+	if !errors.Is(err, store.ErrExists) {
+		return err
+	}
+	held, err := a.Store.Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("writer: reading %s: %w", key, err)
+	}
+	if !bytes.Equal(held, body) {
+		return fmt.Errorf("%w: %s holds %d bytes (sha256 %s) and this writer has %d (sha256 %s)",
+			ErrCatalogueConflict, key, len(held), recobj.SHA256(held), len(body), recobj.SHA256(body))
+	}
+	return nil
 }
 
 func (a *SchemaArchive) put(ctx context.Context, key string, body []byte, contentType string) error {

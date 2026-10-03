@@ -32,36 +32,42 @@ second replica while the first is still writing them.
 2. **Resolve** the catalogue by `source` and `catalogue_version`. Unknown
    version: dead-letter, alert, never drop.
 3. **Validate** against the composed schema. Violation: dead-letter.
-4. **Stamp** `recorded_at`, `observer` from the publisher's verified
-   identity, `origin_hash` as SHA-256 of the canonical wide record.
+4. **Stamp** `recorded_at`, `observer` from the publisher's verified identity,
+   `origin_hash` as SHA-256 of the canonical wide record.
 5. **Split**: for each profile the action belongs to, build a copy with the
    profile's allowed fields and classes.
 6. **Treat identities** per profile: clear, pseudonym (HMAC with the
    tenant-and-purpose key), scoped, or omit. Apply `x-audit-sensitive`. With
-   `keys.provider: none` — the default — there is no pseudonym treatment at
-   all, and a deployment declares `external_identifiers_are_opaque` instead
+   `keys.provider: none` — the default — there is no pseudonym treatment at all,
+   and a deployment declares `external_identifiers_are_opaque` instead
    ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
-8. **Buffer** per profile, tenant and day. Roll on interval (one to five
-   minutes) or size, measured before compression. An object's retention is
-   fixed when it is opened rather than when it is written, so every copy in
-   it is kept at least as long as the profile asks of the oldest.
-9. **PUT** each rolled object with `ObjectLockMode=COMPLIANCE` and
-   `RetainUntilDate` from the profile's retention, SSE-KMS, a checksum, and
-   `Content-Encoding: zstd`.
-10. **Copy schemas** on first use of a catalogue version to the schema
-    prefix, locked for the longest profile the catalogue's actions belong
-    to. On first use of a record major, copy the record's JSON Schema and
-    its proto there too: the archive keeps the meaning of every field, not
-    only its shape.
+8. **Buffer** per profile and tenant. Roll on interval (one to five minutes) or
+   size, measured before compression; what rolls is one ingest batch, and it is
+   keyed by the hour it was taken in, whatever the records' own dates. An
+   object's retention is fixed when it is opened rather than when it is written,
+   so every copy in it is kept at least as long as the profile asks of the
+   oldest.
+9. **PUT** each rolled object, conditionally (`If-None-Match: *`), with
+   `ObjectLockMode=COMPLIANCE` and `RetainUntilDate` from the profile's
+   retention, SSE-KMS, a checksum, `Content-Encoding: zstd` and the metadata
+   `format`, `sha256` and `count` ([the bucket
+   contract](../reference/bucket-contract.md)).
+10. **Copy schemas** on first use of a catalogue version: the catalogue to
+    `catalogue/<app>/<version>`, written once (the same bytes again are a
+    success, other bytes and the writer refuses to start), and extension schemas
+    to the schema prefix, locked for the longest profile the catalogue's actions
+    belong to. On first use of a record major, copy the record's JSON Schema and
+    its proto there too: the archive keeps the meaning of every field, not only
+    its shape.
 11. **Index** the object's rows, which moves the facet counts for the rows the
     insert actually created. A failure here does not fail the write: the index
     is a projection and `audit reindex` rebuilds it from the objects. The
     deployment is told, because an index nobody notices is behind is one that
     quietly answers wrongly.
 12. **Mark** the identifiers as written, now that the copies are durable.
-13. **Acknowledge** only after the PUT: the stream message in stream mode,
-    the caller's batch in direct mode. In both, an acknowledgement means the
-    records are in the archive.
+13. **Acknowledge** only after the PUT: the stream message in stream mode, the
+    caller's batch in direct mode. In both, an acknowledgement means the records
+    are in the archive.
 
 ## Asking and marking are two calls
 
@@ -77,9 +83,9 @@ the component whose job is to have none.
 
 Marking afterwards can only fail the other way. A crash between the PUT and the
 mark means a redelivery is written again, and the archive holds a second copy:
-the index keeps one row per identifier, the digest chain accounts for both
-objects, and a reader sees the record once. A duplicate costs an object. A loss
-cannot be repaired at all.
+the index keeps one row per identifier, both objects are in the archive, and a
+reader sees the record once. A duplicate costs an object. A loss cannot be
+repaired at all.
 
 Because nothing is marked until the batch is durable, a batch carrying a
 redelivery beside its original is not settled by asking. The writer keeps its
@@ -105,9 +111,10 @@ machinery for a case that does not exist.
 
 ## Idempotency
 
-Object keys are deterministic per writer instance and window. Index inserts
-are keyed by `(profile, id)`. A crash between PUT and index leaves an
-object without rows; the nightly reindex of the day repairs it.
+An object's key ends in a ULID made when the put starts, monotonic per writer,
+and the put is conditional, so a key is never written twice. Index inserts are
+keyed by `(profile, id)`. A crash between PUT and index leaves an object
+without rows; the nightly reindex of the ingest day repairs it.
 
 ## Failure
 

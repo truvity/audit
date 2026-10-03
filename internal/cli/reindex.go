@@ -6,17 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
 	"path/filepath"
 
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/truvity/audit/sdk/catalogue"
 
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
 )
@@ -25,8 +23,8 @@ import (
 //
 // This command is what makes the index a projection rather than a second
 // record. Everything a search answers with can be derived again from the
-// objects, and the objects are the ones under an object lock that a signed
-// digest chain accounts for. That is what lets the writer carry on when the
+// objects, and the objects are the ones under an object lock that carry their
+// own hashes. That is what lets the writer carry on when the
 // index is unreachable, lets a deployment change the shape of the index without
 // a migration of the trail, and lets an operator throw the database away.
 //
@@ -84,12 +82,6 @@ func (r Reindex) Run(ctx context.Context) (ReindexReport, error) {
 				"the data columns and a later run could not repair it")
 	}
 
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		return report, err
-	}
-	defer decoder.Close()
-
 	keys, err := r.objects(ctx)
 	if err != nil {
 		return report, err
@@ -113,29 +105,26 @@ func (r Reindex) Run(ctx context.Context) (ReindexReport, error) {
 			report.Unreadable = append(report.Unreadable, key)
 			continue
 		}
-		plain, err := decoder.DecodeAll(body, nil)
+		lines, err := recobj.Decode(body)
 		if err != nil {
 			report.Unreadable = append(report.Unreadable, key)
 			continue
 		}
 		report.Objects++
 
-		// The line number is the row's address in the object, so it is counted
-		// as the object has it, blank lines and all.
-		for n, line := range strings.Split(strings.TrimRight(string(plain), "\n"), "\n") {
-			if line == "" {
-				continue
-			}
-			var copied record.Record
-			if err := record.Unmarshal([]byte(line), &copied); err != nil {
+		// The line number is the row's address in the object, counted from one
+		// as a person counts them.
+		for n, line := range lines {
+			copied, err := line.Decoded()
+			if err != nil {
 				report.Unreadable = append(report.Unreadable, fmt.Sprintf("%s:%d", key, n+1))
 				continue
 			}
-			fields, err := r.Fields(ctx, &copied)
+			fields, err := r.Fields(ctx, copied)
 			if err != nil {
 				return report, fmt.Errorf("reindex: %s:%d: %w", key, n+1, err)
 			}
-			batch = append(batch, index.RowOf(&copied, index.ObjectAt{Key: key, Line: n + 1}, fields))
+			batch = append(batch, index.RowOf(copied, index.ObjectAt{Key: key, Line: n + 1}, fields))
 			report.Records++
 			if len(batch) >= r.batch() {
 				if err := flush(); err != nil {
@@ -160,19 +149,21 @@ func (r Reindex) Run(ctx context.Context) (ReindexReport, error) {
 	return report, nil
 }
 
-// objects lists the profile's objects over the range, tenant by tenant and day
-// by day, which is the shape the archive has and the only one that stays
-// bounded as it grows.
+// objects lists the profile's objects over the range of days, tenant by tenant
+// and in key order, which is ingest order: the shape the archive has, and the
+// only one that stays bounded as it grows. The range is of INGEST time, which
+// is what the keys name, and both its days are included.
 func (r Reindex) objects(ctx context.Context) ([]string, error) {
 	var keys []string
-	err := store.WalkDays(ctx, r.Store, "profile="+r.Profile, r.From, r.To, func(e store.Entry) error {
+	from := r.From.UTC().Truncate(24 * time.Hour)
+	to := r.To.UTC().Truncate(24 * time.Hour).Add(23 * time.Hour)
+	err := store.WalkProfile(ctx, r.Store, r.Profile, from, to, func(_ string, e store.Entry) error {
 		keys = append(keys, e.Key)
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("reindex: listing profile %s: %w", r.Profile, err)
 	}
-	sort.Strings(keys)
 	return keys, nil
 }
 

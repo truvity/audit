@@ -55,8 +55,8 @@ func TestAlertsModeRendersOnlyTheRules(t *testing.T) {
 		t.Fatalf("%d documents, first a %v; want one VMRule", len(docs), docs[0]["kind"])
 	}
 	rules := rulesOf(t, docs[0])
-	if len(rules) != 7 {
-		t.Fatalf("%d rules, want 7", len(rules))
+	if len(rules) != 6 {
+		t.Fatalf("%d rules, want 6", len(rules))
 	}
 	for _, r := range rules {
 		labels := r["labels"].(map[string]any)
@@ -75,7 +75,7 @@ func TestAlertsCanBeAPrometheusRuleAndOneRuleCanBeOff(t *testing.T) {
 	docs := renderRaw(t, "-f", "testdata/values/alerts.yaml",
 		"--set", "alerts.format=prometheusrule", "--set", "alerts.rules.consumerFailing.enabled=false",
 		"--set", "alerts.runbookBaseUrl=")
-	if docs[0]["kind"] != "PrometheusRule" || len(rulesOf(t, docs[0])) != 6 {
+	if docs[0]["kind"] != "PrometheusRule" || len(rulesOf(t, docs[0])) != 5 {
 		t.Fatalf("%v with %d rules", docs[0]["kind"], len(rulesOf(t, docs[0])))
 	}
 	for _, r := range rulesOf(t, docs[0]) {
@@ -155,8 +155,8 @@ func TestEveryRuleStatesItsThreshold(t *testing.T) {
 			t.Errorf("%s has %d comment lines above it; state the threshold and why", strings.TrimSpace(l), n)
 		}
 	}
-	if found != 7 {
-		t.Fatalf("found %d rules in the template, expected 7: a guard must not pass an empty sweep", found)
+	if found != 6 {
+		t.Fatalf("found %d rules in the template, expected 6: a guard must not pass an empty sweep", found)
 	}
 }
 

@@ -82,17 +82,20 @@ produces one copy per profile. See [presets](../presets/README.md).
 
 ## Prefixes
 
-Each profile copy lands under its own prefix, partitioned by **profile,
-tenant and day**, with Object Lock retention set per object when it is opened.
-The profile comes first because a lifecycle rule filters by literal prefix and
-takes no wildcards, so a rule per profile is only expressible that way; a role
-scoped to one customer still works, because a policy's resource may carry a
-wildcard.
+Each profile copy lands under `records/<profile>/<tenant>/` and then the
+**hour of ingest**, one object per ingest batch, with Object Lock retention set
+per object. A record's own date does not decide where it lives; a reader finds
+it by the hour it was ingested. The profile comes first because a lifecycle rule
+filters by literal prefix and takes no wildcards, so a rule per profile is only
+expressible that way; a role scoped to one customer still works, because the
+tenant is the next component and a policy's resource may carry a wildcard. The
+layout is specified in the [bucket contract](reference/bucket-contract.md).
 
-What describes the records is copied under a schema prefix on first use: the
-catalogue as registered, its extension schemas, the record's own schema and its
-proto. A locked object outlives this repository, and a record whose schema has
-been deleted is a record nobody can read.
+What describes the records is copied on first use: the catalogue as registered
+under `catalogue/<app>/<version>`, written once, and its extension schemas, the
+record's own schema and its proto under a schema prefix. A locked object
+outlives this repository, and a record whose schema has been deleted is a record
+nobody can read.
 
 ## Projections
 
@@ -103,5 +106,5 @@ idempotent, all rebuildable from the prefixes.
 ## Meta-events
 
 Reads and exports of the trail, catalogue and profile changes, key
-destruction, legal holds, digests, writer lifecycle and the daily clock
+destruction, legal holds, verifications, writer lifecycle and the daily clock
 check are records too, in the [common catalogue](../sdk/catalogue/common.yaml).

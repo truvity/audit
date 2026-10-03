@@ -51,9 +51,6 @@ func LoadWriter(file string) (*Writer, error) { return load(file, "audit-writer"
 // LoadQuery reads and validates audit-query's configuration.
 func LoadQuery(file string) (*Query, error) { return load(file, "audit-query", (*Query).finish) }
 
-// LoadDigest reads and validates the configuration of `audit digest`.
-func LoadDigest(file string) (*Digest, error) { return load(file, "audit-digest", (*Digest).finish) }
-
 // LoadVerify reads and validates the configuration of `audit verify`.
 func LoadVerify(file string) (*Verify, error) { return load(file, "audit-verify", (*Verify).finish) }
 
@@ -328,16 +325,6 @@ func (q *Query) finish() error {
 	return checkDatabase(q.Database)
 }
 
-func (d *Digest) finish() error {
-	if err := checkRequire(d.Require, d.Sink); err != nil {
-		return err
-	}
-	if err := d.Archive.finish(true); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (v *Verify) finish() error {
 	if err := checkRequire(v.Require, v.Sink); err != nil {
 		return err
@@ -345,7 +332,7 @@ func (v *Verify) finish() error {
 	if v.Last == 0 {
 		v.Last = Duration(24 * 60 * 60 * time.Second)
 	}
-	return v.Archive.finish(true)
+	return v.Archive.finish(false)
 }
 
 func (p *Purge) finish() error { return checkDatabase(&p.Database) }

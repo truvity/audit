@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # Stands in for the platform on the local kind box: the database and its two
-# roles, the wide stream, the archive bucket, and the digest chain's signing
-# key pair — created under the EXACT names
+# roles, the wide stream and the archive bucket — created under the EXACT names
 # charts/audit/testdata/values/e2e.yaml gives the chart, read through
 # e2e/fixture/names.go rather than repeated here by hand.
 #
@@ -96,22 +95,6 @@ kubectl -n "$NAMESPACE" get secret "$S3_CREDS_SECRET" >/dev/null 2>&1 || \
   kubectl -n "$NAMESPACE" create secret generic "$S3_CREDS_SECRET" \
     --from-literal=AWS_ACCESS_KEY_ID=test \
     --from-literal=AWS_SECRET_ACCESS_KEY=test
-
-step "the digest chain's signing key"
-# ed25519, PKCS8 — the one algorithm keys/signer.go's file-based Signer
-# signs with (an ECDSA private key is a KMS or transit key's shape, never
-# this one's: keys/signer.go refuses it with "is not a key this build signs
-# with"). keys/signer.go's Verify accepts either, because a real deployment
-# may sign with a managed ECDSA key instead — this fixture just never asks
-# the file-based signer to be one.
-if ! kubectl -n "$NAMESPACE" get secret "$DIGEST_KEY_SECRET" >/dev/null 2>&1; then
-  keydir=$(mktemp -d)
-  trap 'rm -rf "$keydir"' EXIT
-  openssl genpkey -algorithm ed25519 -out "$keydir/key.pem" >/dev/null 2>&1
-  openssl pkey -in "$keydir/key.pem" -pubout -out "$keydir/public.pem" >/dev/null 2>&1
-  kubectl -n "$NAMESPACE" create secret generic "$DIGEST_KEY_SECRET" --from-file=key.pem="$keydir/key.pem"
-  kubectl -n "$NAMESPACE" create secret generic "$VERIFY_PUBLIC_SECRET" --from-file=public.pem="$keydir/public.pem"
-fi
 
 echo
 echo "the fixture is in place: $DATABASE_HOST/$DATABASE, roles $WRITER_ROLE and $QUERY_ROLE, stream $STREAM, bucket $BUCKET"

@@ -24,7 +24,7 @@ flowchart TB
     Q["audit-query ×2"]
     PG[("the application's Postgres<br/>database audit:<br/>index, dedupe, rollups")]
     VK[("cache<br/>quotas only")]
-    CJ["CronJobs<br/>digest, verify, purge, clock-sync"]
+    CJ["CronJobs<br/>verify, purge, clock-sync"]
     ST["statement CronJob<br/>billing only, monthly"]
     E --> R --> NATS
     NATS --> W --> PG
@@ -33,12 +33,10 @@ flowchart TB
     ST --> PG
   end
   S3[("the environment's bucket<br/>audit/app/")]
-  KMS[("KMS signing key")]
   W --> S3
   Q --> S3
   CJ --> S3
   ST --> S3
-  CJ -. sign .-> KMS
   CONS["the application's console"] -- "its own token" --> Q
 ```
 
@@ -81,12 +79,12 @@ table absorbs it.
 
 It also gathers before it writes. Fetching from a stream returns whatever is
 there, and writing each fetch straight through would make an object of each; an
-archive of many small objects costs a request to put, a line in every hour's
-digest and an entry in every listing, forever. So the writer accumulates until
-one of three is reached — `roll.maxRecords`, the roller's byte limit, or
-`roll.interval` — and writes once. Nothing waits on this but the object:
-the records are already durable on the stream, and they stay unacknowledged
-until the put, so a writer that dies mid-window leaves them for the next one.
+archive of many small objects costs a request to put, an entry in every listing,
+forever. So the writer accumulates until one of three is reached —
+`roll.maxRecords`, the roller's byte limit, or `roll.interval` — and writes
+once. Nothing waits on this but the object: the records are already durable on
+the stream, and they stay unacknowledged until the put, so a writer that dies
+mid-window leaves them for the next one.
 
 `stream.ackWait` must therefore exceed `roll.interval` plus the longest a put
 can take. The writer refuses to start otherwise, because a stream that gives up
@@ -196,7 +194,7 @@ audit:
     tokens:
       - {audience: audit, mountPath: /var/run/audit}
 
-  # jobs.digest, verify, purge and clockSync are configured as in direct mode.
+  # jobs.verify, purge and clockSync are configured as in direct mode.
 
   # Both render nothing yet; the toggles are here so that a deployment's
   # values do not change when the work that fills them lands.
@@ -296,7 +294,8 @@ where the chart's own tests render them.
 ```console
 $ audit conformance --query https://audit-query.app.svc:8080 \
       --profile security --token-file ./token
-$ audit verify --bucket audit-eu-example-1 --prefix audit/app --public-key key.pub
+$ audit verify --profile security --last 24h \
+      --bucket audit-eu-example-1 --prefix audit/app
 ```
 
 Then check the two things that are specific to this shape: that the stream's

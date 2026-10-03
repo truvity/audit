@@ -279,8 +279,8 @@ already a token the query service can verify.
   `audit conformance --query <url> --profile security --token-file token`
   holds the query service to the search contract over the records the
   application has written.
-- **The chain covers them**:
-  `audit verify --profile security --last 24h --bucket <bucket> --prefix <prefix> --public-key public.pem`.
+- **The archive checks out**:
+  `audit verify --profile security --last 24h --bucket <bucket> --prefix <prefix>`.
 - **A `block` action fails when it must.** Stop the receiver and perform one:
   the application must refuse the operation. Perform an `async` action: it
   must succeed, and appear once the receiver is back.

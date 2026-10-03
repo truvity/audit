@@ -18,7 +18,7 @@ follows.
 - `e2e/fixture` — stands in for the platform: the database and its two
   roles (a writer role that owns the schema, and a query role the migrate
   job's `reader` grant lets read it and nothing else), the JetStream
-  stream, the archive bucket, and the digest chain's signing key pair.
+  stream and the archive bucket.
   `e2e/fixture/apply.sh` provisions it; `e2e/fixture/names.go` is what
   reads the values file so nothing is named twice.
 - `e2e/suite` — the Go suite that proves the chart works, through Service
@@ -42,21 +42,16 @@ integration workflow stands the box up itself for every pull request: see
   works (`e2e/suite/write_test.go`).
 - The query role can read the index and cannot write to it
   (`e2e/suite/roles_test.go`).
-- The digest and verify CronJobs run to completion with the service
-  account, archive credentials and signing key this tier's fixture wires up
-  (`e2e/suite/digest_test.go`).
 - The chart still honours every name the fixture gave it — a chart-side
   rename would otherwise surface only as a failed install
   (`e2e/fixture/drift_test.go`).
 
 ## What this deliberately does not prove, and why
 
-- **That a record is inside a SEALED digest.** Sealing only closes a whole
-  hour (`internal/cli/digest.go`: a zero `To` means the last hour that has
-  closed), so proving a just-written record is chained would mean waiting
-  for a real hour boundary — a property of wall-clock time this tier cannot
-  shorten. The signing and chaining logic itself is proved without a
-  cluster at all, by `internal/writer`'s chain tests and `just conformance`.
+- **That the archive is verified or sealed.** The check of the v1 bucket
+  contract lives in `internal/bucketcontract`, which is also the conformance
+  suite: it runs against the memory store and against LocalStack S3 (the CI
+  `s3` job, `just test-s3`), with no cluster at all. Seals are not built yet.
 - **That the archive is tamper-evident under Object Lock.** This tier
   installs with `lockMode: none`: LocalStack Community's Object Lock
   support is partial, and the `security` profile this tier composes is one

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/sdk/record"
@@ -44,8 +44,9 @@ func roller(t *testing.T, s store.Store, now func() time.Time) *writer.Roller {
 }
 
 // A lifecycle rule matches a literal prefix, so the profile has to come first
-// for a per-profile rule to be expressible at all.
-func TestObjectKeysArePartitionedProfileFirst(t *testing.T) {
+// for a per-profile rule to be expressible at all. The rest of the key is the
+// v1 grammar of the bucket contract.
+func TestObjectKeysAreTheV1GrammarProfileFirst(t *testing.T) {
 	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
@@ -62,21 +63,83 @@ func TestObjectKeysArePartitionedProfileFirst(t *testing.T) {
 		t.Fatalf("keys = %v", keys)
 	}
 	key := keys[0]
-	for _, want := range []string{
-		"profile=security/", "tenant=acme/", "year=2026/", "month=09/", "day=17/",
-		"-writer-1-", ".ndjson.zst",
-	} {
-		if !strings.Contains(key, want) {
-			t.Errorf("key %q lacks %q", key, want)
-		}
+	if !strings.HasPrefix(key, "records/security/acme/2026/09/17/10/") {
+		t.Fatalf("key %q is not records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>/<ULID>", key)
 	}
-	if !strings.HasPrefix(key, "profile=security/") {
-		t.Fatalf("key %q must begin with the profile, or no lifecycle rule can target it", key)
+	parsed, ok := store.ParseRecordKey(key)
+	if !ok {
+		t.Fatalf("key %q does not parse as a record key", key)
+	}
+	if parsed.Profile != "security" || parsed.Tenant != "acme" || !parsed.Hour.Equal(day(t, "2026-09-17T10:00:00Z")) {
+		t.Fatalf("parsed %+v", parsed)
+	}
+	// The object says what it is without being opened.
+	o, _ := s.Object(key)
+	if o.Metadata["format"] != "1" || o.Metadata["count"] != "1" || len(o.Metadata["sha256"]) != 64 {
+		t.Fatalf("metadata = %v", o.Metadata)
+	}
+	if o.Encoding != "zstd" {
+		t.Fatalf("encoding = %q", o.Encoding)
 	}
 }
 
-// One object holds one profile, for one tenant, for one day.
-func TestRollerSeparatesProfilesTenantsAndDays(t *testing.T) {
+// The key is the moment the batch was taken, not the time of any record in it:
+// a record from last week lands in this hour's object.
+func TestTheKeyIsTheIngestTimeAndNotTheRecordsOwn(t *testing.T) {
+	s := storetest.NewMemory()
+	at := day(t, "2026-09-17T10:30:00Z")
+	r := roller(t, s, func() time.Time { return at })
+	p := profiles(t)["security"]
+	ctx := context.Background()
+
+	for _, occurred := range []time.Time{at, at.AddDate(0, 0, -7), at.Add(-26 * time.Hour)} {
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", occurred), index.Fields{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.Len() != 1 || !strings.HasPrefix(s.Keys()[0], "records/security/acme/2026/09/17/10/") {
+		t.Fatalf("the late records did not land in the hour of ingest: %v", s.Keys())
+	}
+}
+
+// Within a writer the keys of an hour sort in the order the batches were taken,
+// even if the clock stands still or steps back between them.
+func TestKeysSortInTheOrderBatchesWereTaken(t *testing.T) {
+	s := storetest.NewMemory()
+	at := day(t, "2026-09-17T10:30:00Z")
+	now := at
+	r := roller(t, s, func() time.Time { return now })
+	p := profiles(t)["security"]
+	ctx := context.Background()
+
+	var taken []string
+	for i, step := range []time.Duration{0, 0, time.Second, -5 * time.Second, 0, 2 * time.Minute} {
+		now = now.Add(step)
+		if err := r.Add(ctx, p, copyFor(t, "security", "acme", at), index.Fields{}); err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Flush(ctx); err != nil {
+			t.Fatal(err)
+		}
+		keys := s.Keys()
+		if len(keys) != i+1 {
+			t.Fatalf("%d objects after %d batches", len(keys), i+1)
+		}
+		last := keys[len(keys)-1]
+		for _, earlier := range taken {
+			if last <= earlier {
+				t.Fatalf("batch %d has key %s, which sorts before an earlier batch's %s", i, last, earlier)
+			}
+		}
+		taken = append(taken, last)
+	}
+}
+
+// One object holds one ingest batch of one profile and one tenant.
+func TestRollerSeparatesProfilesAndTenants(t *testing.T) {
 	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
 	r := roller(t, s, func() time.Time { return at })
@@ -92,6 +155,7 @@ func TestRollerSeparatesProfilesTenantsAndDays(t *testing.T) {
 		{"security", "acme", at.Add(time.Minute)},
 		{"security", "other", at},
 		{"billing", "acme", at},
+		// Another day's record is another day's event and the same batch.
 		{"security", "acme", at.AddDate(0, 0, -1)},
 	} {
 		if err := r.Add(ctx, all[c.profile], copyFor(t, c.profile, c.tenant, c.at), index.Fields{}); err != nil {
@@ -101,8 +165,24 @@ func TestRollerSeparatesProfilesTenantsAndDays(t *testing.T) {
 	if err := r.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if n := s.Len(); n != 4 {
-		t.Fatalf("wrote %d objects, want one per profile, tenant and day: %v", n, s.Keys())
+	if n := s.Len(); n != 3 {
+		t.Fatalf("wrote %d objects, want one per profile and tenant: %v", n, s.Keys())
+	}
+}
+
+// A profile or a tenant is a key component, and a slash would make it two.
+func TestARecordWhoseTenantCannotBeAKeyComponentIsRefused(t *testing.T) {
+	s := storetest.NewMemory()
+	at := day(t, "2026-09-17T10:30:00Z")
+	r := roller(t, s, func() time.Time { return at })
+	p := profiles(t)["security"]
+
+	err := r.Add(context.Background(), p, copyFor(t, "security", "acme/eu", at), index.Fields{})
+	if !errors.Is(err, writer.ErrKeyComponent) {
+		t.Fatalf("a tenant with a slash was accepted: %v", err)
+	}
+	if r.Pending() != 0 {
+		t.Fatal("a refused record was gathered")
 	}
 }
 
@@ -123,25 +203,25 @@ func TestObjectsCarryTheProfilesRetention(t *testing.T) {
 	if err := r.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range s.Keys() {
-		o, _ := s.Object(key)
-		profile := o.Metadata["audit-profile"]
-		want := all[profile].RetainUntil(at, nil)
-		if !o.RetainUntil.Equal(want) {
-			t.Errorf("%s retains until %s, want %s", profile, o.RetainUntil, want)
-		}
-	}
-	// The billing copy is the seven-year tax record; the security copy is not.
 	var billing, security time.Time
 	for _, key := range s.Keys() {
 		o, _ := s.Object(key)
-		switch o.Metadata["audit-profile"] {
+		parsed, ok := store.ParseRecordKey(key)
+		if !ok {
+			t.Fatalf("%s is not a record key", key)
+		}
+		want := all[parsed.Profile].RetainUntil(at, nil)
+		if !o.RetainUntil.Equal(want) {
+			t.Errorf("%s retains until %s, want %s", parsed.Profile, o.RetainUntil, want)
+		}
+		switch parsed.Profile {
 		case "billing":
 			billing = o.RetainUntil
 		case "security":
 			security = o.RetainUntil
 		}
 	}
+	// The billing copy is the seven-year tax record; the security copy is not.
 	if !billing.After(security.AddDate(5, 0, 0)) {
 		t.Fatalf("billing retains until %s, security until %s: the tax record is not longer", billing, security)
 	}
@@ -149,7 +229,7 @@ func TestObjectsCarryTheProfilesRetention(t *testing.T) {
 
 // An object is written once. Under Object Lock a second put creates a version
 // rather than replacing anything, so a writer that reuses a key writes objects
-// a digest cannot account for.
+// nothing accounts for.
 func TestRollerNeverReusesAKey(t *testing.T) {
 	s := storetest.NewMemory()
 	at := day(t, "2026-09-17T10:30:00Z")
@@ -186,7 +266,7 @@ func TestRollerRollsOnSize(t *testing.T) {
 	if s.Len() == 0 {
 		t.Fatal("nothing rolled: a full object must be written without waiting for the timer")
 	}
-	if !strings.HasSuffix(s.Keys()[0], ".ndjson.zst") {
+	if _, ok := store.ParseRecordKey(s.Keys()[0]); !ok {
 		t.Fatalf("key = %q", s.Keys()[0])
 	}
 }
@@ -235,35 +315,41 @@ func TestObjectHoldsTheCopies(t *testing.T) {
 	if err := r.Flush(ctx); err != nil {
 		t.Fatal(err)
 	}
-	body, err := s.Get(ctx, s.Keys()[0])
+	key := s.Keys()[0]
+	body, err := s.Get(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoder, err := zstd.NewReader(nil)
+	lines, err := recobj.Decode(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer decoder.Close()
-	plain, err := decoder.DecodeAll(body, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimRight(string(plain), "\n"), "\n")
 	if len(lines) != 3 {
 		t.Fatalf("the object holds %d lines, want 3", len(lines))
 	}
 	for i, line := range lines {
-		var got record.Record
-		if err := record.Unmarshal([]byte(line), &got); err != nil {
-			t.Fatalf("line %d does not parse: %v", i, err)
+		// The line is the envelope of the contract: the hash of the canonical
+		// record, then the record.
+		if err := line.Verify(); err != nil {
+			t.Fatalf("line %d: %v", i+1, err)
+		}
+		got, err := line.Decoded()
+		if err != nil {
+			t.Fatalf("line %d does not parse: %v", i+1, err)
 		}
 		if got.GetProfile() != "security" {
-			t.Fatalf("line %d is from profile %q", i, got.GetProfile())
+			t.Fatalf("line %d is from profile %q", i+1, got.GetProfile())
+		}
+		if canonical, _ := record.Canonical(got); recobj.Hash(canonical) != line.Hash {
+			t.Fatalf("line %d: the hash is not the sha256 of the canonical record", i+1)
 		}
 	}
-	o, _ := s.Object(s.Keys()[0])
-	if o.Metadata["audit-records"] != "3" {
+	o, _ := s.Object(key)
+	if o.Metadata["count"] != "3" {
 		t.Fatalf("the object does not say what it holds: %v", o.Metadata)
+	}
+	if problems := recobj.CheckMetadata(o.Metadata, body, len(lines)); len(problems) != 0 {
+		t.Fatalf("the metadata disagrees with the object: %v", problems)
 	}
 }
 

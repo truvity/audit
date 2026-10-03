@@ -29,25 +29,9 @@ metadata:
 
 ---
 # Source: audit/templates/serviceaccount.yaml
-# Sealing is a different privilege from writing: whoever can write the archive
-# and also sign a digest for it can choose what to sign. This identity holds the
-# signing key; the writer's does not.
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: audit-digest
-  labels:
-    helm.sh/chart: audit-0.0.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.0.0"
-    app.kubernetes.io/managed-by: Helm
-
----
-# Source: audit/templates/serviceaccount.yaml
 # Verification needs to read the archive and nothing else. An auditor running
-# the same command with the same public key must get the same answer, which is
-# what makes the answer worth having.
+# the same command must get the same answer, which is what makes the answer
+# worth having.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -139,46 +123,11 @@ data:
 
 ---
 # Source: audit/templates/cronjobs.yaml
-# Hourly. Seals the windows since the last digest into the signed chain. It
-# resumes past a missed run on its own, so a failed hour needs no operator: a
-# gap in the chain cannot be told from a digest somebody removed.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: audit-digest-config
-  labels:
-    helm.sh/chart: audit-0.0.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.0.0"
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: digest
-data:
-  # What the binary reads with --config: validated against
-  # schemas/config/ at start-up, and by this chart's values.schema.json before
-  # it renders.
-  config.yaml: |
-    archive:
-      bucket:
-        name: audit-archive
-    deployment: /etc/audit/deployment.yaml
-    signer:
-      transit:
-        key: audit-digest
-        openbao:
-          address: https://openbao.example:8200
-          caFile: /etc/audit/trust/ca.crt
-          login:
-            jwtFile: /var/run/openbao/token
-            mount: jwt-devel
-            role: audit-digest
-          namespace: devel
-
----
-# Source: audit/templates/cronjobs.yaml
-# Nightly. Walks each profile's chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
+# Nightly. Checks each profile's record objects of the last day against the
+# bucket contract (key, metadata, sha256, the hash of every record) and reports
+# what it finds; a non-zero exit is the alert. It reads the archive and nothing
+# else, which is what lets an auditor run the same command and get the same
+# answer.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -199,7 +148,6 @@ data:
       bucket:
         name: audit-archive
     deployment: /etc/audit/deployment.yaml
-    publicKeyFile: /etc/audit/public/public.pem
 
 ---
 # Source: audit/templates/cronjobs.yaml
@@ -578,93 +526,6 @@ spec:
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: audit-digest
-  labels:
-    helm.sh/chart: audit-0.0.0
-    app.kubernetes.io/name: audit
-    app.kubernetes.io/instance: audit
-    app.kubernetes.io/version: "0.0.0"
-    app.kubernetes.io/managed-by: Helm
-spec:
-  schedule: "7 * * * *"
-  # A run that overlaps itself only does the same work twice.
-  concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 3
-  failedJobsHistoryLimit: 3
-  jobTemplate:
-    spec:
-      template:
-        metadata:
-          labels:
-            app.kubernetes.io/name: audit
-            app.kubernetes.io/instance: audit
-          annotations:
-            checksum/config: d436476dc8c720cb3673a36c19acd923d6f9b99bb34c3d74efc00c431f6a347b
-        spec:
-          restartPolicy: OnFailure
-          serviceAccountName: audit-digest
-          
-          securityContext:
-            fsGroup: 65532
-            runAsNonRoot: true
-            runAsUser: 65532
-            seccompProfile:
-              type: RuntimeDefault
-          containers:
-            - name: digest
-              image: ghcr.io/truvity/audit/audit:0.0.0
-              imagePullPolicy: IfNotPresent
-              args:
-                - digest
-                - --config=/etc/audit/config.yaml
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities:
-                  drop:
-                  - ALL
-                readOnlyRootFilesystem: true
-              volumeMounts:
-                - name: config
-                  mountPath: /etc/audit/config.yaml
-                  subPath: config.yaml
-                  readOnly: true
-                - name: deployment
-                  mountPath: /etc/audit/deployment.yaml
-                  subPath: deployment.yaml
-                  readOnly: true
-                
-                - name: trust
-                  mountPath: /etc/audit/trust
-                  readOnly: true
-                
-                - name: token-0
-                  mountPath: /var/run/openbao
-                  readOnly: true
-          volumes:
-            - name: config
-              configMap:
-                name: audit-digest-config
-            - name: deployment
-              configMap:
-                name: audit-deployment
-            
-            - name: trust
-              configMap:
-                name: private-ca-bundle
-            
-            - name: token-0
-              projected:
-                sources:
-                  - serviceAccountToken:
-                      path: token
-                      audience: "openbao"
-                      expirationSeconds: 600
-
----
-# Source: audit/templates/cronjobs.yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
   name: audit-verify
   labels:
     helm.sh/chart: audit-0.0.0
@@ -686,7 +547,7 @@ spec:
             app.kubernetes.io/name: audit
             app.kubernetes.io/instance: audit
           annotations:
-            checksum/config: 1bd52328b6cbb18b75ad6066acfb0fee374c0b083d75a66b6baf4561a530a5cd
+            checksum/config: 513e1f4d2565e4e6740141b47646b5dd6812b5a91ee9cf2de588e228ceb5f04f
         spec:
           restartPolicy: OnFailure
           serviceAccountName: audit-verify
@@ -724,9 +585,6 @@ spec:
                   mountPath: /etc/audit/trust
                   readOnly: true
                 
-                - name: secret-0
-                  mountPath: /etc/audit/public
-                  readOnly: true
           volumes:
             - name: config
               configMap:
@@ -739,9 +597,6 @@ spec:
               configMap:
                 name: private-ca-bundle
             
-            - name: secret-0
-              secret:
-                secretName: audit-signing-public
 
 ---
 # Source: audit/templates/cronjobs.yaml

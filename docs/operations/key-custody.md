@@ -18,15 +18,15 @@ identifier from a locked archive, or whose records unavoidably carry direct
 identifiers. That is a deliberate choice, made once and recorded by the
 deployer, and it cannot be undone or migrated afterwards.
 
-The **signing key is different**: every installation has one, whatever it
-does about pseudonyms, because without a signed digest chain the archive
-proves nothing to anybody outside. [Signing key](#signing-key) is that half
-of the page.
+The **signing key is different**: it is for seals
+([0019](../decisions/0019-seals.md)), which are not built yet, so nothing signs
+today. It does not depend on what the deployment does about pseudonyms.
+[Signing key](#signing-key) is that half of the page.
 
 | kind | what it does | how many | who holds it | ends by |
 |---|---|---|---|---|
 | **pseudonymisation** (symmetric), off by default | turns an identifier into a stable pseudonym; seals the identity behind it | one per **tenant × purpose**, created on first use | the writer (make), resolve (open) | destruction — that is erasure |
-| **signing** (asymmetric), always | signs the hourly digest chain | one per installation | the digest job only | replacement, with the old public half kept |
+| **signing** (asymmetric), for seals | will sign the seals | one per installation | the signer only, never the writer | replacement, with the old public half kept |
 
 Neither is ever rotated, and that is deliberate.
 
@@ -44,8 +44,9 @@ The archive is write-once under Object Lock, for years. Two things follow.
 - Object Lock stops deletion. It does not prove the trail is complete and
   genuine to anyone outside: a record can be added beside the real ones, a
   quiet hour cannot be told from an emptied one, and a copy (an export, a
-  replica, a restored backup) carries no lock at all. A **signed chain of
-  digests** proves all three, to anyone with the public key.
+  replica, a restored backup) carries no lock at all. **Seals** will prove all
+  three, to anyone with the public key. Until they are built, `audit verify`
+  checks the per-object `sha256` and per-record hashes, which needs no key.
 
 ## Pseudonymisation keys
 
@@ -181,35 +182,33 @@ impossible.
 
 ### The requirement
 
-Every hour the digest job writes, per profile, one small object listing
-every archive object written in that hour with its SHA-256, the previous
-digest's hash and signature, and its own signature. `audit verify` walks
-the chain with the **public** half and reports any object changed, any
-object nobody accounted for, and any hour missing — with nothing that has to
-be trusted.
+The v0 archive was vouched for by an hourly signed digest chain, written by a
+digest job and walked by `audit verify`. That job and chain were removed with
+the v1 layout, because they read the v0 layout, and seals replace them. What
+the key will sign is decided by [0019](../decisions/0019-seals.md); the
+requirement that carries over is the one on who may hold it.
 
 The signing key must be one the **writer cannot use**. Whoever can write the
-archive and also sign digests for it can choose what to sign. So the digest
-job has its own identity and its own credentials, and the writer's have no
-path to the key.
+archive and also sign for it can choose what to sign. So the signer will have
+its own identity and its own credentials, and the writer's have no path to the
+key.
 
 ### Where it lives
 
 - **A key file** (ed25519 PEM in a Secret): fine for a trial; the private
   half is then in the cluster.
 - **AWS KMS** (`ECC_NIST_P256`, sign/verify): the private half never leaves
-  KMS; the digest job's role may `kms:Sign`, the writer's may not.
+  KMS; the signer's role may `kms:Sign`, the writer's may not.
 - **OpenBAO transit** (ed25519): the same separation for a deployment whose
-  secrets live in OpenBAO; the job's policy may `transit/sign/<key>`.
+  secrets live in OpenBAO; the signer's policy may `transit/sign/<key>`.
 
-`audit key public` prints the public half for the verify job and for any
-auditor.
+`audit key public` prints the public half for any auditor.
 
 ### Replaced, not rotated
 
-The chain can survive a new signing key: each digest names the key version
-it was signed with (`KeyID`), and verification with the right public half
-per version still walks the whole chain. What must never happen is losing a
+A signing key can be replaced: what it signed names the key version it was
+signed with, and verification with the right public half per version still
+holds. What must never happen is losing a
 public half: keep every one that ever signed, beside the archive, for as
 long as the archive lives.
 
@@ -221,9 +220,7 @@ separately through `serviceAccount`, `receiver.serviceAccount`,
 `query.serviceAccount` and `jobs.*.serviceAccount`. This is what keeps the
 separations above true on a cluster: the receiver publishes and holds neither
 the bucket nor a key, so it must not run as the writer, and in stream mode the
-chart refuses a receiver and a writer that share a ServiceAccount name; the
-digest job holds the signing key and the writer does not, and the chart refuses
-a digest job that signs as the writer.
+chart refuses a receiver and a writer that share a ServiceAccount name.
 
 ## What a deployment supplies
 
@@ -232,5 +229,5 @@ a digest job that signs as the writer.
 | `none` (default) | nothing | — |
 | `local` | a 32-byte root in a Secret; a persistent, shared directory | — |
 | `transit` | an OpenBAO transit mount in the environment's namespace; a JWT role per component | writer: `hmac`, `encrypt` on its purposes; resolve: `decrypt`; eraser (human): `read`, `update` on `transit/keys/<prefix>.*` |
-| signing, KMS | one asymmetric key | digest job: `kms:Sign`, `kms:GetPublicKey`; verify job: `kms:GetPublicKey` |
-| signing, transit | one ed25519 transit key | digest job: `transit/sign/<key>`, `read` on the key |
+| signing, KMS (for seals) | one asymmetric key | the signer: `kms:Sign`, `kms:GetPublicKey` |
+| signing, transit (for seals) | one ed25519 transit key | the signer: `transit/sign/<key>`, `read` on the key |

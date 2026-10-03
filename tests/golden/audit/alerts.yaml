@@ -59,30 +59,6 @@ spec:
               away longer than the queue is deep: see audit_emit_queue_pending for
               the climb, and the sink's own health.
             runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditemitterdroppingrecords"
-        # The hourly job seals the hour that has just closed, so the newest
-        # window's age runs from 0 to about 1h05m before the next run. Two hours
-        # tolerates one missed run (a node drain, a slow KMS) and fires on two,
-        # which is when the chain has a gap nothing later can fill. The age is
-        # observed by the writer, not pushed by the job, so a job that never
-        # runs still shows. A profile with no digest at all reports the 24h
-        # lookback, so a chain that never started fires too.
-        - alert: AuditDigestStale
-          expr: >-
-            max by (k8s_cluster_name, namespace, profile) (audit_digest_age_seconds{namespace="audit"}) > 7200
-          for: 10m
-          labels:
-            k8s_cluster_name: example
-            severity: critical
-            team: platform
-          annotations:
-            summary: 'The newest audit digest of profile {{ $labels.profile }} is {{ $value | humanizeDuration }} old'
-            description: >-
-              No digest window has been sealed for profile {{ $labels.profile }}
-              for longer than 7200s. An hour with no
-              digest cannot be told from one whose digest was removed. Check the
-              digest CronJob (`kubectl get cronjob`), its last Job's log and
-              the signing key it uses.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditdigeststale"
         # The lag is from an object being in the archive to its rows being in the
         # index, so it is the insert's own time: milliseconds when healthy (the
         # p99 sits well under a second on a database in the same cluster). Thirty

@@ -16,8 +16,6 @@ writer:
       bucket:
         name: audit-archive
 jobs:
-  digest:
-    enabled: false
   verify:
     enabled: false
   purge:

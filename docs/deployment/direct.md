@@ -23,7 +23,7 @@ flowchart TB
     RW["audit-writer ×2<br/>receiver = writer"]
     Q["audit-query ×1"]
     PG[("index database")]
-    CJ["CronJobs<br/>digest, verify, purge, clock-sync"]
+    CJ["CronJobs<br/>verify, purge, clock-sync"]
     E --> RW
     E2 --> RW
     RW --> PG
@@ -31,11 +31,9 @@ flowchart TB
     E -- "the console's Audit page" --> Q
   end
   S3[("the environment's bucket<br/>audit/app/")]
-  KMS[("KMS signing key")]
   RW --> S3
   Q --> S3
   CJ --> S3
-  CJ -. sign .-> KMS
 ```
 
 Two receiver replicas are safe: the deduplication table is in Postgres, so
@@ -145,16 +143,6 @@ audit:
       - {audience: audit, mountPath: /var/run/audit}
 
   jobs:
-    digest:
-      config:
-        deployment: /etc/audit/deployment.yaml
-        archive:
-          bucket: {name: audit-eu-example-1, region: eu-example-1}
-          prefix: audit/app
-        sink: {url: "http://audit:8080", tokenFile: /var/run/audit/token}
-        signer: {kmsKey: alias/audit-digest}
-      tokens:
-        - {audience: audit, mountPath: /var/run/audit}
     clockSync:
       config:
         ntp: ["169.254.169.123"]    # required by every compliance preset
@@ -169,8 +157,8 @@ whole thing as a file, with the verify and purge jobs, kept beside the chart
 and rendered by its tests.
 
 `prefix` is what keeps two applications apart in one bucket, and the chart's
-notes print the IAM statements the four roles need underneath it: the
-writer, the digest job, the verify job and the query service, each scoped to
+notes print the IAM statements the three roles need underneath it: the
+writer, the verify job and the query service, each scoped to
 its own part of the prefix, and none of them with a delete.
 
 ## The index
@@ -199,11 +187,13 @@ where the chart's own tests render them.
 ```console
 $ audit conformance --query https://audit-query.app.svc:8080 \
       --profile security --token-file ./token
-$ audit verify --bucket audit-eu-example-1 --prefix audit/app --public-key key.pub
+$ audit verify --profile security --last 24h \
+      --bucket audit-eu-example-1 --prefix audit/app
 ```
 
 The first asks the query service the questions every searcher must answer
-the same way. The second walks the digest chain. Run the second an hour
-after the first records land, so that there is a sealed hour to walk.
+the same way. The second checks every record object of the profile in the last
+day against the bucket contract, from the archive alone; run it after the
+first records have landed.
 
 The [runbook](../operations/runbook.md) has what to do when either fails.

@@ -8,12 +8,13 @@ import (
 	"time"
 )
 
-// Composition is what a deployment declares: a profile name, the presets it is
-// made of, and the prefix its copies land under.
+// Composition is what a deployment declares: a profile name and the presets it
+// is made of. The name is also the first component of the key every copy lands
+// under (records/<profile>/..., docs/reference/bucket-contract.md), so it has
+// no slash in it.
 type Composition struct {
 	Name    string   `json:"name"`
 	Presets []string `json:"presets"`
-	Prefix  string   `json:"prefix,omitempty"`
 }
 
 // Profile is a composition resolved: what a copy under it carries, how
@@ -21,7 +22,6 @@ type Composition struct {
 // the store it lands in.
 type Profile struct {
 	Name    string
-	Prefix  string
 	Presets []string
 
 	Classes            map[Class]bool
@@ -53,19 +53,18 @@ func Compose(c Composition, available map[string]*Preset) (*Profile, error) {
 	if c.Name == "" {
 		return nil, errors.New("profile: name is required")
 	}
+	if strings.Contains(c.Name, "/") {
+		return nil, fmt.Errorf("profile %q: a name is the first component of every key under it and has no slash", c.Name)
+	}
 	if len(c.Presets) == 0 {
 		return nil, fmt.Errorf("profile %s: at least one preset is required", c.Name)
 	}
 	p := &Profile{
 		Name:         c.Name,
-		Prefix:       c.Prefix,
 		Presets:      append([]string(nil), c.Presets...),
 		Classes:      map[Class]bool{},
 		ForbiddenPII: map[string]bool{},
 		Identity:     map[Category]Treatment{},
-	}
-	if p.Prefix == "" {
-		p.Prefix = "profile=" + c.Name
 	}
 	required, optional, forbidden := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	categories := map[string]bool{}
@@ -212,7 +211,7 @@ func (p *Profile) Explain() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "profile %s\n", p.Name)
 	fmt.Fprintf(&b, "  presets   %s\n", strings.Join(p.Presets, ", "))
-	fmt.Fprintf(&b, "  prefix    %s\n", p.Prefix)
+	fmt.Fprintf(&b, "  prefix    records/%s/\n", p.Name)
 	classes := make([]string, 0, len(p.Classes))
 	for c := range p.Classes {
 		classes = append(classes, string(c))

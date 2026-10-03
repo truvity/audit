@@ -26,7 +26,7 @@ so a first installation that is unsure should start direct.
 
 ## 2. Prepare
 
-Five things, none of which the chart creates. It takes references to all of
+Four things, none of which the chart creates. It takes references to all of
 them and refuses to render when one is missing.
 
 ### A bucket, with or without Object Lock, and a prefix
@@ -47,16 +47,17 @@ profiles the installation composes:
     --object-lock-enabled-for-bucket
   ```
 
-- **attested** — no lock; the signed digest chain under a managed key is the
-  integrity control. Enough for `security`, `history` and `billing-nl`, and
-  the only tier a store without the Object Lock API can offer. The same
-  command without `--object-lock-enabled-for-bucket`, and
-  `archive.lockMode: none` in the writer's configuration. On any
-  S3-compatible store that is not AWS — a service from another provider,
-  MinIO, Ceph — add `bucket.endpoint`, `bucket.pathStyle` if its certificate
-  does not cover a bucket subdomain, and `bucket.credentialsEnv` with static
-  keys if it has no pod identity; the
-  [S3 guide](../operations/s3-guide.md#s3-compatible-stores) has the recipe.
+- **attested** — no lock; the per-object and per-record
+  hashes that `audit verify` checks are the integrity control until seals
+  ([0019](../decisions/0019-seals.md)) arrive. Enough for `security`, `history`
+  and `billing-nl`, and the only tier a store without the Object Lock API can
+  offer. The same command without `--object-lock-enabled-for-bucket`, and
+  `archive.lockMode: none` in the writer's configuration. On any S3-compatible
+  store that is not AWS — a service from another provider, MinIO, Ceph — add
+  `bucket.endpoint`, `bucket.pathStyle` if its certificate does not cover a
+  bucket subdomain, and `bucket.credentialsEnv` with static keys if it has no
+  pod identity; the [S3 guide](../operations/s3-guide.md#s3-compatible-stores)
+  has the recipe.
 
 The bucket needs no default retention: on the record tier the writer sets
 each object's from its profile, and on the attested tier retention is the
@@ -64,24 +65,23 @@ bucket's lifecycle rule. Each application then writes under a **prefix of its ow
 (`audit/<application>/…`), which is what keeps two installations apart in one
 bucket. [Sharing a bucket](../operations/s3-guide.md#sharing-a-bucket) has the
 policy, and [IAM per component](../operations/s3-guide.md#iam-per-component)
-has the statements for each of the four roles, each scoped to its own part of
+has the statements for each of the three roles, each scoped to its own part of
 the prefix and none of them with a delete:
 
 | role | on the prefix |
 |---|---|
-| writer | put objects, put and read their retention, put a legal hold, read `holds/` |
-| digest job | put under `digest/`, and `kms:Sign` on the signing key |
-| verify job | read, and put under `verified/` |
+| writer | put objects under `records/`, `catalogue/` and the other prefixes it writes, put and read their retention, put a legal hold, read `holds/` |
+| verify job | read; it puts nothing |
 | query service | read, and write on the exports bucket if exports are wanted |
 
 Bind each through its ServiceAccount's annotations — `serviceAccount` (the
 writer; the consumers in stream mode), `receiver.serviceAccount`,
-`query.serviceAccount`, `jobs.digest.serviceAccount`,
+`query.serviceAccount`,
 `jobs.verify.serviceAccount`, `jobs.purge.serviceAccount`,
 `jobs.clockSync.serviceAccount` — with Pod Identity or IRSA.
 
 Every component runs as a ServiceAccount of its own, named
-`<fullname>-<component>` (`audit-receiver`, `audit-query`, `audit-digest`,
+`<fullname>-<component>` (`audit-receiver`, `audit-query`,
 `audit-verify`, `audit-purge`, `audit-clock-sync`); only the writer keeps the
 release's name (`audit`). Each takes `create`, `name` and `annotations`. In
 stream mode the chart refuses a receiver and a writer that share one
@@ -113,34 +113,6 @@ before the writer rolls when `migrate.enabled` is true, with
 The index is a projection: `audit reindex` rebuilds it from the archive. It
 needs no backup and no replica, and losing it costs search until the rebuild
 finishes, not evidence.
-
-### A signing key for the digest chain
-
-Writing the archive and vouching for it must stay different privileges, so the
-digest job signs with a key the writer's role cannot use. Three ways, in order
-of preference:
-
-```sh
-# AWS KMS (signer.kmsKey): an ECC_NIST_P256 key. The private half never
-# leaves KMS, and only the digest job's role has kms:Sign on it.
-# OpenBAO transit (signer.transit): an ed25519 key, the same
-# separation for a deployment whose secrets live in OpenBAO.
-
-# Or a key file, when there is neither:
-openssl genpkey -algorithm ed25519 -out key.pem
-openssl pkey -in key.pem -pubout -out public.pem
-kubectl create secret generic audit-signing-key -n <app> --from-file=key.pem=key.pem
-kubectl create secret generic audit-signing-public -n <app> --from-file=public.pem=public.pem
-```
-
-The digest job's `signer.keyFile.path` and the verify job's `publicKeyFile`
-name the files, and each job's `secretMounts` mounts the Secret that holds
-them.
-
-The verify job and every auditor need only the public half:
-`audit key public --kms-key <id>` (or `--transit-key`, or `--key`) prints it.
-Keep a key file somewhere other than the cluster —
-[key custody](../operations/key-custody.md).
 
 ### A reference clock
 
@@ -184,6 +156,12 @@ identifiers it receives are opaque. A deployment that must be able to
 crypto-shred configures a provider deliberately
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
 
+**A signing key.** Nothing in v1 signs yet: the digest job that used one was
+removed with the v0 layout, and seals ([0019](../decisions/0019-seals.md)) will
+take its place. The signers (an AWS KMS ECC_NIST_P256 key, an OpenBAO transit
+ed25519 key, or a key file) and `audit key public` are kept for them. `audit
+verify` needs no key.
+
 ## 3. Install
 
 The application's chart takes this one as a dependency:
@@ -214,7 +192,7 @@ reason lives. What every installation sets, whichever shape:
 | `profiles` | what copies are kept, each composed from presets |
 | `writer.config.database`, `writer.secretEnv` | the index: its URL, and the Secret holding the password |
 | `query.enabled`, `query.config`, `query.grants` | the read path, its own database role, and who may read what |
-| `jobs.*.config` | digest, verify, purge and clock-sync |
+| `jobs.*.config` | verify, purge and clock-sync |
 
 Which presets to compose is a policy question, not a values question:
 [which presets a deployment composes](../operations/presets-policy.md).
@@ -230,7 +208,7 @@ helm upgrade --install <application> ./charts/<application> -n <app> -f values.y
 
 The chart **refuses to render** a configuration the binaries would reject, or
 accept and get quietly wrong: a configuration that does not match its
-binary's schema (a digest job with no signer, a misspelt key, a password in a
+binary's schema (a misspelt key, a password in a
 URL), the writer's database given to the query service, `mode: stream` with no
 `writer.config.stream` or no database, a `replicas` that is not the number of
 writer pods, or an extension whose profile the deployment does not compose.
@@ -240,8 +218,8 @@ Each refusal says why, and they are listed in
 
 One refusal the chart cannot make is the binaries': a profile whose presets
 demand a lock stricter than `archive.lockMode` — `pci-dss` on `lockMode: none`, say.
-The presets' readings live in the binaries, not the chart, so the writer, the
-digest job and the verify job refuse to **start** instead, naming the profile
+The presets' readings live in the binaries, not the chart, so the writer
+refuses to **start** instead, naming the profile
 and both modes, and the first rollout is where it shows.
 
 ## 4. Check that it works
@@ -257,16 +235,16 @@ and both modes, and the first rollout is where it shows.
    [the example application](../../examples/emit/main.go) against the
    receiver's Service.
 4. **It is in the archive.**
-   `aws s3 ls s3://example-audit/audit/app/profile=security/ --recursive`
-   lists an object per profile, tenant and batch.
-5. **The chain seals and verifies.** After the next hour the digest job writes
-   under `digest/`, and the following night the verify job records a result
-   under `verified/`. An auditor checks the same thing with read access and
-   the public key:
+   `aws s3 ls s3://example-audit/audit/app/records/security/ --recursive`
+   lists an object per profile, tenant and ingest batch, under the hour it
+   was ingested in.
+5. **It verifies.** The following night the verify job checks the previous
+   day's objects and records the result. An auditor checks the same thing
+   with read access to the archive and nothing else:
 
    ```sh
    audit verify --profile security --last 24h \
-     --bucket example-audit --prefix audit/app --public-key public.pem
+     --bucket example-audit --prefix audit/app
    ```
 
 6. **The query service keeps its contract.** With a token that may read:
@@ -276,8 +254,7 @@ and both modes, and the first rollout is where it shows.
      --profile security --token-file token
    ```
 
-   Run it after the first records land, and `audit verify` an hour later, so
-   that there is a sealed hour to walk.
+   Run it after the first records land.
 
 7. **Alerts.** With the `OTEL_EXPORTER_OTLP_ENDPOINT` environment set on the
    pods by the platform, page on

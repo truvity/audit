@@ -121,15 +121,13 @@ func TestAValidFileLoadsWithItsDefaults(t *testing.T) {
 func TestEveryJobTakesAValidFile(t *testing.T) {
 	archive := "archive: {bucket: {name: b}}\n"
 	for name, load := range map[string]func(string) error{
-		"digest":  func(p string) error { _, err := config.LoadDigest(p); return err },
 		"verify":  func(p string) error { _, err := config.LoadVerify(p); return err },
 		"purge":   func(p string) error { _, err := config.LoadPurge(p); return err },
 		"clock":   func(p string) error { _, err := config.LoadClockSync(p); return err },
 		"migrate": func(p string) error { _, err := config.LoadMigrate(p); return err },
 	} {
 		body := map[string]string{
-			"digest":  "deployment: /d.yaml\n" + archive + "signer: {kmsKey: alias/sign}\n",
-			"verify":  "deployment: /d.yaml\n" + archive + "publicKeyFile: /p.pem\n",
+			"verify":  "deployment: /d.yaml\n" + archive,
 			"purge":   "deployment: /d.yaml\ndatabase: {url: 'postgres://u@h/db'}\n",
 			"clock":   "ntp: [time.example.test]\n",
 			"migrate": "database: {url: 'postgres://u@h/db'}\nreader: audit_query\n",
@@ -255,16 +253,6 @@ func TestExactlyOneWayToVerifyCallers(t *testing.T) {
 	neither := strings.Replace(minimalWriter, "anonymousWrites: true\n", "", 1)
 	if _, err := config.LoadWriter(write(t, neither)); err == nil {
 		t.Error("a writer that neither verifies callers nor says it accepts anybody was accepted")
-	}
-}
-
-func TestExactlyOneDigestSigner(t *testing.T) {
-	base := "deployment: /d\narchive: {bucket: {name: b}}\n"
-	if _, err := config.LoadDigest(write(t, base)); err == nil {
-		t.Error("an unsigned chain was accepted")
-	}
-	if _, err := config.LoadDigest(write(t, base+"signer: {kmsKey: k, keyFile: {path: /k.pem}}\n")); err == nil {
-		t.Error("two signers were accepted")
 	}
 }
 

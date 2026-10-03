@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/truvity/audit/internal/hold"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
 )
@@ -32,7 +33,8 @@ func archive(t *testing.T) (*storetest.Memory, hold.Store) {
 // object writes an archive object as the writer would.
 func object(t *testing.T, s *storetest.Memory, profile, tenant, name string) string {
 	t.Helper()
-	key := "profile=" + profile + "/tenant=" + tenant + "/year=2026/month=09/day=17/" + name
+	hour := at(t, "2026-09-17T09:00:00Z")
+	key := store.RecordKey(profile, tenant, hour, ulid.From(hour, uint64(name[0])))
 	if err := s.Put(context.Background(), store.Object{
 		Key: key, Body: []byte("{}"), RetainUntil: at(t, "2027-09-17T00:00:00Z"),
 	}); err != nil {
@@ -45,9 +47,9 @@ func object(t *testing.T, s *storetest.Memory, profile, tenant, name string) str
 // hold on a profile means and the archive puts the tenant below it.
 func TestPlaceHoldsEveryTenantOfAProfile(t *testing.T) {
 	s, holds := archive(t)
-	acme := object(t, s, "security", "acme", "a.ndjson.zst")
-	globex := object(t, s, "security", "globex", "b.ndjson.zst")
-	other := object(t, s, "history", "acme", "c.ndjson.zst")
+	acme := object(t, s, "security", "acme", "a")
+	globex := object(t, s, "security", "globex", "b")
+	other := object(t, s, "history", "acme", "c")
 
 	placed, err := holds.Place(context.Background(), hold.Record{
 		ID: "h-1", Profile: "security", Reason: "matter 2026-11", PlacedBy: "olga",
@@ -73,8 +75,8 @@ func TestPlaceHoldsEveryTenantOfAProfile(t *testing.T) {
 // Narrowed to a tenant, it holds that tenant and no other.
 func TestPlaceCanHoldOneTenant(t *testing.T) {
 	s, holds := archive(t)
-	acme := object(t, s, "security", "acme", "a.ndjson.zst")
-	globex := object(t, s, "security", "globex", "b.ndjson.zst")
+	acme := object(t, s, "security", "acme", "a")
+	globex := object(t, s, "security", "globex", "b")
 
 	if _, err := holds.Place(context.Background(), hold.Record{
 		ID: "h-1", Profile: "security", Tenant: "acme", Reason: "matter", PlacedBy: "olga",
@@ -108,7 +110,7 @@ func TestPlaceRefusesWithoutAReason(t *testing.T) {
 // releasing writes another, and neither is overwritten.
 func TestAHoldIsRecordedTwiceAndOverwrittenNever(t *testing.T) {
 	s, holds := archive(t)
-	object(t, s, "security", "acme", "a.ndjson.zst")
+	object(t, s, "security", "acme", "a")
 	ctx := context.Background()
 
 	if _, err := holds.Place(ctx, hold.Record{
@@ -153,8 +155,8 @@ func TestAHoldIsRecordedTwiceAndOverwrittenNever(t *testing.T) {
 // Listing folds each hold's two records into one.
 func TestListFoldsTheTwoRecords(t *testing.T) {
 	s, holds := archive(t)
-	object(t, s, "security", "acme", "a.ndjson.zst")
-	object(t, s, "history", "acme", "b.ndjson.zst")
+	object(t, s, "security", "acme", "a")
+	object(t, s, "history", "acme", "b")
 	ctx := context.Background()
 
 	for _, c := range []struct{ id, profile string }{{"h-1", "security"}, {"h-2", "history"}} {
@@ -186,7 +188,7 @@ func TestListFoldsTheTwoRecords(t *testing.T) {
 
 func TestReleaseRefusesTwice(t *testing.T) {
 	s, holds := archive(t)
-	object(t, s, "security", "acme", "a.ndjson.zst")
+	object(t, s, "security", "acme", "a")
 	ctx := context.Background()
 	if _, err := holds.Place(ctx, hold.Record{
 		ID: "h-1", Profile: "security", Reason: "matter", PlacedBy: "olga",
@@ -206,7 +208,7 @@ func TestReleaseRefusesTwice(t *testing.T) {
 // knew there were none.
 func TestWatcherSaysWhenItHasNotRead(t *testing.T) {
 	s, holds := archive(t)
-	object(t, s, "security", "acme", "a.ndjson.zst")
+	object(t, s, "security", "acme", "a")
 	ctx := context.Background()
 	if _, err := holds.Place(ctx, hold.Record{
 		ID: "h-1", Profile: "security", Reason: "matter", PlacedBy: "olga",
@@ -245,7 +247,7 @@ func TestWatcherSaysWhenItHasNotRead(t *testing.T) {
 // A hold is an operator's action, and the record has to name the operator.
 func TestPlaceAndReleaseRefuseWithoutSayingWho(t *testing.T) {
 	s, holds := archive(t)
-	object(t, s, "security", "acme", "a.ndjson.zst")
+	object(t, s, "security", "acme", "a")
 	ctx := context.Background()
 	_, err := holds.Place(ctx, hold.Record{ID: "h-1", Profile: "security", Reason: "matter"})
 	if err == nil || !strings.Contains(err.Error(), "who") {
@@ -265,7 +267,7 @@ func TestPlaceAndReleaseRefuseWithoutSayingWho(t *testing.T) {
 // A hold released long ago must cost it a listing entry, not a fetch.
 func TestActiveDoesNotOpenReleasedHolds(t *testing.T) {
 	s, holds := archive(t)
-	object(t, s, "security", "acme", "a.ndjson.zst")
+	object(t, s, "security", "acme", "a")
 	ctx := context.Background()
 	for _, id := range []string{"h-1", "h-2", "h-3"} {
 		if _, err := holds.Place(ctx, hold.Record{

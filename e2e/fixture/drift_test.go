@@ -55,14 +55,11 @@ func TestChartHonoursTheFixturesNames(t *testing.T) {
 	for _, want := range []string{
 		"name: " + names.WriterSecret,
 		"name: " + names.S3CredsSecret,
-		"secretName: " + names.DigestKeySecret,
-		"secretName: " + names.VerifyPublicSecret,
 		"reader: " + names.QueryRole,
 		"name: " + names.Bucket,
 		"url: " + names.StreamURL,
 		"name: " + names.StreamName,
 		"consumer: " + names.StreamConsumer,
-		"id: " + names.DigestKeyID,
 		names.WriterRole + "@" + names.DatabaseHost,
 	} {
 		if !strings.Contains(rendered, want) {

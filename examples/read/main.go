@@ -91,8 +91,8 @@ func run() error {
 		return nil
 	}
 
-	// One record, with where the copy lives and whether the digest chain has
-	// vouched for it.
+	// One record, with where the copy lives and whether a seal has vouched for
+	// it (the digest and the time stay empty until seals exist).
 	got, err := client.Get(ctx, connect.NewRequest(&auditv1.GetRequest{Profile: "security", Id: first}))
 	if err != nil {
 		return err

@@ -6,7 +6,7 @@ chart as a dependency
 ([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 
 There are two shapes. They write the same archive, under the same catalogue
-rules and the same digest chain, and an auditor verifies either with the
+rules and the same bucket layout, and an auditor verifies either with the
 same command. What differs is how a record gets from the application to the
 bucket.
 
@@ -43,7 +43,6 @@ Switched on per installation, and neither adds anything to the request path.
 | Postgres | one database, in a cluster of its own if the application has none | one database in the application's existing cluster | index, dedupe table, rollups — rebuildable, not backed up |
 | JetStream | not used | one stream on the application's own account | records not yet archived |
 | Valkey or another cache | not used | the application's existing one, with the quotas extension | counters, corrected hourly |
-| KMS | one signing key for the digest chain | the same | the chain's signature |
 | OpenBAO | not used unless the deployment chooses a key provider | the same | pseudonymisation keys, off by default |
 | pod disk | nothing | nothing | — |
 
@@ -63,8 +62,6 @@ its own prefix.
   [S3 guide](../operations/s3-guide.md) has the policy.
 - A **Postgres database** the writer owns, and a **read-only role** for the
   query service. See [one more database](#one-more-database-in-a-cluster-you-already-run).
-- A **signing key** for the digest chain — a KMS key is the usual choice, so
-  that writing the archive and vouching for it stay separate privileges.
 - A **reference clock** for the clock-synchronisation job. Every preset with
   a compliance obligation asks for a daily record of the clock's offset, and
   the job's configuration requires one.

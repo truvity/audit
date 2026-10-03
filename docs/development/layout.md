@@ -40,9 +40,9 @@ sinkserver/           the SinkService handler and the Receiver (what the writer 
 sink/natssink/        the NATS JetStream publisher
 sink/sqssink/         the SQS publisher
 preset/               presets, profile composition, the deployment document
-keys/                 pseudonymisation providers (local, OpenBAO transit) and digest signers
+keys/                 pseudonymisation providers (local, OpenBAO transit) and signers, for seals
                       (key file, AWS KMS, OpenBAO transit)
-store/                the object store interface and archive layout; s3store/ the bucket;
+store/                the object store interface and the v1 archive layout; s3store/ the bucket;
                       storetest/ a memory store a test writes to and can tamper with
 index/                Indexer and Searcher; memory; postgres/ the index, searcher, dedupe,
                       migrations; s3scan/ a searcher over the archive; indextest/ the
@@ -54,7 +54,10 @@ query/                the query service as a library: New(Config)
 internal/writer/      split, identity treatment, roll, put, index, dead letters, dedupe,
                       retention addenda, the writer's own account of itself
 internal/query/       search, facets, get, export, resolve, behind grants
-internal/digest/      the digest chain: builder, verifier, provenance
+internal/recobj/      a record object: the key, the metadata, the body, encoded and decoded
+internal/bucketcontract/
+                      the check of the bucket contract, which is also its
+                      conformance suite (memory store and LocalStack S3)
 internal/identity/    sealed identities, for resolve
 internal/hold/        legal holds, and the writer's view of them
 internal/registry/    registered catalogues: validation, storage, the archive copy —
@@ -65,12 +68,13 @@ internal/cli/         the commands of cmd/audit
 internal/config/      each binary's configuration: the types, the loader, and the
                       schema generator behind schemas/config/
 internal/corpus/      the record corpus (testdata/records) for transport tests
-internal/s3test/      a real S3 for the archive walks; internal/pgtest/ a database
+internal/s3test/      a real S3 for the archive walks and the conformance suite;
+                      internal/pgtest/ a database
 internal/authtest/    token issuers for tests
 internal/schemagen/   the record's JSON Schema
 
 cmd/audit/            the operator's command: validate, check-emitters, messages, profile,
-                      verify, digest, conformance, replay, migrate, reindex, purge,
+                      verify, conformance, replay, migrate, reindex, purge,
                       clock-sync, hold, key
 cmd/audit-writer/     the receiver and the writer (one binary, two modes), and
                       RegisterCatalogue

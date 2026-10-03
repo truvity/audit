@@ -59,19 +59,15 @@ usage:
         @truvity/audit's viewer.
 
   audit verify --profile <name> --from <date> --to <date> [flags]
-        Walk a profile's digest chain and report what it finds. Needs the
-        archive and a public key, and nothing that has to be trusted. With
-        --deployment it also holds each object's lock to what the profile
-        demands.
+        Check a profile's record objects over a range of ingest time against
+        the bucket contract: each object's key and metadata, the sha256 of its
+        bytes and the hash on every record. Needs the archive and nothing that
+        has to be trusted. With --deployment it also holds each object's lock
+        to what the profile demands.
 
   audit replay --dlq --from <date> --to <date> [flags]
         Send dead letters back to a writer once the cause is fixed. Without
         --sink it reads and summarises them and sends nothing.
-
-  audit digest --deployment <file> --key <file>|--kms-key <id>|--transit-key <name> [flags]
-        Seal the windows since the last digest into the signed chain. Run it
-        hourly. It catches up on windows a missed run left behind, because a
-        gap in the chain cannot be told from a digest somebody removed.
 
   audit purge --deployment <file> --database <url> [flags]
         Bring the index and the deduplication table back within what the
@@ -89,8 +85,7 @@ usage:
         here, and it cannot be undone.
 
   audit key public --key <file>|--kms-key <id>|--transit-key <name>
-        Print the public half of a digest signing key: all an auditor needs,
-        with the archive, to verify the chain.
+        Print the public half of a signing key.
 
   audit hold place|release|list [flags]
         Place a legal hold on a profile's copies, or a tenant's within it, and
@@ -108,7 +103,7 @@ usage:
 
   audit version
 
-The scheduled jobs (digest, verify, purge, clock-sync, migrate) also take
+The scheduled jobs (verify, purge, clock-sync, migrate) also take
 --config <file> in place of every other flag: one file, validated against
 schemas/config/audit-<job>.schema.json, with secrets named by environment
 variable and never held in it. That is how the chart runs them.
@@ -143,8 +138,6 @@ func main() {
 		err = holdCmd(os.Args[2:])
 	case "clock-sync":
 		err = clockSync(os.Args[2:])
-	case "digest":
-		err = digestCmd(os.Args[2:])
 	case "purge":
 		err = purge(os.Args[2:])
 	case "migrate":
@@ -249,24 +242,19 @@ func checkEmitters(args []string) error {
 func verify(args []string) error {
 	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
 	var (
-		profile    = flags.String("profile", "", "the profile whose chain to walk")
-		from       = flags.String("from", "", "start of the range, a date or a timestamp")
-		to         = flags.String("to", "", "end of the range, a date or a timestamp")
-		publicKey  = flags.String("public-key", "", "the PEM public key the digests were signed with")
+		profile    = flags.String("profile", "", "the profile whose objects to check")
+		from       = flags.String("from", "", "start of the range of ingest time, a date or a timestamp")
+		to         = flags.String("to", "", "end of the range of ingest time, a date or a timestamp; not included")
 		deployment = flags.String("deployment", "",
 			"the profile configuration; with it, each object's lock is held to what the profile demands")
-		lookback = flags.Duration("lookback", 0,
-			"how far before the range to look for objects keyed under an older day; at least what audit digest used")
 		last = flags.Duration("last", 0,
 			"check the windows of the last this long, ending at the hour that has closed; instead of --from and --to")
-		sinkURL  = flags.String("sink", "", "the writer this job records what it checked through")
-		instance = flags.String("instance", "", "the name this job records itself under")
-		record   = flags.Bool("record", false,
-			"write a verification per window into the archive, which a record's provenance reads; needs write access to verified/")
+		sinkURL    = flags.String("sink", "", "the writer this job records what it checked through")
+		instance   = flags.String("instance", "", "the name this job records itself under")
 		asJSON     = flags.Bool("json", false, "print the report as JSON")
 		configFile = flags.String("config", "", configUsage)
 	)
-	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
+	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Reads)
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
@@ -279,8 +267,6 @@ func verify(args []string) error {
 	switch {
 	case *profile == "":
 		return errors.New("name a profile with --profile")
-	case *publicKey == "":
-		return errors.New("give the signing key's public half with --public-key")
 	case *archiveFlags.Bucket == "":
 		return errors.New("name the archive's bucket with --bucket")
 	}
@@ -302,11 +288,6 @@ func verify(args []string) error {
 			return fmt.Errorf("--to: %w", err)
 		}
 	}
-	pem, err := os.ReadFile(*publicKey)
-	if err != nil {
-		return err
-	}
-
 	ctx := context.Background()
 	archive, err := archiveFlags.Open(ctx)
 	if err != nil {
@@ -314,14 +295,12 @@ func verify(args []string) error {
 	}
 
 	run := cli.Verify{
-		Store: archive, PublicKeyPEM: pem, Profile: *profile,
-		From: start, To: end, Lookback: *lookback, JSON: *asJSON,
-		Instance: *instance, Record: *record,
+		Store: archive, Profile: *profile,
+		From: start, To: end, JSON: *asJSON, Instance: *instance,
 	}
 	// With the deployment, the check knows what lock each profile demands:
 	// an object with none is then INVALID under a profile that demands one
-	// and `unlocked` under one that does not. And a job that writes its
-	// results into the archive is held to the same refusal as the writer.
+	// and `unlocked` under one that does not.
 	if *deployment != "" {
 		profiles, err := profilesFor(*deployment)
 		if err != nil {
@@ -329,9 +308,6 @@ func verify(args []string) error {
 		}
 		if _, ok := profiles[*profile]; !ok {
 			return fmt.Errorf("the deployment has no profile %q", *profile)
-		}
-		if err := preset.CheckLockMode(profiles, string(archive.Lock())); err != nil {
-			return err
 		}
 		run.RequiredLock = requiredLocks(profiles)
 	}
@@ -616,102 +592,6 @@ func profilesFor(path string) (map[string]*preset.Profile, error) {
 	return d.Compose(presets)
 }
 
-// digestCmd seals windows into the signed chain.
-func digestCmd(args []string) error {
-	flags := flag.NewFlagSet("digest", flag.ContinueOnError)
-	var (
-		deployment = flags.String("deployment", "", "the profile configuration")
-		only       = flags.String("profile", "", "seal only this profile; default every one")
-		key        = flags.String("key", "", "PEM private key the digests are signed with")
-		keyID      = flags.String("key-id", "", "the name a digest records the signing key under")
-		kmsKey     = flags.String("kms-key", "", "an AWS KMS ECC_NIST_P256 key to sign with instead of --key")
-		transit    = transitFlags(flags)
-		from       = flags.String("from", "", "first window; default the hour after the last digest")
-		to         = flags.String("to", "", "last window; default the hour that has just closed")
-		lookback   = flags.Duration("lookback", 0, "how far back to look for objects keyed under an older day")
-		maxWindows = flags.Int("max-windows", 0, "how many windows one run may seal")
-		sinkURL    = flags.String("sink", "", "the writer this job records what it sealed through")
-		instance   = flags.String("instance", "", "the name this job records itself under")
-		asJSON     = flags.Bool("json", false, "print the report as JSON")
-		configFile = flags.String("config", "", configUsage)
-	)
-	archiveFlags := cli.NewArchiveFlags(flags, env, cli.Writes)
-	if _, err := parse(flags, args); err != nil {
-		return err
-	}
-	if *configFile != "" {
-		if err := onlyConfig(flags); err != nil {
-			return err
-		}
-		return digestFromConfig(*configFile, *asJSON)
-	}
-	switch {
-	case *deployment == "":
-		return errors.New("give the profile configuration with --deployment")
-	case *archiveFlags.Bucket == "":
-		return errors.New("name the archive's bucket with --bucket")
-	}
-	if n := given(*key, *kmsKey, *transit.key); n != 1 {
-		return errors.New("give exactly one of --key, --kms-key and --transit-key: " +
-			"an unsigned chain proves nothing, and one chain has one signer")
-	}
-
-	profiles, err := profilesFor(*deployment)
-	if err != nil {
-		return err
-	}
-	// The digests land in the same store as the copies they cover, so the
-	// job is held to the same refusal as the writer -- before a signer is
-	// opened, since a KMS or transit signer is a round trip of its own.
-	lock, err := archiveFlags.Lock()
-	if err != nil {
-		return err
-	}
-	if err := preset.CheckLockMode(profiles, string(lock)); err != nil {
-		return err
-	}
-	if *only != "" {
-		p, ok := profiles[*only]
-		if !ok {
-			return fmt.Errorf("the deployment has no profile %q", *only)
-		}
-		profiles = map[string]*preset.Profile{*only: p}
-	}
-	signer, err := signerFor(context.Background(), *key, *keyID, *kmsKey, *archiveFlags.Region, transit)
-	if err != nil {
-		return err
-	}
-
-	run := cli.Digest{
-		Profiles: profiles, Signer: signer,
-		Lookback: *lookback, MaxWindows: *maxWindows, JSON: *asJSON,
-		Instance: *instance,
-	}
-	if *sinkURL != "" {
-		if run.Catalogue, err = catalogue.Common(); err != nil {
-			return err
-		}
-		run.Sink = cli.WriterClient(*sinkURL)
-	}
-	if *from != "" {
-		if run.From, err = cli.ParseDay(*from); err != nil {
-			return fmt.Errorf("--from: %w", err)
-		}
-	}
-	if *to != "" {
-		if run.To, err = cli.ParseDay(*to); err != nil {
-			return fmt.Errorf("--to: %w", err)
-		}
-	}
-
-	ctx := context.Background()
-	if run.Store, err = archiveFlags.Open(ctx); err != nil {
-		return err
-	}
-	_, err = run.Run(ctx)
-	return err
-}
-
 // transitOptions names an OpenBAO transit signing key and how to reach it.
 type transitOptions struct {
 	key     *string
@@ -736,7 +616,7 @@ func given(values ...string) int {
 	return n
 }
 
-// signerFor is the digest signer a command was given: a key file, a KMS key or
+// signerFor is the signer a command was given: a key file, a KMS key or
 // a transit key — the last two keeping the private half out of the archive's
 // reach.
 func signerFor(ctx context.Context, keyFile, keyID, kmsKey, region string, transit transitOptions) (keys.Signer, error) {
@@ -762,7 +642,7 @@ func signerFor(ctx context.Context, keyFile, keyID, kmsKey, region string, trans
 	}
 }
 
-// keyPublic prints the public half of a digest signing key, which is all an
+// keyPublic prints the public half of a signing key, which is all an
 // auditor needs to verify the chain.
 func keyPublic(args []string) error {
 	flags := flag.NewFlagSet("key public", flag.ContinueOnError)
@@ -1031,7 +911,7 @@ func conformance(args []string) error {
 			"a file holding the bearer token to call it with, read on every request; default AUDIT_TOKEN_FILE")
 		limit    = flags.Int("max", 1000, "how many records of each profile the walk reads at most")
 		verified = flags.Duration("verified-before", 0,
-			"require sampled records older than this to be covered by a verified digest; 0 checks nothing")
+			"require sampled records older than this to carry a verified_at, which seals set; 0 checks nothing")
 		asJSON = flags.Bool("json", false, "print the report as JSON")
 	)
 	if _, err := parse(flags, args); err != nil {

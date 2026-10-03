@@ -45,15 +45,16 @@ x-stream: &stream
 # (presets/security.yaml: integrity.object_lock_mode: none); a profile that
 # demanded compliance or governance could not run here, and docs/guides/testing.md
 # says so.
+x-bucket: &bucket
+  name: audit-e2e-archive
+  region: us-east-1
+  endpoint: http://s3.object-store.svc:4566
+  pathStyle: true
+  credentialsEnv:
+    accessKeyID: AUDIT_S3_ACCESS_KEY_ID
+    secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
 x-archive: &archive
-  bucket:
-    name: audit-e2e-archive
-    region: us-east-1
-    endpoint: http://s3.object-store.svc:4566
-    pathStyle: true
-    credentialsEnv:
-      accessKeyID: AUDIT_S3_ACCESS_KEY_ID
-      secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+  bucket: *bucket
   lockMode: none
 x-archive-secret: &archive-secret
   - name: AUDIT_S3_ACCESS_KEY_ID
@@ -104,32 +105,14 @@ query:
   enabled: false
 
 jobs:
-  digest:
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive: *archive
-      sink:
-        url: http://audit-e2e:8080
-      signer:
-        keyFile:
-          path: /etc/audit/signing/key.pem
-          id: audit-e2e-digest-1
-    secretEnv: *archive-secret
-    secretMounts:
-      - secretName: audit-e2e-digest-key
-        mountPath: /etc/audit/signing
   verify:
     config:
       deployment: /etc/audit/deployment.yaml
-      archive: *archive
+      archive:
+        bucket: *bucket
       sink:
         url: http://audit-e2e:8080
-      publicKeyFile: /etc/audit/public/public.pem
-      record: true
     secretEnv: *archive-secret
-    secretMounts:
-      - secretName: audit-e2e-digest-public
-        mountPath: /etc/audit/public
   purge:
     enabled: false
   clockSync:

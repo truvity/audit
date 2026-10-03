@@ -132,18 +132,6 @@ func OpenKeysFrom(ctx context.Context, k *config.Keys) (keys.Provider, error) {
 	}
 }
 
-// TransitSignerFrom opens the OpenBAO transit key a digest is signed with.
-func TransitSignerFrom(ctx context.Context, t config.TransitSigner) (keys.Signer, error) {
-	login, token, tokenFile, err := openBAOCredentials(t.OpenBAO)
-	if err != nil {
-		return nil, err
-	}
-	return keys.NewTransitSigner(ctx, &keys.TransitSigner{
-		Address: t.OpenBAO.Address, Mount: mountOrTransit(t.OpenBAO.Mount), Namespace: t.OpenBAO.Namespace,
-		CAFile: t.OpenBAO.CAFile, Key: t.Key, Login: login, Token: token, TokenFile: tokenFile,
-	})
-}
-
 // SinkFrom is a client to the writer the configuration names, presenting the
 // token in the file it names. Every job that records through the writer builds
 // its client here or in WriterClient, so that none of them is the one that

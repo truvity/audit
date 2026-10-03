@@ -153,7 +153,6 @@ func Values() []byte {
 		}),
 		"service": obj("The writer's Service.", m{"type": m{"type": "string"}, "port": integer("Its port.", 1, nil)}),
 		"jobs": obj("The scheduled jobs.", m{
-			"digest":    job("audit-digest", true, m{"serviceAccount": def("serviceAccount")}),
 			"verify":    job("audit-verify", true, m{"serviceAccount": def("serviceAccount")}),
 			"purge":     job("audit-purge", false, m{"serviceAccount": def("serviceAccount")}),
 			"clockSync": job("audit-clock-sync", true, m{"serviceAccount": def("serviceAccount")}),
@@ -183,7 +182,7 @@ func Values() []byte {
 	// A component's config is held to its binary's schema where the component
 	// is rendered, and is free to be empty where it is not.
 	embedded := map[string]string{}
-	for _, name := range []string{"audit-writer", "audit-query", "audit-digest", "audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate"} {
+	for _, name := range []string{"audit-writer", "audit-query", "audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate"} {
 		embedded[name] = "config-" + name
 		flatten(defs, name)
 	}
@@ -208,7 +207,6 @@ func Values() []byte {
 		when(m{"properties": m{"mode": m{"const": "stream"}}, "required": []string{"mode"}}, configOf("audit-writer", "receiver")),
 		when(enabled("query"), configOf("audit-query", "query")),
 		when(enabled("migrate"), configOf("audit-migrate", "migrate")),
-		when(enabled("jobs", "digest"), configOf("audit-digest", "jobs", "digest")),
 		when(enabled("jobs", "verify"), configOf("audit-verify", "jobs", "verify")),
 		when(enabled("jobs", "purge"), configOf("audit-purge", "jobs", "purge")),
 		when(enabled("jobs", "clockSync"), configOf("audit-clock-sync", "jobs", "clockSync")),
@@ -217,7 +215,7 @@ func Values() []byte {
 	root := m{
 		"$schema":              "https://json-schema.org/draft/2020-12/schema",
 		"title":                "audit",
-		"description":          "The audit trail's write path: the writer, the query service, and the jobs that seal, verify and prune what it writes. Each component's `config` is the schema its binary validates its file against, embedded; everything else is the platform's. Names follow docs/reference/configuration.md.",
+		"description":          "The audit trail's write path: the writer, the query service, and the jobs that verify and prune what it writes. Each component's `config` is the schema its binary validates its file against, embedded; everything else is the platform's. Names follow docs/reference/configuration.md.",
 		"type":                 "object",
 		"additionalProperties": false,
 		// `x-` keys are free, so that a values file can anchor what it repeats.

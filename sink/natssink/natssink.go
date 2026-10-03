@@ -284,9 +284,8 @@ type ConsumerOptions struct {
 	// Fetching from a stream returns whatever is there, which under a light
 	// load is a handful of records a second. Writing each fetch straight
 	// through would make an object of each, and an archive of many tiny
-	// objects costs a request to put, a line in every hour's digest and an
-	// entry in every listing, forever. So the consumer gathers until one of
-	// the three is reached and writes once.
+	// objects costs a request to put and an entry in every listing, forever. So
+	// the consumer gathers until one of the three is reached and writes once.
 	//
 	// Nothing is lost by waiting: the messages stay unacknowledged until the
 	// target has taken them, so a consumer that dies mid-window leaves them on

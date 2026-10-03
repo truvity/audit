@@ -9,7 +9,7 @@ and held to one conformance suite (`index/indextest`).
 
 Nothing a search answers with is evidence. Everything in the index can be
 derived again from the archive objects, and those are the ones under an object
-lock that a signed digest chain accounts for. Three things follow, and they are
+lock. Three things follow, and they are
 the reason the rest of this design looks the way it does.
 
 A writer whose index is unreachable still writes the archive. The object is put,
@@ -70,9 +70,10 @@ opinion on the contract.
 
 The scan states what it gives up rather than hiding it. `Capabilities` says it
 counts no facets, because counting means reading everything that matches, which
-is the work it exists to bound; it orders only by occurred time, because the
-archive is laid out by day and any other order means reading everything before
-answering. Each is refused with the reason rather than answered narrowly.
+is the work it exists to bound; it orders only by occurred time, within an
+ingest day, because the archive is laid out by the day of ingest and any other
+order means reading everything before answering. Each is refused with the reason
+rather than answered narrowly.
 
 Its cursor is a place in the archive — an object and a line — where the indexed
 searchers carry sort values. A cursor therefore belongs to the searcher that
@@ -182,8 +183,9 @@ was taken.
 
 **A deployment with no database has no live tail.** The archive scan orders by
 `occurred_at` only, and refuses `recorded_at`, because the archive is laid out
-by the day things happened: following the order things were recorded in would
-mean reading far more of it than a poll can justify. The suite requires that
+by the day things were ingested and ordered by occurred time within it:
+following the order things were recorded in would mean reading far more of it
+than a poll can justify. The suite requires that
 refusal rather than allowing a narrower answer. So `searcher: s3scan` is
 for a deployment that searches the trail, not one that follows it.
 
@@ -214,6 +216,14 @@ no time range walks back to a horizon rather than to the beginning: under a
 seven-year retention, reading to the start is not an answer anybody is waiting
 for. Both are the deployment's to set.
 
+The scan walks **ingest days**, because that is what the v1 layout keys
+objects by ([the bucket contract](../reference/bucket-contract.md)), so a
+record is ordered among the day it arrived and not the day it happened. A
+query that names a period of `occurred_at` reads the ingest days from its start
+to its end plus `Lateness` (default 24 hours), and a record that arrived later
+than that is not found by the scan. The index has no such limit, which is one
+more reason a deployment of any size runs one.
+
 ## Reindex
 
 ```
@@ -221,7 +231,8 @@ audit reindex --profile <p> --from <day> --to <day> \
     --database <url> --bucket <b> --catalogue <file>...
 ```
 
-Safe to run over a range that is already indexed, which is the ordinary case:
+The range is of **ingest days**, read tenant by tenant in key order. Safe to
+run over a range that is already indexed, which is the ordinary case:
 an operator repairing an afternoon does not know exactly where the gap starts.
 
 The catalogues are required. Without them a rebuild would produce an index

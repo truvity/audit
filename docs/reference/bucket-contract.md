@@ -6,8 +6,11 @@ an installation share nothing else
 ([0016](../decisions/0016-three-parts-installed-independently.md)), so this
 page is the whole of what a second implementation of any part must know.
 
-This is a specification of a design that is not yet built; the
-[capabilities](../capabilities.md) page says what exists. The reasons are in
+The records and catalogue parts of this contract are built and tested (the
+writer writes them, `audit verify`, `audit reindex` and the scan searcher read
+them, and a conformance suite holds them to it); seals and keys are specified
+here and not built. The [capabilities](../capabilities.md) page says what
+exists. The reasons are in
 [0018](../decisions/0018-v1-bucket-layout.md) (the layout),
 [0019](../decisions/0019-seals.md) (seals) and
 [0020](../decisions/0020-observe-follows-the-bucket.md) (reading it).
@@ -36,7 +39,8 @@ differs by profile.
 **Key.** `<hh>` is the hour of the **ingest time**: the moment ingest took
 the batch, not the time of any record in it. `<ULID>` is generated when the
 put starts, from the same clock, so within an hour keys sort in the order
-batches arrived. Two batches never share a ULID.
+batches arrived. Two batches never share a ULID. A key whose ULID was made in
+another hour than the key names is not a key of this contract.
 
 **Body.** One batch is one object: newline-delimited JSON, zstd-compressed
 (`Content-Encoding: zstd`), one record per line. Each line is
@@ -46,8 +50,16 @@ batches arrived. Two batches never share a ULID.
 ```
 
 where `record` is the record as `audit.v1.Record` in its canonical JSON form
-and `hash` is the SHA-256 of that canonical encoding. A line is never
-changed, merged or reordered.
+(RFC 8785 over the protobuf JSON mapping) and `hash` is the SHA-256 of that
+canonical encoding, in lower-case hex. A writer embeds the canonical bytes as
+they are; a reader checks a line by putting `record` in canonical form and
+hashing that, so a line written with other whitespace still checks. A line is
+never changed, merged or reordered, and the line numbers of an object, counted
+from one, are how an index addresses a record.
+
+`<profile>` and `<tenant>` are one key component each, so a record whose
+tenant has a `/` in it cannot be written; the writer keeps it aside with the
+reason. The platform's own tenant, `@platform`, is a valid component.
 
 **Metadata.** Every object carries these user-defined keys (`x-amz-meta-`),
 so that a reader needs a listing and a `HEAD` and never a body:
@@ -175,10 +187,19 @@ No part reads another's.
 
 ## Conformance
 
-A conformance suite will test this contract: black-box, against any S3 API,
-it writes batches and catalogues through an ingest, seals them through a
-notary and reads the result through a follower, and checks every rule above,
+A conformance suite tests this contract: black-box, against any S3 API, it
+writes batches and catalogues through an ingest, seals them through a notary
+and reads the result through a follower, and checks every rule above,
 including the refusals (a second catalogue put with other bytes, a delegation
 of more than 25 hours, a seal signed by a revoked or unpinned key). A part
-that passes it may be installed beside the others. The suite is
+that passes it may be installed beside the others.
+
+The half for records and the catalogue is built: `internal/bucketcontract`
+holds a bucket to the key grammar, the envelope, the metadata, the sha256, the
+hash of every record, the uniqueness and order of keys and the presence of the
+catalogue a record names, and names the rule each finding breaks. Its tests run
+it, together with the refusals above for the conditional puts, against the
+in-memory store and against S3 (LocalStack in CI); `audit verify` applies the
+same checker to each object. The half for seals, delegations and revocations,
+with the Merkle vectors for n = 0, 1, 2, 3 and 5, comes with the notary and is
 [designed, not built](../capabilities.md).

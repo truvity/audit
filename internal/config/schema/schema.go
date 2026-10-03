@@ -22,7 +22,7 @@ const policy = "https://github.com/truvity/policy/schemas/"
 // named: schemas/config/<name>.schema.json.
 var Names = []string{
 	"audit-writer", "audit-query",
-	"audit-digest", "audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate",
+	"audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate",
 }
 
 type m = map[string]any
@@ -332,7 +332,7 @@ func querySchema() m {
 		"require":    requireEmitter(),
 		"archive": func() m {
 			a := archive(false, false)
-			a["description"] = "The archive the records are in: where a record's standing in the digest chain is read for Get, and what the s3scan searcher reads. Without it Get still answers, with where the copy is and nothing about whether it has been verified."
+			a["description"] = "The archive the records are in: what the s3scan searcher reads. Get answers where a copy is and, until seals vouch for it, nothing about whether it has been verified."
 			return a
 		}(),
 		"exports": obj("Where exports go: a bucket of its own with no Object Lock, which clears them. Without it the export operation is refused.", m{
@@ -353,50 +353,18 @@ func querySchema() m {
 		}})
 }
 
-func digestSchema() m {
-	props := m{
-		"deployment": str("Path to the profile configuration."),
-		"archive":    archive(true, false),
-		"sink":       m{"$ref": "#/$defs/sink", "description": "The writer this job records what it sealed through (audit.digest.written)."},
-		"require":    requireEmitter(),
-		"signer": obj("What the digests are signed with: exactly one. An unsigned chain proves nothing, and one chain has one signer.", m{
-			"keyFile": obj("A PEM ed25519 private key.", m{
-				"path": str("The key file."),
-				"id":   str("The name a digest records the signing key under."),
-			}, "path"),
-			"kmsKey": str("An AWS KMS ECC_NIST_P256 key. The private half never leaves KMS."),
-			"transit": obj("An OpenBAO transit ed25519 key, signed in to as the job's own identity and never the writer's.", m{
-				"key":     str("The transit key's name."),
-				"openbao": def("openbao"),
-			}, "key", "openbao"),
-		}),
-		"lookback":   duration("How far before a window to look for objects keyed under an older day. The verify job's must be at least this.", ""),
-		"maxWindows": integer("How many windows one run may seal when catching up.", 1, nil),
-	}
-	s := document("audit-digest", "audit digest",
-		"The configuration of `audit digest --config`, which seals windows into the signed chain."+secretsNote,
-		props, []string{"deployment", "archive", "signer"}, []string{"sink", "openbao", "duration"}, m{"dependentRequired": m{"require": []string{"sink"}}})
-	s["properties"].(m)["signer"].(m)["oneOf"] = []any{
-		m{"required": []string{"keyFile"}}, m{"required": []string{"kmsKey"}}, m{"required": []string{"transit"}},
-	}
-	return s
-}
-
 func verifySchema() m {
 	props := m{
-		"deployment":    str("Path to the profile configuration; the check holds each object's lock to what its profile demands."),
-		"archive":       archive(true, false),
-		"sink":          m{"$ref": "#/$defs/sink", "description": "The writer this job records what it checked through."},
-		"require":       requireEmitter(),
-		"publicKeyFile": str("The PEM public key the digests were signed with."),
-		"profiles":      m{"type": "array", "minItems": 1, "uniqueItems": true, "items": str("A profile name."), "description": "The profiles whose chains to walk. Unset walks every profile the deployment composes."},
-		"last":          duration("Check the windows of the last this long, ending at the hour that has closed.", "24h"),
-		"lookback":      duration("How far before the range to look for objects keyed under an older day; at least what the digest job used.", ""),
-		"record":        boolean("Write a verification per window into the archive under verified/, which a record's provenance reads. Needs write access there."),
+		"deployment": str("Path to the profile configuration; the check holds each object's lock to what its profile demands."),
+		"archive":    archive(false, false),
+		"sink":       m{"$ref": "#/$defs/sink", "description": "The writer this job records what it checked through."},
+		"require":    requireEmitter(),
+		"profiles":   m{"type": "array", "minItems": 1, "uniqueItems": true, "items": str("A profile name."), "description": "The profiles whose objects to check. Unset checks every profile the deployment composes."},
+		"last":       duration("Check the objects ingested in the last this long, ending at the hour that has closed.", "24h"),
 	}
 	return document("audit-verify", "audit verify",
-		"The configuration of `audit verify --config`, which walks digest chains and reports what it finds."+secretsNote,
-		props, []string{"deployment", "archive", "publicKeyFile"}, []string{"sink", "duration"}, m{"dependentRequired": m{"require": []string{"sink"}}})
+		"The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds."+secretsNote,
+		props, []string{"deployment", "archive"}, []string{"sink", "duration"}, m{"dependentRequired": m{"require": []string{"sink"}}})
 }
 
 func purgeSchema() m {
@@ -444,8 +412,6 @@ func Schema(name string) ([]byte, bool) {
 		s = writerSchema()
 	case "audit-query":
 		s = querySchema()
-	case "audit-digest":
-		s = digestSchema()
 	case "audit-verify":
 		s = verifySchema()
 	case "audit-purge":

@@ -97,30 +97,6 @@ spec:
               the climb, and the sink's own health.
             {{- include "audit.runbook" (dict "root" $ "alert" "AuditEmitterDroppingRecords") | nindent 12 }}
         {{- end }}
-        {{- if $r.digestStale.enabled }}
-        # The hourly job seals the hour that has just closed, so the newest
-        # window's age runs from 0 to about 1h05m before the next run. Two hours
-        # tolerates one missed run (a node drain, a slow KMS) and fires on two,
-        # which is when the chain has a gap nothing later can fill. The age is
-        # observed by the writer, not pushed by the job, so a job that never
-        # runs still shows. A profile with no digest at all reports the 24h
-        # lookback, so a chain that never started fires too.
-        - alert: AuditDigestStale
-          expr: >-
-            max by ({{ $c }}, namespace, profile) (audit_digest_age_seconds{ {{- $w -}} }) > {{ $r.digestStale.maxAgeSeconds }}
-          for: {{ $r.digestStale.for }}
-          labels:
-            {{- include "audit.ruleLabels" (dict "root" $ "cfg" $r.digestStale) | nindent 12 }}
-          annotations:
-            summary: 'The newest audit digest of profile {{ "{{ $labels.profile }}" }} is {{ "{{ $value | humanizeDuration }}" }} old'
-            description: >-
-              No digest window has been sealed for profile {{ "{{ $labels.profile }}" }}
-              for longer than {{ $r.digestStale.maxAgeSeconds }}s. An hour with no
-              digest cannot be told from one whose digest was removed. Check the
-              digest CronJob ({{ "`kubectl get cronjob`" }}), its last Job's log and
-              the signing key it uses.
-            {{- include "audit.runbook" (dict "root" $ "alert" "AuditDigestStale") | nindent 12 }}
-        {{- end }}
         {{- if $r.indexLag.enabled }}
         # The lag is from an object being in the archive to its rows being in the
         # index, so it is the insert's own time: milliseconds when healthy (the

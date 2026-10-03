@@ -75,12 +75,14 @@ func PlacedKey(id string) string { return Prefix + "/" + id + "/placed.json" }
 // ReleasedKey is the second record, written when the hold comes off.
 func ReleasedKey(id string) string { return Prefix + "/" + id + "/released.json" }
 
-// prefixOf is the archive prefix a hold covers.
+// prefixOf is the archive prefix a hold covers: the profile's records, or one
+// tenant's of them. The profile is the first component of a record key, so a
+// hold on a profile is one prefix.
 func prefixOf(r Record) string {
 	if r.Tenant == "" {
-		return "profile=" + r.Profile
+		return store.ProfilePrefix(r.Profile)
 	}
-	return "profile=" + r.Profile + "/tenant=" + r.Tenant
+	return store.TenantPrefix(r.Profile, r.Tenant)
 }
 
 // Store places, releases and lists holds.
@@ -205,6 +207,10 @@ func (s Store) Place(ctx context.Context, r Record) (Record, error) {
 		return r, errors.New("hold: name the profile to hold")
 	case strings.TrimSpace(r.Reason) == "":
 		return r, errors.New("hold: give a reason: a hold nobody can account for cannot be safely released")
+	case store.KeyComponent(r.Profile) != "":
+		return r, fmt.Errorf("hold: the profile %q %s, so no key is under it", r.Profile, store.KeyComponent(r.Profile))
+	case r.Tenant != "" && store.KeyComponent(r.Tenant) != "":
+		return r, fmt.Errorf("hold: the tenant %q %s, so no key is under it", r.Tenant, store.KeyComponent(r.Tenant))
 	case r.ID == "":
 		return r, errors.New("hold: an identifier is required")
 	case strings.TrimSpace(r.PlacedBy) == "":
@@ -281,41 +287,26 @@ func (s Store) Get(ctx context.Context, id string) (Record, error) {
 	return r, nil
 }
 
-// sweep sets or clears the hold on everything under a prefix.
+// sweep sets or clears the hold on everything under a prefix, in key order, a
+// page at a time.
 func (s Store) sweep(ctx context.Context, prefix string, on bool) (int, error) {
-	tenants := []string{prefix + "/"}
-	if !strings.Contains(prefix, "/tenant=") {
-		found, err := s.Store.Prefixes(ctx, prefix+"/", "/")
+	count, after := 0, ""
+	for {
+		entries, err := s.Store.List(ctx, prefix, after, 1000)
 		if err != nil {
-			return 0, fmt.Errorf("hold: %w", err)
+			return count, fmt.Errorf("hold: %w", err)
 		}
-		tenants = found
-	}
-
-	count := 0
-	for _, tenant := range tenants {
-		after := ""
-		for {
-			entries, err := s.Store.List(ctx, tenant, after, 1000)
-			if err != nil {
-				return count, fmt.Errorf("hold: %w", err)
+		for _, e := range entries {
+			after = e.Key
+			if err := s.Store.SetLegalHold(ctx, e.Key, on); err != nil {
+				return count, err
 			}
-			if len(entries) == 0 {
-				break
-			}
-			for _, e := range entries {
-				after = e.Key
-				if err := s.Store.SetLegalHold(ctx, e.Key, on); err != nil {
-					return count, err
-				}
-				count++
-			}
-			if len(entries) < 1000 {
-				break
-			}
+			count++
+		}
+		if len(entries) < 1000 {
+			return count, nil
 		}
 	}
-	return count, nil
 }
 
 func (s Store) write(ctx context.Context, key string, r Record) error {

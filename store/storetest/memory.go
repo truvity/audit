@@ -4,7 +4,7 @@
 // do: overwrite an object, remove one, change when one appeared. This package
 // gives a store that behaves like that bucket for the properties the system
 // depends on, and can also be made to misbehave on purpose, so that a test can
-// show the digest chain catches what the bucket was relied on to prevent.
+// show the checks catch what the bucket was relied on to prevent.
 package storetest
 
 import (
@@ -107,7 +107,19 @@ func (m *Memory) Head(_ context.Context, key string) (store.Entry, error) {
 		Key: key, Size: int64(len(o.Body)),
 		Modified: m.written[key], RetainUntil: o.RetainUntil,
 		LegalHold: o.LegalHold,
+		Metadata:  copyMeta(o.Metadata),
 	}, nil
+}
+
+func copyMeta(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // List implements Store.
@@ -162,9 +174,9 @@ func (m *Memory) now() time.Time {
 // one appeared.
 //
 // A bucket configured as this system asks would refuse all three. They exist so
-// that a test can do them anyway and show that the digest chain catches what
+// that a test can do them anyway and show that the checks catch what
 // the bucket was relied on to prevent — which is the only way to know that the
-// chain is worth having and not just another thing that agrees with itself.
+// checks are worth having and not just another thing that agrees with itself.
 func (m *Memory) Replace(key string, body []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -173,6 +185,20 @@ func (m *Memory) Replace(key string, body []byte) {
 		return
 	}
 	o.Body = append([]byte(nil), body...)
+	m.objects[key] = o
+}
+
+// SetMetadata overwrites an object's user metadata, as a bucket that someone
+// with write access could be made to do. A test uses it to show that a check
+// does not rest on the metadata alone.
+func (m *Memory) SetMetadata(key string, meta map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	o, ok := m.objects[key]
+	if !ok {
+		return
+	}
+	o.Metadata = copyMeta(meta)
 	m.objects[key] = o
 }
 

@@ -68,7 +68,8 @@ locale-aware), actor, target, outcome, time, and for the security profile
 the client address. Expanding shows the JSON with filter-for and filter-out
 on every value, the old-versus-new diff on updates, pivots by request id,
 trace id, actor and target, a permalink by event id, and the integrity
-badge when a verified digest covers the record.
+badge when a verified seal covers the record; until seals exist it has
+nothing to show.
 
 Where the deployment runs no pseudonymisation keys — the default — an
 identity is shown as it was written, and the page offers no resolve: the

@@ -16,10 +16,8 @@ and nothing else composes them.
 profiles:
   security:
     presets: [security, pci-dss]
-    prefix: profile=security
   billing:
     presets: [billing-nl]
-    prefix: profile=billing
   history:
     presets: [history]
   evidence:

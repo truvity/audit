@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/truvity/audit/sdk/catalogue"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,10 +16,12 @@ import (
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/identity"
+	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
 )
 
@@ -172,6 +172,22 @@ func write(t *testing.T, b *built, records ...*record.Record) *sink.Result {
 		t.Fatalf("write: %v", err)
 	}
 	return res
+}
+
+// A tenant that cannot be a component of a key can never be written; it is
+// dead-lettered with the reason and does not fail the batch that carried it,
+// which would be retried for ever.
+func TestATenantWithASlashIsDeadLettered(t *testing.T) {
+	b := build(t)
+	bad := fresh(t)
+	bad.TenantId = "acme/eu"
+	res := write(t, b, bad, fresh(t))
+	if res.Accepted != 2 {
+		t.Fatalf("accepted %d, want both: the dead letter is accepted", res.Accepted)
+	}
+	if len(b.deadLetter) != 1 || !strings.Contains(b.deadLetter[0], "cannot be a component of an archive key") {
+		t.Fatalf("dead letters = %v", b.deadLetter)
+	}
 }
 
 // Nothing is acknowledged before it is in the archive. Holding a batch open and
@@ -439,38 +455,45 @@ func TestNewChecksItsParts(t *testing.T) {
 	}
 }
 
-// decode reads every copy the writer put, from every object.
-func decode(t *testing.T, s *storetest.Memory) []*record.Record {
+// objectRecords reads the records of one record object, checking the object as
+// the contract says on the way: the metadata, and the hash on every line.
+func objectRecords(t *testing.T, s *storetest.Memory, key string) []*record.Record {
 	t.Helper()
-	decoder, err := zstd.NewReader(nil)
+	body, err := s.Get(context.Background(), key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer decoder.Close()
+	stored, _ := s.Object(key)
+	lines, err := recobj.Decode(body)
+	if err != nil {
+		t.Fatalf("%s: %v", key, err)
+	}
+	if problems := recobj.CheckMetadata(stored.Metadata, body, len(lines)); len(problems) > 0 {
+		t.Fatalf("%s: %v", key, problems)
+	}
+	out := make([]*record.Record, 0, len(lines))
+	for n, line := range lines {
+		if err := line.Verify(); err != nil {
+			t.Fatalf("%s:%d: %v", key, n+1, err)
+		}
+		r, err := line.Decoded()
+		if err != nil {
+			t.Fatalf("%s:%d: %v", key, n+1, err)
+		}
+		out = append(out, r)
+	}
+	return out
+}
 
+// decode reads every copy the writer put, from every record object.
+func decode(t *testing.T, s *storetest.Memory) []*record.Record {
+	t.Helper()
 	var out []*record.Record
 	for _, key := range s.Keys() {
-		if strings.HasPrefix(key, "dlq/") || strings.HasPrefix(key, identity.Prefix+"/") {
+		if !strings.HasPrefix(key, store.RecordsPrefix) {
 			continue
 		}
-		body, err := s.Get(context.Background(), key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		plain, err := decoder.DecodeAll(body, nil)
-		if err != nil {
-			t.Fatalf("%s: %v", key, err)
-		}
-		for _, line := range strings.Split(strings.TrimRight(string(plain), "\n"), "\n") {
-			if line == "" {
-				continue
-			}
-			var r record.Record
-			if err := record.Unmarshal([]byte(line), &r); err != nil {
-				t.Fatalf("%s: %v", key, err)
-			}
-			out = append(out, &r)
-		}
+		out = append(out, objectRecords(t, s, key)...)
 	}
 	return out
 }
@@ -681,7 +704,7 @@ func TestObjectsWrittenUnderAHeldPrefixCarryIt(t *testing.T) {
 		t.Fatal("nothing was written with the hold the prefix is under")
 	}
 	for _, key := range b.store.Keys() {
-		want := strings.HasPrefix(key, "profile=security/tenant=acme/")
+		want := strings.HasPrefix(key, store.TenantPrefix("security", "acme"))
 		if held[key] != want {
 			t.Fatalf("%s: held=%v, want %v", key, held[key], want)
 		}

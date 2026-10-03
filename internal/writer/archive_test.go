@@ -2,6 +2,7 @@ package writer_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,7 @@ func TestArchiveKeepsWhatMakesRecordsReadable(t *testing.T) {
 
 	keys := s.Keys()
 	for _, want := range []string{
-		"schema/wallet/1.0.0/catalogue.yaml",
+		"catalogue/wallet/1.0.0",
 		"schema/audit/v1/record.v1.schema.json",
 		"schema/audit/v1/record.proto",
 	} {
@@ -60,8 +61,12 @@ func TestArchiveKeepsWhatMakesRecordsReadable(t *testing.T) {
 	}
 
 	// The catalogue is kept as it was registered, not as it would be written
-	// back: a re-serialised catalogue is not the one that was registered.
-	body, err := s.Get(ctx, "schema/wallet/1.0.0/catalogue.yaml")
+	// back: a re-serialised catalogue is not the one that was registered. It is
+	// at the contract's key, and says what it is without being opened.
+	if o, _ := s.Object("catalogue/wallet/1.0.0"); o.Metadata["sha256"] == "" || o.RetainUntil.IsZero() {
+		t.Fatalf("the catalogue object carries no sha256 or no lock: %+v", o)
+	}
+	body, err := s.Get(ctx, "catalogue/wallet/1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +121,46 @@ func TestArchiveIsIdempotentAcrossWriters(t *testing.T) {
 	}
 }
 
+// The same version with other bytes is not the same catalogue: the writer
+// refuses to run on it, and the object already there is untouched.
+func TestACatalogueVersionWithOtherBytesIsAConflict(t *testing.T) {
+	a, s := archive(t)
+	c, err := catalogue.Load([]byte(walletDoc), [][]byte{[]byte(walletSchema)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := a.EnsureCatalogue(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	// Another writer's view of the same version, with a comment added.
+	changed, err := catalogue.Load([]byte(walletDoc+"\n# edited without a new version\n"), [][]byte{[]byte(walletSchema)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := &writer.SchemaArchive{Store: s, Now: a.Now, RetainUntil: a.RetainUntil}
+	if err := second.EnsureCatalogue(ctx, changed); !errors.Is(err, writer.ErrCatalogueConflict) {
+		t.Fatalf("other bytes under one version: %v", err)
+	}
+	held, _ := s.Get(ctx, "catalogue/wallet/1.0.0")
+	if string(held) != walletDoc {
+		t.Fatal("the catalogue already in the archive was changed")
+	}
+}
+
+// A version with a slash in it would be two key components.
+func TestACatalogueWhoseVersionCannotBeAKeyIsRefused(t *testing.T) {
+	a, _ := archive(t)
+	c, err := catalogue.Load([]byte(strings.Replace(walletDoc, "1.0.0", "1/0", 1)), [][]byte{[]byte(walletSchema)})
+	if err != nil {
+		t.Skipf("the catalogue loader already refuses it: %v", err)
+	}
+	if err := a.EnsureCatalogue(context.Background(), c); err == nil {
+		t.Fatal("a catalogue version with a slash was written")
+	}
+}
+
 // Doing this after the records would leave a window in which the archive holds
 // records nothing explains.
 func TestTheWriterArchivesBeforeTheFirstRecordLands(t *testing.T) {
@@ -127,7 +172,7 @@ func TestTheWriterArchivesBeforeTheFirstRecordLands(t *testing.T) {
 	write(t, b, fresh(t))
 
 	keys := b.store.Keys()
-	if !has(keys, "schema/wallet/1.0.0/catalogue.yaml") {
+	if !has(keys, "catalogue/wallet/1.0.0") {
 		t.Fatalf("the catalogue was not archived: %v", keys)
 	}
 	if !has(keys, "schema/audit/v1/record.proto") {

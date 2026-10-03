@@ -22,10 +22,9 @@ func TestEverySubcommandTakesTheArchiveFromTheEnvironment(t *testing.T) {
 		run  func([]string) error
 		args []string
 	}{
-		"verify":  {verify, []string{"--profile=security", "--public-key=/dev/null"}},
+		"verify":  {verify, []string{"--profile=security"}},
 		"replay":  {replay, []string{"--dlq"}},
 		"reindex": {reindex, []string{"--profile=security", "--database=postgres://x/y"}},
-		"digest":  {digestCmd, []string{"--deployment=/dev/null"}},
 		"hold":    {holdCmd, []string{"list"}},
 		"key":     {keyCmd, []string{"destroy"}},
 	} {
@@ -45,7 +44,7 @@ func TestEverySubcommandTakesTheArchiveFromTheEnvironment(t *testing.T) {
 func TestTheRefusalStillNamesTheBucket(t *testing.T) {
 	t.Setenv("AUDIT_BUCKET", "")
 
-	err := verify([]string{"--profile=security", "--public-key=/dev/null"})
+	err := verify([]string{"--profile=security"})
 	if err == nil || !strings.Contains(err.Error(), "name the archive's bucket") {
 		t.Errorf("got %v, want a refusal naming the bucket", err)
 	}
@@ -58,7 +57,7 @@ func TestAJobTakesItsFileAndNothingElse(t *testing.T) {
 		run  func([]string) error
 		flag string
 	}{
-		"digest": {digestCmd, "--sink"}, "verify": {verify, "--sink"}, "purge": {purge, "--database"},
+		"verify": {verify, "--sink"}, "purge": {purge, "--database"},
 		"clock-sync": {clockSync, "--sink"}, "migrate": {migrate, "--database"},
 	} {
 		t.Run(name, func(t *testing.T) {

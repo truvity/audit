@@ -23,7 +23,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -35,6 +34,8 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/truvity/audit/store"
 )
 
 // Enabled reports whether a collector is named in the environment for metrics.
@@ -210,78 +211,18 @@ func (w *Writer) RetentionNotExtended(profile string) {
 	w.notExtended.Add(context.Background(), 1, metric.WithAttributes(attribute.String("profile", profile)))
 }
 
-// DigestAge publishes how old the newest sealed digest window is, per profile,
-// as audit.digest.age in seconds: the time since the window's end. The hourly
-// job seals the hour that has just closed, so a healthy value runs from zero to
-// a little over an hour; a value that keeps climbing is a chain that has
-// stopped growing, which nothing else shows until somebody verifies.
-//
-// It is observed in the writer, which runs all day, and not pushed by the job:
-// a job that exits in seconds is attributed to the previous occupant of its
-// address by the gateway and its series goes stale a few minutes later.
-//
-// newest says where a profile's newest digest window ended. The answer is
-// cached for refresh (the age is computed afresh from the cached window end), because the callback runs on every collection and what
-// it asks is a request to the archive. An error keeps the last answer. A
-// profile with no digest within the lookback reports the lookback, which is
-// "at least this old".
-func DigestAge(provider metric.MeterProvider, profiles []string, lookback, refresh time.Duration,
-	newest func(ctx context.Context, profile string) (end time.Time, ok bool, err error), now func() time.Time,
-) error {
-	if now == nil {
-		now = time.Now
-	}
-	var (
-		mu   sync.Mutex
-		at   time.Time
-		ends = map[string]time.Time{} // zero: none within the lookback
-	)
-	m := provider.Meter("github.com/truvity/audit/digest")
-	_, err := m.Float64ObservableGauge("audit.digest.age", metric.WithUnit("s"), // audit:not-an-action — a metric name
-		metric.WithDescription("Seconds since the end of the newest sealed digest window, per profile."),
-		metric.WithFloat64Callback(func(ctx context.Context, o metric.Float64Observer) error {
-			mu.Lock()
-			defer mu.Unlock()
-			if t := now(); at.IsZero() || t.Sub(at) >= refresh {
-				at = t
-				probe, cancel := context.WithTimeout(ctx, 20*time.Second)
-				defer cancel()
-				for _, p := range profiles {
-					end, ok, err := newest(probe, p)
-					switch {
-					case err != nil:
-						// Keep what was known: an archive that could not
-						// answer is not evidence the chain stopped.
-					case !ok:
-						ends[p] = time.Time{}
-					default:
-						ends[p] = end
-					}
-				}
-			}
-			for p, end := range ends {
-				v := lookback.Seconds()
-				if !end.IsZero() {
-					v = max(0, now().Sub(end).Seconds())
-				}
-				o.Observe(v, metric.WithAttributes(attribute.String("profile", p)))
-			}
-			return nil
-		}))
-	if err != nil {
-		return fmt.Errorf("telemetry: audit.digest.age: %w", err)
-	}
-	return nil
-}
-
 // ProfileOf is the profile an archive key is under, or "" for a key outside
-// the profile layout. It is the one label these counters carry: a profile is
-// a handful of names a deployment chose, where a tenant would be thousands.
+// the records layout (records/<profile>/...). It is the one label these
+// counters carry: a profile is a handful of names a deployment chose, where a
+// tenant would be thousands.
 func ProfileOf(key string) string {
-	for _, segment := range strings.Split(key, "/") {
-		if name, ok := strings.CutPrefix(segment, "profile="); ok {
-			return name
-		}
+	rest, ok := strings.CutPrefix(key, store.RecordsPrefix)
+	if !ok {
+		return ""
 	}
-	return ""
+	profile, _, found := strings.Cut(rest, "/")
+	if !found {
+		return ""
+	}
+	return profile
 }

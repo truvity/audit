@@ -4,10 +4,10 @@ Pseudonymisation keys are off by default: `keys.provider: none`, and nothing
 on this page applies
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),
 [key custody](key-custody.md)). Read on only for a deployment that must be
-able to crypto-shred and has chosen `transit` to do it with — or for one
-whose digest job signs with a transit key, which is a different key that
-every installation has
-([signing key](key-custody.md#signing-key)).
+able to crypto-shred and has chosen `transit` to do it with. A transit key
+that will sign seals is a different key
+([signing key](key-custody.md#signing-key)); nothing in the chart uses one
+today.
 
 The `transit` key provider keeps every tenant's key for every purpose in an
 OpenBAO (or Vault) transit engine. It is the provider for a deployment of more
@@ -54,7 +54,6 @@ environment, the environment's):
 |---|---|---|---|
 | writer | `<release>` | `writer.config.keys.transit.openbao.login.role` | writer |
 | query service, if it resolves | `<release>-query` | `query.config.keys.transit.openbao.login.role` | resolve |
-| digest job, if it signs with transit | `<release>-digest` | `jobs.digest.config.signer.transit.openbao.login.role` | digest |
 
 Give each component a role of its own. Each is a
 separate privilege, and one identity holding two of them is the thing the
@@ -135,13 +134,6 @@ profiles it resolves:
 path "transit/decrypt/audit.security.*" { capabilities = ["update"] }
 ```
 
-The **digest job**, if it signs with transit:
-
-```hcl
-path "transit/sign/audit-digest" { capabilities = ["update"] }
-path "transit/keys/audit-digest" { capabilities = ["read"] }
-```
-
 The **erasure operator**, who runs `audit key destroy`. This is a person, so
 it is granted to a human group rather than to a workload's role:
 
@@ -204,7 +196,7 @@ They cover:
 - a login with a projected token inside a namespace, signing in again after the
   lease runs out and after a revoke, and a token for the wrong audience refused
   at start-up;
-- the digest signer signing in the same way;
+- the transit signer, kept for seals, signing in the same way;
 - every policy on this page run as its own token: a single-purpose role refuses
   another purpose and cannot destroy, the writer seals but cannot open, resolve
   opens and does nothing else, and the eraser destroys but cannot delete.

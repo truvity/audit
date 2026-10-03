@@ -2,11 +2,11 @@ package s3test_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/truvity/audit/internal/s3test"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/store"
 )
 
@@ -14,16 +14,16 @@ import (
 // thousand keys at a time whatever is asked, and the tenant sits between the
 // profile and the date; a memory store hides both facts.
 
-const day = "year=2026/month=09/day=17"
+var hour = time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
 
 // A listing asked for everything must return everything, across as many pages
 // as S3 chooses to use.
 func TestListReturnsEverythingPastOnePage(t *testing.T) {
 	s := s3test.Open(t, false)
 	const n = 1100
-	s3test.Fill(t, s, "security", "acme", day, n)
+	s3test.Fill(t, s, "security", "acme", hour, n)
 
-	entries, err := s.List(context.Background(), "profile=security/", "", 0)
+	entries, err := s.List(context.Background(), "records/security/", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,9 +40,9 @@ func TestListReturnsEverythingPastOnePage(t *testing.T) {
 // With a limit the caller is paging, and gets one page from after its key.
 func TestListWithALimitPagesFromAKey(t *testing.T) {
 	s := s3test.Open(t, false)
-	keys := s3test.Fill(t, s, "security", "acme", day, 10)
+	keys := s3test.Fill(t, s, "security", "acme", hour, 10)
 
-	entries, err := s.List(context.Background(), "profile=security/", keys[3], 2)
+	entries, err := s.List(context.Background(), "records/security/", keys[3], 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,23 +52,23 @@ func TestListWithALimitPagesFromAKey(t *testing.T) {
 }
 
 // The tenants under a profile, without walking the objects beneath them. This
-// is what the digest builder asks before it walks days, and getting it wrong
-// made a digest cover one tenant.
+// is what a walk asks before it lists hours, and getting it wrong made a walk
+// cover one tenant.
 func TestPrefixesListsEveryTenant(t *testing.T) {
 	s := s3test.Open(t, false)
 	for _, tenant := range []string{"acme", "globex", "initech"} {
-		s3test.Fill(t, s, "security", tenant, day, 3)
+		s3test.Fill(t, s, "security", tenant, hour, 3)
 	}
-	s3test.Fill(t, s, "history", "acme", day, 3)
+	s3test.Fill(t, s, "history", "acme", hour, 3)
 
-	groups, err := s.Prefixes(context.Background(), "profile=security/", "/")
+	groups, err := s.Prefixes(context.Background(), "records/security/", "/")
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
-		"profile=security/tenant=acme/",
-		"profile=security/tenant=globex/",
-		"profile=security/tenant=initech/",
+		"records/security/acme/",
+		"records/security/globex/",
+		"records/security/initech/",
 	}
 	if len(groups) != len(want) {
 		t.Fatalf("got %v, want %v", groups, want)
@@ -80,36 +80,65 @@ func TestPrefixesListsEveryTenant(t *testing.T) {
 	}
 }
 
-// WalkDays is what every archive job uses. It must reach every tenant's day and
-// every object of it, however many pages that takes.
-func TestWalkDaysReachesEveryTenantAndEveryObject(t *testing.T) {
+// WalkHours is what every archive reader uses. It must reach every object of
+// the hours asked for, however many pages that takes, in key order, and stop
+// at the end of the range.
+func TestWalkHoursReachesEveryObjectOfTheRangeAndNoMore(t *testing.T) {
 	s := s3test.Open(t, false)
-	s3test.Fill(t, s, "security", "acme", day, 1100)
-	s3test.Fill(t, s, "security", "globex", day, 5)
-	s3test.Fill(t, s, "security", "acme", "year=2026/month=09/day=18", 4)
+	s3test.Fill(t, s, "security", "acme", hour, 1100)
+	s3test.Fill(t, s, "security", "acme", hour.Add(time.Hour), 4)
+	s3test.Fill(t, s, "security", "acme", hour.Add(2*time.Hour), 3)
+	s3test.Fill(t, s, "security", "acme", hour.Add(-time.Hour), 2)
 
-	at, err := time.Parse("2006-01-02", "2026-09-17")
+	var keys []string
+	err := store.WalkHours(context.Background(), s, "security", "acme", hour, hour.Add(time.Hour), "",
+		func(e store.Entry) error {
+			keys = append(keys, e.Key)
+			return nil
+		})
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]int{}
-	err = store.WalkDays(context.Background(), s, "profile=security", at, at, func(e store.Entry) error {
-		switch {
-		case strings.Contains(e.Key, "tenant=acme"):
-			seen["acme"]++
-		case strings.Contains(e.Key, "tenant=globex"):
-			seen["globex"]++
+	if len(keys) != 1104 {
+		t.Fatalf("the walk saw %d of 1104 objects in two hours", len(keys))
+	}
+	for i := 1; i < len(keys); i++ {
+		if keys[i] <= keys[i-1] {
+			t.Fatalf("keys came back out of order at %d", i)
 		}
-		return nil
-	})
+	}
+
+	// Resumed after a key, it continues from the next one: the cursor a
+	// follower keeps.
+	var rest int
+	err = store.WalkHours(context.Background(), s, "security", "acme", hour, hour.Add(time.Hour), keys[1000],
+		func(store.Entry) error { rest++; return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if seen["acme"] != 1100 {
-		t.Fatalf("the walk saw %d of 1100 objects of the first tenant", seen["acme"])
+	if rest != 103 {
+		t.Fatalf("resumed after the 1001st key, saw %d, want 103", rest)
 	}
-	if seen["globex"] != 5 {
-		t.Fatalf("the walk saw %d of 5 objects of the second tenant", seen["globex"])
+}
+
+// Every tenant of a profile is reached, tenant by tenant.
+func TestWalkProfileReachesEveryTenant(t *testing.T) {
+	s := s3test.Open(t, false)
+	s3test.Fill(t, s, "security", "acme", hour, 7)
+	s3test.Fill(t, s, "security", "globex", hour, 5)
+	s3test.Fill(t, s, "history", "acme", hour, 2)
+
+	seen := map[string]int{}
+	err := store.WalkProfile(context.Background(), s, "security", hour, hour,
+		func(tenant string, _ store.Entry) error {
+			seen[tenant]++
+			return nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if seen["acme"] != 7 || seen["globex"] != 5 || len(seen) != 2 {
+		t.Fatalf("the walk saw %v", seen)
 	}
 }
 
@@ -120,7 +149,7 @@ func TestWalkDaysReachesEveryTenantAndEveryObject(t *testing.T) {
 func TestALockedPutIsAccepted(t *testing.T) {
 	s := s3test.Open(t, true)
 	ctx := context.Background()
-	key := "profile=security/tenant=acme/" + day + "/a.ndjson.zst"
+	key := store.RecordKey("security", "acme", hour, ulid.From(hour, 1))
 	if err := s.Put(ctx, store.Object{
 		Key: key, Body: []byte("{}"),
 		RetainUntil: time.Now().Add(24 * time.Hour).UTC(),
@@ -136,7 +165,7 @@ func TestALockedPutIsAccepted(t *testing.T) {
 	}
 
 	// And the key cannot be taken twice, which is what keeps a writer from
-	// adding a version no digest accounts for.
+	// adding a version nothing accounts for.
 	err = s.Put(ctx, store.Object{Key: key, Body: []byte("{}"), RetainUntil: entry.RetainUntil})
 	if err == nil {
 		t.Fatal("a key was written twice")

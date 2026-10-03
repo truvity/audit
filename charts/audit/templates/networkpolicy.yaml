@@ -3,7 +3,7 @@
 # The writer is the single trusted consumer of the stream and the only thing
 # that puts to the bucket. Saying so here is what keeps a second writer from
 # appearing quietly: a deployment that can run one anyway is a deployment whose
-# digest chain has objects nobody accounted for.
+# seals vouch for an hour that something else was still writing into.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

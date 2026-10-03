@@ -127,14 +127,6 @@ alerts:
       severity: critical
       for: 0m
       labels: {}
-    digestStale:
-      enabled: true
-      severity: critical
-      # 2h: the hourly job leaves a healthy chain at most about 1h05m old, so
-      # this tolerates one missed run.
-      maxAgeSeconds: 7200
-      for: 10m
-      labels: {}
     indexLag:
       enabled: true
       severity: warning
@@ -225,6 +217,13 @@ writer:
   consumers: 3
   # The audit-writer configuration: schemas/config/audit-writer.schema.json.
   # In direct mode this is the one writer; in stream mode, the consumers.
+  #
+  # The writer puts v1 objects, `records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/
+  # <hh>/<ULID>`, and the catalogues at `catalogue/<app>/<version>`
+  # (docs/reference/bucket-contract.md). The chart creates no bucket, so the
+  # bucket's lifecycle is yours and is written against those prefixes, one rule
+  # per profile on `records/<profile>/`: Glacier Instant Retrieval at 30 days
+  # and Deep Archive at 1 year (docs/decisions/0023, docs/operations/s3-guide.md).
   config: {}
   secretEnv: []
   secretMounts: []
@@ -397,33 +396,17 @@ service:
 # did through the writer's own sink, so each needs to reach it (`sink` in its
 # config, and a token if the writer verifies callers).
 jobs:
-  digest:
-    enabled: true
-    schedule: "7 * * * *"
-    # Sealing is a different privilege from writing: the signing key must not
-    # live where the writer's credentials do, so this job has a service account
-    # of its own.
-    serviceAccount:
-      create: true
-      name: ""
-      annotations: {}
-    # schemas/config/audit-digest.schema.json. Its `signer` is a key file, an
-    # AWS KMS key (the private half never leaves KMS) or an OpenBAO transit
-    # key: the same separation, for a deployment whose secrets live in OpenBAO.
-    config: {}
-    secretEnv: []
-    secretMounts: []
-    tokens: []
   verify:
     enabled: true
     schedule: "23 3 * * *"
-    # Credentials that read the archive, and the public half of the signing key.
+    # Credentials that read the archive and nothing else.
     serviceAccount:
       create: true
       name: ""
       annotations: {}
     # schemas/config/audit-verify.schema.json. One job checks every profile it
-    # names, or every profile the deployment composes.
+    # names, or every profile the deployment composes, over the objects ingested
+    # in the last `last` (default 24h).
     config: {}
     secretEnv: []
     secretMounts: []

@@ -107,26 +107,34 @@ under `dlq/` and exits non-zero if anything did. A record refused for not
 satisfying its schema will be refused again, and should be: the archive is not
 where an emitter's mistakes are corrected.
 
-## Digest verification failed
+## Verification failed
 
-Treat as an incident. The report names each object or digest that failed and
-why, one line each (`--json` for the same as data):
+Treat as an incident. The report names each object that failed and why, one
+line each (`--json` for the same as data):
 
-| the report says | look for |
+| the report says (rule: finding) | look for |
 |---|---|
-| an object has changed since it was signed | a new version under the same key — only possible if Object Lock was off or in governance mode when it was written; compare versions with `aws s3api list-object-versions` |
-| no digest accounts for this object | an object put by something other than the writer, or a digest job that has not run for that hour; the job's own `audit.digest.written` records say which |
-| the digest before it is missing, or has changed | the chain broken at that hour: a removed or replaced digest |
-| the signature does not verify | the wrong public key for that digest's `signed_by` (after a signing key change, keep every public half), or a forged digest |
+| `object.sha256`: the object's bytes do not match its `sha256` | an object changed since it was written: a new version under the same key (only possible if Object Lock was off or in governance mode when it was written; compare versions with `aws s3api list-object-versions`), or damage in storage or transit |
+| `record.hash`: a record's hash does not match its record | a line altered inside an object, or an object not written by the writer |
+| `key.grammar`, `object.metadata`, `record.placement` or `object.body`: the key, the metadata or a line is malformed, or a record is under another profile or tenant | an object put by something other than the writer, or a copy that lost its user metadata (`format`, `sha256`, `count`) |
+| `object.count`: the object has a different number of records than its `count` | the same: the writer sets both |
 | the lock ends sooner than the profile requires | an object written with a shorter retention than its profile asks: check the writer's version and the profile at that time (`schema/profile/<name>/`) |
 
 Nothing in the archive can be repaired: that is its point. Record what was
 found and when, place a legal hold on the affected prefix if it may be needed
 as evidence, and fix what let it happen.
 
-The chain covers one installation's prefix. An application whose records
+`audit verify` checks what is in a range of ingest time; it does not find an
+object that was removed or one added beside the others. Seals are what will
+([0019](../decisions/0019-seals.md)); until they exist, the bucket's own
+access log and versioning are the evidence for those two.
+
+The check covers one installation's prefix. An application whose records
 share a bucket with another application's is not affected by a problem under
 the other's prefix, and the two are verified separately.
+
+An archive written before the v1 layout is not checked by this command; use
+the previous release's CLI (v0.6.x), which also walks its digest chain.
 
 ## The clock-sync job is failing
 
@@ -144,42 +152,6 @@ checked and saying it was would be worse than a red job.
 
 The offset is the correction this clock needs: positive means it is behind.
 The job never sets the clock — whatever runs the machine does that.
-
-## The digest chain has a gap
-
-An hour with no digest cannot be told from one whose digest was removed, which
-is why `audit verify` reports both the same way. `audit digest` resumes from the
-hour after the last one sealed, so a job that missed its runs catches up on its
-own; run it by hand to catch up now:
-
-```
-audit digest --deployment <file> --key <file> --bucket <b> --sink <writer>
-```
-
-`--sink` is what puts `audit.digest.written` in the trail for each window
-sealed; leave it off only when running by hand, where you can see the output.
-
-It never seals the hour it wakes in — objects are still being written into it —
-and it seals at most a week of windows per run, reporting how many are left. To
-backfill a specific range, name it with `--from` and `--to`; a window already
-sealed is left alone.
-
-**Catching up only works once something has been sealed.** With no digest at
-all, a run has nothing to resume from and seals the hour that just closed,
-rather than every hour since the archive began. That is right for a new
-installation, whose first run comes within the hour — but if the job was
-broken over its own first runs, the hours before it finally worked are outside
-the chain and stay there. Nothing reports this: the chain is whole from where
-it starts. After an outage that spans the first seal, list what is there,
-compare it with the earliest object, and backfill the difference by range:
-
-```
-aws s3 ls s3://<bucket>/<prefix>/digest/ --recursive
-audit digest --deployment <file> --kms-key <key> --bucket <b> --sink <writer> \
-    --from 2026-09-22T17:00:00Z --to 2026-09-22T18:00:00Z
-```
-
-An unsigned chain proves nothing, so the command refuses without `--key`.
 
 ## A scheduled job is not running
 
@@ -206,8 +178,8 @@ may not use. Each says so in one line and then exits, which is why the
 re-run is worth more than any amount of staring at the Job's events. Delete
 the probe afterwards — it is not in anybody's git, and a sync will report it.
 
-Alert on the CronJob rather than on the archive. An hour with no digest is
-only visible from the chain, and by then the gap is a day old.
+Alert on the CronJob rather than on the archive: a verification that never ran
+leaves nothing in the archive to notice.
 
 ## The index is behind
 
@@ -247,7 +219,7 @@ audit reindex --profile <p> --from <day> --to <day> \
     --database <url> --bucket <b> --catalogue <file>...
 ```
 
-Safe at any time and over a range already indexed, which is the usual case: a
+The range is of ingest days. Safe at any time and over a range already indexed, which is the usual case: a
 record is counted once however many times it is read. The catalogues are
 required — without them the rebuild would omit the data columns and a later run
 could not repair it. The tail cursor advances on recorded order, so pollers
@@ -262,18 +234,18 @@ index is evidence, and the archive is unaffected.
 A dropped database, a lost cluster, a restore that cannot be trusted. This
 is a documented incident with a documented recovery, because **the index is
 not backed up on purpose**: everything in it is derived from the archive, and
-the archive is what is under the lock and the chain.
+the archive is what is under the lock.
 
 What is lost is search, facets and tail until the rebuild finishes, and the
 deduplication table — so a redelivery that arrives during the gap is written
 a second time. That costs an object: the index keeps one row per identifier,
-the digest chain accounts for both objects, and a reader sees the record
+both objects are in the archive, and a reader sees the record
 once. Not one record is lost. `audit verify` reads the archive
-and the chain only, so the trail can still be proved intact while the index
-is being rebuilt.
+only, so the trail can still be checked while the index is being rebuilt.
 
 Recreate the schema and the reader role, then rebuild, oldest range first,
-one profile at a time:
+one profile at a time. The range is of ingest days: the rebuild reads each
+day's hours tenant by tenant, in key order.
 
 ```
 audit migrate --database "$OWNER_URL" --reader audit_query
@@ -282,7 +254,7 @@ audit reindex --profile <p> --from <day> --to <day> \
 ```
 
 The catalogues must be every version the range was written under; the
-archive keeps a copy of each under `schema/`. A rebuild is asserted to
+archive keeps a copy of each under `catalogue/<app>/<version>`. A rebuild is asserted to
 produce the same rows and the same counts the writer produced, which is why
 this is a rebuild and not a reconstruction.
 
@@ -339,8 +311,9 @@ audit hold list --bucket <b>
 audit hold release --id <id> --by <who> --bucket <b> --sink <writer>   # break-glass only
 ```
 
-Placing sets an Object Lock legal hold on every existing object under the
-prefix and writes the hold under `holds/`; the writer reads the holds every
+A hold is one prefix: `records/<profile>/` or, with `--tenant`,
+`records/<profile>/<tenant>/`. Placing sets an Object Lock legal hold on every
+existing object under it and writes the hold under `holds/`; the writer reads the holds every
 minute and puts new objects under a held prefix with the hold already on.
 Releasing needs the break-glass role: the bucket policy refuses
 `s3:PutObjectLegalHold` with `OFF` to everyone else, and the refused attempt
@@ -399,8 +372,8 @@ person's actions across time. If a key may have leaked, what it exposes is the
 ability to compute pseudonyms of identifiers the attacker already knows; the
 answer is where the keys live and who may use them
 ([key providers](../decisions/0010-key-providers.md)), not a new key. The
-digest signing key can be replaced — each digest names the key it was signed
-with — as long as every public half ever used is kept.
+signing key, which will sign seals, can be replaced as long as every public
+half ever used is kept.
 
 The signing key is a different key and a different job, and every
 installation has one: see [key custody](key-custody.md).

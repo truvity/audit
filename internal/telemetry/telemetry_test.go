@@ -26,9 +26,9 @@ func TestTheWriterCountsWhatTheIndexDidNotTake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.Written("profile=security/tenant=acme/year=2026/month=09/day=18/a.ndjson.zst", 40)
-	w.IndexDeferred("profile=security/tenant=acme/year=2026/month=09/day=18/a.ndjson.zst", 40)
-	w.IndexDeferred("profile=history/tenant=acme/year=2026/month=09/day=18/b.ndjson.zst", 2)
+	w.Written("records/security/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW02", 40)
+	w.IndexDeferred("records/security/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW02", 40)
+	w.IndexDeferred("records/history/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW03", 2)
 
 	var got metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &got); err != nil {
@@ -53,9 +53,10 @@ func TestTheWriterCountsWhatTheIndexDidNotTake(t *testing.T) {
 
 func TestProfileOf(t *testing.T) {
 	for key, want := range map[string]string{
-		"profile=security/tenant=acme/a.ndjson.zst":    "security",
-		"prod/profile=billing-nl/tenant=acme/x.ndjson": "billing-nl",
-		"holds/h-1/placed.json":                        "",
+		"records/security/acme/2026/10/03/12/01ARZ3NDEKTSV4RRFFQ69G5FAV":   "security",
+		"records/billing-nl/acme/2026/10/03/12/01ARZ3NDEKTSV4RRFFQ69G5FAV": "billing-nl",
+		"holds/h-1/placed.json": "",
+		"records/":              "",
 	} {
 		if got := telemetry.ProfileOf(key); got != want {
 			t.Errorf("%s: %q, want %q", key, got, want)
@@ -114,55 +115,13 @@ func TestTheExporterDropsWhatIsNotAllowlisted(t *testing.T) {
 	}
 }
 
-func TestTheDigestAgeIsTheTimeSinceTheNewestWindowEnded(t *testing.T) {
-	reader := sdkmetric.NewManualReader()
-	clock := time.Date(2026, 10, 3, 14, 20, 0, 0, time.UTC)
-	calls := 0
-	err := telemetry.DigestAge(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)),
-		[]string{"security", "billing"}, 24*time.Hour, 5*time.Minute,
-		func(_ context.Context, p string) (time.Time, bool, error) {
-			calls++
-			if p == "billing" {
-				return time.Time{}, false, nil
-			}
-			return time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC), true, nil
-		}, func() time.Time { return clock })
-	if err != nil {
-		t.Fatal(err)
-	}
-	collect := func() map[string]float64 {
-		var got metricdata.ResourceMetrics
-		if err := reader.Collect(context.Background(), &got); err != nil {
-			t.Fatal(err)
-		}
-		out := map[string]float64{}
-		for _, sc := range got.ScopeMetrics {
-			for _, m := range sc.Metrics {
-				for _, p := range m.Data.(metricdata.Gauge[float64]).DataPoints {
-					profile, _ := p.Attributes.Value("profile")
-					out[profile.AsString()] = p.Value
-				}
-			}
-		}
-		return out
-	}
-	got := collect()
-	if got["security"] != (2*time.Hour+20*time.Minute).Seconds() || got["billing"] != (24*time.Hour).Seconds() {
-		t.Fatalf("ages %v", got)
-	}
-	clock = clock.Add(time.Minute)
-	if got := collect(); got["security"] != (2*time.Hour+21*time.Minute).Seconds() || calls != 2 {
-		t.Fatalf("a second collection inside the refresh asked the archive again (%d calls) or did not age: %v", calls, got)
-	}
-}
-
 func TestTheIndexLagIsRecordedPerProfile(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	w, err := telemetry.NewWriter(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	w.IndexLag("profile=security/tenant=acme/x.ndjson.zst", 1500*time.Millisecond)
+	w.IndexLag("records/security/acme/2026/09/18/10/01M2QEN1202H1FC8B71C3YCW04", 1500*time.Millisecond)
 	var got metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &got); err != nil {
 		t.Fatal(err)

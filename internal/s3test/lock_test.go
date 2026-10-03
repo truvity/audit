@@ -12,13 +12,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/truvity/audit/internal/s3test"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/store"
 )
 
 // TestALockedObjectSurvivesBeingDeleted is the archive's central claim, asked of
 // a bucket rather than of a comment.
 //
-// Everything else in this repository — the digest chain, the holds, the writer's
+// Everything else in this repository — the seals, the holds, the writer's
 // refusal to reuse a key — is built on the belief that once bytes are in the
 // archive nobody can take them out. That belief had never been put to a bucket:
 // the tamper tests run against a memory store that refuses deletion because it
@@ -34,7 +35,7 @@ import (
 func TestALockedObjectSurvivesBeingDeleted(t *testing.T) {
 	raw := s3test.OpenRaw(t, true)
 	ctx := context.Background()
-	const key = "profile=security/tenant=t/year=2026/month=09/day=18/hour=00/a.ndjson"
+	key := store.RecordKey("security", "t", hour, ulid.From(hour, 1))
 	const original = "the record as it was written"
 
 	if err := raw.Store.Put(ctx, store.Object{
@@ -86,7 +87,7 @@ func TestALockedObjectSurvivesBeingDeleted(t *testing.T) {
 func TestAnOverwriteCannotReachTheOriginal(t *testing.T) {
 	raw := s3test.OpenRaw(t, true)
 	ctx := context.Background()
-	const key = "profile=security/tenant=t/year=2026/month=09/day=18/hour=00/b.ndjson"
+	key := store.RecordKey("security", "t", hour, ulid.From(hour, 2))
 
 	if err := raw.Store.Put(ctx, store.Object{
 		Key: key, Body: []byte("what happened"), RetainUntil: retention(),

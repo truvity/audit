@@ -2,62 +2,81 @@
 
 ```
 audit verify --profile security --from 2026-09-01 --to 2026-09-17 \
-  --bucket <name> --prefix audit/<application> --public-key digest-signing.pem [--json]
+  --bucket <name> --prefix audit/<application> [--json]
 ```
 
-A date, an hour (`2026-09-17T10`) or a full timestamp are all accepted. The
-command needs the archive and the public key and nothing else: run it with
-read-only credentials and your own copy of the binary, because an answer that
-depended on the operator of the archive would not be worth having.
+A date, an hour (`2026-09-17T10`) or a full timestamp are all accepted, and
+the range is of **ingest time**: the hours from the one `--from` is in up to,
+but not including, the one `--to` is in. The command needs the archive and
+nothing else: no public key, no database, no writer. Run it with read-only
+credentials and your own copy of the binary, because an answer that depended
+on the operator of the archive would not be worth having.
 
 **One command, every installation.** Each installation writes one prefix of
-the environment's bucket, and its chain covers that prefix. Verifying an
-application means naming its `--prefix`; no other application's records are
-read, and none is needed. The two deployment shapes make no difference here
-either: direct and stream write the same objects, under the same keys, sealed
-by the same chain, so an auditor need not know which one produced them.
+the environment's bucket. Verifying an application means naming its
+`--prefix`; no other application's records are read, and none is needed. The
+two deployment shapes make no difference here either: direct and stream write
+the same objects, under the same keys, so an auditor need not know which one
+produced them.
 
-Walks the digest chain newest-first, then for each digest:
+For every record object under `records/<profile>/` whose ingest hour is in the
+range, in key order, it checks, against the
+[bucket contract](../reference/bucket-contract.md):
 
-1. Verifies the signature against the public key.
-2. Confirms the previous digest exists and its hash and signature match
-   what this digest names.
-3. Fetches each listed object, computes its SHA-256, compares.
-4. Reads each object's lock, when given the deployment: an object with no
-   retention is `unlocked` under a profile that demands no lock, and
-   `INVALID` under one that does
-   ([0014](../decisions/0014-lock-modes-and-store-tiers.md)).
-5. Confirms that no object in the range is unaccounted for. This is the half a
-   chain alone does not cover: the chain shows that what it names is unaltered,
-   and this shows that nothing was added beside it.
+1. **The key.** It has the grammar the contract gives: profile, tenant, the
+   ingest hour, a ULID.
+2. **The metadata.** `format` is `1`, and `sha256` and `count` are present and
+   well formed.
+3. **The bytes.** The SHA-256 of the stored bytes is the `sha256` the object
+   names.
+4. **The records.** The object decompresses, has `count` lines, and each line's
+   `hash` is the SHA-256 of the canonical encoding of its `record`.
+5. **The lock**, when given the deployment: an object with no retention is
+   `unlocked` under a profile that demands no lock, and `INVALID` under one
+   that does ([0014](../decisions/0014-lock-modes-and-store-tiers.md)).
 
-Output: one line per digest and per object, `valid`, `unlocked` or
-`INVALID: <reason>`, and a summary. Exit code non-zero on any invalid entry;
-`unlocked` is information and does not count.
+What this shows is that each object is the object that was written and each
+record is the record that was hashed. What it cannot show is that nothing was
+removed or added beside them: that is what seals vouch for
+([0019](../decisions/0019-seals.md)), and they are not built yet.
+
+Output: one line per object, `valid`, `unlocked` or `INVALID: <reason>`, and a
+summary of the objects and records checked. Exit code non-zero on any invalid
+entry; `unlocked` is information and does not count.
 
 Auditors run it with read-only credentials scoped to the installation's
-prefix. The nightly run inside the cluster (`audit verify --config`, whose file has
-the same settings under their own names) does the same for the previous day
-and records the outcome as `audit.digest.verified` or `audit.digest.failed`.
+prefix. The nightly run inside the cluster (`audit verify --config`, whose
+file has the same settings under their own names) does the same for the
+previous day and records the outcome through the writer, per ingest hour, as
+`audit.digest.verified` or `audit.digest.failed` (the target of each is
+`records/<profile>/<yyyy>/<mm>/<dd>/<hh>`). Those two event names are kept
+until seals replace them.
 
 | flag | what |
 |---|---|
+| `--profile <p>` | required; the profile to check |
+| `--from`, `--to` | the range of ingest time, `--to` not included |
+| `--last 24h` | the objects ingested in the last this long, ending at the hour that has closed; instead of `--from` and `--to` |
 | `--prefix <p>` | the installation's prefix in the bucket, as `archive.prefix` of the chart's configuration names it; omit only where the installation is at the bucket's root |
-| `--last 24h` | the windows of the last this long, ending at the hour that has closed; instead of `--from` and `--to` |
-| `--lookback 168h` | how far before the range to look for objects keyed under an older day; at least what `audit digest` used |
 | `--sink <writer>` | record what was checked through the writer. The scheduled job does; an auditor's run by hand should not |
-| `--record` | also write one verification per window under `verified/`, which `Get` reports as a record's `verified_at`; needs write access there |
-| `--deployment <file>` | the profile configuration, so the check knows what lock the profile demands. The scheduled job passes it; an auditor without it still gets the chain checked, with nothing said about locks |
-| `--lock-mode none` | for `--record` on a store with no lock, so the verification is written without a lock header; the scheduled job takes it from `archive.lockMode` |
+| `--deployment <file>` | the profile configuration, so the check knows what lock the profile demands. The scheduled job passes it; an auditor without it still gets keys, bytes and hashes checked, with nothing said about locks |
+| `--json` | print the report as JSON |
 | `--endpoint`, `--path-style` | an S3-compatible store that is not AWS, as the [S3 guide](s3-guide.md#s3-compatible-stores) has it |
 
 `--profile` is required, and a profile is verified on its own: an
 installation composing two profiles is two runs, because each profile has its
-own chain and its own retention to check against.
+own retention to check against.
 
-After a signing key change, keep every public half: each digest names the key
-it was signed with (`signed_by`), and a digest checked with the wrong half
-fails its signature.
+The scheduled job's configuration is `archive` (the bucket and prefix, and
+nothing about a lock mode: it only reads), `deployment`, `last` (default
+`24h`), optionally `profiles`, and `sink` with `require`. It has no key
+settings.
+
+**The old archive is not read.** An archive written before the v1 layout, with
+`profile=<p>/tenant=<t>/year=…` keys and a signed digest chain under
+`digest/`, is read by nothing in v1 and is not checked by this command. It
+stays verifiable with the previous release's CLI (v0.6.x), whose `audit verify`
+walks that digest chain with the public key.
 
 What a failed verification means, and what to do about it, is in
 [the runbook](runbook.md).

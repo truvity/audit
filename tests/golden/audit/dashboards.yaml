@@ -25,7 +25,7 @@ data:
     {
       "uid": "audit-overview",
       "title": "Audit overview - $cluster",
-      "description": "The audit trail's write path: ingest, rejections, durability, dead letters, index lag, digest age, and what the emitters of each application are queueing and dropping.",
+      "description": "The audit trail's write path: ingest, rejections, durability, dead letters, index lag, and what the emitters of each application are queueing and dropping.",
       "editable": false,
       "graphTooltip": 1,
       "refresh": "1m",
@@ -322,76 +322,6 @@ data:
         {
           "id": 5,
           "type": "stat",
-          "title": "Newest digest age",
-          "description": "How old the newest sealed digest window is, the worst profile. The hourly job seals the hour that has just closed, so up to about an hour is normal. Past two hours the chain has stopped growing: look at the digest CronJob.",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "gridPos": {
-            "h": 4,
-            "w": 4,
-            "x": 12,
-            "y": 1
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "code",
-              "expr": "max(audit_digest_age_seconds{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"})",
-              "legendFormat": "",
-              "range": false,
-              "instant": true,
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "s",
-              "noValue": "no data",
-              "decimals": 0,
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "orange",
-                    "value": 5400.0
-                  },
-                  {
-                    "color": "red",
-                    "value": 7200
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "colorMode": "background",
-            "graphMode": "none",
-            "justifyMode": "center",
-            "textMode": "value",
-            "orientation": "auto",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            }
-          }
-        },
-        {
-          "id": 6,
-          "type": "stat",
           "title": "Emitters dropping (1h)",
           "description": "Records emitters gave up because their queue overflowed, across every namespace of the cluster. Healthy is zero: a drop is a record that will never exist. Look at the per-application panel below for who.",
           "datasource": {
@@ -401,7 +331,7 @@ data:
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 16,
+            "x": 12,
             "y": 1
           },
           "targets": [
@@ -456,7 +386,7 @@ data:
           }
         },
         {
-          "id": 7,
+          "id": 6,
           "type": "stat",
           "title": "Consumers failing (1h)",
           "description": "Batches a queue consumer's target refused or failed, to be delivered again. A few across a writer restart are normal; a count that keeps growing is a consumer going round in circles.",
@@ -467,7 +397,7 @@ data:
           "gridPos": {
             "h": 4,
             "w": 4,
-            "x": 20,
+            "x": 16,
             "y": 1
           },
           "targets": [
@@ -526,7 +456,7 @@ data:
           }
         },
         {
-          "id": 8,
+          "id": 7,
           "type": "row",
           "title": "Ingest",
           "collapsed": false,
@@ -539,7 +469,7 @@ data:
           "panels": []
         },
         {
-          "id": 9,
+          "id": 8,
           "type": "timeseries",
           "title": "Records acknowledged per second, by transport",
           "description": "Records each hop acknowledged, by transport: connect-server is the writer's or receiver's front door, nats and sqs the publishers behind a receiver. The shape should follow the application's traffic.",
@@ -607,7 +537,7 @@ data:
           }
         },
         {
-          "id": 10,
+          "id": 9,
           "type": "timeseries",
           "title": "Durability mix",
           "description": "What the acknowledgements promised: archived (in the bucket), queued (on a durable queue, the writer will archive it), logged (the process's log only). A deployment that requires archived should show nothing else on its front door.",
@@ -675,7 +605,7 @@ data:
           }
         },
         {
-          "id": 11,
+          "id": 10,
           "type": "timeseries",
           "title": "Rejected records per second, by transport",
           "description": "Records refused for their own sake. Compare with the acknowledgement rate: the alert is on the share, not the count.",
@@ -743,7 +673,7 @@ data:
           }
         },
         {
-          "id": 12,
+          "id": 11,
           "type": "timeseries",
           "title": "Dead-lettered records per second",
           "description": "Records the writer kept aside because it could not process them. Should be a flat zero.",
@@ -811,7 +741,7 @@ data:
           }
         },
         {
-          "id": 13,
+          "id": 12,
           "type": "timeseries",
           "title": "Write latency p99, by transport",
           "description": "The 99th-percentile time a write took at each hop. A rise at nats or sqs is the broker; at connect-server it is the archive or the index.",
@@ -879,7 +809,7 @@ data:
           }
         },
         {
-          "id": 14,
+          "id": 13,
           "type": "timeseries",
           "title": "Consumer failures per second",
           "description": "Batches a queue consumer's target refused, by transport. Each is delivered again by the queue, so a sustained rate is records going round and not through.",
@@ -947,9 +877,9 @@ data:
           }
         },
         {
-          "id": 15,
+          "id": 14,
           "type": "row",
-          "title": "Index and digest",
+          "title": "Index and writes",
           "collapsed": false,
           "gridPos": {
             "h": 1,
@@ -960,7 +890,7 @@ data:
           "panels": []
         },
         {
-          "id": 16,
+          "id": 15,
           "type": "timeseries",
           "title": "Index lag, p50 and p99",
           "description": "Seconds from an object being in the archive to its rows being searchable. Healthy is well under a second; rows that never arrive are counted as deferred instead and do not appear here.",
@@ -1040,7 +970,7 @@ data:
           }
         },
         {
-          "id": 17,
+          "id": 16,
           "type": "timeseries",
           "title": "Index rows deferred, by profile",
           "description": "Rows written to the archive and not to the index, by profile. Repair with `audit reindex` for the day; see the runbook.",
@@ -1108,75 +1038,7 @@ data:
           }
         },
         {
-          "id": 18,
-          "type": "timeseries",
-          "title": "Digest age, by profile",
-          "description": "Seconds since the end of the newest sealed digest window, per profile. A sawtooth under about an hour is the hourly job; a line that climbs past two hours is a chain that stopped.",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 39
-          },
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "${datasource}"
-              },
-              "editorMode": "code",
-              "expr": "max by (profile) (audit_digest_age_seconds{k8s_cluster_name=~\"$cluster\",namespace=~\"$namespace\"})",
-              "legendFormat": "{{profile}}",
-              "range": true,
-              "instant": false,
-              "refId": "A"
-            }
-          ],
-          "fieldConfig": {
-            "defaults": {
-              "unit": "s",
-              "noValue": "no data",
-              "custom": {
-                "drawStyle": "line",
-                "lineWidth": 1,
-                "fillOpacity": 10,
-                "showPoints": "never",
-                "spanNulls": false,
-                "stacking": {
-                  "mode": "none",
-                  "group": "A"
-                }
-              },
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "options": {
-            "legend": {
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "multi",
-              "sort": "desc"
-            }
-          }
-        },
-        {
-          "id": 19,
+          "id": 17,
           "type": "timeseries",
           "title": "Objects and records written per second",
           "description": "Objects the writer put into the archive and the record copies in them. Many records per object is the roll working; one record per object is a roll interval too short for the traffic.",
@@ -1187,7 +1049,7 @@ data:
           "gridPos": {
             "h": 8,
             "w": 12,
-            "x": 12,
+            "x": 0,
             "y": 39
           },
           "targets": [
@@ -1256,7 +1118,7 @@ data:
           }
         },
         {
-          "id": 20,
+          "id": 18,
           "type": "row",
           "title": "Emitters, by application namespace",
           "collapsed": false,
@@ -1269,7 +1131,7 @@ data:
           "panels": []
         },
         {
-          "id": 21,
+          "id": 19,
           "type": "timeseries",
           "title": "Emitter queue pending, by namespace",
           "description": "Records queued for async delivery and not yet acknowledged, per application namespace. It is what that process would lose if it died now; a line that only climbs is a sink that has been away longer than the queue is deep, and drops follow.",
@@ -1337,7 +1199,7 @@ data:
           }
         },
         {
-          "id": 22,
+          "id": 20,
           "type": "timeseries",
           "title": "Emitter drops, by namespace",
           "description": "Records an application's queue gave up. Should be a flat zero: each is a record that will never exist.",
@@ -1405,7 +1267,7 @@ data:
           }
         },
         {
-          "id": 23,
+          "id": 21,
           "type": "timeseries",
           "title": "Emitter batches failed, by delivery",
           "description": "Batches a sink refused or could not take, by how the application asked for delivery. Block failures fail the action being recorded; async failures are retried until the queue overflows.",
@@ -1473,7 +1335,7 @@ data:
           }
         },
         {
-          "id": 24,
+          "id": 22,
           "type": "timeseries",
           "title": "Records the emitters refused as invalid",
           "description": "Records that do not satisfy their catalogue, by application namespace: a bug in the emitting code, caught before it left the process.",

@@ -92,10 +92,6 @@ before it had one of its own. */}}
 {{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.query "suffix" "query") -}}
 {{- end -}}
 
-{{- define "audit.digestServiceAccountName" -}}
-{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.jobs.digest "suffix" "digest") -}}
-{{- end -}}
-
 {{- define "audit.verifyServiceAccountName" -}}
 {{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.jobs.verify "suffix" "verify") -}}
 {{- end -}}

@@ -57,6 +57,9 @@ type Roller struct {
 	// because an index nobody notices is behind is one that quietly answers
 	// wrongly.
 	OnIndexDeferred func(key string, rows int, err error)
+	// OnIndexed is called when an object's rows are in the index, with how long
+	// that took after the object was in the archive.
+	OnIndexed func(key string, rows int, lag time.Duration)
 
 	mu      sync.Mutex
 	open    map[partition]*batch
@@ -251,7 +254,7 @@ func (r *Roller) put(ctx context.Context, key partition, b *batch) error {
 	if r.OnPut != nil {
 		r.OnPut(objectKey, len(b.lines))
 	}
-	r.index(ctx, b, objectKey)
+	r.index(ctx, b, objectKey, r.now())
 	delete(r.open, key)
 	return nil
 }
@@ -309,7 +312,7 @@ func tenantOf(c *record.Record) string {
 // trail rests on; the index is a projection that a reindex of the day rebuilds
 // from the objects themselves. Failing the put instead would mean an outage of
 // the search database could stop the audit trail, which is the wrong way round.
-func (r *Roller) index(ctx context.Context, b *batch, objectKey string) {
+func (r *Roller) index(ctx context.Context, b *batch, objectKey string, putAt time.Time) {
 	if r.Indexer == nil || len(b.rows) == 0 {
 		return
 	}
@@ -323,5 +326,9 @@ func (r *Roller) index(ctx context.Context, b *batch, objectKey string) {
 		if r.OnIndexDeferred != nil {
 			r.OnIndexDeferred(objectKey, len(rows), err)
 		}
+		return
+	}
+	if r.OnIndexed != nil {
+		r.OnIndexed(objectKey, len(rows), r.now().Sub(putAt))
 	}
 }

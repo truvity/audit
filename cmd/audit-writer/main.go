@@ -305,7 +305,7 @@ func run() error {
 	}
 
 	mux.Handle("/healthz", health)
-	server := &http.Server{Addr: cfg.Listen.Address, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Addr: cfg.Listen.Address, Handler: telemetry.HTTPHandler(mux, "audit-writer"), ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		<-ctx.Done()

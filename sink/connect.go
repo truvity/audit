@@ -5,9 +5,11 @@ import (
 	"net/http"
 
 	"connectrpc.com/connect"
+	"go.opentelemetry.io/otel/trace"
 
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
+	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/wire"
 )
 
@@ -23,6 +25,10 @@ func NewClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.Cl
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+	// The call carries the caller's trace, when there is one: an interceptor
+	// that does nothing without a tracer provider. A caller's own options come
+	// after and may add to it.
+	opts = append(telemetry.ConnectClientOptions(), opts...)
 	return &Client{client: auditv1connect.NewSinkServiceClient(httpClient, baseURL, opts...)}
 }
 
@@ -40,6 +46,13 @@ func (c *Client) Guarantees() Durability { return c.best }
 
 // Write implements Sink.
 func (c *Client) Write(ctx context.Context, req *Request) (*Result, error) {
+	ctx, done := Observe(ctx, TransportConnectClient, trace.SpanKindClient, req)
+	res, err := c.write(ctx, req)
+	done(res, err)
+	return res, err
+}
+
+func (c *Client) write(ctx context.Context, req *Request) (*Result, error) {
 	res, err := c.client.Write(ctx, connect.NewRequest(&auditv1.WriteRequest{
 		Records:  req.Records,
 		Delivery: req.Delivery,
@@ -59,17 +72,20 @@ type Handler struct {
 
 // NewHandler returns the path and handler to mount.
 func NewHandler(s Sink, opts ...connect.HandlerOption) (string, http.Handler) {
-	return auditv1connect.NewSinkServiceHandler(&Handler{sink: s}, append(wire.HandlerOptions(), opts...)...)
+	return auditv1connect.NewSinkServiceHandler(&Handler{sink: s}, append(append(wire.HandlerOptions(), telemetry.ConnectOptions()...), opts...)...)
 }
 
 // Write implements the service.
 func (h *Handler) Write(
 	ctx context.Context, req *connect.Request[auditv1.WriteRequest],
 ) (*connect.Response[auditv1.WriteResponse], error) {
-	res, err := h.sink.Write(ctx, &Request{
+	in := &Request{
 		Records:  req.Msg.GetRecords(),
 		Delivery: req.Msg.GetDelivery(),
-	})
+	}
+	ctx, done := Observe(ctx, TransportConnectServer, trace.SpanKindInternal, in)
+	res, err := h.sink.Write(ctx, in)
+	done(res, err)
 	if err != nil {
 		return nil, connect.NewError(connect.CodeUnavailable, err)
 	}

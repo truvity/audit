@@ -318,3 +318,53 @@ const hashingSchema = `{
     }
   }
 }`
+
+const renamedDoc = `
+source: purse
+aliases: [wallet]
+version: "1.0.0"
+locales: [en]
+actions:
+  purse.credential.issued:
+    summary: A credential was issued.
+    operation: create
+    categories: [data_change]
+    profiles: [security]
+    message: { en: "{actor} issued a credential" }
+`
+
+// A catalogue registered under its source is held under each alias too, so a
+// record naming the former name resolves to it.
+func TestRegisterHoldsACatalogueUnderItsAliases(t *testing.T) {
+	r := registryFor(t, nil, "purse")
+	problems, err := r.Register(context.Background(), registry.Entry{
+		Source: "purse", Version: "1.0.0", Document: []byte(renamedDoc)})
+	if err != nil || len(problems) != 0 {
+		t.Fatalf("register: %v %v", problems, err)
+	}
+	got, err := r.Get(context.Background(), "wallet", "1.0.0")
+	if err != nil || got.Source != "purse" {
+		t.Fatalf("the former name resolved to %v, %v", got, err)
+	}
+}
+
+// An alias does not make a version new: a former name that already holds the
+// version with another document refuses the registration.
+func TestRegisterRefusesAnAliasOverAnotherDocument(t *testing.T) {
+	store := &registry.Memory{}
+	old := registryFor(t, nil, "wallet")
+	old.Store = store
+	if problems, err := old.Register(context.Background(), entry(walletDoc)); err != nil || len(problems) != 0 {
+		t.Fatalf("%v %v", problems, err)
+	}
+	next := registryFor(t, nil, "purse")
+	next.Store = store
+	problems, err := next.Register(context.Background(), registry.Entry{
+		Source: "purse", Version: "1.0.0", Document: []byte(renamedDoc)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "alias wallet") {
+		t.Fatalf("problems = %v", problems)
+	}
+}

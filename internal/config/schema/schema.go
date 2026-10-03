@@ -22,7 +22,7 @@ const policy = "https://github.com/truvity/policy/schemas/"
 // named: schemas/config/<name>.schema.json.
 var Names = []string{
 	"audit-writer", "audit-query", "audit-observe",
-	"audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate", "audit-notary",
+	"audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate", "audit-notary", "audit-writer-lambda",
 }
 
 type m = map[string]any
@@ -319,6 +319,32 @@ func writerSchema() m {
 		})
 }
 
+func writerLambdaSchema() m {
+	props := m{
+		"deployment":       str("Path to the profile configuration: which presets each profile is composed from. In the function's package, at `/var/task/deployment.yaml` in the shipped layout."),
+		"catalogues":       str("A directory of catalogues to register at start-up."),
+		"archive":          archive(true, true),
+		"keys":             def("keys"),
+		"forgetIdentities": boolean("Do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it."),
+		"dedupe": m{
+			"type": "object", "additionalProperties": false,
+			"description": "Where the writer remembers which records it has written, so that a redelivery by the queue is absorbed. A function has no database; exactly one of its fields.",
+			"properties": m{
+				"dynamodb": obj("A DynamoDB table with a string hash key `pk` and TTL on `expires_at`. One item per written record id, written by a conditional put once the copies are durable. Credentials are the function role's.", m{
+					"table":  str("The table's name."),
+					"region": str("The table's region. Unset is the SDK's: AWS_REGION, which Lambda sets."),
+					"window": duration("How long a written record's id is remembered. Unset is the widest window any profile's presets ask for. It wants to be at least as long as the queue keeps a message (SQS: at most 14 days).", ""),
+				}, "table"),
+			},
+			"oneOf": []any{m{"required": []string{"dynamodb"}}},
+		},
+		"require": durability("The weakest durability this process's chain may give; the writer gives `archived` at best, which is the default. A batch acknowledged weaker than this fails. See ADR 0017."),
+	}
+	return document("audit-writer-lambda", "audit-writer-lambda",
+		"The configuration of audit-writer-lambda, the write path as an AWS Lambda behind an SQS event source mapping."+secretsNote,
+		props, []string{"deployment", "archive", "dedupe"}, []string{"openbao", "keys", "duration"}, nil)
+}
+
 func querySchema() m {
 	props := m{
 		"listen": listen(),
@@ -493,6 +519,8 @@ func Schema(name string) ([]byte, bool) {
 	switch name {
 	case "audit-writer":
 		s = writerSchema()
+	case "audit-writer-lambda":
+		s = writerLambdaSchema()
 	case "audit-query":
 		s = querySchema()
 	case "audit-observe":

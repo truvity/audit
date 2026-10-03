@@ -1,0 +1,5 @@
+# refuse: telemetry/otlp/endpoint
+# An endpoint with no scheme is read by the SDK as something else.
+telemetry:
+  otlp:
+    endpoint: gateway.observability.svc:4318

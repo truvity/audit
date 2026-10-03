@@ -23,6 +23,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -69,6 +70,27 @@ func defaultSampler() sdktrace.Sampler {
 	return sdktrace.ParentBased(sdktrace.AlwaysSample())
 }
 
+// flushers are what ForceFlush calls: the providers Start installed.
+var (
+	flushMu  sync.Mutex
+	flushers []func(context.Context) error
+)
+
+// Flush exports whatever the providers Start installed are holding, now. A
+// process that is frozen between invocations (a function platform) cannot wait
+// for the next periodic export, so it flushes before it returns. Without a
+// collector there is nothing to flush.
+func Flush(ctx context.Context) error {
+	flushMu.Lock()
+	fs := append([]func(context.Context) error(nil), flushers...)
+	flushMu.Unlock()
+	var errs []error
+	for _, f := range fs {
+		errs = append(errs, f(ctx))
+	}
+	return errors.Join(errs...)
+}
+
 // Start installs the global meter provider when a collector is named for
 // metrics and the global tracer provider (and the W3C trace-context
 // propagator) when one is named for traces, and returns what flushes and
@@ -87,6 +109,14 @@ func Start(ctx context.Context, service, version string, log *slog.Logger) (func
 		return nil, fmt.Errorf("telemetry: the resource: %w", err)
 	}
 	var stops []func(context.Context) error
+	flushMu.Lock()
+	flushers = nil
+	flushMu.Unlock()
+	addFlusher := func(f func(context.Context) error) {
+		flushMu.Lock()
+		flushers = append(flushers, f)
+		flushMu.Unlock()
+	}
 	if Enabled() {
 		exporter, err := otlpmetrichttp.New(ctx)
 		if err != nil {
@@ -98,6 +128,7 @@ func Start(ctx context.Context, service, version string, log *slog.Logger) (func
 		)
 		otel.SetMeterProvider(provider)
 		stops = append(stops, provider.Shutdown)
+		addFlusher(provider.ForceFlush)
 		log.InfoContext(ctx, "publishing metrics over OTLP", "service", service)
 	}
 	if TracesEnabled() {
@@ -116,6 +147,7 @@ func Start(ctx context.Context, service, version string, log *slog.Logger) (func
 		otel.SetTracerProvider(provider)
 		otel.SetTextMapPropagator(propagation.TraceContext{})
 		stops = append(stops, provider.Shutdown)
+		addFlusher(provider.ForceFlush)
 		log.InfoContext(ctx, "publishing traces over OTLP", "service", service)
 	}
 	return func(ctx context.Context) error {

@@ -1,0 +1,8 @@
+# refuse: does not match pattern '^OTEL_'
+# A secret in a value is rendered into the manifest. extraEnv is OpenTelemetry
+# SDK variables only; a secret reaches a pod through secretEnv.
+telemetry:
+  otlp:
+    endpoint: http://gateway.observability.svc:4318
+    extraEnv:
+      AWS_SECRET_ACCESS_KEY: not-for-a-manifest

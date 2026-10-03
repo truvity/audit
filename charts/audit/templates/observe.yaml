@@ -39,7 +39,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --config=/etc/audit/config.yaml
-          {{- with include "audit.secretEnv" .Values.observe }}
+          {{- with include "audit.env" (dict "root" . "comp" .Values.observe "service" "audit-observe") }}
           env:
             {{- . | nindent 12 }}
           {{- end }}

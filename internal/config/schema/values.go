@@ -169,6 +169,13 @@ func Values() []byte {
 		"networkPolicy": obj("Who may reach each component.", m{
 			"enabled": boolean("Render the policies."), "ingressFrom": def("selectors"), "queryIngressFrom": def("selectors"),
 		}),
+		"telemetry": obj("The OpenTelemetry SDK environment every pod carries (ADR 0021): where signals go, never the configuration file.", m{
+			"otlp": obj("OTLP export. With `endpoint` set every pod gets OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL and an OTEL_SERVICE_NAME of its own, then each `extraEnv` entry; empty renders nothing.", m{
+				"endpoint": m{"type": "string", "pattern": "^(https?://[^/?#\\s]+.*)?$", "description": "The collector or metrics gateway, an http(s) URL. Empty: no export."},
+				"protocol": m{"enum": []string{"http/protobuf", "http/json"}, "default": "http/protobuf", "description": "The OTLP protocol. The exporters are OTLP/HTTP; gRPC is not supported."},
+				"extraEnv": m{"type": "object", "propertyNames": m{"pattern": "^OTEL_"}, "additionalProperties": m{"type": "string"}, "description": "Other OpenTelemetry SDK variables, `OTEL_*` only. A secret reaches a pod through `secretEnv`, never here. It cannot carry OTEL_EXPORTER_OTLP_ENDPOINT: `endpoint` is where that is set."},
+			}),
+		}),
 		"podAnnotations":     m{"type": "object"},
 		"podSecurityContext": m{"type": "object"},
 		"securityContext":    m{"type": "object"},

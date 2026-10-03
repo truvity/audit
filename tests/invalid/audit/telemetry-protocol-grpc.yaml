@@ -1,0 +1,6 @@
+# refuse: must be one of 'http/protobuf', 'http/json'
+# The exporters here are OTLP/HTTP; a pod told to speak gRPC would export nothing.
+telemetry:
+  otlp:
+    endpoint: http://gateway.observability.svc:4318
+    protocol: grpc

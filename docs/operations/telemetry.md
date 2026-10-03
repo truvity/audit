@@ -5,7 +5,9 @@ alerts and the dashboard on the platform that runs the metrics store.
 
 Telemetry is OpenTelemetry's own environment and nothing else
 ([0021](../decisions/0021-one-validated-configuration-file.md)): nothing about it
-is in a configuration file or a chart value of the write path. Each process
+is in a configuration file. The chart's one value for it, `telemetry.otlp`,
+renders that environment on every pod and nothing more
+([below](#the-chart-sets-the-environment)). Each process
 pushes over OTLP only when a collector is named, and publishes nothing, with no
 error, when none is:
 
@@ -15,6 +17,38 @@ error, when none is:
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | one signal only |
 | `OTEL_SERVICE_NAME` | defaults to `audit-writer` or `audit-query` |
 | `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | the sampler. Unset, a parent-based `always_on` (the SDK default): a caller's decision always wins and every new trace is kept. Set `OTEL_TRACES_SAMPLER=parentbased_traceidratio` and `OTEL_TRACES_SAMPLER_ARG=0.1` to keep a tenth |
+
+### The chart sets the environment
+
+`telemetry.otlp` is the chart's way to say where signals go, and it renders only
+the variables above:
+
+```yaml
+telemetry:
+  otlp:
+    endpoint: http://gateway.observability.svc:4318   # empty: render nothing
+    protocol: http/protobuf                           # or http/json; the exporters are OTLP/HTTP
+    extraEnv:                                         # OTEL_* only
+      OTEL_TRACES_SAMPLER: parentbased_traceidratio
+      OTEL_TRACES_SAMPLER_ARG: "0.1"
+```
+
+With an `endpoint`, every pod the chart renders (the writer, the receiver and the
+consumers, the query service, the indexer, the migration Job and each CronJob)
+gets `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL` and an
+`OTEL_SERVICE_NAME` of its own, then each `extraEnv` entry, sorted:
+`audit-writer` for the front door, the receiver and the consumers (they are one
+binary), `audit-query`, `audit-observe`, `audit-notary`, and `audit` for the
+toolchain's jobs, which export nothing and carry the variables for uniformity.
+Without an `endpoint` nothing is rendered, and a release that never set the
+value renders byte for byte what it did before it existed. The chart refuses an
+`extraEnv` key that does not start with `OTEL_` (a secret reaches a pod through
+`secretEnv`, never through a value rendered into the manifest) and one that
+carries `OTEL_EXPORTER_OTLP_ENDPOINT`, which has a value of its own, and an
+endpoint that is not an http(s) URL.
+
+On AWS, a function's telemetry goes through the Lambda extension rather than a
+gateway address: [AWS, telemetry](../deployment/aws.md#telemetry).
 
 The gateway turns delta temporality into cumulative and keeps only the cluster,
 namespace and tier from the resource as labels
@@ -35,6 +69,7 @@ Names are as the gateway stores them: dots become underscores, a counter gains
 | `audit_observe_index_lag_seconds` | histogram | `profile` | seconds from an object's put into the archive to its rows being in the index, as `audit-observe` measures it; the settle window is its floor |
 | `audit_observe_index_deferred_total` | counter | `profile`, `reason` | objects the indexer could not index: `retry` is tried again, `unreadable` was skipped |
 | `audit_observe_objects_indexed_total`, `audit_observe_records_indexed_total` | counter | `profile` | the indexer's output |
+| `audit_queue_message_age_seconds` | histogram | `transport` | seconds from a message being sent to a queue to the writer receiving it (AWS: the Lambda's `SentTimestamp`); a redelivery's wait is in it, so a message that keeps failing is a long tail. The depth and the dead-letter queue are CloudWatch's, and alarmed there ([AWS](../deployment/aws.md#alarms)) |
 | `audit_writer_dead_lettered_total` | counter | | records the writer could not process |
 | `audit_seal_age_seconds` | gauge | `profile` | seconds since the end of the newest sealed hour, of the tenant furthest behind, **as of the notary's last run** |
 | `audit_seal_written_total` | counter | `profile` | seals the notary wrote |

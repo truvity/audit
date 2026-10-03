@@ -1,0 +1,1579 @@
+---
+# Source: audit/templates/networkpolicy.yaml
+# The writer is the single trusted consumer of the stream and the only thing
+# that puts to the bucket. Saying so here is what keeps a second writer from
+# appearing quietly: a deployment that can run one anyway is a deployment whose
+# seals vouch for an hour that something else was still writing into.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: audit
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: writer
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        # This release's own pods: the jobs and the query service record
+        # themselves through the writer.
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: audit
+              app.kubernetes.io/instance: audit
+      ports:
+        - protocol: TCP
+          port: 8080
+
+---
+# Source: audit/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Reading is a different privilege from writing: this identity reads the
+# archive and writes exports, and holds a key only to open sealed identifiers
+# if it may resolve. Pod Identity, IRSA or an OpenBAO role binds here.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-query
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    iam.example.com/role: audit-query
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# The indexer reads the archive and writes the index. It holds the index's
+# write credential, which the writer must not, and reads what the writer wrote
+# without being able to write it: a different identity from either. Pod
+# Identity or IRSA binds here, with get and list on the archive and nothing more.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    iam.example.com/role: audit-observe
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Sealing is a different privilege from writing: whoever can write the archive
+# and can also sign for it can choose what to sign. This identity reads the
+# records, puts seals and keys/roots.jwks, and uses the seal key; the writer's
+# role has no use of that key, and this one has no write to records/.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-notary
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Verification needs to read the archive and nothing else. An auditor running
+# the same command must get the same answer, which is what makes the answer
+# worth having.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-verify
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# The front door publishes and nothing more. It must not hold the archive's
+# write identity: a receiver that shares the writer's service account would
+# reach the bucket through whatever Pod Identity or IRSA role that binds.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-receiver
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Purging deletes from the archive, a different privilege from appending to it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-purge
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Clock sync only records what it measured through the writer's sink. It needs
+# no cloud rights at all.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-clock-sync
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-deployment
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  # The document a config names as `deployment`: which presets each profile is
+  # composed from, and where its copies land. Every component that reads
+  # profiles reads this one, because retention is a property of the profile and
+  # every one of them needs to agree about it.
+  deployment.yaml: |
+    external_identifiers_are_opaque: false
+    profiles:
+      billing-nl:
+        presets:
+        - billing-nl
+      history:
+        presets:
+        - history
+      security:
+        presets:
+        - security
+  # The document a writer's config names as `workloads`: the issuers trusted to
+  # name a calling workload, and the source each speaks for.
+  workloads.yaml: |
+    issuers:
+      - url: "https://oidc.example.com/id/CLUSTER"
+        audience: "audit"
+    workloads:
+      - source: wallet
+        subject: system:serviceaccount:wallet:wallet-api
+
+---
+# Source: audit/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-writer-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: writer
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      kmsKey: alias/audit
+      prefix: prod
+    database:
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+      url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full
+    deployment: /etc/audit/deployment.yaml
+    keys:
+      local:
+        dir: /var/lib/audit/keys
+        rootFile: /etc/audit/keys/root
+      provider: local
+    replicas: 3
+    stream:
+      consumer: audit-writer
+      name: AUDIT
+      nats:
+        tokenFile: /var/run/audit/stream/token
+        url: nats://nats.audit.svc:4222
+    workloads: /etc/audit/workloads.yaml
+
+---
+# Source: audit/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-receiver-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: receiver
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    database:
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+      url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full
+    deployment: /etc/audit/deployment.yaml
+    mode: receiver
+    stream:
+      consumer: audit-writer
+      name: AUDIT
+      nats:
+        tokenFile: /var/run/audit/stream/token
+        url: nats://nats.audit.svc:4222
+    workloads: /etc/audit/workloads.yaml
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Hourly. Seals the hours that have closed and settled since the last seal, for
+# every profile and tenant, into the signed chain: one seal per hour, empty
+# hours too, each naming the one before. It resumes past a missed run on its
+# own, so a failed hour needs no operator, and a rerun of a sealed hour writes
+# nothing. It signs, and it runs as an identity of its own that the writer's is
+# not: whoever can write the archive and can also sign for it can choose what
+# to sign.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-notary-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: notary
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      prefix: prod
+    signer:
+      kms:
+        key: alias/audit-seal
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Nightly. Checks each profile's record objects of the last day against the
+# bucket contract (key, metadata, sha256, the hash of every record) and, with
+# `seals.roots`, the seals too: their signatures against the pinned roots, the
+# chain, each hour's count and root against its objects, and that no due seal is
+# missing. It reports what it finds; a non-zero exit is the alert. It reads the
+# archive and nothing else, which is what lets an auditor run the same command
+# and get the same answer.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-verify-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: verify
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      prefix: prod
+    deployment: /etc/audit/deployment.yaml
+    sink:
+      tokenFile: /var/run/audit/token
+      url: http://audit:8080
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Daily. Brings the index and the deduplication table back within what the
+# profiles allow. It never touches the archive: those objects are released by
+# their object lock, which is what makes a retention a retention.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-purge-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: purge
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    database:
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+      url: postgres://audit_purge@db.example.test:5432/audit?sslmode=verify-full
+    dedupeWindow: 336h
+    deployment: /etc/audit/deployment.yaml
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Daily. Compares this cluster's clock with UTC and records the answer, which is
+# what ETSI EN 319 401 7.10 asks for. It never sets the clock. A drift beyond
+# the tolerance fails the run, so the job going red is the alert.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-clock-sync-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: clock-sync
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    ntp:
+    - time.cloudflare.com
+    - time.google.com
+    sink:
+      tokenFile: /var/run/audit/token
+      url: http://audit:8080
+
+---
+# Source: audit/templates/observe.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-observe-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      prefix: prod
+    database:
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      url: postgres://audit_observe@db.example.test:5432/audit?sslmode=verify-full
+    settle: 2m
+    wake:
+      nats:
+        nats:
+          tokenFile: /var/run/audit/stream/token
+          url: nats://nats.audit.svc:4222
+        subject: audit.bucket.created
+
+---
+# Source: audit/templates/query.yaml
+# Who may sign in to the query service, and what each caller may read. A
+# changed file must reach a running service, so the pods carry its checksum.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-grants
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+data:
+  grants.yaml: |
+    issuers:
+    - audience: audit
+      url: https://id.example.com
+    presets:
+    - issuer: https://id.example.com
+      name: access-roster
+
+---
+# Source: audit/templates/query.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-query-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+        region: eu-example-1
+      prefix: prod
+    database:
+      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+      url: postgres://audit_query@db.example.test:5432/audit?sslmode=verify-full
+    deployment: /etc/audit/deployment.yaml
+    exports:
+      bucket:
+        name: audit-exports
+    grants: /etc/audit/grants.yaml
+    keys:
+      local:
+        dir: /var/lib/audit/keys
+        rootFile: /etc/audit/keys/root
+      provider: local
+    sink:
+      tokenFile: /var/run/audit/token
+      url: http://audit:8080
+
+---
+# Source: audit/templates/keys-pvc.yaml
+# Data keys are random and wrapped into this directory, so it is the only copy
+# of them. In stream mode the writers share it, which is why it needs an access
+# mode that lets more than one pod mount it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: audit-keys
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: "efs"
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Source: audit/templates/query.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-query
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/component: query
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
+# Source: audit/templates/writer.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/component: writer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
+# Source: audit/templates/observe.yaml
+# The indexer. It follows the archive's listing from a cursor per profile and
+# tenant kept in Postgres, indexes what is older than the settle window, and
+# writes the index the query service reads. It reads the archive and never
+# writes it; it writes the index as a role of its own, which holds neither the
+# deduplication table nor the registry. Nothing calls it, so it has no Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: observe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: observe
+      annotations:
+        checksum/config: 3da288dc4661e6d36501ab88b1fbf2cb1770eefcd00203e6eae11e097f240a5b
+    spec:
+      serviceAccountName: audit-observe
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: observe
+          image: ghcr.io/truvity/audit/audit-observe:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-observe-database
+                  key: password
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://gateway.observability.svc:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-observe"
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "30000"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "0.1"
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+            
+            - name: token-0
+              mountPath: /var/run/audit/stream
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-observe-config
+        
+        
+        - name: token-0
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "nats"
+                  expirationSeconds: 3600
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/query.yaml
+# The read path. It reads the index as a role that does not own the tables, so
+# the tenant policies bind it; it reads the archive for provenance; it records
+# every read through the writer before answering; and it holds the keys only
+# if it may resolve.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-query
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: query
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: query
+      annotations:
+        checksum/config: 432a1aeb52dfee3e9c223724dfd8548df1f690d3a3c828d61f5f9ba749924ca7
+        checksum/grants: 64a2af7a257e3558f4c717cd5961046d26a7a78787c31965c503d3e1aa5589a9
+        # A grant preset turns roles into profiles, so the profiles are part
+        # of what a grant means.
+        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+    spec:
+      serviceAccountName: audit-query
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: query
+          image: ghcr.io/truvity/audit/audit-query:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_QUERY_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-query-database
+                  key: password
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://gateway.observability.svc:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-query"
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "30000"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "0.1"
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            - name: grants
+              mountPath: /etc/audit/grants.yaml
+              subPath: grants.yaml
+              readOnly: true
+            - name: keys
+              mountPath: /var/lib/audit/keys
+              readOnly: true
+            
+            
+            - name: secret-0
+              mountPath: /etc/audit/keys
+              readOnly: true
+            - name: token-0
+              mountPath: /var/run/audit
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-query-config
+        - name: deployment
+          configMap:
+            name: audit-deployment
+        - name: grants
+          configMap:
+            name: audit-grants
+        - name: keys
+          persistentVolumeClaim:
+            claimName: audit-keys
+            readOnly: true
+        
+        
+        - name: secret-0
+          secret:
+            secretName: audit-key-root
+        - name: token-0
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "audit"
+                  expirationSeconds: 3600
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/writer.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: writer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: writer
+      annotations:
+        # A changed configuration must reach a running pod, and a file mounted
+        # with subPath is never updated in place, so the pod is replaced.
+        checksum/config: 7eddce2977643fee9a4f1fd136ddcf3fe01f1333d9d824b1a03d76a65a080360
+        # Likewise a profile change.
+        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        # And who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: 0096193e035e4003ff3940211abf0b4dfdb7c9fcdbad2524453bd17047f897c3
+    spec:
+      serviceAccountName: audit-receiver
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: receiver
+          image: ghcr.io/truvity/audit/audit-writer:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-database
+                  key: password
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://gateway.observability.svc:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-writer"
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "30000"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "0.1"
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/workloads.yaml
+              subPath: workloads.yaml
+              readOnly: true
+            
+            
+            - name: token-0
+              mountPath: /var/run/audit/stream
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-receiver-config
+        - name: deployment
+          configMap:
+            name: audit-deployment
+        
+        
+        - name: token-0
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "nats"
+                  expirationSeconds: 3600
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/writer.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-consumer
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: consumer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: consumer
+      annotations:
+        # A changed configuration must reach a running pod, and a file mounted
+        # with subPath is never updated in place, so the pod is replaced.
+        checksum/config: b8cedb82bb0df065af2739591dae67727e9b951335a73be55d8976f59f20abf0
+        # Likewise a profile change.
+        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        # And who may write: a changed issuer or mapping must reach it.
+        checksum/workloads: 0096193e035e4003ff3940211abf0b4dfdb7c9fcdbad2524453bd17047f897c3
+    spec:
+      serviceAccountName: audit
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: consumer
+          image: ghcr.io/truvity/audit/audit-writer:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-database
+                  key: password
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://gateway.observability.svc:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "audit-writer"
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "30000"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "0.1"
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/workloads.yaml
+              subPath: workloads.yaml
+              readOnly: true
+            - name: keys
+              mountPath: /var/lib/audit/keys
+            
+            
+            - name: secret-0
+              mountPath: /etc/audit/keys
+              readOnly: true
+            - name: token-0
+              mountPath: /var/run/audit/stream
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-writer-config
+        - name: deployment
+          configMap:
+            name: audit-deployment
+        - name: keys
+          persistentVolumeClaim:
+            claimName: audit-keys
+        
+        
+        - name: secret-0
+          secret:
+            secretName: audit-key-root
+        - name: token-0
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: "nats"
+                  expirationSeconds: 3600
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-notary
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "17 * * * *"
+  # A run that overlaps itself only does the same work twice.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 3ce476a12c9fa5a7277270931f94913f6b5889faca70cf74b4280d43b224ac2d
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-notary
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: notary
+              image: ghcr.io/truvity/audit/audit-notary:0.0.0
+              imagePullPolicy: IfNotPresent
+              args:
+                - --config=/etc/audit/config.yaml
+              env:
+                
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://gateway.observability.svc:4318"
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "http/protobuf"
+                - name: OTEL_SERVICE_NAME
+                  value: "audit-notary"
+                - name: OTEL_METRIC_EXPORT_INTERVAL
+                  value: "30000"
+                - name: OTEL_TRACES_SAMPLER
+                  value: "parentbased_traceidratio"
+                - name: OTEL_TRACES_SAMPLER_ARG
+                  value: "0.1"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                
+                
+          volumes:
+            - name: config
+              configMap:
+                name: audit-notary-config
+            
+            
+
+---
+# Source: audit/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-verify
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "23 3 * * *"
+  # A run that overlaps itself only does the same work twice.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 4e323189bc9bc558a53c59be34626bd5f771ab7d062e5c3e7cb208838d80e7f7
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-verify
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: verify
+              image: ghcr.io/truvity/audit/audit:0.0.0
+              imagePullPolicy: IfNotPresent
+              args:
+                - verify
+                - --config=/etc/audit/config.yaml
+              env:
+                
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://gateway.observability.svc:4318"
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "http/protobuf"
+                - name: OTEL_SERVICE_NAME
+                  value: "audit"
+                - name: OTEL_METRIC_EXPORT_INTERVAL
+                  value: "30000"
+                - name: OTEL_TRACES_SAMPLER
+                  value: "parentbased_traceidratio"
+                - name: OTEL_TRACES_SAMPLER_ARG
+                  value: "0.1"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                - name: deployment
+                  mountPath: /etc/audit/deployment.yaml
+                  subPath: deployment.yaml
+                  readOnly: true
+                
+                
+                - name: token-0
+                  mountPath: /var/run/audit
+                  readOnly: true
+          volumes:
+            - name: config
+              configMap:
+                name: audit-verify-config
+            - name: deployment
+              configMap:
+                name: audit-deployment
+            
+            
+            - name: token-0
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "audit"
+                      expirationSeconds: 3600
+
+---
+# Source: audit/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-purge
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "41 4 * * *"
+  # A run that overlaps itself only does the same work twice.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: fce36fe6972f94512175c62cf2be437dcfbde89016cb11585b8bfa35938ee763
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-purge
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: purge
+              image: ghcr.io/truvity/audit/audit:0.0.0
+              imagePullPolicy: IfNotPresent
+              args:
+                - purge
+                - --config=/etc/audit/config.yaml
+              env:
+                
+                - name: AUDIT_DATABASE_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: audit-purge-database
+                      key: password
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://gateway.observability.svc:4318"
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "http/protobuf"
+                - name: OTEL_SERVICE_NAME
+                  value: "audit"
+                - name: OTEL_METRIC_EXPORT_INTERVAL
+                  value: "30000"
+                - name: OTEL_TRACES_SAMPLER
+                  value: "parentbased_traceidratio"
+                - name: OTEL_TRACES_SAMPLER_ARG
+                  value: "0.1"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                - name: deployment
+                  mountPath: /etc/audit/deployment.yaml
+                  subPath: deployment.yaml
+                  readOnly: true
+                
+                
+          volumes:
+            - name: config
+              configMap:
+                name: audit-purge-config
+            - name: deployment
+              configMap:
+                name: audit-deployment
+            
+            
+
+---
+# Source: audit/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-clock-sync
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "13 2 * * *"
+  # A run that overlaps itself only does the same work twice.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 79fb41b965bab8f71809e02a28bff15435610dbd5b5d68b810747d7930b9942d
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-clock-sync
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: clock-sync
+              image: ghcr.io/truvity/audit/audit:0.0.0
+              imagePullPolicy: IfNotPresent
+              args:
+                - clock-sync
+                - --config=/etc/audit/config.yaml
+              env:
+                
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://gateway.observability.svc:4318"
+                - name: OTEL_EXPORTER_OTLP_PROTOCOL
+                  value: "http/protobuf"
+                - name: OTEL_SERVICE_NAME
+                  value: "audit"
+                - name: OTEL_METRIC_EXPORT_INTERVAL
+                  value: "30000"
+                - name: OTEL_TRACES_SAMPLER
+                  value: "parentbased_traceidratio"
+                - name: OTEL_TRACES_SAMPLER_ARG
+                  value: "0.1"
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                
+                
+                - name: token-0
+                  mountPath: /var/run/audit
+                  readOnly: true
+          volumes:
+            - name: config
+              configMap:
+                name: audit-clock-sync-config
+            
+            
+            - name: token-0
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "audit"
+                      expirationSeconds: 3600
+---
+# Source: audit/templates/migrate.yaml
+# The identity this Job runs as, created as a hook of its own so that it
+# exists before the Job that names it. A pre-install hook runs BEFORE the
+# release's ordinary resources, so a hook Pod cannot name a ServiceAccount
+# the release has not created yet: the Job would be admitted and then never
+# get a Pod, with "serviceaccount not found" on the Job and a release that
+# waits for a hook that can never run. The same is true of its configuration.
+#
+# It is the migration's own, not the writer's, and it carries no cloud
+# annotations. This Job talks to Postgres; it has no business holding the
+# credentials that write the archive. A lower weight than the Job so it is
+# applied first.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-migrate
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+
+---
+# Source: audit/templates/migrate.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-migrate-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    database:
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+      url: postgres://audit_owner@db.example.test:5432/audit?sslmode=verify-full
+    observe: audit_observe
+    purge: audit_purge
+    reader: audit_query
+    writer: audit_writer
+
+---
+# Source: audit/templates/migrate.yaml
+# The index schema, applied before the writer rolls.
+#
+# A hook rather than something the writer does at start-up: several replicas
+# migrating at once is a race, and a schema change to the index should be a step
+# an operator can see happen. The writer refuses to start against a version it
+# does not know, so this Job failing stops the release rather than producing a
+# writer that will not run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: audit-migrate
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+    spec:
+      restartPolicy: Never
+      serviceAccountName: audit-migrate
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/truvity/audit/audit:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - migrate
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-owner-database
+                  key: password
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://gateway.observability.svc:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "audit"
+            - name: OTEL_METRIC_EXPORT_INTERVAL
+              value: "30000"
+            - name: OTEL_TRACES_SAMPLER
+              value: "parentbased_traceidratio"
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: "0.1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+            
+      volumes:
+        - name: config
+          configMap:
+            name: audit-migrate-config
+        
+        
+

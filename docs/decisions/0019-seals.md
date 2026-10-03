@@ -36,6 +36,11 @@ the contract, so a verifier in any language generates its structures from the
 same file. The fields are in
 [the bucket contract](../reference/bucket-contract.md#seals).
 
+**2026-10-03: the root is over per-record hashes**, so one record can be
+proven with a short audit path. The root is now a Merkle tree of the record
+hashes (the `hash` field of each record line) in all objects for the hour, in
+key order by object, then line order within each object.
+
 **Trust anchors are pinned.** `keys/roots.jwks` lists root public keys, and
 **observe's configuration pins them by thumbprint** (RFC 7638). The file in
 the bucket is a convenience for distribution; a root that is not pinned by

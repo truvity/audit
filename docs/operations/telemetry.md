@@ -14,7 +14,7 @@ error, when none is:
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | the collector, for metrics and traces. The estate's gateway (`http://<gateway>:4318`) |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT`, `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | one signal only |
 | `OTEL_SERVICE_NAME` | defaults to `audit-writer` or `audit-query` |
-| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | the sampler. Unset, a parent-based ratio of 0.1: a caller's decision always wins, and a tenth of new traces is kept |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | the sampler. Unset, a parent-based `always_on` (the SDK default): a caller's decision always wins and every new trace is kept. Set `OTEL_TRACES_SAMPLER=parentbased_traceidratio` and `OTEL_TRACES_SAMPLER_ARG=0.1` to keep a tenth |
 
 The gateway turns delta temporality into cumulative and keeps only the cluster,
 namespace and tier from the resource as labels

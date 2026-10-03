@@ -59,11 +59,14 @@ func named(vars ...string) bool {
 	return false
 }
 
-// defaultTraceRatio is the share of root traces kept when OTEL_TRACES_SAMPLER
-// names no sampler. Audit writes are frequent and a trace of one is mostly the
-// same shape as the next; a tenth keeps the trace store small and still shows
-// every kind of slow path. A caller's decision always wins (parent based).
-const defaultTraceRatio = 0.1
+// defaultSampler is the sampler used when OTEL_TRACES_SAMPLER names none: a
+// parent-based always_on, which is the OpenTelemetry SDK's own default. Every
+// new trace is kept and a caller's decision always wins. Thin the volume with
+// OTEL_TRACES_SAMPLER (for example parentbased_traceidratio) and
+// OTEL_TRACES_SAMPLER_ARG when the trace store needs it.
+func defaultSampler() sdktrace.Sampler {
+	return sdktrace.ParentBased(sdktrace.AlwaysSample())
+}
 
 // Start installs the global meter provider when a collector is named for
 // metrics and the global tracer provider (and the W3C trace-context
@@ -106,7 +109,7 @@ func Start(ctx context.Context, service, version string, log *slog.Logger) (func
 			sdktrace.WithBatcher(FilterExporter(exporter)),
 		}
 		if strings.TrimSpace(os.Getenv("OTEL_TRACES_SAMPLER")) == "" {
-			opts = append(opts, sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(defaultTraceRatio))))
+			opts = append(opts, sdktrace.WithSampler(defaultSampler()))
 		} // else the SDK reads OTEL_TRACES_SAMPLER and OTEL_TRACES_SAMPLER_ARG itself.
 		provider := sdktrace.NewTracerProvider(opts...)
 		otel.SetTracerProvider(provider)

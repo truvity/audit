@@ -181,3 +181,10 @@ func TestTheIndexLagIsRecordedPerProfile(t *testing.T) {
 	}
 	t.Fatal("no audit.writer.index.lag")
 }
+
+func TestTheDefaultSamplerKeepsEveryTrace(t *testing.T) {
+	sampler := telemetry.DefaultSampler()
+	if got, want := sampler.Description(), "ParentBased{root:AlwaysOnSampler,remoteParentSampled:AlwaysOnSampler,remoteParentNotSampled:AlwaysOffSampler,localParentSampled:AlwaysOnSampler,localParentNotSampled:AlwaysOffSampler}"; got != want {
+		t.Fatalf("default sampler = %s, want %s", got, want)
+	}
+}

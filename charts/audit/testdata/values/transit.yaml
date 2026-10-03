@@ -50,33 +50,10 @@ migrate:
       secretName: audit-database
       key: password
 jobs:
-  digest:
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive: *archive
-      signer:
-        transit:
-          key: audit-digest
-          openbao:
-            address: https://openbao.example:8200
-            namespace: devel
-            caFile: /etc/audit/trust/ca.crt
-            login:
-              mount: jwt-devel
-              role: audit-digest
-              jwtFile: /var/run/openbao/token
-    tokens:
-      - audience: openbao
-        mountPath: /var/run/openbao
-        expirationSeconds: 600
   verify:
     config:
       deployment: /etc/audit/deployment.yaml
       archive: *archive
-      publicKeyFile: /etc/audit/public/public.pem
-    secretMounts:
-      - secretName: audit-signing-public
-        mountPath: /etc/audit/public
   purge:
     enabled: false
   clockSync:

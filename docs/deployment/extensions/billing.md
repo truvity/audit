@@ -14,7 +14,7 @@ Nothing here is in the request path.
 | 1 | **catalogue** | on each billable action: `meter: {name, quantity_path, outcomes: [success]}` and `profiles: [security, billing]` | built |
 | 2 | **emit** | nothing — the record carries `meter{name, quantity, unit}` | built |
 | 3 | **writer** | nothing — it splits a `billing` copy (tenant and meter, no actor, the metering profile's retention), indexes the meter fields, and the dedupe table makes it exactly-once | built |
-| 4 | **rollups and statement** | a rollup row per tenant, meter and hour, filled at index time; a monthly CronJob writes an immutable statement object naming the digest it was computed from | rollups partly built; the statement not built |
+| 4 | **rollups and statement** | a rollup row per tenant, meter and hour, filled at index time; a monthly CronJob writes an immutable statement object naming the seal of the archive it was computed from (once seals exist) | rollups partly built; the statement not built |
 | 5 | **export** | push the statement's totals to a billing system, or invoice from the statement object | the application's |
 
 ## The rules that make it defensible
@@ -29,10 +29,10 @@ Nothing here is in the request path.
 - **Exactly once.** The dedupe table absorbs a redelivery, so a writer
   restart or a stream redelivery cannot double a customer's bill.
 - **The statement is immutable and self-describing.** It names the period,
-  the rollups it summed and the digest of the archive it was computed from,
+  the rollups it summed and the seal of the archive it was computed from,
   and it is written into the archive under the metering profile's lock. A
   dispute six years later is answered by re-reading it, and by verifying the
-  chain it names.
+  seal it names.
 - **The billing copy holds no people.** The metering profile omits actor and
   subject: quantities per tenant and meter, which is what finance, a
   customer in a dispute and a tax inspector are entitled to see. Who did it
@@ -79,8 +79,9 @@ actions:
   cannot index is also a writer that is not counting. The runbook's
   `audit.writer.index.deferred` counter is the one to alert on.
 - **The monthly close**: a statement is written after the period ends and
-  after the last hour of it is sealed by the digest job. Running it earlier
-  produces a statement that names a digest that does not cover the period.
+  after the last hour of it is sealed
+  ([0019](../../decisions/0019-seals.md)). Running it earlier produces a
+  statement that names a seal that does not cover the period.
 - **A meter renamed** is a new meter. The old name keeps its history; the
   rollups do not migrate.
 

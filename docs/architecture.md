@@ -33,9 +33,7 @@ flowchart LR
   NATS --> W["writer<br/>(audit-writer, consumer mode, N pods)"]
   W -- "locked objects" --> S3[("the environment's bucket<br/>audit/app/ — THE RECORD")]
   W -- "rows, dedupe, rollups" --> PG[("index database<br/>in the application's Postgres")]
-  D["digest CronJob, hourly"] --> S3
   V["verify CronJob, nightly"] --> S3
-  D -. sign .-> KMS[("signing key")]
   Q["query service<br/>(audit-query)"] --> PG
   Q --> S3
   UI["Audit page<br/>in the application's console"] -- "the console's own token" --> Q
@@ -45,12 +43,12 @@ flowchart LR
 |---|---|---|---|
 | **emit** | a library in the application (`emit`) | the compiled-in catalogue, a bounded in-memory queue | credentials for the bucket, the index or the stream |
 | **receiver** | `audit-writer`, one or two pods, the application's front door over Connect | the stream's credentials in stream mode, and it serves `RegisterCatalogue` | — |
-| **writer** | the same image in consumer mode, N pods (stream mode); the receiver itself (direct mode) | write rights on its prefix, the index owner's credentials | the signing key, any way to hand a record back to a caller |
+| **writer** | the same image in consumer mode, N pods (stream mode); the receiver itself (direct mode) | write rights on its prefix, the index owner's credentials | any way to hand a record back to a caller |
 | **stream** | one JetStream stream on the application's own account (stream mode only) | records not yet archived, replicated | — |
-| **bucket** | one per environment, Object Lock in compliance mode where a profile demands it | every record, one copy per profile, locked or chained | — |
+| **bucket** | one per environment, Object Lock in compliance mode where a profile demands it | every record, one copy per profile, locked where the profile demands it | — |
 | **index** | one database in the application's existing Postgres | rows, facet counts, the dedupe table, rollups | anything that is not rebuildable |
-| **digest / verify** | two CronJobs | the signing key (digest), the public key (verify) | write rights outside `digest/` and `verified/` |
-| **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive, the signing key |
+| **verify** | a CronJob | read on the prefix, and nothing else | write rights on the archive |
+| **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive |
 | **Audit page** | a React component in the application's console | nothing — it calls the query service with the console's own token | credentials of its own |
 | **usage consumer** | a small Deployment, [quotas](deployment/extensions/quotas.md) only | the counter cache | — |
 
@@ -155,42 +153,41 @@ them is the record.
 
 ## The life of one record
 
-1. **The application records an action.** The emitter fills what it knows
-   (id, time, source, sequence, the request's client address and ids),
-   validates the record against the catalogue — the action exists, the data
-   matches its schema, nothing on the negative list is present — and
-   delivers it as the catalogue declares.
-2. **The receiver stamps what it verified itself**: `recorded_at`, the
-   observer taken from the caller's verified token, and the `origin_hash` over
-   the canonical form. A caller never says who it is. In stream mode the
-   stamping has to happen here, because the writers on the other side read
-   messages and have no caller to verify; they keep a stamp whose hash still
-   describes its record, and stamp afresh one that does not.
-3. **The writer splits the record** into one copy per profile the action
-   names. Each copy keeps only the fields that profile's presets allow
-   (default-deny), and each identity is treated by its category: kept in
-   clear, replaced by a keyed pseudonym, or dropped. With
-   `keys.provider: none` — the default — there are no pseudonyms, and
-   [0013](decisions/0013-no-pseudonymisation-keys-by-default.md) says what
-   the deployment must declare instead.
-4. **It rolls copies into objects** — one per profile, tenant and day — and
-   puts each under an Object Lock retention computed from the profile: a
-   fixed number of days, or years after the thing the record is about
-   expires. Nothing is acknowledged before the object is in the bucket. A
-   record the writer cannot take goes to the dead-letter prefix, never
-   nowhere.
-5. **It indexes** each copy's row and facet counts, and marks the record's
-   id so that a redelivery is absorbed exactly once.
-6. **Every hour the digest job** signs, per profile, a digest listing every
-   object of that hour with its hash and the previous digest's hash —
-   including for a quiet hour, so silence can be told from removal.
-7. **Every night the verify job** walks the chain with the public key and
-   records what it checked, which `Get` later reports as a record's
-   `verified_at`.
-8. **A reader asks** through the query service. Their token names them; the
-   grants say which profiles, tenants, operations and period they may read,
-   and the grant becomes one more term of the query, so there is no path to
-   a row outside it. The read is itself recorded.
+1. **The application records an action.** The emitter fills what it knows (id,
+   time, source, sequence, the request's client address and ids), validates the
+   record against the catalogue — the action exists, the data matches its
+   schema, nothing on the negative list is present — and delivers it as the
+   catalogue declares.
+2. **The receiver stamps what it verified itself**: `recorded_at`, the observer
+   taken from the caller's verified token, and the `origin_hash` over the
+   canonical form. A caller never says who it is. In stream mode the stamping
+   has to happen here, because the writers on the other side read messages and
+   have no caller to verify; they keep a stamp whose hash still describes its
+   record, and stamp afresh one that does not.
+3. **The writer splits the record** into one copy per profile the action names.
+   Each copy keeps only the fields that profile's presets allow (default-deny),
+   and each identity is treated by its category: kept in clear, replaced by a
+   keyed pseudonym, or dropped. With `keys.provider: none` — the default — there
+   are no pseudonyms, and
+   [0013](decisions/0013-no-pseudonymisation-keys-by-default.md) says what the
+   deployment must declare instead.
+4. **It rolls copies into objects** — one per ingest batch, profile and tenant,
+   keyed by the hour of ingest — and puts each under an Object Lock retention
+   computed from the profile: a fixed number of days, or years after the thing
+   the record is about expires. Nothing is acknowledged before the object is in
+   the bucket. A record the writer cannot take goes to the dead-letter prefix,
+   never nowhere.
+5. **It indexes** each copy's row and facet counts, and marks the record's id so
+   that a redelivery is absorbed exactly once.
+6. **Every night the verify job** checks the previous day's objects against the
+   [bucket contract](reference/bucket-contract.md) — each object's key, metadata
+   and bytes, and the hash of every record — and records what it checked. Seals
+   ([0019](decisions/0019-seals.md)), which will say that nothing was removed,
+   are not built yet.
+7. **A reader asks** through the query service. Their token names them; the
+   grants say which profiles, tenants, operations and period they may read, and
+   the grant becomes one more term of the query, so there is no path to a row
+   outside it. The read is itself recorded.
 
 The installation keeps its own account of itself in the archive it writes,
 and every job records what it did, so the trail says when it was and was not
@@ -226,7 +223,7 @@ neither puts anything new in the request path.
 
 | | state |
 |---|---|
-| record, catalogue, presets, emitter, writer, query service, digest chain, verify, legal holds, retention addenda | built |
+| record, catalogue, presets, emitter, writer, query service, v1 bucket layout, verify, legal holds, retention addenda | built |
 | searchers: Postgres, archive scan, memory | built |
 | signers: key file, AWS KMS, OpenBAO transit | built |
 | key providers `local` and OpenBAO `transit`; AWS KMS envelope designed | built, and off by default |

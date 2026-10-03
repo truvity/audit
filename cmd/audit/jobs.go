@@ -11,21 +11,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
-	"github.com/truvity/audit/keys"
-	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/sdk/catalogue"
 	"github.com/truvity/audit/sdk/record"
 )
@@ -50,65 +45,6 @@ func onlyConfig(flags *flag.FlagSet) error {
 	return nil
 }
 
-func digestFromConfig(path string, asJSON bool) error {
-	cfg, err := config.LoadDigest(path)
-	if err != nil {
-		return err
-	}
-	profiles, err := profilesFor(cfg.Deployment)
-	if err != nil {
-		return err
-	}
-	// The digests land in the same store as the copies they cover, so the job
-	// is held to the same refusal as the writer -- before a signer is opened,
-	// since a KMS or transit signer is a round trip of its own.
-	if err := preset.CheckLockMode(profiles, cfg.Archive.LockMode); err != nil {
-		return err
-	}
-
-	ctx := context.Background()
-	var signer keys.Signer
-	switch s := cfg.Signer; {
-	case s.KMSKey != "":
-		var opts []func(*awsconfig.LoadOptions) error
-		if r := cfg.Archive.Bucket.Region; r != "" {
-			opts = append(opts, awsconfig.WithRegion(r))
-		}
-		aws, err := awsconfig.LoadDefaultConfig(ctx, opts...)
-		if err != nil {
-			return err
-		}
-		signer = &keys.KMSSigner{Client: kms.NewFromConfig(aws), Key: s.KMSKey}
-	case s.Transit != nil:
-		if signer, err = cli.TransitSignerFrom(ctx, *s.Transit); err != nil {
-			return err
-		}
-	default:
-		if signer, err = keys.LoadLocalSignerFile(s.KeyFile.ID, s.KeyFile.Path); err != nil {
-			return err
-		}
-	}
-
-	run := cli.Digest{
-		Profiles: profiles, Signer: signer,
-		Lookback: cfg.Lookback.D(), MaxWindows: cfg.MaxWindows, JSON: asJSON,
-		Instance: record.InstanceName(),
-	}
-	if cfg.Sink != nil {
-		if run.Catalogue, err = catalogue.Common(); err != nil {
-			return err
-		}
-		if run.Sink, err = cli.SinkFrom(*cfg.Sink, cfg.Require); err != nil {
-			return err
-		}
-	}
-	if run.Store, err = cli.OpenArchiveFrom(ctx, cfg.Archive); err != nil {
-		return err
-	}
-	_, err = run.Run(ctx)
-	return err
-}
-
 func verifyFromConfig(path string, asJSON bool) error {
 	cfg, err := config.LoadVerify(path)
 	if err != nil {
@@ -130,19 +66,9 @@ func verifyFromConfig(path string, asJSON bool) error {
 			return fmt.Errorf("profiles: the deployment has no profile %q", name)
 		}
 	}
-	pem, err := os.ReadFile(cfg.PublicKeyFile)
-	if err != nil {
-		return fmt.Errorf("publicKeyFile: %w", err)
-	}
-
 	ctx := context.Background()
 	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive)
 	if err != nil {
-		return err
-	}
-	// A job that writes its results into the archive is held to the same
-	// refusal as the writer.
-	if err := preset.CheckLockMode(profiles, string(archive.Lock())); err != nil {
 		return err
 	}
 	// A scheduled run says "the last day"; the image the jobs run from has no
@@ -154,9 +80,9 @@ func verifyFromConfig(path string, asJSON bool) error {
 	var failed []string
 	for _, name := range names {
 		run := cli.Verify{
-			Store: archive, PublicKeyPEM: pem, Profile: name,
-			From: start, To: end, Lookback: cfg.Lookback.D(), JSON: asJSON,
-			Instance: record.InstanceName(), Record: cfg.Record,
+			Store: archive, Profile: name,
+			From: start, To: end, JSON: asJSON,
+			Instance:     record.InstanceName(),
 			RequiredLock: requiredLocks(profiles),
 		}
 		if cfg.Sink != nil {

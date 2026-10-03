@@ -248,47 +248,14 @@ type Query struct {
 	Keys       *Keys     `json:"keys,omitempty"`
 }
 
-// KeyFile is a PEM private key the digests are signed with.
-type KeyFile struct {
-	Path string `json:"path"`
-	ID   string `json:"id,omitempty"`
-}
-
-// TransitSigner is an OpenBAO transit ed25519 key.
-type TransitSigner struct {
-	Key     string  `json:"key"`
-	OpenBAO OpenBAO `json:"openbao"`
-}
-
-// Signer is what the digests are signed with: exactly one of its fields.
-type Signer struct {
-	KeyFile *KeyFile       `json:"keyFile,omitempty"`
-	KMSKey  string         `json:"kmsKey,omitempty"`
-	Transit *TransitSigner `json:"transit,omitempty"`
-}
-
-// Digest is the configuration of `audit digest`.
-type Digest struct {
+// Verify is the configuration of `audit verify`.
+type Verify struct {
 	Deployment string   `json:"deployment"`
 	Archive    Archive  `json:"archive"`
 	Sink       *Sink    `json:"sink,omitempty"`
 	Require    string   `json:"require,omitempty"`
-	Signer     Signer   `json:"signer"`
-	Lookback   Duration `json:"lookback,omitzero"`
-	MaxWindows int      `json:"maxWindows,omitempty"`
-}
-
-// Verify is the configuration of `audit verify`.
-type Verify struct {
-	Deployment    string   `json:"deployment"`
-	Archive       Archive  `json:"archive"`
-	Sink          *Sink    `json:"sink,omitempty"`
-	Require       string   `json:"require,omitempty"`
-	PublicKeyFile string   `json:"publicKeyFile"`
-	Profiles      []string `json:"profiles,omitempty"`
-	Last          Duration `json:"last,omitzero"`
-	Lookback      Duration `json:"lookback,omitzero"`
-	Record        bool     `json:"record,omitempty"`
+	Profiles   []string `json:"profiles,omitempty"`
+	Last       Duration `json:"last,omitzero"`
 }
 
 // Purge is the configuration of `audit purge`.

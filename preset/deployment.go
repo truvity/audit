@@ -33,7 +33,6 @@ type Deployment struct {
 // ProfileConfig is one profile's composition.
 type ProfileConfig struct {
 	Presets []string `json:"presets"`
-	Prefix  string   `json:"prefix,omitempty"`
 }
 
 // ParseDeployment reads a deployment document. Unknown keys are refused: a
@@ -58,7 +57,7 @@ func ParseDeployment(raw []byte) (*Deployment, error) {
 func (d *Deployment) Compose(presets map[string]*Preset) (map[string]*Profile, error) {
 	out := make(map[string]*Profile, len(d.Profiles))
 	for name, c := range d.Profiles {
-		p, err := Compose(Composition{Name: name, Presets: c.Presets, Prefix: c.Prefix}, presets)
+		p, err := Compose(Composition{Name: name, Presets: c.Presets}, presets)
 		if err != nil {
 			return nil, err
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/truvity/audit/sdk/emit"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/store"
 )
 
 // Catalogues resolves the catalogue a record names.
@@ -93,7 +94,7 @@ type Writer struct {
 	Roller     *Roller
 	Dedupe     Dedupe
 	DeadLetter DeadLetter
-	// Archive copies what a reader needs to make sense of the records: the
+	// Archive keeps what a reader needs to make sense of the records: the
 	// catalogue, its extension schemas, and the record's own schema and proto.
 	// Without it the archive is a heap of JSON whose meaning lives somewhere
 	// else.
@@ -240,10 +241,18 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 // one processes a single record: resolve, validate, stamp, split, gather.
 func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension) error {
 	// The writer takes no caller's word for the shape of a record, its own
-	// included. The one that reached here without a time was keyed under
-	// the epoch, outside every digest window, and the lock keeps it there.
+	// included. One without a time would sit in the archive for as long as
+	// the lock lasts, where no reader looking for when it happened finds it.
 	if err := record.Check(r, record.Default); err != nil {
 		return w.deadLetter(ctx, r, err.Error())
+	}
+	// The tenant is a component of every key its copies land under. One that
+	// cannot be — it has a slash in it — can never be written, so it is
+	// dead-lettered like any record that can never be valid, rather than
+	// failing a batch that would be retried for ever.
+	if why := store.KeyComponent(r.GetTenantId()); why != "" {
+		return w.deadLetter(ctx, r, fmt.Sprintf("tenant_id %q %s, so it cannot be a component of an archive key",
+			r.GetTenantId(), why))
 	}
 	c, err := w.Catalogues.Get(ctx, r.GetSource(), r.GetCatalogueVersion())
 	if err != nil {
@@ -254,6 +263,8 @@ func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension
 		// it is beside it. Doing this after would leave a window in which the
 		// archive holds records nothing explains.
 		if err := w.Archive.EnsureCatalogue(ctx, c); err != nil {
+			// Never a dead letter: a conflict is the writer's own to refuse to
+			// run on, and a failure to write is the batch's to retry.
 			return fmt.Errorf("writer: archive catalogue %s %s: %w", c.Source, c.Version, err)
 		}
 		if err := w.Archive.EnsureRecord(ctx, r.GetSchemaVersion()); err != nil {

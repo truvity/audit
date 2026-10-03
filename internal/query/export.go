@@ -21,7 +21,7 @@ import (
 //
 // Outside every profile's prefix, deliberately. An export is a copy of records
 // made to be taken away, and it must not be mistaken for the archive: it is not
-// under an object lock, no digest accounts for it, and it expires. A reader who
+// under an object lock, no seal covers it, and it expires. A reader who
 // found one under a profile prefix would have no way to tell it from a record.
 const ExportPrefix = "export"
 

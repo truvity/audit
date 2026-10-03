@@ -1,7 +1,7 @@
 # audit
 
 One installation of the audit trail: the receiver, the writer, the jobs that
-seal, verify and prune what it writes, and the query service that reads it
+verify and prune what it writes, and the query service that reads it
 back. The Audit page lives in the application's console and is not in here.
 
 **This chart is instantiated, not deployed.** An installation belongs to one
@@ -28,7 +28,7 @@ the application. The deployment pages show the values each shape takes:
   given the keys — resolve, behind the grants in `query.grants`. Every read is
   recorded through the writer. It reads the index as **its own database
   role**, which must not own the tables (`query.config.database`).
-- **Four CronJobs**: `audit digest` hourly, `audit verify` nightly (one job
+- **Three CronJobs**: `audit verify` nightly (one job
   for the profiles it lists, or every profile), `audit purge` daily,
   `audit clock-sync` daily. Each runs `--config` against its own file and
   records what it did through the writer's own sink. `clock-sync` needs at
@@ -60,7 +60,7 @@ refused at run time instead.
 Each component has a `config:` block: the binary's own configuration file,
 rendered as it stands into a ConfigMap `<fullname>-<component>-config` and
 mounted at `/etc/audit/config.yaml`. The components are `writer`, `receiver`
-(stream mode), `query`, `migrate` and `jobs.digest`, `jobs.verify`,
+(stream mode), `query`, `migrate` and `jobs.verify`,
 `jobs.purge` and `jobs.clockSync`. The chart translates none of it: a key
 under `config:` is the binary's key, and it is validated by
 `values.schema.json`, which embeds the schemas in `schemas/config/`, and again
@@ -97,9 +97,7 @@ The chart takes references; it creates none of these.
 | a bucket belonging to the environment: with Object Lock in compliance mode for a profile that demands it, or without a lock where none does ([0014](../../docs/decisions/0014-lock-modes-and-store-tiers.md)) | `writer.config.archive.bucket`, `.lockMode` |
 | **only on an S3-compatible store that is not AWS**: its endpoint, whether its certificate covers a bucket subdomain, and the names of the variables holding static keys if it has no pod identity | `archive.bucket.endpoint`, `.pathStyle`, `.credentialsEnv` with `secretEnv` |
 | **a prefix of its own within it**, required wherever the bucket is shared: it is what keeps two applications' archives apart, and what each role's IAM is scoped to | `archive.prefix` |
-| a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `holds/` | the writer's ServiceAccount annotation |
-| the digest signing key: a Secret (PEM, ed25519), an AWS KMS ECC_NIST_P256 key, or an OpenBAO transit ed25519 key | `jobs.digest.config.signer`: `keyFile` (with `secretMounts`), `kmsKey` or `transit` |
-| a Secret with its public half | `jobs.verify.config.publicKeyFile`, with `secretMounts` |
+| a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `records/`, `catalogue/` and `holds/` | the writer's ServiceAccount annotation |
 | a reference clock the clock-synchronisation job can reach | `jobs.clockSync.config.ntp` |
 | **a database in the application's existing Postgres**, owned by the writer, in a Secret. It holds the index, the dedupe table and the rollups, all rebuildable with `audit reindex`, so it needs no backup | `writer.config.database` and `passwordEnv`, with `secretEnv` |
 | **a separate read-only role** for the query service: `usage` on the schema, `select` on its tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.config.database` and `passwordEnv`, with `query.secretEnv`; `migrate.config.reader` names the role |
@@ -109,7 +107,7 @@ The chart takes references; it creates none of these.
 | an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsEnv` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
 | the images | `image.writer`, `image.query`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
-| a role per component — writer, query, digest, and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
+| a role per component — writer, query and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
 | **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/operations/openbao-keys.md#what-the-engine-needs)) | `keys.local.rootFile` with `secretMounts`, or `keys.provider: transit` with `keys.transit.openbao.login` and a `tokens` entry |
 | a CA bundle, if OpenBAO or Postgres serve from a private chain (e.g. trust-manager's) | `trust.configMap` |
 | a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keysVolume` |
@@ -202,16 +200,15 @@ password in a database URL, a value from before the file such as a top-level
 The binaries refuse the rest at start-up, naming the key: `stream.ackWait` not
 longer than `roll.interval`, a profile that demands a stricter lock than
 `archive.lockMode` (`pci-dss` composed on `lockMode: none`, refused by the
-writer, the digest job and the verify job), OpenBAO configured with none or
-more than one way to sign in, and a digest `signer` with none or more than one
-of its three.
+writer), and OpenBAO configured with none or more than one way to sign in.
 
 ## Checking it
 
 ```
 just chart          # lint, every refusal, golden renders
-audit verify --profile <p> --last 24h --bucket <b> --public-key <file>
+audit verify --profile <p> --last 24h --bucket <b>
 ```
 
-The second needs read access to the archive and the public key, and nothing
-that has to be trusted.
+The second needs read access to the archive and nothing else, and nothing
+that has to be trusted. An archive written before the v1 layout is read by
+nothing in v1 and stays verifiable with the previous release's CLI (v0.6.x).

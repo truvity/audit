@@ -1,7 +1,7 @@
 {{/*
 A scheduled job: `audit <command> --config`, in the toolchain's image, with the
-configuration of its own. Takes (dict "root" $ "name" "digest" "command"
-"digest" "comp" <the job's values> "account" <service account> "profiles" bool).
+configuration of its own. Takes (dict "root" $ "name" "verify" "command"
+"verify" "comp" <the job's values> "account" <service account> "profiles" bool).
 `profiles` mounts the profile document, for a job whose config names it.
 */}}
 {{- define "audit.cronjob" -}}
@@ -59,19 +59,13 @@ spec:
             {{- include "audit.extraVolumes" .comp | nindent 12 }}
 {{- end -}}
 {{- if eq .Values.renders "app" -}}
-{{- if .Values.jobs.digest.enabled }}
-# Hourly. Seals the windows since the last digest into the signed chain. It
-# resumes past a missed run on its own, so a failed hour needs no operator: a
-# gap in the chain cannot be told from a digest somebody removed.
-{{ include "audit.configMap" (dict "root" . "name" "digest" "config" .Values.jobs.digest.config) }}
----
-{{ include "audit.cronjob" (dict "root" . "name" "digest" "command" "digest" "comp" .Values.jobs.digest "account" (include "audit.digestServiceAccountName" .) "profiles" true) }}
-{{- end }}
 {{- if .Values.jobs.verify.enabled }}
 ---
-# Nightly. Walks each profile's chain and reports what it finds; a non-zero
-# exit is the alert. It takes the public half of the signing key only, which is
-# what lets an auditor run the same command and get the same answer.
+# Nightly. Checks each profile's record objects of the last day against the
+# bucket contract (key, metadata, sha256, the hash of every record) and reports
+# what it finds; a non-zero exit is the alert. It reads the archive and nothing
+# else, which is what lets an auditor run the same command and get the same
+# answer.
 {{ include "audit.configMap" (dict "root" . "name" "verify" "config" .Values.jobs.verify.config) }}
 ---
 {{ include "audit.cronjob" (dict "root" . "name" "verify" "command" "verify" "comp" .Values.jobs.verify "account" (include "audit.verifyServiceAccountName" .) "profiles" true) }}

@@ -8,8 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
@@ -82,28 +80,14 @@ func compositions(t *testing.T, s *storetest.Memory, profile string) []writer.Co
 // recorded is the writer's own records of one action, from the profile copies.
 func recorded(t *testing.T, s *storetest.Memory, action string) []*record.Record {
 	t.Helper()
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer decoder.Close()
 	var out []*record.Record
 	for _, key := range s.Keys() {
-		if !strings.HasPrefix(key, "profile=security/") {
+		if !strings.HasPrefix(key, "records/security/") {
 			continue
 		}
-		body, _ := s.Get(context.Background(), key)
-		plain, err := decoder.DecodeAll(body, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, line := range strings.Split(strings.TrimSpace(string(plain)), "\n") {
-			var r record.Record
-			if err := record.Unmarshal([]byte(line), &r); err != nil {
-				t.Fatal(err)
-			}
+		for _, r := range objectRecords(t, s, key) {
 			if r.GetAction() == action {
-				out = append(out, &r)
+				out = append(out, r)
 			}
 		}
 	}

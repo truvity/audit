@@ -11,6 +11,15 @@
 // is bounded by a budget: a scan stops when it has spent it and hands back a
 // cursor, rather than running until something times out and leaving the caller
 // with nothing.
+//
+// A day here is a day of INGEST time, because that is what the v1 layout keys
+// objects by (docs/reference/bucket-contract.md): records/<profile>/<tenant>/
+// <yyyy>/<mm>/<dd>/<hh>/<ULID>. Rows are ordered by occurred_at within an
+// ingest day, so a record that was ingested late sorts among the records of the
+// day it arrived, not the day it happened. A query that names a period of
+// occurred_at reads the ingest days from its start to its end plus Lateness,
+// and a record that arrived later than that is not found by it; the index has
+// no such limit, which is one more reason a deployment of any size runs one.
 package s3scan
 
 import (
@@ -21,9 +30,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
 )
@@ -45,7 +53,11 @@ type Scanner struct {
 	// the archive to its beginning, which for a seven-year retention is not an
 	// answer anybody is waiting for.
 	Horizon time.Duration
-	Now     func() time.Time
+	// Lateness is how long after a period a record that happened in it may
+	// still arrive: the scan reads the ingest days up to the period's end plus
+	// this. Default 24 hours.
+	Lateness time.Duration
+	Now      func() time.Time
 }
 
 // Budget is what one request may spend.
@@ -68,8 +80,8 @@ func (s *Scanner) Capabilities() index.Capabilities {
 		Facets:          false,
 		DataPredicates:  true,
 		MaxConjunctions: 4,
-		// The archive is laid out by day, so that is the only order it can
-		// deliver without reading everything first.
+		// The archive is laid out by ingest day, so that is the only order it
+		// can deliver without reading everything first.
 		SortFields: []string{index.SortOccurredAt},
 	}
 }
@@ -104,7 +116,7 @@ func (s *Scanner) Search(ctx context.Context, q index.Query) (index.Page, error)
 			descending = by.Descending
 		default:
 			return index.Page{}, fmt.Errorf(
-				"s3scan: cannot order by %q: the archive is laid out by day, and any other "+
+				"s3scan: cannot order by %q: the archive is laid out by ingest day, and any other "+
 					"order means reading everything before answering", by.Field)
 		}
 	}
@@ -118,12 +130,6 @@ func (s *Scanner) Search(ctx context.Context, q index.Query) (index.Page, error)
 	if err != nil {
 		return index.Page{}, err
 	}
-
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		return index.Page{}, err
-	}
-	defer decoder.Close()
 
 	deadline := time.Now().Add(s.budget().Time)
 	spent := 0
@@ -169,7 +175,7 @@ func (s *Scanner) Search(ctx context.Context, q index.Query) (index.Page, error)
 
 		var rows []index.Row
 		for _, key := range keys {
-			found, err := s.rowsOf(ctx, decoder, key, q)
+			found, err := s.rowsOf(ctx, key, q)
 			if err != nil {
 				return index.Page{}, err
 			}
@@ -300,20 +306,36 @@ func (s *Scanner) window(q index.Query) (from, to time.Time) {
 			}
 		}
 	}
+	// The archive is keyed by when a record arrived, which is no earlier than
+	// when it happened: a period of occurred_at is read up to its end plus the
+	// time a record may be late, and nothing is ingested in the future.
+	to = to.Add(s.lateness())
+	if to.After(now) {
+		to = now
+	}
 	return from.UTC().Truncate(24 * time.Hour), to.UTC().Truncate(24 * time.Hour)
 }
 
-// objectsOf lists one day's objects across every tenant, newest key last.
+func (s *Scanner) lateness() time.Duration {
+	if s.Lateness > 0 {
+		return s.Lateness
+	}
+	return 24 * time.Hour
+}
+
+// objectsOf lists the objects ingested on one day across every tenant: the
+// day's 24 hours, tenant by tenant, each in key order.
 func (s *Scanner) objectsOf(ctx context.Context, profile string, day time.Time) ([]string, error) {
 	var keys []string
-	err := store.WalkDays(ctx, s.Store, "profile="+profile, day, day, func(e store.Entry) error {
-		keys = append(keys, e.Key)
-		return nil
-	})
+	err := store.WalkProfile(ctx, s.Store, profile, day, day.Add(23*time.Hour),
+		func(_ string, e store.Entry) error {
+			keys = append(keys, e.Key)
+			return nil
+		})
 	if err != nil {
 		return nil, fmt.Errorf("s3scan: %w", err)
 	}
-	// Within a day, newest first, to match the walk.
+	// Newest first, to match the walk.
 	for a, z := 0, len(keys)-1; a < z; a, z = a+1, z-1 {
 		keys[a], keys[z] = keys[z], keys[a]
 	}
@@ -321,34 +343,29 @@ func (s *Scanner) objectsOf(ctx context.Context, profile string, day time.Time) 
 }
 
 // rowsOf reads one object and returns the rows of it that match.
-func (s *Scanner) rowsOf(
-	ctx context.Context, decoder *zstd.Decoder, key string, q index.Query,
-) ([]index.Row, error) {
+func (s *Scanner) rowsOf(ctx context.Context, key string, q index.Query) ([]index.Row, error) {
 	body, err := s.Store.Get(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("s3scan: %s: %w", key, err)
 	}
-	plain, err := decoder.DecodeAll(body, nil)
+	lines, err := recobj.Decode(body)
 	if err != nil {
 		return nil, fmt.Errorf("s3scan: %s: %w", key, err)
 	}
 
 	var out []index.Row
-	for n, line := range strings.Split(strings.TrimRight(string(plain), "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-		var copied record.Record
-		if err := record.Unmarshal([]byte(line), &copied); err != nil {
+	for n, line := range lines {
+		copied, err := line.Decoded()
+		if err != nil {
 			return nil, fmt.Errorf("s3scan: %s:%d: %w", key, n+1, err)
 		}
 		var fields index.Fields
 		if s.Fields != nil {
-			if fields, err = s.Fields(ctx, &copied); err != nil {
+			if fields, err = s.Fields(ctx, copied); err != nil {
 				return nil, fmt.Errorf("s3scan: %s:%d: %w", key, n+1, err)
 			}
 		}
-		r := index.RowOf(&copied, index.ObjectAt{Key: key, Line: n + 1}, fields)
+		r := index.RowOf(copied, index.ObjectAt{Key: key, Line: n + 1}, fields)
 		if !granted(r, q.Tenants) || !index.Matches(r, q.Filter) {
 			continue
 		}
@@ -371,7 +388,7 @@ func granted(r index.Row, tenants []string) bool {
 
 // cursor is where a scan stopped.
 //
-// It is a day plus a position inside that day's ordering, not a place in the
+// It is an ingest day plus a position inside that day's ordering, not a place in the
 // archive. It used to be an object and a line, which is what the walk does, and
 // that stopped being a resumable position the moment a day was sorted before
 // being emitted: the next row in sort order is very often in an object the walk
@@ -385,12 +402,16 @@ type cursor struct {
 	id       string
 }
 
-// cursorOf marks the last row of a page. The day comes from the row's own
-// occurrence, which is the day its object is keyed under.
+// cursorOf marks the last row of a page. The day is the ingest day of the
+// row's object, which its key names: not the day the record happened.
 func cursorOf(r index.Row) *index.Boundary {
+	day := r.OccurredAt.UTC().Truncate(24 * time.Hour)
+	if o, ok := store.ParseRecordKey(r.ObjectKey); ok {
+		day = o.Hour.Truncate(24 * time.Hour)
+	}
 	return &index.Boundary{
 		Values: []string{strings.Join([]string{
-			r.OccurredAt.UTC().Truncate(24 * time.Hour).Format(dayLayout),
+			day.Format(dayLayout),
 			r.OccurredAt.UTC().Format(time.RFC3339Nano),
 			r.ID,
 		}, "|")},

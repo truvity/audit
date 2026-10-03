@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -61,8 +62,9 @@ const (
 	Governance LockMode = "governance"
 	// None writes no lock at all. It is the export bucket's shape, and the
 	// archive's on a store that has no Object Lock API, or under profiles
-	// whose frameworks do not demand one: the digest chain and a managed
-	// signing key are then the whole of the integrity story. A bucket
+	// whose frameworks do not demand one: the objects' own hashes and, once
+	// the notary seals them, a managed signing key are then the whole of the
+	// integrity story. A bucket
 	// without Object Lock refuses a put that names a lock mode, so this is
 	// also the only way to write to such a bucket.
 	None LockMode = "none"
@@ -210,7 +212,7 @@ func configure(o Options) func(*s3.Options) {
 // default, because a default applies one period to every profile and the whole
 // point of the profiles is that they differ. The write is conditional on the
 // key being free, so a writer that would reuse one fails instead of adding a
-// version the digest cannot account for.
+// version nothing accounts for.
 func (s *Store) Put(ctx context.Context, o store.Object) error {
 	if o.Key == "" {
 		return errors.New("s3store: an object needs a key")
@@ -309,6 +311,14 @@ func (s *Store) Head(ctx context.Context, key string) (store.Entry, error) {
 		e.Modified = out.LastModified.UTC()
 	}
 	e.LegalHold = out.ObjectLockLegalHoldStatus == types.ObjectLockLegalHoldStatusOn
+	if len(out.Metadata) > 0 {
+		// S3 lower-cases user metadata keys on the way back; the contract's
+		// keys are lower-case already.
+		e.Metadata = make(map[string]string, len(out.Metadata))
+		for k, v := range out.Metadata {
+			e.Metadata[strings.ToLower(k)] = v
+		}
+	}
 	if out.ObjectLockRetainUntilDate != nil {
 		e.RetainUntil = out.ObjectLockRetainUntilDate.UTC()
 	}
@@ -415,8 +425,8 @@ func (s *Store) retainUntil(o store.Object) *time.Time {
 //
 // S3 charges `s3:PutObjectLegalHold` for the header's presence, whatever its
 // value, so sending OFF on every put would oblige every component that writes
-// the archive to hold the right to place holds -- including the digest and
-// verify jobs, which write their own results and have no business placing one.
+// the archive to hold the right to place holds -- including the verify
+// job and the query service, which have no business placing one.
 // An absent header and OFF leave the object in the same state, because a
 // bucket has no default legal hold the way it has a default retention.
 func (s *Store) legalHoldStatus(o store.Object) types.ObjectLockLegalHoldStatus {
@@ -437,7 +447,7 @@ func legalHold(on bool) types.ObjectLockLegalHoldStatus {
 //
 // It pages to the end rather than taking the first response: a deployment with
 // more than a thousand tenants that silently lost the rest would produce
-// digests covering some of its archive, which is the one failure a digest chain
+// seals covering some of its archive, which is the one failure a seal
 // must not have.
 func (s *Store) Prefixes(ctx context.Context, prefix, delimiter string) ([]string, error) {
 	var out []string

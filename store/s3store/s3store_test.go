@@ -25,10 +25,13 @@ import (
 // fake records what the store asked of S3, which is what these tests are about:
 // the archive's properties are in the request, not in the response.
 type fake struct {
-	puts    []*s3.PutObjectInput
-	putErr  error
-	objects map[string][]byte
-	holds   []*s3.PutObjectLegalHoldInput
+	// metadata is what each put carried, which a head answers with, upper-cased
+	// the way a store that normalises its keys might.
+	metadata map[string]map[string]string
+	puts     []*s3.PutObjectInput
+	putErr   error
+	objects  map[string][]byte
+	holds    []*s3.PutObjectLegalHoldInput
 	// retentions are the extensions asked for.
 	retentions []*s3.PutObjectRetentionInput
 	// pageSize is how many keys one listing answers, for tests about paging.
@@ -45,6 +48,10 @@ func (f *fake) PutObject(_ context.Context, in *s3.PutObjectInput, _ ...func(*s3
 	}
 	body, _ := io.ReadAll(in.Body)
 	f.objects[aws.ToString(in.Key)] = body
+	if f.metadata == nil {
+		f.metadata = map[string]map[string]string{}
+	}
+	f.metadata[aws.ToString(in.Key)] = in.Metadata
 	return &s3.PutObjectOutput{}, nil
 }
 
@@ -67,6 +74,7 @@ func (f *fake) HeadObject(_ context.Context, in *s3.HeadObjectInput, _ ...func(*
 		ContentLength:             aws.Int64(int64(len(body))),
 		LastModified:              &modified,
 		ObjectLockRetainUntilDate: &until,
+		Metadata:                  f.metadata[aws.ToString(in.Key)],
 	}, nil
 }
 
@@ -300,6 +308,24 @@ func TestGetAndHead(t *testing.T) {
 	}
 	if _, err := s.Head(context.Background(), "nothing/here"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("a missing key must be reported as such, got %v", err)
+	}
+}
+
+// A reader of the v1 layout learns an object's sha256 and record count from a
+// HEAD, so the user metadata a put carried has to come back from one.
+func TestHeadReturnsTheUserMetadataThePutCarried(t *testing.T) {
+	s, _ := newStore(t, s3store.Options{})
+	o := object()
+	o.Metadata = map[string]string{"format": "1", "sha256": "ab", "count": "3"}
+	if err := s.Put(context.Background(), o); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := s.Head(context.Background(), o.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Metadata["format"] != "1" || entry.Metadata["sha256"] != "ab" || entry.Metadata["count"] != "3" {
+		t.Fatalf("metadata = %v", entry.Metadata)
 	}
 }
 

@@ -284,7 +284,7 @@
   "properties": {
     "archive": {
       "additionalProperties": false,
-      "description": "The archive the records are in: where a record's standing in the digest chain is read for Get, and what the s3scan searcher reads. Without it Get still answers, with where the copy is and nothing about whether it has been verified.",
+      "description": "The archive the records are in: what the s3scan searcher reads. Get answers where a copy is and, until seals vouch for it, nothing about whether it has been verified.",
       "properties": {
         "bucket": {
           "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"

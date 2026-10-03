@@ -12,7 +12,7 @@ the profiles' decision, not the operator's:
 | **record** | `compliance` (the default; `governance` for a non-production bucket) | `PutObject` with the Object Lock headers, `PutObjectRetention`, `PutObjectLegalHold`, `GetObject`, `HeadObject`, `ListObjectsV2`, presigned `GetObject` | every profile |
 | **attested** | `none` | `PutObject`, `GetObject`, `HeadObject`, `ListObjectsV2`, presigned `GetObject` | profiles composed only from presets that demand no lock: `security`, `history`, `billing-nl` |
 
-The writer, the digest job and the verify job refuse to start when a
+The writer refuses to start when a
 composed profile demands a stricter lock than the deployment writes with,
 naming the profile and both modes. Everything below describes the record
 tier unless it says otherwise; [the attested tier](#the-attested-tier) says
@@ -32,7 +32,7 @@ installation
   retention in compliance mode** equal to the shortest profile's
   retention; the writer sets longer per object.
 - SSE-KMS with a customer-managed key whose policy allows the writer to
-  encrypt and the query service, digest job and verify role to decrypt,
+  encrypt and the query service and the verify role to decrypt,
   and nobody to schedule deletion of the key without a break-glass role.
 - Public access blocked. Bucket policy denies `s3:DeleteObject`,
   `s3:DeleteObjectVersion`, `s3:PutBucketObjectLockConfiguration` changes
@@ -44,7 +44,7 @@ installation
   Object Lock, with replication of retention metadata.
 
 None of that is per installation. An application arriving in the environment
-gets a prefix and four roles, and changes nothing about the bucket.
+gets a prefix and three roles, and changes nothing about the bucket.
 
 ## Sharing a bucket
 
@@ -63,10 +63,10 @@ bucket: the archive's layout is the contract between them, not the code.
 
 | what | where | who may see it |
 |---|---|---|
-| one application's records, digests and verifications | `audit/<application>/…` | that installation's four roles, and an auditor's read-only role |
+| one application's records and catalogues | `audit/<application>/…` | that installation's three roles, and an auditor's read-only role |
 | another application's | `audit/<other>/…` | its own, and nobody from the first |
 
-Lifecycle rules filter on `<prefix>/profile=<name>/`, one rule per profile
+Lifecycle rules filter on `<prefix>/records/<profile>/`, one rule per profile
 per application. A bucket-wide rule would apply the shortest profile's
 transition to every application in it, which is why the filter names the
 prefix as well.
@@ -81,15 +81,28 @@ Everything one installation writes, beneath its `prefix`:
 
 | prefix | written by | what | retention |
 |---|---|---|---|
-| `profile=<p>/tenant=<t>/year=/month=/day=/…ndjson.zst` | writer | the profile's copies | the profile's, per object at PUT (years after expiry for an `after_expiry` profile) |
-| `schema/…` | writer | the catalogues, extension schemas and record schema the records were written under | the longest profile |
+| `records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>/<ULID>` | writer | one object per ingest batch, by the hour of ingest ([the contract](../reference/bucket-contract.md)) | the profile's, per object at PUT (years after expiry for an `after_expiry` profile) |
+| `catalogue/<app>/<version>` | writer | the application's catalogue at that version, written once | the longest profile |
+| `schema/…` | writer | extension schemas and the record schema the records were written under | the longest profile |
 | `dlq/year=/month=/day=/…` | writer | records the writer could not take | the longest profile |
 | `holds/<id>/…` | `audit hold` | legal holds placed and released | the longest profile |
-| `digest/profile=<p>/year=/month=/day=/hour=HH.json` | digest job | the signed chain | the profile's |
-| `verified/profile=<p>/…` | verify job | what each verification found | the digest's own |
 | `identity/tenant=<t>/purpose=<p>/<pseudonym>` | writer | the sealed identity behind a pseudonym, for resolve | the longest profile |
 
-The last one exists only where the deployment configured a key provider.
+A record's own date does not decide where it lives: a reader finds it by the
+hour it was ingested. A profile's name is a key component, so it must not
+contain `/`, and a record whose tenant id contains `/` is dead-lettered.
+
+A catalogue object is written once. The same bytes again are a success; other
+bytes under the same version make the writer refuse to start, which it checks
+at start-up for the catalogues it runs with and at the first record of any
+other.
+
+The archive written before the v1 layout (`profile=<p>/tenant=<t>/year=…`,
+with `digest/` and `verified/`) is read by nothing in v1. It stays readable
+with the previous release's CLI (v0.6.x), and a bucket that holds both needs
+the lifecycle rules of both until the old objects expire.
+
+The `identity/` prefix exists only where the deployment configured a key provider.
 `keys.provider: none` is the default (no `keys` block), and an installation running without
 keys writes no `identity/` prefix at all
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
@@ -104,8 +117,7 @@ bucket has credentials of its own.
 
 ## The attested tier
 
-The same archive, the same keys under the same prefix, the same digest chain
-— on a store that holds no lock. Either the store has no Object Lock API,
+The same archive, the same keys under the same prefix — on a store that holds no lock. Either the store has no Object Lock API,
 which is most S3-compatible stores, or the deployment composes only profiles
 that demand none and chooses not to lock. The writer is told with
 `archive.lockMode: none` (the interactive commands' `--lock-mode none`), sends no lock header on
@@ -115,13 +127,11 @@ and `audit hold place` is refused and records the attempt.
 
 What the deployment supplies in place of the lock:
 
-- **A managed signing key** for the digest job — KMS or a transit engine.
-  Required on this tier, not recommended: without the lock only a key the
-  operator cannot re-sign with proves the operator did not choose what to
-  sign.
-- **A shorter digest interval.** The unsealed window is the one gap the
-  lock alone covered. A `jobs.digest.schedule` every ten minutes narrows it
-  from an hour to ten.
+- **Seals under a managed key.** Without the lock, only a seal made with a key
+  the operator cannot re-sign with proves the operator did not choose what the
+  archive holds. Seals ([0019](../decisions/0019-seals.md)) are not built yet,
+  so on this tier the per-object `sha256` and per-record hashes that
+  `audit verify` checks are what there is today.
 - **No delete permission on any component**, exactly as on the record tier,
   and versioning on where the store offers it.
 - **A bucket-level no-delete rule where the store has one.** Several stores
@@ -189,7 +199,7 @@ first two, and `archive.kmsKey` on the third.
 
 ## IAM per component
 
-Four roles per installation, each bound to its own service account (Pod
+Three roles per installation, each bound to its own service account (Pod
 Identity or IRSA); the chart has a `serviceAccount` per component for it.
 The receiver (stream mode) and the clock-sync job get a service account too, and
 no role: they hold no S3 rights. The purge job works on the index database only
@@ -202,15 +212,13 @@ one.
 
 | role | on the archive, under its prefix | elsewhere |
 |---|---|---|
-| **writer** | `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetObjectRetention`, `s3:PutObjectLegalHold`; `s3:GetObject` and `s3:ListBucket` on `holds/`, `profile=`, `schema/`, and `identity/` where there are keys | `kms:GenerateDataKey`, `kms:Encrypt` on the bucket's key |
-| **digest job** | `s3:GetObject`, `s3:ListBucket`; `s3:PutObject` on `digest/` | `kms:Sign` if it signs with KMS |
-| **verify job** | `s3:GetObject`, `s3:ListBucket`; `s3:PutObject` on `verified/` | `kms:Decrypt` on the bucket's key |
+| **writer** | `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetObjectRetention`, `s3:PutObjectLegalHold` under `records/`, `catalogue/`, `schema/`, `dlq/`, `holds/` and `identity/` (where there are keys); `s3:GetObject` and `s3:ListBucket` on `records/`, `catalogue/`, `holds/`, `schema/`, and `identity/` where there are keys | `kms:GenerateDataKey`, `kms:Encrypt` on the bucket's key |
+| **verify job** | `s3:GetObject`, `s3:ListBucket`; nothing is put | `kms:Decrypt` on the bucket's key |
 | **query service** | `s3:GetObject`, `s3:ListBucket` | `s3:PutObject`, `s3:GetObject` on the exports bucket; `kms:Decrypt` |
 
 Only the **writer** holds `s3:PutObjectLegalHold`, and only because it places
 holds. A put carries the legal-hold header solely when it is placing one, so
-the digest and verify jobs — which write their own results into a locked
-bucket — need `s3:PutObject` and `s3:PutObjectRetention` and nothing more. If
+no other component needs it. If
 a component that places no holds is refused `s3:PutObjectLegalHold` on a plain
 put, it is running a version that sent the header as OFF on every put; upgrade
 it rather than granting the right.
@@ -223,9 +231,8 @@ object, takes a 403 and dies, on a loop -- which reads as a broken archive
 rather than a missing verb.
 
 The separations inside that table are the point of it. The writer may put
-objects and may lengthen a lock, and may not sign; the digest job may sign
-and may write only under `digest/`; the query service may read and may write
-nothing into the archive at all. And **nobody, including the writer, gets
+objects and may lengthen a lock; the verify job and the query service may read
+and may write nothing into the archive at all. And **nobody, including the writer, gets
 `s3:DeleteObject`, `s3:DeleteObjectVersion` or
 `s3:BypassGovernanceRetention`** — not on its own prefix, and not on anyone
 else's.
@@ -239,16 +246,17 @@ needs nothing here at all:
 | an operator running `audit hold` | `s3:PutObjectLegalHold` (placing), `s3:GetObjectLegalHold`, `s3:ListBucket`, `s3:PutObject` on `holds/` |
 | break-glass | `s3:PutObjectLegalHold` with `s3:object-lock-legal-hold` = `OFF` (releasing) |
 
-Lifecycle: transition to an infrequent-access tier after the hot window;
-never to deep archive for objects under a few megabytes; expiration only
-after lock expiry, which S3 enforces anyway.
+Lifecycle ([0023](../decisions/0023-archive-retention-and-lifecycle.md)).
+The chart creates no buckets, so these are rules the environment's bucket
+carries: Glacier Instant Retrieval at 30 days and Deep Archive at 1 year, one
+rule per profile, filtered on `<prefix>/records/<profile>/`. Expiration only
+after lock expiry, which S3 enforces anyway. This is why the profile is the
+leading component of `records/`: a lifecycle filter matches a literal prefix
+and takes no wildcards, so a rule per profile is possible only in that order.
 
-Write one rule per profile, filtered on `<prefix>/profile=<name>/`. This is
-why the profile is the leading component of every key under the prefix: a
-lifecycle filter matches a literal prefix and takes no wildcards, so a rule
-per profile is possible only in that order. A role scoped to one customer is
-unaffected, because a policy's resource may carry a wildcard:
-`arn:aws:s3:::<bucket>/<prefix>/*/tenant=<id>/*`.
+Per-tenant credentials follow from the tenant being the next component: a
+role scoped to one customer names
+`arn:aws:s3:::<bucket>/<prefix>/records/<profile>/<tenant>/*` as its resource.
 
 ## Legal hold
 
@@ -298,19 +306,19 @@ This applies only where the deployment runs pseudonymisation keys at all; see
 
 ## What breaks verification
 
-Moving or renaming objects. Copying objects to another bucket without the
-digest prefix. Changing the KMS key without keeping the old one decryptable.
-Re-uploading an object under the same key (a new version) is detectable
-and reported.
+Moving or renaming objects: the key carries the profile, tenant and ingest
+hour, and a reader finds a record by it. Changing the KMS key without keeping
+the old one decryptable. Re-uploading an object under the same key (a new
+version) is refused by the writer's conditional put, and a changed object is
+reported by `audit verify`, whose check of the stored bytes no longer matches
+the object's `sha256`.
 
-Moving one installation to a different prefix is all four of those at once:
-the chain names objects by key, so the old prefix's chain no longer finds
-them. A prefix is chosen when an installation is created and not changed
-afterwards.
+Moving one installation to a different prefix moves every key with it. A
+prefix is chosen when an installation is created and not changed afterwards.
 
 ## Break-glass reads
 
 Auditors get a read-only role scoped to one installation's prefix — its
-profile prefixes and its digest prefix. Their reads appear in the bucket's
+`records/` and `catalogue/` prefixes. Their reads appear in the bucket's
 access log and, when made through the query service, as `audit.get` and
 `audit.search` records.

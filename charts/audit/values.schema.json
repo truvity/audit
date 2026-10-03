@@ -81,314 +81,6 @@
       ],
       "type": "object"
     },
-    "config-audit-digest": {
-      "additionalProperties": false,
-      "dependentRequired": {
-        "require": [
-          "sink"
-        ]
-      },
-      "description": "The configuration of `audit digest --config`, which seals windows into the signed chain. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
-      "properties": {
-        "archive": {
-          "additionalProperties": false,
-          "description": "Where the archive is and how it is written.",
-          "properties": {
-            "bucket": {
-              "additionalProperties": false,
-              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-              "properties": {
-                "ca": {
-                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "credentialsEnv": {
-                  "additionalProperties": false,
-                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-                  "properties": {
-                    "accessKeyID": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "secretAccessKey": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "accessKeyID",
-                    "secretAccessKey"
-                  ],
-                  "type": "object"
-                },
-                "endpoint": {
-                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-                  "format": "uri",
-                  "type": "string"
-                },
-                "name": {
-                  "description": "The bucket. It exists already: a service does not create its own store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "pathStyle": {
-                  "default": false,
-                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-                  "type": "boolean"
-                },
-                "region": {
-                  "description": "The region the bucket is in.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
-            },
-            "lockMode": {
-              "default": "compliance",
-              "description": "The Object Lock mode every object is written in: compliance (the record tier), governance (a lock a privileged role can shorten), or none (the attested tier, for a store without Object Lock). A process refuses to start when a profile demands a stricter mode than this.",
-              "enum": [
-                "compliance",
-                "governance",
-                "none"
-              ]
-            },
-            "prefix": {
-              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
-              "minLength": 1,
-              "type": "string"
-            }
-          },
-          "required": [
-            "bucket"
-          ],
-          "type": "object"
-        },
-        "deployment": {
-          "description": "Path to the profile configuration.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "lookback": {
-          "$ref": "#/$defs/config-audit-digest.duration",
-          "description": "How far before a window to look for objects keyed under an older day. The verify job's must be at least this."
-        },
-        "maxWindows": {
-          "description": "How many windows one run may seal when catching up.",
-          "minimum": 1,
-          "type": "integer"
-        },
-        "require": {
-          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
-          "enum": [
-            "logged",
-            "queued",
-            "archived"
-          ]
-        },
-        "signer": {
-          "additionalProperties": false,
-          "description": "What the digests are signed with: exactly one. An unsigned chain proves nothing, and one chain has one signer.",
-          "oneOf": [
-            {
-              "required": [
-                "keyFile"
-              ]
-            },
-            {
-              "required": [
-                "kmsKey"
-              ]
-            },
-            {
-              "required": [
-                "transit"
-              ]
-            }
-          ],
-          "properties": {
-            "keyFile": {
-              "additionalProperties": false,
-              "description": "A PEM ed25519 private key.",
-              "properties": {
-                "id": {
-                  "description": "The name a digest records the signing key under.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "path": {
-                  "description": "The key file.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "path"
-              ],
-              "type": "object"
-            },
-            "kmsKey": {
-              "description": "An AWS KMS ECC_NIST_P256 key. The private half never leaves KMS.",
-              "minLength": 1,
-              "type": "string"
-            },
-            "transit": {
-              "additionalProperties": false,
-              "description": "An OpenBAO transit ed25519 key, signed in to as the job's own identity and never the writer's.",
-              "properties": {
-                "key": {
-                  "description": "The transit key's name.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "openbao": {
-                  "$ref": "#/$defs/config-audit-digest.openbao"
-                }
-              },
-              "required": [
-                "key",
-                "openbao"
-              ],
-              "type": "object"
-            }
-          },
-          "type": "object"
-        },
-        "sink": {
-          "$ref": "#/$defs/config-audit-digest.sink",
-          "description": "The writer this job records what it sealed through (audit.digest.written)."
-        }
-      },
-      "required": [
-        "deployment",
-        "archive",
-        "signer"
-      ],
-      "title": "audit digest",
-      "type": "object"
-    },
-    "config-audit-digest.duration": {
-      "description": "A Go duration: 30s, 2m, 168h.",
-      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
-      "type": "string"
-    },
-    "config-audit-digest.openbao": {
-      "additionalProperties": false,
-      "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
-      "oneOf": [
-        {
-          "required": [
-            "login"
-          ]
-        },
-        {
-          "required": [
-            "tokenFile"
-          ]
-        },
-        {
-          "required": [
-            "tokenEnv"
-          ]
-        }
-      ],
-      "properties": {
-        "address": {
-          "description": "The server, for example https://openbao.example:8200.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "caFile": {
-          "description": "A PEM bundle trusted beside the system roots, for a server on a private chain.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "login": {
-          "additionalProperties": false,
-          "description": "Sign in with a JWT: the pod's projected service-account token, presented to an auth mount. Nothing is stored.",
-          "properties": {
-            "jwtFile": {
-              "description": "The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires.",
-              "minLength": 1,
-              "type": "string"
-            },
-            "mount": {
-              "description": "The JWT auth mount, for example jwt-devel.",
-              "minLength": 1,
-              "type": "string"
-            },
-            "role": {
-              "description": "The role on that mount.",
-              "minLength": 1,
-              "type": "string"
-            }
-          },
-          "required": [
-            "mount",
-            "role",
-            "jwtFile"
-          ],
-          "type": "object"
-        },
-        "mount": {
-          "default": "transit",
-          "description": "Where the transit engine is mounted.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "namespace": {
-          "description": "The OpenBAO namespace the engine and the auth mount are in. Unset is the root namespace.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "tokenEnv": {
-          "description": "The NAME of the environment variable holding a token.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "tokenFile": {
-          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "address"
-      ],
-      "type": "object"
-    },
-    "config-audit-digest.sink": {
-      "additionalProperties": false,
-      "description": "The writer this process records through.",
-      "properties": {
-        "expect": {
-          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
-          "enum": [
-            "logged",
-            "queued",
-            "archived"
-          ]
-        },
-        "tokenFile": {
-          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "url": {
-          "description": "The writer's base URL.",
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "url"
-      ],
-      "type": "object"
-    },
     "config-audit-migrate": {
       "additionalProperties": false,
       "description": "The configuration of `audit migrate --config`, which applies the index schema. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
@@ -551,7 +243,7 @@
       "properties": {
         "archive": {
           "additionalProperties": false,
-          "description": "The archive the records are in: where a record's standing in the digest chain is read for Get, and what the s3scan searcher reads. Without it Get still answers, with where the copy is and nothing about whether it has been verified.",
+          "description": "The archive the records are in: what the s3scan searcher reads. Get answers where a copy is and, until seals vouch for it, nothing about whether it has been verified.",
           "properties": {
             "bucket": {
               "additionalProperties": false,
@@ -1034,7 +726,7 @@
           "sink"
         ]
       },
-      "description": "The configuration of `audit verify --config`, which walks digest chains and reports what it finds. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+      "description": "The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "archive": {
           "additionalProperties": false,
@@ -1094,15 +786,6 @@
               ],
               "type": "object"
             },
-            "lockMode": {
-              "default": "compliance",
-              "description": "The Object Lock mode every object is written in: compliance (the record tier), governance (a lock a privileged role can shorten), or none (the attested tier, for a store without Object Lock). A process refuses to start when a profile demands a stricter mode than this.",
-              "enum": [
-                "compliance",
-                "governance",
-                "none"
-              ]
-            },
             "prefix": {
               "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
               "minLength": 1,
@@ -1122,14 +805,10 @@
         "last": {
           "$ref": "#/$defs/config-audit-verify.duration",
           "default": "24h",
-          "description": "Check the windows of the last this long, ending at the hour that has closed."
-        },
-        "lookback": {
-          "$ref": "#/$defs/config-audit-verify.duration",
-          "description": "How far before the range to look for objects keyed under an older day; at least what the digest job used."
+          "description": "Check the objects ingested in the last this long, ending at the hour that has closed."
         },
         "profiles": {
-          "description": "The profiles whose chains to walk. Unset walks every profile the deployment composes.",
+          "description": "The profiles whose objects to check. Unset checks every profile the deployment composes.",
           "items": {
             "description": "A profile name.",
             "minLength": 1,
@@ -1138,15 +817,6 @@
           "minItems": 1,
           "type": "array",
           "uniqueItems": true
-        },
-        "publicKeyFile": {
-          "description": "The PEM public key the digests were signed with.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "record": {
-          "description": "Write a verification per window into the archive under verified/, which a record's provenance reads. Needs write access there.",
-          "type": "boolean"
         },
         "require": {
           "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
@@ -1163,8 +833,7 @@
       },
       "required": [
         "deployment",
-        "archive",
-        "publicKeyFile"
+        "archive"
       ],
       "title": "audit verify",
       "type": "object"
@@ -2335,47 +2004,6 @@
               "properties": {
                 "jobs": {
                   "properties": {
-                    "digest": {
-                      "properties": {
-                        "enabled": {
-                          "const": true
-                        }
-                      },
-                      "required": [
-                        "enabled"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "digest"
-                  ]
-                }
-              },
-              "required": [
-                "jobs"
-              ]
-            },
-            "then": {
-              "properties": {
-                "jobs": {
-                  "properties": {
-                    "digest": {
-                      "properties": {
-                        "config": {
-                          "$ref": "#/$defs/config-audit-digest"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "properties": {
-                "jobs": {
-                  "properties": {
                     "verify": {
                       "properties": {
                         "enabled": {
@@ -2498,7 +2126,7 @@
       }
     }
   ],
-  "description": "The audit trail's write path: the writer, the query service, and the jobs that seal, verify and prune what it writes. Each component's `config` is the schema its binary validates its file against, embedded; everything else is the platform's. Names follow docs/reference/configuration.md.",
+  "description": "The audit trail's write path: the writer, the query service, and the jobs that verify and prune what it writes. Each component's `config` is the schema its binary validates its file against, embedded; everything else is the platform's. Names follow docs/reference/configuration.md.",
   "patternProperties": {
     "^x-": {}
   },
@@ -2607,37 +2235,6 @@
                   },
                   "description": "Labels added to this rule only.",
                   "type": "object"
-                },
-                "severity": {
-                  "description": "The severity label.",
-                  "type": "string"
-                }
-              },
-              "type": "object"
-            },
-            "digestStale": {
-              "additionalProperties": false,
-              "description": "The newest digest is older than `maxAgeSeconds`.",
-              "properties": {
-                "enabled": {
-                  "description": "Render the rule.",
-                  "type": "boolean"
-                },
-                "for": {
-                  "description": "How long the condition holds before the alert fires, as a duration.",
-                  "type": "string"
-                },
-                "labels": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "description": "Labels added to this rule only.",
-                  "type": "object"
-                },
-                "maxAgeSeconds": {
-                  "description": "The age, in seconds.",
-                  "minimum": 1,
-                  "type": "integer"
                 },
                 "severity": {
                   "description": "The severity label.",
@@ -2909,38 +2506,6 @@
           "properties": {
             "config": {
               "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-clock-sync's: schemas/config/audit-clock-sync.schema.json.",
-              "type": "object"
-            },
-            "enabled": {
-              "description": "Run it.",
-              "type": "boolean"
-            },
-            "schedule": {
-              "description": "A cron schedule.",
-              "minLength": 1,
-              "type": "string"
-            },
-            "secretEnv": {
-              "$ref": "#/$defs/secretEnv"
-            },
-            "secretMounts": {
-              "$ref": "#/$defs/secretMounts"
-            },
-            "serviceAccount": {
-              "$ref": "#/$defs/serviceAccount"
-            },
-            "tokens": {
-              "$ref": "#/$defs/tokens"
-            }
-          },
-          "type": "object"
-        },
-        "digest": {
-          "additionalProperties": false,
-          "description": "A scheduled job: `audit <command> --config`.",
-          "properties": {
-            "config": {
-              "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-digest's: schemas/config/audit-digest.schema.json.",
               "type": "object"
             },
             "enabled": {

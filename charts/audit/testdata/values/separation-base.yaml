@@ -20,21 +20,6 @@ writer:
             role: audit-writer
             jwtFile: /var/run/openbao/token
 jobs:
-  digest:
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive:
-        bucket:
-          name: audit-archive
-      signer:
-        transit:
-          key: audit-digest
-          openbao:
-            address: https://openbao.example.test:8200
-            login:
-              mount: jwt-devel
-              role: audit-digest
-              jwtFile: /var/run/openbao/token
   verify:
     enabled: false
   purge:

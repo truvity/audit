@@ -353,9 +353,8 @@ func recorder(to sink.Sink, version string) func(context.Context, registry.Entry
 
 // registrationRecord is the writer's own record of a catalogue arriving. It
 // carries the time it happened, which every emitter's record carries and
-// this one, being built by hand, once did not: without a time the archive
-// keyed it under the epoch, outside every digest window, for as long as the
-// lock lasts.
+// this one, being built by hand, once did not: without a time a record is
+// not one the writer will take, and the registration was dead-lettered.
 func registrationRecord(e registry.Entry, version string) *record.Record {
 	return &record.Record{
 		Action:           "audit.catalogue.registered",

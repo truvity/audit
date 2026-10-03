@@ -2,12 +2,10 @@ package writer_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/truvity/audit/index"
@@ -37,28 +35,11 @@ func pgParts(t *testing.T, pool *pgxpool.Pool, instance string, s *storetest.Mem
 // and line number address.
 func lineAt(t *testing.T, s *storetest.Memory, key string, line int) *record.Record {
 	t.Helper()
-	body, err := s.Get(context.Background(), key)
-	if err != nil {
-		t.Fatalf("%s: %v", key, err)
+	records := objectRecords(t, s, key)
+	if line < 1 || line > len(records) {
+		t.Fatalf("%s has %d lines and a row addresses line %d", key, len(records), line)
 	}
-	decoder, err := zstd.NewReader(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer decoder.Close()
-	plain, err := decoder.DecodeAll(body, nil)
-	if err != nil {
-		t.Fatalf("%s: %v", key, err)
-	}
-	lines := strings.Split(strings.TrimRight(string(plain), "\n"), "\n")
-	if line < 1 || line > len(lines) {
-		t.Fatalf("%s has %d lines and a row addresses line %d", key, len(lines), line)
-	}
-	var r record.Record
-	if err := record.Unmarshal([]byte(lines[line-1]), &r); err != nil {
-		t.Fatalf("%s:%d: %v", key, line, err)
-	}
-	return &r
+	return records[line-1]
 }
 
 // The writer end to end against a real database: objects in the archive, rows

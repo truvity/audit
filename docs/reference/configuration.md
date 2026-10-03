@@ -50,7 +50,7 @@ anything was lost:
 ## The configuration file
 
 `audit-writer` and `audit-query` take one flag, `--config <file>` (and
-`--version`, `--help`). `audit digest`, `audit verify`, `audit purge`,
+`--version`, `--help`). `audit verify`, `audit purge`,
 `audit clock-sync` and `audit migrate` take `--config <file>` in place of every
 other flag of the command; only `--json`, which changes how the report is
 printed, may accompany it. The interactive flags of `audit` stay for a person
@@ -67,7 +67,7 @@ or command, and ship in the release:
 |---|---|
 | `audit-writer` | `audit-writer.schema.json` |
 | `audit-query` | `audit-query.schema.json` |
-| `audit digest`, `verify`, `purge`, `clock-sync`, `migrate` | `audit-digest.schema.json`, `audit-verify.schema.json`, `audit-purge.schema.json`, `audit-clock-sync.schema.json`, `audit-migrate.schema.json` |
+| `audit verify`, `purge`, `clock-sync`, `migrate` | `audit-verify.schema.json`, `audit-purge.schema.json`, `audit-clock-sync.schema.json`, `audit-migrate.schema.json` |
 
 An unknown key, a missing required key or a value of the wrong type is a
 start-up error that names the path to it. A few rules a schema cannot say run
@@ -93,7 +93,7 @@ variable. These are all of them:
 
 A password inside a database URL is refused. Token, key and root **files** are
 referenced by path, not by name: `tokenFile`, `jwtFile`, `rootFile`,
-`keyFile.path`, `publicKeyFile`, `caFile`. On a platform the file is a mounted
+`keyFile.path`, `caFile`. On a platform the file is a mounted
 Secret or a projected token.
 
 ### Telemetry
@@ -293,7 +293,7 @@ the grants. Every read it serves is recorded through the writer.
 | `deployment` | path | none | the profile configuration. A grant preset needs it, because a preset turns roles into the deployment's own profiles |
 | `searcher` | `postgres` or `s3scan` | `postgres` | `postgres` is the index; `s3scan` is the archive, within a budget, for a deployment with no database. The scan orders by `occurred_at` only and refuses `recorded_at`, so a deployment on it can search the trail but cannot follow it: there is no live tail ([search](../design/search.md#tail)) |
 | `database` | `database` | | the index, as the query service's **own** role: `usage` on the schema, `select` on its tables, not the owner. Tenant row-level security binds only a non-owner. Required unless `searcher` is `s3scan` |
-| `archive.bucket`, `archive.prefix` | `bucket`, string | | where a record's standing in the digest chain is read for Get, and what `s3scan` reads. Required with `s3scan`. Without it Get still answers, with where the copy is and nothing about whether it has been verified. The service's region is `archive.bucket.region` |
+| `archive.bucket`, `archive.prefix` | `bucket`, string | | what `s3scan` reads, and where Get finds a record's object. Required with `s3scan`. Without it Get still answers, with where the copy is and nothing about whether it has been verified (nothing yet sets that: it is for seals). The service's region is `archive.bucket.region` |
 | `exports.bucket` | `bucket`, required with `exports` | | a separate bucket with no Object Lock, which clears it. Without `exports` the export operation is refused. It inherits nothing from the archive: name its endpoint, path style and `credentialsEnv` here |
 | `exports.expiry` | duration | `168h` | how long an export is kept before the bucket clears it |
 | `exports.linkValid` | duration | `1h` | how long a download link works |
@@ -403,45 +403,29 @@ audience and expiry. That library allows no clock skew.
 
 Each job is `audit <command> --config <file>`, runs to completion and records
 what it did through the writer's own sink, so each needs `sink` and, where
-the writer verifies callers, a `tokenFile`. Each has its own identity: the
-digest job's signing key is its, never the writer's.
-
-### audit digest
-
-Seals windows into the signed chain. Hourly in the chart.
-
-| key | type | default | meaning |
-|---|---|---|---|
-| `deployment` | path, required | | the profile configuration |
-| `archive` | `archive`, required | | the archive to read and write. Only `bucket`, `prefix` and `lockMode` |
-| `signer.keyFile.path`, `.id` | path required, string | | sign with a PEM ed25519 private key; `id` is the name a digest records the key under |
-| `signer.kmsKey` | string | | or with an AWS KMS `ECC_NIST_P256` key; the private half never leaves KMS |
-| `signer.transit.key`, `.openbao` | string, `openbao`; both required | | or with an OpenBAO transit ed25519 key, signed in to as the job's own identity |
-| `sink` | `sink` | none: nothing is recorded | the writer the job records what it sealed through (`audit.digest.written`) |
-| `require` | `logged`, `queued` or `archived` | none | the weakest durability the writer's acknowledgements may carry; needs `sink` and `sink.expect` ([durability](#durability-require-forward-consume)) |
-| `lookback` | duration | 7 days | how far before a window to look for objects keyed under an older day. The verify job's must be at least this |
-| `maxWindows` | integer, at least 1 | 168 in the command | how many windows one run may seal when catching up |
-
-Exactly one of `keyFile`, `kmsKey` and `transit` under `signer`: an unsigned
-chain proves nothing, and one chain has one signer.
+the writer verifies callers, a `tokenFile`. Each has its own identity.
 
 ### audit verify
 
-Walks the digest chains and reports what it finds. Nightly in the chart, over
-the last 24 hours. One job checks every profile it names, or every profile the
+Checks every record object of a range of ingest time against the
+[bucket contract](bucket-contract.md) and reports what it finds
+([verification](../operations/verify.md)). It reads the archive only, so its
+`archive` has no `lockMode`, and it needs no key. Nightly in the chart, over the
+last 24 hours. One job checks every profile it names, or every profile the
 deployment composes.
 
 | key | type | default | meaning |
 |---|---|---|---|
 | `deployment` | path, required | | the profile configuration; each object's lock is held to what its profile demands |
-| `archive` | `archive`, required | | the archive to read (`bucket`, `prefix`, `lockMode`) |
-| `publicKeyFile` | path, required | | the PEM public key the digests were signed with; the public half only |
-| `profiles` | list of strings, at least one, unique | every profile the deployment composes | the profiles whose chains to walk |
-| `last` | duration | `24h` | check the windows of the last this long, ending at the hour that has closed |
-| `lookback` | duration | 7 days | how far before the range to look for objects keyed under an older day; at least what the digest job used |
-| `record` | boolean | false | write what each verification found under `verified/`, which `Get` reports as a record's `verified_at`. Needs `s3:PutObject` there |
-| `sink` | `sink` | none | the writer the job records what it checked through |
+| `archive` | `archive`, required | | the archive to read (`bucket`, `prefix`) |
+| `profiles` | list of strings, at least one, unique | every profile the deployment composes | the profiles whose objects to check |
+| `last` | duration | `24h` | check the objects ingested in the last this long, ending at the hour that has closed |
+| `sink` | `sink` | none | the writer the job records what it checked through (`audit.digest.verified` or `audit.digest.failed` per ingest hour) |
 | `require` | `logged`, `queued` or `archived` | none | the weakest durability the writer's acknowledgements may carry; needs `sink` and `sink.expect` ([durability](#durability-require-forward-consume)) |
+
+The keys `publicKeyFile`, `lookback` and `record` of the v0 job are gone: the
+check needs no key, the range is of ingest time so there is nothing to look
+back over, and there is no `verified/` prefix to write.
 
 ### audit purge
 
@@ -523,9 +507,9 @@ After the schema, the binaries refuse:
 - `keys` on the query service without `archive`, or with the local provider and
   no `keys.local.dir`: resolve opens what the writer sealed in the archive;
 - a `database.url` that does not parse;
-- a profile that demands a stricter `lockMode` than the archive's: the writer,
-  the digest job and the verify job refuse at start-up, naming the profile and
-  both modes.
+- a profile that demands a stricter `lockMode` than the archive's: the writer
+  refuses at start-up, naming the profile and both modes;
+- a profile whose name contains `/`: it is a key component.
 
 The grants file has refusals of its own, listed with it under [Query service](#query-service).
 
@@ -575,7 +559,7 @@ none of it.
 | `receiver` | `audit-writer` with `mode: receiver` | stream mode only |
 | `query` | `audit-query` | `query.enabled` |
 | `migrate` | `audit migrate` | `migrate.enabled`, a pre-install and pre-upgrade hook Job |
-| `jobs.digest`, `jobs.verify`, `jobs.purge`, `jobs.clockSync` | `audit digest`, `verify`, `purge`, `clock-sync` | one CronJob each. The verify job is one CronJob (`<fullname>-verify`) covering the `profiles` its config lists, or every profile |
+| `jobs.verify`, `jobs.purge`, `jobs.clockSync` | `audit verify`, `purge`, `clock-sync` | one CronJob each. The verify job is one CronJob (`<fullname>-verify`) covering the `profiles` its config lists, or every profile |
 
 ### What is a value and what is configuration
 
@@ -584,7 +568,7 @@ Everything else under a component is the platform's, not the binary's:
 | value | meaning |
 |---|---|
 | `secretEnv` | a list of `{name, secretName, key}`: an environment variable taken from a Secret's key. The config names `name` as the holder of a secret (`passwordEnv`, `credentialsEnv`, `tokenEnv`). `optional: true` allows a missing key |
-| `secretMounts` | a list of `{secretName, mountPath}`: a Secret mounted read-only as a directory, for a key or a root the config names by path (`keyFile.path`, `publicKeyFile`, `local.rootFile`) |
+| `secretMounts` | a list of `{secretName, mountPath}`: a Secret mounted read-only as a directory, for a key or a root the config names by path (`local.rootFile`, a key file) |
 | `tokens` | a list of `{audience, mountPath, expirationSeconds, path}`: a projected service-account token of that audience (lifetime 3600 by default), a file named `token` (or `path`) in the directory `mountPath`, which the config names (`tokenFile`, `jwtFile`). It is read afresh by whatever names it, because the kubelet replaces it before it expires |
 | `serviceAccount` | the identity of the component, for Pod Identity or IRSA annotations. Every component has its own, `{create, name, annotations}`: `receiver.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount`. Created, it is `<fullname>-<component>` unless `name` says otherwise; with `create: false` the component runs as `name`, or as the release's own top-level `serviceAccount` (the writer's) when `name` is empty. In stream mode the chart refuses a receiver and a writer with the same name |
 | `replicas`, `writer.consumers`, `query.replicas` | pod counts. `replicas` is the front door's: the writer in direct mode, the receiver in stream mode |
@@ -721,16 +705,6 @@ query:
     - {audience: audit, mountPath: /var/run/audit}   # the file is .../token
 
 jobs:
-  digest:
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive:
-        bucket: {name: audit-eu-example-1, region: eu-example-1}
-        prefix: audit/app
-      sink: {url: "http://audit:8080", tokenFile: /var/run/audit/token}
-      signer: {kmsKey: alias/audit-digest}
-    tokens:
-      - {audience: audit, mountPath: /var/run/audit}
   clockSync:
     config:
       ntp: ["169.254.169.123"]
@@ -739,9 +713,9 @@ jobs:
       - {audience: audit, mountPath: /var/run/audit}
 ```
 
-`verify` and `purge` follow the same pattern: `jobs.verify` names
-`publicKeyFile` and mounts it with `secretMounts`, and `jobs.purge` names the
-owner's `database` and `passwordEnv`. The full file, and a stream-mode one
+`verify` and `purge` follow the same pattern: `jobs.verify` names the
+archive to read, and `jobs.purge` names the owner's `database` and
+`passwordEnv`. The full file, and a stream-mode one
 that adds `receiver` and the stream, are `charts/audit/examples/direct.yaml`
 and `charts/audit/examples/stream.yaml`. The sink URL names the writer's
 Service, which is the release's full name: `audit` here, and
@@ -823,21 +797,16 @@ variable of its own is listed with its flag only.
 | `--bucket`, `--prefix`, `--region`, `--endpoint`, `--path-style`, `--lock-mode` | `archive.bucket.name`, `archive.prefix`, `archive.bucket.region`, `.endpoint`, `.pathStyle`, `archive.lockMode` |
 | `--sink`, `AUDIT_SINK` | `sink.url`; `AUDIT_TOKEN_FILE` becomes `sink.tokenFile` |
 | `--instance` | removed: the job names itself |
-| digest `--key`, `--key-id` | `signer.keyFile.path`, `.id` |
-| digest `--kms-key` | `signer.kmsKey` |
-| digest `--transit-key` and the `--transit-*` flags | `signer.transit.key`, `signer.transit.openbao.*` |
-| digest `--lookback`, `--max-windows` | `lookback`, `maxWindows` |
-| verify `--public-key` | `publicKeyFile` |
 | verify `--profile` (repeatable) | `profiles` |
-| verify `--last`, `--lookback`, `--record` | `last`, `lookback`, `record` |
+| verify `--last` | `last` |
+| verify `--public-key`, `--lookback`, `--record` | removed with the v1 layout: verify needs no key |
 | purge `--database` | `database.url` and `database.passwordEnv` |
 | purge `--identifying-after`, `--dedupe-window` | `identifyingAfter`, `dedupeWindow` |
 | clock-sync `--ntp` (repeatable), `--max-offset`, `--timeout` | `ntp`, `maxOffset`, `timeout` |
 | migrate `--database`, `--reader` | `database`, `reader` |
 
-`--dry-run` of `audit purge`, and `--from`, `--to` and a single `--profile` of
-`audit digest`, remain on the command line for a person: they are not
-scheduled work and have no key.
+`--dry-run` of `audit purge`, and `--from` and `--to` of `audit verify`, remain
+on the command line for a person: they are not scheduled work and have no key.
 
 ### Chart values
 
@@ -865,9 +834,8 @@ scheduled work and have no key.
 | `stream.token.enabled`, `.audience`, `.expirationSeconds` | a `tokens` entry on `receiver` and `writer`, and `stream.nats.tokenFile` |
 | `roll.interval`, `roll.maxRecords` | `writer.config.roll.interval`, `.maxRecords` |
 | `workloadIdentity.expirationSeconds` | `expirationSeconds` of each component's `tokens` entry |
-| `jobs.digest.signingKey.*`, `.kmsKey`, `.transit.*` | `jobs.digest.config.signer`, with `secretMounts` for a key file |
-| `jobs.verify.publicKey.*`, `.window`, `.record` | `jobs.verify.config.publicKeyFile` with `secretMounts`, `last`, `record` |
-| `jobs.digest.lookback`, `.maxWindows` | `jobs.digest.config.lookback`, `.maxWindows` |
+| `jobs.verify.publicKey.*`, `.window` | `jobs.verify.config.last` (no key: verify reads the archive only) |
+| `jobs.digest.*` | removed with the v1 layout: the digest job read the v0 layout and seals replace it |
 | `jobs.purge.identifyingAfter`, `.dedupeWindow` | `jobs.purge.config.identifyingAfter`, `.dedupeWindow` |
 | `jobs.clockSync.ntp`, `.maxOffset` | `jobs.clockSync.config.ntp`, `.maxOffset` |
 | `telemetry.*` | `OTEL_*` environment, set on the pods by the platform |

@@ -138,15 +138,15 @@ not a UUID is `not_found`.
 → {"facets": [{"field": "action", "values": [{"value": "shop.order.placed", "count": "42"}]}]}
 ```
 
-`Get` returns one record and where its copy is, with the digest that covers it
-and when that was last verified clean:
+`Get` returns one record and where its copy is. `digest_id` and `verified_at`
+are for the seal that covers it and when that was last verified clean; they are
+empty until seals ([0019](../decisions/0019-seals.md)) set them:
 
 ```json
 {"profile": "security", "id": "0199b100-…"}
 → {"record": { … },
-   "provenance": {"object_key": "profile=security/tenant=acme/…ndjson.zst", "line": "3",
-                  "digest_id": "digest/profile=security/year=2026/…/hour=10.json",
-                  "verified_at": "2026-09-18T03:23:11Z"}}
+   "provenance": {"object_key": "records/security/acme/2026/09/17/10/01K5…", "line": "3",
+                  "digest_id": "", "verified_at": ""}}
 ```
 
 `Export` starts a job over a filter; `GetExport` polls it and, when ready,

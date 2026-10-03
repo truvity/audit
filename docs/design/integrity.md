@@ -1,6 +1,15 @@
 # Integrity
 
-## Digest chain
+> **Superseded.** The v0 digest chain described below was removed with the v1
+> bucket layout: `audit digest`, the digest job and the `digest/` and
+> `verified/` prefixes no longer exist. Seals
+> ([0019](../decisions/0019-seals.md)) replace it, and are not built yet. What
+> `audit verify` checks today is the per-object `sha256` and the per-record
+> hashes of the v1 [bucket contract](../reference/bucket-contract.md)
+> ([verification](../operations/verify.md)). The rest of this page is the
+> description of the v0 design it was, kept for what it argues about signing.
+
+## The v0 digest chain
 
 Hourly, per profile, `audit digest` writes one digest covering every tenant's
 objects written in the window:

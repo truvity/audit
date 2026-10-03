@@ -1,7 +1,7 @@
 // Package s3test gives a test a real S3 to walk.
 //
 // The archive walks are the part of this repository that has been wrong twice,
-// and both times the tests passed: a digest that covered one tenant, and a
+// and both times the tests passed: a walk that covered one tenant, and a
 // listing that stopped at the first thousand keys. Both hid behind
 // storetest.Memory, which returns everything, in any layout, on one page. A
 // double kinder than the thing it stands in for is not a test.
@@ -22,7 +22,6 @@ package s3test
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -34,6 +33,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/s3store"
 )
@@ -202,14 +202,16 @@ func bucketName(name string) string {
 	return out + "-" + strings.ToLower(rand.Text()[:suffix])
 }
 
-// Fill writes n objects under one profile and tenant on one day, so that a test
-// can cross a listing page.
-func Fill(t *testing.T, s store.Store, profile, tenant, day string, n int) []string {
+// Fill writes n objects under one profile and tenant in one hour of ingest time,
+// as v1 keys, so that a test can cross a listing page. Their keys sort in the
+// order they are returned.
+func Fill(t *testing.T, s store.Store, profile, tenant string, hour time.Time, n int) []string {
 	t.Helper()
 	ctx := context.Background()
+	hour = hour.UTC().Truncate(time.Hour)
 	keys := make([]string, 0, n)
 	for i := 0; i < n; i++ {
-		key := fmt.Sprintf("profile=%s/tenant=%s/%s/%06d.ndjson.zst", profile, tenant, day, i)
+		key := store.RecordKey(profile, tenant, hour, ulid.From(hour, uint64(i)))
 		// The retention is always set, so that Fill serves a locked bucket as
 		// well as an unlocked one: a locked archive refuses an object without
 		// one, and a harness that only worked on the easy bucket would be the

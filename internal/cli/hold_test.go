@@ -8,6 +8,7 @@ import (
 
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/hold"
+	"github.com/truvity/audit/internal/ulid"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store"
@@ -19,7 +20,7 @@ func holder(t *testing.T, into sink.Sink) (cli.Hold, *storetest.Memory) {
 	t.Helper()
 	s := storetest.NewMemory()
 	if err := s.Put(context.Background(), store.Object{
-		Key:  "profile=security/tenant=acme/year=2026/month=09/day=17/a.ndjson.zst",
+		Key:  store.RecordKey("security", "acme", at(t, "2026-09-17T09:00:00Z"), ulid.From(at(t, "2026-09-17T09:00:00Z"), 1)),
 		Body: []byte("{}"), RetainUntil: at(t, "2027-09-17T00:00:00Z"),
 	}); err != nil {
 		t.Fatal(err)

@@ -22,7 +22,7 @@ type Object struct {
 	// expected to refuse a deletion before it, and to refuse shortening it.
 	RetainUntil time.Time
 	ContentType string
-	// Encoding is the content encoding, "zstd" for a rolled batch.
+	// Encoding is the content encoding, "zstd" for a batch of records.
 	Encoding string
 	// Metadata is small, and is there so an object can say what it is without
 	// being opened.
@@ -47,6 +47,11 @@ type Entry struct {
 	// it — S3 does not report it per key — so it is set by Head and left false
 	// by List.
 	LegalHold bool
+	// Metadata is the object's user-defined metadata, as Head returns it. A
+	// listing carries none — S3 does not report it per key — so it is nil from
+	// List. It is what lets a reader of the v1 layout learn an object's
+	// sha256 and record count from a HEAD and never a body.
+	Metadata map[string]string
 }
 
 // ErrExists is returned when a key is already taken. Under Object Lock a second
@@ -86,13 +91,13 @@ type Store interface {
 	// A caller that is not sure the new date is later checks with Head first.
 	ExtendRetention(ctx context.Context, key string, until time.Time) error
 	// Prefixes returns the distinct groups one level under a prefix, as S3's
-	// common prefixes: listing "profile=security/" with "/" gives the tenants
+	// common prefixes: listing "records/security/" with "/" gives the tenants
 	// without walking the objects beneath them.
 	//
-	// The archive puts the tenant between the profile and the date, so a job
-	// that works a day at a time — the digest chain does — cannot build its
-	// prefix without first knowing which tenants exist. Walking every object to
-	// find out would cost the whole profile once an hour.
+	// The archive puts the tenant between the profile and the hour, so a job
+	// that works a range of hours cannot build its prefix without first
+	// knowing which tenants exist. Walking every object to find out would cost
+	// the whole profile every time.
 	Prefixes(ctx context.Context, prefix, delimiter string) ([]string, error)
 }
 

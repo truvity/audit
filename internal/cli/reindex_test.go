@@ -2,47 +2,43 @@ package cli_test
 
 import (
 	"context"
-	"fmt"
+	"hash/fnv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/cli"
+	"github.com/truvity/audit/internal/recobj"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
 )
 
-// object writes an archive object of the shape the writer writes.
-func object(t *testing.T, s *storetest.Memory, profile, tenant string, day time.Time, records ...*record.Record) string {
+// object writes an archive object of the shape the writer writes, taken at the
+// moment given.
+func object(t *testing.T, s *storetest.Memory, profile, tenant string, taken time.Time, records ...*record.Record) string {
 	t.Helper()
-	var lines []byte
+	var lines [][]byte
 	for _, r := range records {
-		line, err := record.Canonical(r)
+		canonical, err := record.Canonical(r)
 		if err != nil {
 			t.Fatal(err)
 		}
-		lines = append(append(lines, line...), '\n')
+		lines = append(lines, recobj.EncodeLine(canonical))
 	}
-	encoder, err := zstd.NewWriter(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := encoder.EncodeAll(lines, nil)
-	if err := encoder.Close(); err != nil {
-		t.Fatal(err)
-	}
+	body, meta := recobj.Encode(lines)
 
-	key := fmt.Sprintf("profile=%s/tenant=%s/year=%s/month=%s/day=%s/%s.ndjson.zst",
-		profile, tenant, day.Format("2006"), day.Format("01"), day.Format("02"),
-		day.Format("150405")+"-"+records[0].GetId())
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(records[0].GetId()))
+	key := store.RecordKey(profile, tenant, taken, ulid.From(taken, uint64(h.Sum32())))
 	if err := s.Put(context.Background(), store.Object{
-		Key: key, Body: body, ContentType: "application/x-ndjson", Encoding: "zstd",
+		Key: key, Body: body, Metadata: meta, ContentType: recobj.ContentType, Encoding: recobj.Encoding,
+		RetainUntil: taken.AddDate(1, 0, 0),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +72,7 @@ var catalogueFields = func(context.Context, *record.Record) (index.Fields, error
 
 // This is the promise the index rests on: everything a search answers with can
 // be derived again from the objects, which are the ones under an object lock
-// that a signed digest chain accounts for.
+// that carry their own hashes.
 func TestReindexRebuildsFromTheArchive(t *testing.T) {
 	s := storetest.NewMemory()
 	day := at(t, "2026-09-17T10:17:00Z")

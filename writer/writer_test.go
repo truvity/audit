@@ -105,3 +105,46 @@ func TestAWriterThatPseudonymisesNobodyNeedsNoKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The catalogue the writer runs with is at catalogue/<app>/<version>, written
+// when it starts; a second writer starting over the same bytes carries on, and
+// one whose catalogue of that version is something else refuses to run.
+func TestTheWriterWritesItsCatalogueAtStartAndRefusesAConflictingOne(t *testing.T) {
+	ctx := context.Background()
+	archive := storetest.NewMemory()
+	open := func() (*writer.Writer, error) {
+		return writer.Open(ctx, writer.Config{Archive: archive, Profiles: opaqueProfiles(t)})
+	}
+
+	w, err := open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var key string
+	for _, k := range archive.Keys() {
+		if strings.HasPrefix(k, "catalogue/") {
+			key = k
+		}
+	}
+	if key == "" {
+		t.Fatalf("no catalogue was written at start: %v", archive.Keys())
+	}
+
+	// Another instance over the same bucket finds the same bytes and starts.
+	w, err = open()
+	if err != nil {
+		t.Fatalf("a second writer over the same catalogue: %v", err)
+	}
+	if err := w.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// The bucket holds another document under that version: refuse to run.
+	archive.Replace(key, []byte("another document under the same version"))
+	if _, err := open(); err == nil || !strings.Contains(err.Error(), "different catalogue") {
+		t.Fatalf("a writer started over a conflicting catalogue: %v", err)
+	}
+}

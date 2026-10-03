@@ -96,23 +96,6 @@ query:
       mountPath: /var/run/audit
 
 jobs:
-  digest:
-    enabled: true
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive:
-        bucket:
-          name: audit-eu-example-1
-          region: eu-example-1
-        prefix: audit/app
-      sink:
-        url: http://audit:8080
-        tokenFile: /var/run/audit/token
-      signer:
-        kmsKey: alias/audit-digest
-    tokens:
-      - audience: audit
-        mountPath: /var/run/audit
   verify:
     enabled: true
     config:
@@ -125,10 +108,6 @@ jobs:
       sink:
         url: http://audit:8080
         tokenFile: /var/run/audit/token
-      publicKeyFile: /etc/audit/public/public.pem
-    secretMounts:
-      - secretName: audit-digest-public
-        mountPath: /etc/audit/public
     tokens:
       - audience: audit
         mountPath: /var/run/audit

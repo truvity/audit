@@ -14,7 +14,7 @@ import (
 // profile -- against a real bucket in both shapes the store is deployed in:
 // with Object Lock in compliance mode, and with no lock at all. The second is
 // what a store without the Object Lock API looks like, and the writer, the
-// digest job and the query service all take it; a harness that only ran the
+// verify job and the query service all take it; a harness that only ran the
 // locked shape would leave that path to the memory store.
 func TestRoundTripInBothLockModes(t *testing.T) {
 	for _, tc := range []struct {
@@ -24,8 +24,8 @@ func TestRoundTripInBothLockModes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := s3test.Open(t, tc.lock)
 			ctx := context.Background()
-			keys := s3test.Fill(t, s, "security", "acme", day, 3)
-			s3test.Fill(t, s, "security", "globex", day, 1)
+			keys := s3test.Fill(t, s, "security", "acme", hour, 3)
+			s3test.Fill(t, s, "security", "globex", hour, 1)
 
 			body, err := s.Get(ctx, keys[0])
 			if err != nil {
@@ -47,14 +47,14 @@ func TestRoundTripInBothLockModes(t *testing.T) {
 			if !tc.lock && !entry.RetainUntil.IsZero() {
 				t.Fatalf("the unlocked object carries a retention %s: a lock header was sent", entry.RetainUntil)
 			}
-			entries, err := s.List(ctx, "profile=security/tenant=acme/", "", 0)
+			entries, err := s.List(ctx, "records/security/acme/", "", 0)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if len(entries) != 3 {
 				t.Fatalf("listed %d of 3", len(entries))
 			}
-			tenants, err := s.Prefixes(ctx, "profile=security/", "/")
+			tenants, err := s.Prefixes(ctx, "records/security/", "/")
 			if err != nil {
 				t.Fatal(err)
 			}

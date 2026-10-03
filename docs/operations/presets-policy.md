@@ -14,9 +14,9 @@ procedure, a review cadence somebody performs.
 
 | preset | what it keeps | retention | identities | demands | compose it |
 |---|---|---|---|---|---|
-| `security` | authentication, authorisation, privileged access, configuration change, key and secret use, every read of the trail | 365 days, 90 hot (minimum 180) | staff clear, external pseudonym | daily clock-synchronisation event, digest chain, compliance lock, reads logged | **always** |
-| `billing-nl` | quantities per tenant and meter; no actor, no subject | 7 years | both omitted | digest chain, compliance lock | **when the installation meters** |
-| `history` | what a tenant's own administrator changed, as sentences | 365 days | staff by role (see below), tenant's own people scoped | nothing beyond the chain | when a product shows activity to its tenants |
+| `security` | authentication, authorisation, privileged access, configuration change, key and secret use, every read of the trail | 365 days, 90 hot (minimum 180) | staff clear, external pseudonym | daily clock-synchronisation event, integrity (seals), compliance lock, reads logged | **always** |
+| `billing-nl` | quantities per tenant and meter; no actor, no subject | 7 years | both omitted | integrity (seals), compliance lock | **when the installation meters** |
+| `history` | what a tenant's own administrator changed, as sentences | 365 days | staff by role (see below), tenant's own people scoped | nothing beyond integrity (seals) | when a product shows activity to its tenants |
 | `evidence-etsi` | credential and trust-service lifecycle facts | 7 years after the credential expires (10-year fallback) | staff clear, external pseudonym | daily clock-synchronisation, timestamp anchor recommended, quarterly verification report | a trust-service deployment under audit |
 | `pci-dss` | the security set, at PCI's floor | 12 months, 3 hot (minimum 365 days) | staff clear, external pseudonym | **daily** review with dispositions | a deployment in cardholder-data scope |
 | `dora` | the security set, plus logging-failure detection | 365 days, entity-defined | staff clear, external pseudonym | documented reference time source, monthly review | a supplier to a financial entity, when the contract flows it down |
@@ -26,10 +26,10 @@ procedure, a review cadence somebody performs.
 
 **Compose `security` in every installation.** It is what makes the trail a
 security record rather than a log, and everything the component does to
-itself — every read of the trail, every digest, every job — is in it. Note
+itself — every read of the trail, every verification, every job — is in it. Note
 what it demands: `clock_sync_event: daily`. The chart refuses to render an
 installation that composes `security` without a reference clock configured
-for the clock-synchronisation job, because an integrity chain whose
+for the clock-synchronisation job, because an integrity record whose
 timestamps nobody vouches for proves less than it appears to.
 
 **Compose `billing-nl` where the installation meters.** It is the profile
@@ -67,17 +67,18 @@ declared that its external identifiers carry nothing direct.
 
 Two consequences worth knowing before composing:
 
-- **Retention cannot be shortened later.** Object Lock in compliance mode
-  means an object written under a seven-year profile is there for seven
-  years, whatever the profile says afterwards. Compose the long presets when
-  the obligation exists, not in advance.
+- **Retention cannot be shortened later.** Object Lock in compliance mode means
+  an object written under a seven-year profile is there for seven years,
+  whatever the profile says afterwards. Compose the long presets when the
+  obligation exists, not in advance.
 - **Some presets demand the lock and some do not.** `pci-dss`, `nen-7513`,
   `dora` and `evidence-etsi` demand Object Lock in compliance mode, so an
   installation composing any of them needs a bucket that has it; `security`,
-  `history` and `billing-nl` are satisfied by the digest chain under a
-  managed key, and may run on any S3-compatible store with `archive.lockMode: none`.
-  A component refuses to start when the store is weaker than a composed
-  profile demands
+  `history` and `billing-nl` are satisfied by integrity under a managed key
+  (seals, [0019](../decisions/0019-seals.md); until they are built, the hashes
+  `audit verify` checks), and may run on any S3-compatible store with
+  `archive.lockMode: none`. A component refuses to start when the store is
+  weaker than a composed profile demands
   ([0014](../decisions/0014-lock-modes-and-store-tiers.md)).
 - **A profile that requires a category nobody emits refuses to start.** The
   writer checks the registered catalogue against the profile's required

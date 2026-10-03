@@ -50,8 +50,8 @@ their own jobs, and they matter as much.
   pseudonymisation keys are off by default
   ([0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md)), so the
   transit provider is tested because it is offered, not because it is the
-  default. The transit digest signer is a separate choice, and is tested the
-  same way.
+  default. The transit signer, for the seals that will follow, is a separate
+  choice, and is tested the same way.
 - `just ts` installs the TypeScript package's dependencies, then typechecks,
   tests, builds, and checks what a publish would ship.
 - Against real S3, on demand: `AUDIT_S3_REAL_BUCKET=<bucket> go test

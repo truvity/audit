@@ -92,18 +92,14 @@ stat("Rejected (1h)",
 stat("Index rows deferred (1h)",
      "Rows of objects that reached the archive and not the index. The archive is fine; search is behind until `audit reindex` repairs the day.",
      "sum(increase(audit_writer_index_deferred_total{%s}[1h]))" % W, 8, y)
-stat("Newest digest age",
-     "How old the newest sealed digest window is, the worst profile. The hourly job seals the hour that has just closed, so up to about an "
-     "hour is normal. Past two hours the chain has stopped growing: look at the digest CronJob.",
-     "max(audit_digest_age_seconds{%s})" % W, 12, y, unit="s", steps=[(None, GREEN), (3600 * 1.5, ORANGE), (7200, RED)])
 stat("Emitters dropping (1h)",
      "Records emitters gave up because their queue overflowed, across every namespace of the cluster. Healthy is zero: a drop is a record "
      "that will never exist. Look at the per-application panel below for who.",
-     "sum(increase(audit_emit_records_dropped_total{%s}[1h]))" % K, 16, y)
+     "sum(increase(audit_emit_records_dropped_total{%s}[1h]))" % K, 12, y)
 stat("Consumers failing (1h)",
      "Batches a queue consumer's target refused or failed, to be delivered again. A few across a writer restart are normal; a count that "
      "keeps growing is a consumer going round in circles.",
-     "sum(increase(audit_sink_consume_failures_total{%s}[1h]))" % W, 20, y, steps=[(None, GREEN), (5, ORANGE), (30, RED)])
+     "sum(increase(audit_sink_consume_failures_total{%s}[1h]))" % W, 16, y, steps=[(None, GREEN), (5, ORANGE), (30, RED)])
 y += 4
 
 row("Ingest", y)
@@ -139,7 +135,7 @@ series("Consumer failures per second",
        12, y, 12, "ops")
 y += 8
 
-row("Index and digest", y)
+row("Index and writes", y)
 y += 1
 series("Index lag, p50 and p99",
        "Seconds from an object being in the archive to its rows being searchable. Healthy is well under a second; rows that never arrive are "
@@ -152,17 +148,12 @@ series("Index rows deferred, by profile",
        [('sum by (profile) (increase(audit_writer_index_deferred_total{%s}[$__rate_interval]))' % W, "{{profile}}")],
        12, y, 12, "short")
 y += 8
-series("Digest age, by profile",
-       "Seconds since the end of the newest sealed digest window, per profile. A sawtooth under about an hour is the hourly job; a line that "
-       "climbs past two hours is a chain that stopped.",
-       [('max by (profile) (audit_digest_age_seconds{%s})' % W, "{{profile}}")],
-       0, y, 12, "s")
 series("Objects and records written per second",
        "Objects the writer put into the archive and the record copies in them. Many records per object is the roll working; one record per "
        "object is a roll interval too short for the traffic.",
        [('sum(rate(audit_writer_objects_written_total{%s}[$__rate_interval]))' % W, "objects"),
         ('sum(rate(audit_writer_records_written_total{%s}[$__rate_interval]))' % W, "records")],
-       12, y, 12, "ops")
+       0, y, 12, "ops")
 y += 8
 
 row("Emitters, by application namespace", y)
@@ -213,7 +204,7 @@ def var_namespace():
 dashboard = {
     "uid": "audit-overview",
     "title": "Audit overview - $cluster",
-    "description": "The audit trail's write path: ingest, rejections, durability, dead letters, index lag, digest age, and what the emitters of each application are queueing and dropping.",
+    "description": "The audit trail's write path: ingest, rejections, durability, dead letters, index lag, and what the emitters of each application are queueing and dropping.",
     "editable": False, "graphTooltip": 1, "refresh": "1m", "schemaVersion": 39,
     "time": {"from": "now-6h", "to": "now"}, "timezone": "", "annotations": {"list": []},
     "links": [], "tags": ["audit"],

@@ -1,17 +1,16 @@
 package writer
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/recobj"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
@@ -19,18 +18,26 @@ import (
 
 // Roller gathers copies into objects and puts them.
 //
-// One object holds the copies of one profile, for one tenant, for one day. The
-// partition order is profile first and deliberately: an object store's
-// lifecycle rules filter by literal prefix and take no wildcards, so a rule
-// that moves one profile's objects to colder storage after its hot window can
-// only exist if the profile is the leading component. Per-tenant credentials
-// are still expressible, because a policy's resource may carry a wildcard where
-// a lifecycle filter may not.
+// One object is one ingest batch of one profile and one tenant, and its key is
+// the moment the batch was taken, not the time of any record in it:
+//
+//	records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>/<ULID>
+//
+// (docs/reference/bucket-contract.md). The profile is first, and deliberately:
+// an object store's lifecycle rules filter by literal prefix and take no
+// wildcards, so a rule that moves one profile's objects to colder storage after
+// its hot window can only exist if the profile is the leading component.
+// Per-tenant credentials are still expressible, because a policy's resource
+// may carry a wildcard where a lifecycle filter may not.
+//
+// The ULID is made when the put starts, from the same clock the hour is read
+// from, and never goes backwards within a writer, so within an hour the keys
+// sort in the order the batches were taken.
 type Roller struct {
 	// Store is where objects go.
 	Store store.Store
-	// Instance names this writer in every key it writes, so that two writers
-	// cannot collide and a reader can tell their objects apart.
+	// Instance names this writer in its own records. It is not in any key: the
+	// ULID is what keeps two writers' keys apart.
 	Instance string
 	// Interval rolls an object that has been open this long. Default 5m.
 	Interval time.Duration
@@ -53,7 +60,7 @@ type Roller struct {
 	OnPut func(key string, records int)
 	// OnIndexDeferred is called when an object was written but its rows were
 	// not. The object is durable and the records are safe; the index is behind
-	// until a reindex of that day repairs it. A deployment alerts on this,
+	// until a reindex of that hour repairs it. A deployment alerts on this,
 	// because an index nobody notices is behind is one that quietly answers
 	// wrongly.
 	OnIndexDeferred func(key string, rows int, err error)
@@ -61,33 +68,36 @@ type Roller struct {
 	// that took after the object was in the archive.
 	OnIndexed func(key string, rows int, lag time.Duration)
 
-	mu      sync.Mutex
-	open    map[partition]*batch
-	seq     atomic.Uint64
-	encoder *zstd.Encoder
+	mu   sync.Mutex
+	open map[partition]*batch
+	ids  ulid.Generator
 }
 
 type partition struct {
 	profile string
 	tenant  string
-	day     string
 }
 
 type batch struct {
 	profile *preset.Profile
 	opened  time.Time
-	first   time.Time
 	bytes   int
-	lines   [][]byte
+	// lines are the object's lines, hash and record, in the order the copies
+	// were added.
+	lines [][]byte
 	// rows are the index rows of the same copies, in the same order, built
 	// where the record is still in hand. They carry no object key yet: the
-	// object does not have one until it is sealed.
+	// object does not have one until it is put.
 	rows     []index.Row
 	retainAt time.Time
 }
 
-// Add puts one copy into the object being gathered for its profile, tenant and
-// day, rolling that object first if it is full or old.
+// ErrKeyComponent is returned for a profile or a tenant that cannot be a key
+// component: one with a slash in it, or none at all.
+var ErrKeyComponent = errors.New("writer: not usable in a key")
+
+// Add puts one copy into the object being gathered for its profile and tenant,
+// rolling that object first if it is full or old.
 //
 // The fields are the action's indexed extension properties, which only the
 // caller's catalogue knows.
@@ -108,8 +118,12 @@ func (r *Roller) AddExpiring(
 	if err != nil {
 		return fmt.Errorf("writer: %w", err)
 	}
-	occurred := c.GetOccurredAt().AsTime().UTC()
-	key := partition{profile: p.Name, tenant: tenantOf(c), day: occurred.Format("2006/01/02")}
+	key := partition{profile: p.Name, tenant: tenantOf(c)}
+	for kind, part := range map[string]string{"profile": key.profile, "tenant": key.tenant} {
+		if why := store.KeyComponent(part); why != "" {
+			return fmt.Errorf("%w: the %s %q %s", ErrKeyComponent, kind, part, why)
+		}
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -126,7 +140,6 @@ func (r *Roller) AddExpiring(
 		b = &batch{
 			profile: p,
 			opened:  r.now(),
-			first:   occurred,
 			// The retention is fixed when the object is opened, not when it is
 			// written, so every copy in it is kept at least as long as the
 			// profile asks of the oldest.
@@ -139,14 +152,11 @@ func (r *Roller) AddExpiring(
 			b.retainAt = until
 		}
 	}
-	b.lines = append(b.lines, line)
+	b.lines = append(b.lines, recobj.EncodeLine(line))
 	if r.Indexer != nil {
 		b.rows = append(b.rows, index.RowOf(c, index.ObjectAt{}, fields))
 	}
 	b.bytes += len(line) + 1
-	if occurred.Before(b.first) {
-		b.first = occurred
-	}
 	return nil
 }
 
@@ -167,10 +177,7 @@ func (r *Roller) Flush(ctx context.Context) error {
 		if keys[i].profile != keys[j].profile {
 			return keys[i].profile < keys[j].profile
 		}
-		if keys[i].tenant != keys[j].tenant {
-			return keys[i].tenant < keys[j].tenant
-		}
-		return keys[i].day < keys[j].day
+		return keys[i].tenant < keys[j].tenant
 	})
 	for _, k := range keys {
 		if err := r.put(ctx, k, r.open[k]); err != nil {
@@ -203,15 +210,9 @@ func (r *Roller) Pending() int {
 	return n
 }
 
-// Close releases the compressor.
-func (r *Roller) Close() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.encoder != nil {
-		return r.encoder.Close()
-	}
-	return nil
-}
+// Close is called when the writer is done. The compressor is shared by the
+// process, so there is nothing of the roller's to release.
+func (r *Roller) Close() error { return nil }
 
 // put writes one object and forgets the batch. The caller holds the lock.
 func (r *Roller) put(ctx context.Context, key partition, b *batch) error {
@@ -219,32 +220,24 @@ func (r *Roller) put(ctx context.Context, key partition, b *batch) error {
 		delete(r.open, key)
 		return nil
 	}
-	var buf bytes.Buffer
-	for _, line := range b.lines {
-		buf.Write(line)
-		buf.WriteByte('\n')
+	body, metadata := recobj.Encode(b.lines)
+
+	// The batch is taken now: the ULID and the hour come from one moment, which
+	// is the ingest time the contract keys by.
+	id, at, err := r.ids.New(r.now())
+	if err != nil {
+		return fmt.Errorf("writer: %w", err)
 	}
-	r.encoder.Reset(nil)
-	body := r.encoder.EncodeAll(buf.Bytes(), nil)
+	objectKey := store.RecordKey(key.profile, key.tenant, at, id)
 
-	name := fmt.Sprintf("%019d-%s-%06d.ndjson.zst", b.first.UnixNano(), r.Instance, r.seq.Add(1))
-	objectKey := fmt.Sprintf("%s/tenant=%s/year=%s/month=%s/day=%s/%s",
-		b.profile.Prefix, key.tenant,
-		b.first.Format("2006"), b.first.Format("01"), b.first.Format("02"), name)
-
-	err := r.Store.Put(ctx, store.Object{
+	err = r.Store.Put(ctx, store.Object{
 		Key:         objectKey,
 		Body:        body,
 		RetainUntil: b.retainAt,
 		LegalHold:   r.Held != nil && r.Held(b.profile.Name, key.tenant),
-		ContentType: "application/x-ndjson",
-		Encoding:    "zstd",
-		Metadata: map[string]string{
-			"audit-profile": b.profile.Name,
-			"audit-tenant":  key.tenant,
-			"audit-records": fmt.Sprint(len(b.lines)),
-			"audit-writer":  r.Instance,
-		},
+		ContentType: recobj.ContentType,
+		Encoding:    recobj.Encoding,
+		Metadata:    metadata,
 	})
 	if err != nil {
 		// The batch stays open. Losing it here would lose records the writer
@@ -262,14 +255,6 @@ func (r *Roller) put(ctx context.Context, key partition, b *batch) error {
 func (r *Roller) ensure() {
 	if r.open == nil {
 		r.open = map[partition]*batch{}
-	}
-	if r.encoder == nil {
-		e, err := zstd.NewWriter(nil)
-		if err != nil {
-			// zstd.NewWriter fails only on a bad option, and there are none.
-			panic(fmt.Sprintf("writer: zstd: %v", err))
-		}
-		r.encoder = e
 	}
 	if r.Instance == "" {
 		r.Instance = record.InstanceName()
@@ -308,9 +293,9 @@ func tenantOf(c *record.Record) string {
 // told the batch is safe.
 //
 // A failure here is not a failure of the write. The object is in the archive
-// under its lock and is accounted for by the digest chain, which is what the
-// trail rests on; the index is a projection that a reindex of the day rebuilds
-// from the objects themselves. Failing the put instead would mean an outage of
+// under its lock, with its own sha256 and a hash on every record, which is what
+// the trail rests on; the index is a projection that a reindex of the hour
+// rebuilds from the objects themselves. Failing the put instead would mean an outage of
 // the search database could stop the audit trail, which is the wrong way round.
 func (r *Roller) index(ctx context.Context, b *batch, objectKey string, putAt time.Time) {
 	if r.Indexer == nil || len(b.rows) == 0 {

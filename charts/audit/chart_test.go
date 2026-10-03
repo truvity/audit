@@ -40,7 +40,6 @@ var components = map[string]struct {
 	"receiver":   {[]string{"receiver", "config"}, "audit-writer"},
 	"query":      {[]string{"query", "config"}, "audit-query"},
 	"migrate":    {[]string{"migrate", "config"}, "audit-migrate"},
-	"digest":     {[]string{"jobs", "digest", "config"}, "audit-digest"},
 	"verify":     {[]string{"jobs", "verify", "config"}, "audit-verify"},
 	"purge":      {[]string{"jobs", "purge", "config"}, "audit-purge"},
 	"clock-sync": {[]string{"jobs", "clockSync", "config"}, "audit-clock-sync"},

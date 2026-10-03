@@ -9,6 +9,7 @@ import (
 
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/hold"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/keys"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/sink"
@@ -40,7 +41,7 @@ func destroyer(t *testing.T, into sink.Sink) (cli.KeyDestroy, *storetest.Memory,
 func held(t *testing.T, s *storetest.Memory, profile, tenant string) {
 	t.Helper()
 	ctx := context.Background()
-	key := "profile=" + profile + "/tenant=" + tenant + "/year=2026/month=09/day=17/a.ndjson.zst"
+	key := store.RecordKey(profile, tenant, at(t, "2026-09-17T09:00:00Z"), ulid.From(at(t, "2026-09-17T09:00:00Z"), 1))
 	if err := s.Put(ctx, store.Object{
 		Key: key, Body: []byte("{}"), RetainUntil: at(t, "2027-09-17T00:00:00Z"),
 	}); err != nil {

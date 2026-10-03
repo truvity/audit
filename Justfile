@@ -121,11 +121,11 @@ stop-postgres:
 # not a change.
 s3_image := "localstack/localstack@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a"
 
-# Run the archive-walk tests against a real S3, and the SQS sink against a real
-# SQS: LocalStack serves both.
+# Run the archive-walk tests and the bucket-contract conformance suite against a
+# real S3, and the SQS sink against a real SQS: LocalStack serves both.
 #
 # These are the tests that would have caught the two bugs the memory store hid:
-# a digest covering one tenant, and a listing stopping at the first thousand
+# a walk covering one tenant, and a listing stopping at the first thousand
 # keys. They skip when AUDIT_S3_URL is unset, so `check` stays hermetic.
 test-s3:
     #!/usr/bin/env bash
@@ -137,7 +137,7 @@ test-s3:
         curl -sf -m 3 http://localhost:4566/_localstack/health >/dev/null 2>&1 && break
         sleep 3
     done
-    AUDIT_S3_URL=http://localhost:4566 AUDIT_SQS_URL=http://localhost:4566 go test ./internal/s3test/... ./store/... ./sink/sqssink/...
+    AUDIT_S3_URL=http://localhost:4566 AUDIT_SQS_URL=http://localhost:4566 go test ./internal/s3test/... ./internal/bucketcontract/... ./store/... ./sink/sqssink/...
 
 # The OpenBAO the transit key provider and signer are tested against. Pinned
 # by digest for the reason the S3 image is: a moving tag changes the test.
@@ -458,10 +458,9 @@ vuln:
 e2e-snapshot:
     bash hack/e2e-snapshot.sh
 
-# Stand in for the platform: the database and its two roles, the stream, the
-# archive bucket and the digest chain's signing key, under the exact names
-# charts/audit/testdata/values/e2e.yaml gives the chart. Must run before
-# `e2e-install`.
+# Stand in for the platform: the database and its two roles, the stream and the
+# archive bucket, under the exact names charts/audit/testdata/values/e2e.yaml
+# gives the chart. Must run before `e2e-install`.
 [doc("Provision what a platform would, by name")]
 e2e-fixture:
     bash e2e/fixture/apply.sh

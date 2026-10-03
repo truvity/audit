@@ -100,25 +100,6 @@ writer:
 # what it acknowledges is `queued`: say so, and the job refuses to start against
 # a writer it was not told gives that.
 jobs:
-  digest:
-    enabled: true
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive:
-        bucket:
-          name: audit-eu-example-1
-          region: eu-west-1
-        prefix: audit/app
-      sink:
-        url: http://audit:8080
-        tokenFile: /var/run/audit/token
-        expect: queued
-      require: queued
-      signer:
-        kmsKey: alias/audit-digest
-    tokens:
-      - audience: audit
-        mountPath: /var/run/audit
   # Shown on the stream example; off here so that this one stays to the point.
   verify:
     enabled: false

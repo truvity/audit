@@ -19,7 +19,7 @@ flowchart LR
   R -- "stream mode" --> N[("JetStream")] --> W
   W --> S3[("Object-Locked bucket<br/>THE RECORD")]
   W --> PG[("index — rebuildable")]
-  D["digest, hourly<br/>verify, nightly"] --> S3
+  D["verify, nightly"] --> S3
   Q["query service"] --> PG
   Q --> S3
   UI["Audit page in the<br/>application's console"] --> Q
@@ -28,8 +28,7 @@ flowchart LR
 ## Who it is for
 
 An application team that already has, or can provision, a Postgres
-database, an S3-compatible bucket with Object Lock, a signing key (a KMS
-key is the usual choice) and a reference clock — the things
+database, an S3-compatible bucket with Object Lock and a reference clock — the things
 [Before either shape](docs/deployment/README.md#before-either-shape) lists.
 
 It deliberately does not install: a central, multi-tenant audit service (an
@@ -106,7 +105,7 @@ audit:
         passwordEnv: AUDIT_DATABASE_PASSWORD
     secretEnv:                       # the Secret behind that variable name
       - {name: AUDIT_DATABASE_PASSWORD, secretName: audit-db, key: password}
-  # query, and the digest, verify, purge and clock-sync jobs, each take a
+  # query, and the verify, purge and clock-sync jobs, each take a
   # `config:` the same way; see the example file below
 ```
 
@@ -185,11 +184,11 @@ This repository follows the shared
 | Record, catalogues, presets, `audit validate` / `check-emitters` | built |
 | Go emitter: `block` and `async`; Connect and JetStream sinks | built |
 | Writer: split per profile, Object Lock where a profile demands it, index, dead letters, legal holds, retention addenda | built |
-| Two store tiers on any S3-compatible store: `record` (Object Lock in compliance mode) and `attested` (chain under a managed key, no lock) ([0014](docs/decisions/0014-lock-modes-and-store-tiers.md)) | built |
+| Two store tiers on any S3-compatible store: `record` (Object Lock in compliance mode) and `attested` (no lock) ([0014](docs/decisions/0014-lock-modes-and-store-tiers.md)) | built |
 | Query service: search, facets, get, export, tail; JWT with declarative grants | built |
-| Digest chain and `audit verify`; signing with a key file, AWS KMS or OpenBAO transit | built |
+| The v1 bucket layout and `audit verify`, which checks every record object against the [bucket contract](docs/reference/bucket-contract.md); signers (key file, AWS KMS, OpenBAO transit) for the seals that will follow | built; seals are not |
 | Pseudonymisation keys: `local` and OpenBAO transit, **off by default** ([0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md)) | built |
-| Helm chart: `mode`, receiver, writer, query service, the four jobs, the extension toggles | built; a golden per shape, and every documented example rendered |
+| Helm chart: `mode`, receiver, writer, query service, the three jobs, the extension toggles | built; a golden per shape, and every documented example rendered |
 | `@truvity/audit`: query client, sentences, React hooks and view | built; consumed from a release tag (`github:truvity/audit#vX.Y.Z`), not from a registry |
 | TypeScript emitter | designed, not built |
 | Billing statement, usage consumer, reconciler | designed, not built |

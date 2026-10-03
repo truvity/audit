@@ -3,13 +3,15 @@ package s3test
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
+	"math/rand/v2"
 	"os"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 
+	"github.com/truvity/audit/internal/recobj"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/s3store"
 )
@@ -58,17 +60,18 @@ func TestCompatibleStoreTakesACompressedRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Shaped like a record object: the partition key an archive writes, zstd,
-	// and the metadata the roller attaches. The tenant carries an `@` because
-	// the platform's own does.
-	key := "profile=security/tenant=@platform/" + strings.ToLower(rand.Text()[:12]) + ".ndjson.zst"
+	// Shaped like a record object: the v1 key an archive writes, zstd, and the
+	// metadata the roller attaches. The tenant carries an `@` because the
+	// platform's own does.
+	now := time.Now().UTC()
+	key := store.RecordKey("security", "@platform", now, ulid.From(now, rand.Uint64()))
 	body := []byte("a compressed record")
 	if err := archive.Put(ctx, store.Object{
 		Key:         key,
 		Body:        body,
 		ContentType: "application/x-ndjson",
 		Encoding:    "zstd",
-		Metadata:    map[string]string{"audit-profile": "security", "audit-tenant": "@platform"},
+		Metadata:    recobj.Metadata(body, 1),
 	}); err != nil {
 		t.Fatalf("putting a compressed record: %v", err)
 	}

@@ -13,8 +13,10 @@ going.
 | ✅ supported | built, tested in CI and run in an installation |
 | — | does not apply to that platform |
 
-Today's state is that the v0 archive and everything around it is ✅, and the
-target architecture is 📄.
+Today's state is that the ingest path writes the v1 layout (🧪), the
+readers around it follow it, and the rest of the target architecture is 📄. The
+v0 archive is not read or written by anything in this release: it is readable
+only with the previous release's CLI (v0.6.x).
 
 ## Ingest
 
@@ -34,9 +36,9 @@ target architecture is 📄.
 | deduplication on JetStream (duplicate window, KV with TTL) | 📄 | — | — |
 | deduplication on DynamoDB | — | 📄 | — |
 | one configuration file against a schema | ✅ | 📄 | 📄 |
-| metrics over OTLP: acknowledgements by durability, write latency per transport, index lag, digest age, consumer failures | 🧪 | 🧪 | 🧪 |
+| metrics over OTLP: acknowledgements by durability, write latency per transport, index lag, consumer failures | 🧪 | 🧪 | 🧪 |
 | traces over OTLP: server and client spans, `traceparent` across NATS headers and SQS attributes, no personal data on a span | 🧪 | 🧪 | 🧪 |
-| chart `renders: alerts`: seven alert rules as a `VMRule` or `PrometheusRule`, unit-tested on vmalert-tool | 🧪 | 🧪 | 🧪 |
+| chart `renders: alerts`: six alert rules as a `VMRule` or `PrometheusRule`, unit-tested on vmalert-tool | 🧪 | 🧪 | 🧪 |
 | chart `renders: dashboards`: the audit overview for Grafana's sidecar, held to the observability dashboard lint | 🧪 | 🧪 | 🧪 |
 
 The `s3` sink works against any store that speaks the S3 API; on a store
@@ -47,21 +49,22 @@ without Object Lock it is the `attested` tier of
 
 | feature | Kubernetes | AWS | self-hosted |
 |---|---|---|---|
-| v0 layout, one object per profile, tenant and day | ✅ | ✅ | ✅ |
-| v1 layout ([bucket contract](reference/bucket-contract.md)) | 📄 | 📄 | 📄 |
+| v1 layout, written and read ([bucket contract](reference/bucket-contract.md)): one object per ingest batch, keyed by ingest time | 🧪 | 🧪 | 🧪 |
+| `catalogue/<app>/<version>`, written once, compared when present | 🧪 | 🧪 | 🧪 |
+| `audit verify`: key, metadata, sha256 and per-record hashes of every object | 🧪 | 🧪 | 🧪 |
 | Object Lock, compliance mode | ✅ | ✅ | — |
 | governance trial, then compliance ([0023](decisions/0023-archive-retention-and-lifecycle.md)) | 📄 | 📄 | — |
 | lifecycle to Glacier Instant Retrieval and Deep Archive | — | 📄 | — |
-| bucket-contract conformance suite | 📄 | 📄 | 📄 |
+| bucket-contract conformance suite (records, catalogue and ordering, against the memory store and S3) | 🧪 | 🧪 | 🧪 |
+| conformance of seals, delegation and revocation | 📄 | 📄 | 📄 |
 
 ## Notary
 
-The signers exist today for the v0 digest; using them for ES384 seals is
-part of the v1 work.
+The v0 digest job was removed with the v0 layout; seals replace it and are not
+built yet. The signers stay for them.
 
 | feature | Kubernetes | AWS | self-hosted |
 |---|---|---|---|
-| hourly digest chain (v0) | ✅ | 📄 | 📄 |
 | seals, chained through `prev` ([0019](decisions/0019-seals.md)) | 📄 | 📄 | 📄 |
 | delegation and revocation | 📄 | 📄 | 📄 |
 | signer: AWS KMS | ✅ | ✅ | — |
@@ -70,7 +73,7 @@ part of the v1 work.
 | signer: PKCS#11 | — | — | 📄 |
 | signer: TPM | — | — | 📄 |
 | notary as a function on a schedule | — | 📄 | — |
-| `audit verify` | ✅ | ✅ | ✅ |
+| `audit verify` of seals | 📄 | 📄 | 📄 |
 
 ## Observe
 
@@ -79,7 +82,7 @@ part of the v1 work.
 | index and search on Postgres, fed by the writer | ✅ | 📄 | 📄 |
 | cursor listing over the bucket, settle window | 📄 | 📄 | 📄 |
 | notifications as a wake-up | 📄 | 📄 | 📄 |
-| reindex from the archive | ✅ | ✅ | ✅ |
+| reindex from the archive (v1) | 🧪 | 🧪 | 🧪 |
 | usage quotas | 📄 | 📄 | 📄 |
 | billing statements | 📄 | 📄 | 📄 |
 

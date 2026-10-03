@@ -45,7 +45,7 @@ the way object storage and CI providers meter storage. Never deltas.
 - `usage_hourly(tenant_id, meter, hour, quantity, event_count, last_event_id)`
   upserted idempotently.
 - `usage_statement(tenant_id, meter, period, quantity, event_id_range,
-  digest_key, computed_at)` written once at period close and never
+  seal_key, computed_at)` written once at period close and never
   updated. The statement plus the locked billing copies are the seven-year
   administration.
 

@@ -128,8 +128,8 @@ jobs:
       - uses: actions/setup-go@41dfa10bad2bb2ae585af6ee5bb4d7d973ad74ed # v5.1.0
         with:
           go-version-file: go.mod
-      - name: the archive walks against real S3, and the queue sink against real SQS
-        run: go test ./internal/s3test/... ./store/... ./sink/sqssink/...
+      - name: the archive walks and the bucket contract against real S3, and the queue sink against real SQS
+        run: go test ./internal/s3test/... ./internal/bucketcontract/... ./store/... ./sink/sqssink/...
       - name: the S3 tests must have run, not skipped
         # Same guard as the Postgres job: an endpoint that stopped reaching the
         # tests would turn this green while proving nothing, which is the exact
@@ -137,6 +137,9 @@ jobs:
         run: |
           go test ./internal/s3test/ -run TestPrefixesListsEveryTenant -v | tee out.txt
           grep -q -- "--- PASS: TestPrefixesListsEveryTenant" out.txt
+          go test ./internal/bucketcontract/ -run TestWhatTheWriterWritesConforms -v | tee out.txt
+          grep -q -- "--- PASS: TestWhatTheWriterWritesConforms/s3-locked" out.txt
+          grep -q -- "--- PASS: TestWhatTheWriterWritesConforms/s3-unlocked" out.txt
           go test ./sink/sqssink/ -run TestLocalStackRoundTrip -v | tee out.txt
           grep -q -- "--- PASS: TestLocalStackRoundTrip/fifo" out.txt
 

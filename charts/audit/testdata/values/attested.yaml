@@ -1,5 +1,5 @@
 # The attested tier on an S3-compatible store that is not AWS: no Object
-# Lock, so the signed digest chain under a managed key is the integrity
+# Lock, so the record objects's own sha256 and per-record hashes are the integrity
 # control; an endpoint and path-style addressing; static credentials, since
 # the store has no pod identity; and the query service with an exports bucket
 # on a store of its own. The profile composes only presets whose frameworks
@@ -78,35 +78,6 @@ query:
       secretName: audit-exports-credentials
       key: AWS_SECRET_ACCESS_KEY
 jobs:
-  digest:
-    config:
-      deployment: /etc/audit/deployment.yaml
-      archive:
-        bucket:
-          name: audit-archive
-          region: auto
-          endpoint: https://s3.example.test
-          pathStyle: true
-          credentialsEnv:
-            accessKeyID: AUDIT_S3_ACCESS_KEY_ID
-            secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
-        prefix: audit/app
-        lockMode: none
-      sink:
-        url: http://audit:8080
-      signer:
-        keyFile:
-          path: /etc/audit/signing/key.pem
-    secretMounts:
-      - secretName: audit-signing-key
-        mountPath: /etc/audit/signing
-    secretEnv:
-      - name: AUDIT_S3_ACCESS_KEY_ID
-        secretName: audit-store-credentials
-        key: AWS_ACCESS_KEY_ID
-      - name: AUDIT_S3_SECRET_ACCESS_KEY
-        secretName: audit-store-credentials
-        key: AWS_SECRET_ACCESS_KEY
   verify:
     config:
       deployment: /etc/audit/deployment.yaml
@@ -120,11 +91,6 @@ jobs:
             accessKeyID: AUDIT_S3_ACCESS_KEY_ID
             secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
         prefix: audit/app
-        lockMode: none
-      publicKeyFile: /etc/audit/public/public.pem
-    secretMounts:
-      - secretName: audit-signing-public
-        mountPath: /etc/audit/public
     secretEnv:
       - name: AUDIT_S3_ACCESS_KEY_ID
         secretName: audit-store-credentials

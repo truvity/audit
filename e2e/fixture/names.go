@@ -1,7 +1,7 @@
 // Package fixture stands in for the platform on the local kind box (see
 // truvity/policy's hack/kind/README.md and docs/decisions/0005-kind-is-the-gate.md
 // there): a Postgres database and its two roles, a JetStream stream, an S3
-// bucket and the two signing keys the digest and verify jobs need — the
+// bucket — the
 // things a real deployment's platform would already have provisioned before
 // `helm install audit` ever runs.
 //
@@ -61,11 +61,6 @@ type secretEnv struct {
 	Key        string `json:"key"`
 }
 
-type secretMount struct {
-	SecretName string `json:"secretName"`
-	MountPath  string `json:"mountPath"`
-}
-
 // chartValues is the handful of fields this package reads out of
 // charts/audit/testdata/values/e2e.yaml — everything else in that file is
 // the chart's own business. They are the binaries' own configuration keys,
@@ -103,19 +98,6 @@ type chartValues struct {
 		SecretEnv []secretEnv `json:"secretEnv"`
 	} `json:"migrate"`
 	Jobs struct {
-		Digest struct {
-			Config struct {
-				Signer struct {
-					KeyFile struct {
-						ID string `json:"id"`
-					} `json:"keyFile"`
-				} `json:"signer"`
-			} `json:"config"`
-			SecretMounts []secretMount `json:"secretMounts"`
-		} `json:"digest"`
-		Verify struct {
-			SecretMounts []secretMount `json:"secretMounts"`
-		} `json:"verify"`
 	} `json:"jobs"`
 }
 
@@ -127,13 +109,6 @@ func secretOf(env []secretEnv, name string) string {
 		}
 	}
 	return ""
-}
-
-func firstMount(m []secretMount) string {
-	if len(m) == 0 {
-		return ""
-	}
-	return m[0].SecretName
 }
 
 // queryDatabaseSecret is the query role's credential, a Secret this package
@@ -167,11 +142,6 @@ type Names struct {
 	PathStyle     bool
 	LockMode      string
 	S3CredsSecret string // existingSecret: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
-
-	// The digest chain's signing key.
-	DigestKeySecret    string
-	DigestKeyID        string
-	VerifyPublicSecret string
 }
 
 // valuesFilePath resolves charts/audit/testdata/values/e2e.yaml relative to
@@ -217,9 +187,6 @@ func Resolve(o Options) (Names, error) {
 		"writer.config.stream.name":                          v.Writer.Config.Stream.Name,
 		"writer.config.stream.consumer":                      v.Writer.Config.Stream.Consumer,
 		"migrate.config.reader":                              v.Migrate.Config.Reader,
-		"jobs.digest.secretMounts[0].secretName":             firstMount(v.Jobs.Digest.SecretMounts),
-		"jobs.digest.config.signer.keyFile.id":               v.Jobs.Digest.Config.Signer.KeyFile.ID,
-		"jobs.verify.secretMounts[0].secretName":             firstMount(v.Jobs.Verify.SecretMounts),
 	} {
 		if got == "" {
 			return Names{}, fmt.Errorf("%s: %s is empty — this package has nothing to name", valuesFilePath(), field)
@@ -247,9 +214,5 @@ func Resolve(o Options) (Names, error) {
 		PathStyle:     v.Writer.Config.Archive.Bucket.PathStyle,
 		LockMode:      v.Writer.Config.Archive.LockMode,
 		S3CredsSecret: s3Secret,
-
-		DigestKeySecret:    firstMount(v.Jobs.Digest.SecretMounts),
-		DigestKeyID:        v.Jobs.Digest.Config.Signer.KeyFile.ID,
-		VerifyPublicSecret: firstMount(v.Jobs.Verify.SecretMounts),
 	}, nil
 }

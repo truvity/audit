@@ -38,7 +38,6 @@ func telemetryValues() m {
 			"rules": obj("The rules.", m{
 				"deadLettered":     rule("Records the writer dead-lettered.", nil),
 				"emitterDrops":     rule("Records an emitter's queue gave up.", nil),
-				"digestStale":      rule("The newest digest is older than `maxAgeSeconds`.", m{"maxAgeSeconds": integer("The age, in seconds.", 1, nil)}),
 				"indexLag":         rule("The index is behind the archive.", m{"thresholdSeconds": integer("The p99 lag, in seconds.", 1, nil)}),
 				"indexDeferred":    rule("Rows reached the archive and not the index.", nil),
 				"writerRejections": rule("The writer refuses a share of the records it is sent.", m{"ratio": m{"type": "number", "minimum": 0, "maximum": 1, "description": "The share refused."}, "minRecords": integer("The fewest refusals in the window that count.", 1, nil)}),

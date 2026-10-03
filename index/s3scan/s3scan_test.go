@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/s3scan"
+	"github.com/truvity/audit/internal/recobj"
+	"github.com/truvity/audit/internal/ulid"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
@@ -34,29 +35,23 @@ var fields = index.Fields{
 
 func fieldsOf(context.Context, *record.Record) (index.Fields, error) { return fields, nil }
 
-// archived writes one object as the writer would, with the records given.
+// archived writes one object as the writer would, with the records given. The
+// day is the day of ingest, which the key names; name only orders the objects
+// of one tenant's hour.
 func archived(t *testing.T, s *storetest.Memory, tenant string, day time.Time, name string, rows ...*record.Record) string {
 	t.Helper()
-	var lines []byte
+	var lines [][]byte
 	for _, r := range rows {
-		line, err := record.Canonical(r)
+		canonical, err := record.Canonical(r)
 		if err != nil {
 			t.Fatal(err)
 		}
-		lines = append(append(lines, line...), '\n')
+		lines = append(lines, recobj.EncodeLine(canonical))
 	}
-	encoder, err := zstd.NewWriter(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := encoder.EncodeAll(lines, nil)
-	if err := encoder.Close(); err != nil {
-		t.Fatal(err)
-	}
-	key := "profile=security/tenant=" + tenant + "/year=" + day.Format("2006") +
-		"/month=" + day.Format("01") + "/day=" + day.Format("02") + "/" + name
+	body, meta := recobj.Encode(lines)
+	key := store.RecordKey("security", tenant, day, ulid.From(day.Truncate(time.Hour).Add(time.Second), uint64(name[0])))
 	if err := s.Put(context.Background(), store.Object{
-		Key: key, Body: body, RetainUntil: day.AddDate(1, 0, 0),
+		Key: key, Body: body, Metadata: meta, RetainUntil: day.AddDate(1, 0, 0),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +115,7 @@ func scanned(t *testing.T) (*s3scan.Scanner, *storetest.Memory) {
 			rows = append(rows, made(t, id(n), day.Add(time.Duration(i)*time.Minute), action, outcome, tenant))
 			n++
 		}
-		archived(t, s, rows[0].GetTenantId(), day, "a.ndjson.zst", rows...)
+		archived(t, s, rows[0].GetTenantId(), day, "a", rows...)
 	}
 	return &s3scan.Scanner{
 		Store: s, Fields: fieldsOf,
@@ -236,7 +231,7 @@ func TestScanStopsWhenTheBudgetIsSpent(t *testing.T) {
 func TestScanStopsAtTheHorizon(t *testing.T) {
 	scanner, s := scanned(t)
 	old := at(t, "2020-01-01T10:00:00Z")
-	archived(t, s, "acme", old, "old.ndjson.zst",
+	archived(t, s, "acme", old, "old",
 		made(t, id(15), old, "wallet.credential.issued", "success", "acme"))
 
 	page, err := scanner.Search(context.Background(), index.Query{Profile: "security", Limit: 100})

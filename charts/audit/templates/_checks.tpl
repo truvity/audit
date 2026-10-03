@@ -36,8 +36,8 @@ or to a trail that looks fine and is not.
   {{- if eq $mode "receiver" -}}
   {{- fail "audit: `writer.config.mode` is `receiver` in stream mode. `writer.config` is the consumers' configuration; the receiver's is `receiver.config`." -}}
   {{- end -}}
-  {{- if not (dig "stream" nil $writer) -}}
-  {{- fail "audit: `mode: stream` needs `writer.config.stream`: the consumers read the stream, and without one there is nothing for them to read." -}}
+  {{- if not (or (dig "stream" nil $writer) (dig "consume" nil $writer)) -}}
+  {{- fail "audit: `mode: stream` needs `writer.config.stream` or `writer.config.consume`: the consumers read the stream or the queue, and without one there is nothing for them to read." -}}
   {{- end -}}
   {{- if not $database -}}
   {{- fail "audit: `mode: stream` needs `database` in `writer.config`. Several writers share one stream, and deduplication in one process only absorbs a repeat on the writer that saw the original; a redelivery landing on another would be written twice." -}}

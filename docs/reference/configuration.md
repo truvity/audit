@@ -159,6 +159,7 @@ block is present). Both servers default it to `:8080`.
 |---|---|---|---|
 | `url` | string, required | | the writer's base URL |
 | `tokenFile` | path | none: no token, which only an anonymous trial install accepts | the file holding the bearer token, read afresh on every request; in a cluster the pod's projected service-account token |
+| `expect` | `logged`, `queued` or `archived` | none: the client claims nothing | what the writer at `url` is configured to give. A client cannot learn that until it writes, so the file says (`sink.Client.Expecting`); the process's `require` is checked against it at start-up and against every acknowledgement afterwards |
 
 **`openbao`** (how a process reaches an OpenBAO transit engine)
 
@@ -208,6 +209,16 @@ the application registers its catalogue with the address it writes to.
 | `replicas` | integer, at least 1 | 1 | how many writers share this stream: the number of writer pods, which the writer cannot see for itself |
 | `keys` | `keys` | none, which is provider `none` | pseudonymisation keys. Not in a receiver |
 | `forgetIdentities` | boolean | false | do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it |
+| `require` | `logged`, `queued` or `archived` | `archived` for a writer, `queued` for a receiver | the weakest durability the chain may give ([0017](../decisions/0017-sink-durability-and-transports.md)). At start-up the process wraps its chain in `sink.Guard` and refuses to run if the chain can never give it; a write acknowledged weaker fails. See [Durability](#durability-require-forward-consume) |
+| `forward.nats`, `.sqs`, `.log` | exactly one; `nats` and `sqs` as below | | a receiver's onward transport. Required in `receiver` mode (or `stream`, its NATS shorthand); refused in `writer` mode. `forward.nats` takes the keys of `stream` |
+| `forward.sqs.queueUrl` | string, required with `forward.sqs` | | the queue the receiver publishes to |
+| `forward.sqs.region` | string | the SDK's (`AWS_REGION`) | the queue's region |
+| `forward.sqs.fifo` | boolean | derived from the URL | the queue is FIFO. It must agree with the URL, which ends in `.fifo` for one |
+| `forward.log` | `{}` | | the `log` sink: one JSON line per record on standard output, which survives nothing but the log pipeline. Allowed only with `require: logged` |
+| `consume.nats`, `.sqs` | exactly one | | what a writer reads its records from, beside its own sink. Not in a receiver. `consume.nats` takes the keys of `stream` |
+| `consume.sqs.queueUrl`, `.region`, `.fifo` | as `forward.sqs` | | the queue the writer consumes |
+| `consume.sqs.batch` | integer, 1 to 10 | 10 | how many messages are received at once |
+| `consume.sqs.visibility` | duration | `1m` | how long a received message is hidden from other consumers while the writer writes it. It must outlast a write to the bucket, or the message is delivered twice |
 | `stream.nats.url` | string, required with `stream` | | the JetStream server, for example `nats://nats:4222` |
 | `stream.nats.tokenFile` | path | none: no credentials | the token presented to a broker that verifies who connects, read afresh on every connect ([stream](../deployment/stream.md#authenticating-to-the-stream)) |
 | `stream.name` | string | `AUDIT` | the stream |
@@ -217,8 +228,49 @@ the application registers its catalogue with the address it writes to.
 | `roll.interval` | duration | `30s` | how long gathered records wait before they are written. In direct mode there is no stream to gather from, and it is only how long an object may stay open inside one write |
 | `roll.maxRecords` | integer, at least 1 | 5000 | how many gathered records are written at once. The roll ends at whichever of the two is reached first, or at the roller's byte limit |
 
-A `receiver` requires `stream`. A writer without `stream` only serves its own
-sink; with it, it also consumes.
+`stream` is the NATS shorthand and is kept as it was: in a receiver it is
+`forward.nats`, in a writer `consume.nats`, with the same defaults. Give it or
+the longhand, not both. A `receiver` requires `stream` or `forward`. A writer
+with neither `stream` nor `consume` only serves its own sink; with one, it
+also consumes.
+
+### Durability: `require`, `forward`, `consume`
+
+Every acknowledgement carries a durability ([0017](../decisions/0017-sink-durability-and-transports.md)):
+`archived` (the object is in the bucket), `queued` (a replicated queue holds it
+and will deliver it) or `logged` (a log line). `require` is the floor a process
+holds its own chain to, and its default is the strongest the mode can give, so
+that anything weaker is something a person wrote down:
+
+- a **writer** defaults to `archived`: it puts the object itself, and a
+  deployment that wants a weaker promise says so;
+- a **receiver** defaults to `queued`, not `archived`: it holds no archive (a
+  receiver holding one would be a writer), so `archived` is not its to promise,
+  and it is refused there. Its promise is what its onward transport gives, and
+  the writers behind it are what reach `archived`.
+
+At start-up the process builds its chain (the receiver, and the transport
+`forward` names; or the writer) and computes the best it can ever give. A chain
+below `require` is a start-up error, not a surprise on the first privileged
+action. `forward.log` can give `logged` at most, so it is allowed only with
+`require: logged`, which the schema, the loader and the guard each refuse
+otherwise: it is for a deployment that has chosen its log pipeline as its
+record.
+
+The queue's credentials are never in the file. `sqs` uses the AWS SDK's ambient
+credentials, which on Kubernetes is the pod's workload identity (EKS Pod
+Identity, or IRSA through a service-account annotation), the same way the
+archive's bucket does. The role needs `sqs:SendMessage` for the receiver,
+`sqs:ReceiveMessage`, `sqs:DeleteMessage` and `sqs:ChangeMessageVisibility`
+for the writers. `charts/audit/examples/sqs.yaml` is a full SQS install; its
+transport is not yet tested against live AWS, only against a fake and
+LocalStack.
+
+A process that records through a writer of its own (`audit-query` and every
+job with a `sink`) takes `require` too, with `sink.expect` saying what that
+writer gives: `require` unset checks nothing, and set it needs `expect` at
+least as strong, checked at start-up, with every acknowledgement checked
+afterwards.
 
 The receiver verifies who writes with `workloads` and stamps the caller's
 service account as each record's observer. Without it, it refuses to start
@@ -237,6 +289,7 @@ the grants. Every read it serves is recorded through the writer.
 | `listen` | `listen` | `:8080` | the address it is served on |
 | `grants` | path, required | | the grants file, below |
 | `sink` | `sink`, required | | the writer every read is recorded through |
+| `require` | `logged`, `queued` or `archived` | none: checks nothing | the weakest durability the writer's acknowledgements may carry. Needs `sink.expect` at least as strong ([durability](#durability-require-forward-consume)) |
 | `deployment` | path | none | the profile configuration. A grant preset needs it, because a preset turns roles into the deployment's own profiles |
 | `searcher` | `postgres` or `s3scan` | `postgres` | `postgres` is the index; `s3scan` is the archive, within a budget, for a deployment with no database. The scan orders by `occurred_at` only and refuses `recorded_at`, so a deployment on it can search the trail but cannot follow it: there is no live tail ([search](../design/search.md#tail)) |
 | `database` | `database` | | the index, as the query service's **own** role: `usage` on the schema, `select` on its tables, not the owner. Tenant row-level security binds only a non-owner. Required unless `searcher` is `s3scan` |
@@ -365,6 +418,7 @@ Seals windows into the signed chain. Hourly in the chart.
 | `signer.kmsKey` | string | | or with an AWS KMS `ECC_NIST_P256` key; the private half never leaves KMS |
 | `signer.transit.key`, `.openbao` | string, `openbao`; both required | | or with an OpenBAO transit ed25519 key, signed in to as the job's own identity |
 | `sink` | `sink` | none: nothing is recorded | the writer the job records what it sealed through (`audit.digest.written`) |
+| `require` | `logged`, `queued` or `archived` | none | the weakest durability the writer's acknowledgements may carry; needs `sink` and `sink.expect` ([durability](#durability-require-forward-consume)) |
 | `lookback` | duration | 7 days | how far before a window to look for objects keyed under an older day. The verify job's must be at least this |
 | `maxWindows` | integer, at least 1 | 168 in the command | how many windows one run may seal when catching up |
 
@@ -387,6 +441,7 @@ deployment composes.
 | `lookback` | duration | 7 days | how far before the range to look for objects keyed under an older day; at least what the digest job used |
 | `record` | boolean | false | write what each verification found under `verified/`, which `Get` reports as a record's `verified_at`. Needs `s3:PutObject` there |
 | `sink` | `sink` | none | the writer the job records what it checked through |
+| `require` | `logged`, `queued` or `archived` | none | the weakest durability the writer's acknowledgements may carry; needs `sink` and `sink.expect` ([durability](#durability-require-forward-consume)) |
 
 ### audit purge
 
@@ -408,6 +463,7 @@ Compares the clock with UTC and records the answer. Daily in the chart.
 |---|---|---|---|
 | `ntp` | list of strings, at least one, required | | time references, host or host:port; the quickest to answer is believed, and one being unreachable is survivable |
 | `sink` | `sink` | none | the writer the reading is recorded through |
+| `require` | `logged`, `queued` or `archived` | none | the weakest durability the writer's acknowledgements may carry; needs `sink` and `sink.expect` ([durability](#durability-require-forward-consume)) |
 | `maxOffset` | duration | `1s` | the offset beyond which the run fails. `0s` records any offset and never fails |
 | `timeout` | duration | `5s` | how long to wait for a reference |
 
@@ -429,7 +485,12 @@ error that names the key.
 Beyond types, required keys and unknown keys, the schemas refuse:
 
 - a `workloads` and an `anonymousWrites` together, or neither;
-- `mode: receiver` with `archive`, `catalogues` or `keys`, or without `stream`;
+- `mode: receiver` with `archive`, `catalogues`, `keys` or `consume`, or with
+  neither `stream` nor `forward`;
+- `forward` with none, or more than one, of `nats`, `sqs` and `log`; `consume`
+  with none, or both, of `nats` and `sqs`; `forward` in a writer;
+- `require: archived` in a receiver, and `forward.log` without `require: logged`;
+- `require` on an emitter with no `sink`;
 - a `writer` without `archive`;
 - `keys.provider` of `local` without `local`, of `transit` without `transit`,
   or either block beside a provider that is not its own;
@@ -441,6 +502,10 @@ Beyond types, required keys and unknown keys, the schemas refuse:
   `s3scan` and no `archive`.
 
 After the schema, the binaries refuse:
+
+- a `require` the chain can never give (the guard, at start-up), and an
+  emitter's `require` with no `sink.expect`, or one weaker than it;
+- `forward.sqs.fifo: true` on a URL that does not end in `.fifo`;
 
 - `stream.ackWait` not longer than `roll.interval`: a writer gathers records
   for one interval before it writes them and leaves them unacknowledged
@@ -569,7 +634,7 @@ The chart checks what only the platform can see, in
   several, and can only do that if it is told the truth;
 - more than one writer pod needs `database` in `writer.config`;
 - stream mode needs `receiver.config` with `mode: receiver`,
-  `writer.config.stream` and a `database` in `writer.config`, and
+  `writer.config.stream` (or `consume`) and a `database` in `writer.config`, and
   `writer.config.mode` must not be `receiver`; direct mode refuses a receiver
   writer;
 - more than one writer pod with a `keysVolume` that lacks `ReadWriteMany`, and

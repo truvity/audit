@@ -1,0 +1,8 @@
+# refuse: value must be 'logged'
+# base: sqs-base
+receiver:
+  config:
+    require: queued
+    forward:
+      sqs: null
+      log: {}

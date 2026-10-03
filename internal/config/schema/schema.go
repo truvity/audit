@@ -61,6 +61,42 @@ func integer(description string, least int, def any) m {
 	return o
 }
 
+func durability(description string) m {
+	return m{"enum": []string{"logged", "queued", "archived"}, "description": description}
+}
+
+// requireEmitter is `require` for a process that records through a sink of
+// its own: it holds the writer's acknowledgements to a floor, and needs
+// sink.expect to know the writer can meet it before anything is sent.
+func requireEmitter() m {
+	return durability("The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.")
+}
+
+// stream is how a process reaches a NATS JetStream stream.
+func stream(description string) m {
+	return obj(description, m{
+		"nats":     ref(policy + "fragments/nats.json"),
+		"name":     strDefault("The stream.", "AUDIT"),
+		"consumer": strDefault("The durable consumer this installation's writers share.", "audit-writer"),
+		"batch":    integer("How many records are taken from the stream at once.", 1, 100),
+		"ackWait":  duration("How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take.", "2m"),
+	}, "nats")
+}
+
+// sqs is an SQS queue. Its credentials are never here: they are the SDK's
+// ambient ones, which on Kubernetes is the pod's workload identity.
+func sqs(description string, extra m) m {
+	props := m{
+		"queueUrl": str("The queue's URL."),
+		"region":   str("The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set."),
+		"fifo":     boolean("The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication."),
+	}
+	for k, v := range extra {
+		props[k] = v
+	}
+	return obj(description+" Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.", props, "queueUrl")
+}
+
 func boolean(description string) m {
 	return m{"type": "boolean", "description": description}
 }
@@ -97,6 +133,7 @@ func sharedDefs() map[string]m {
 		"sink": obj("The writer this process records through.", m{
 			"url":       str("The writer's base URL."),
 			"tokenFile": str("A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts."),
+			"expect":    durability("What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards."),
 		}, "url"),
 		"openbao": map[string]any{
 			"type":                 "object",
@@ -218,13 +255,32 @@ func writerSchema() m {
 		"replicas":         integer("How many writers share this stream. Above one it needs a database, and with local keys a directory every replica shares.", 1, 1),
 		"keys":             def("keys"),
 		"forgetIdentities": boolean("Do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it."),
-		"stream": obj("The wide stream. Without it the writer only serves its own sink.", m{
-			"nats":     ref(policy + "fragments/nats.json"),
-			"name":     strDefault("The stream.", "AUDIT"),
-			"consumer": strDefault("The durable consumer this installation's writers share.", "audit-writer"),
-			"batch":    integer("How many records are taken from the stream at once.", 1, 100),
-			"ackWait":  duration("How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take.", "2m"),
-		}, "nats"),
+		"stream":           stream("The wide stream, as the NATS shorthand: for a receiver it is `forward.nats`, for a writer `consume.nats`. Give it or the longhand, not both."),
+		"forward": m{
+			"type": "object", "additionalProperties": false,
+			"description": "Where a receiver sends what it took: exactly one of `nats`, `sqs` and `log`. `log` is allowed only with `require: logged`.",
+			"properties": m{
+				"nats": stream("A NATS JetStream stream; what `stream` says."),
+				"sqs":  sqs("An SQS queue the receiver publishes to.", nil),
+				"log":  obj("The log sink: one JSON line per record on standard output, which survives nothing but the log pipeline. Nothing to configure.", m{}),
+			},
+			"oneOf": []any{
+				m{"required": []string{"nats"}}, m{"required": []string{"sqs"}}, m{"required": []string{"log"}},
+			},
+		},
+		"consume": m{
+			"type": "object", "additionalProperties": false,
+			"description": "What a writer reads its records from, beside its own sink: exactly one of `nats` and `sqs`.",
+			"properties": m{
+				"nats": stream("A NATS JetStream stream; what `stream` says."),
+				"sqs": sqs("An SQS queue the writer consumes.", m{
+					"batch":      integer("How many messages are received at once, one to ten.", 1, 10),
+					"visibility": duration("How long a received message is hidden from other consumers while the writer writes it. It must outlast the write, or the message is delivered twice.", "1m"),
+				}),
+			},
+			"oneOf": []any{m{"required": []string{"nats"}}, m{"required": []string{"sqs"}}},
+		},
+		"require": durability("The weakest durability this process's chain may give. Unset is `archived` for a writer and `queued` for a receiver. At start-up the process refuses to run if what it is configured with can never give that: a receiver, which holds no archive, cannot promise `archived`, and `forward.log` cannot promise more than `logged`. A write acknowledged weaker than this fails. See ADR 0017."),
 		"roll": obj("How much a writer gathers from the stream before it writes, which decides how many objects a day of records becomes.", m{
 			"interval":   duration("How long gathered records wait before they are written, and how long an object stays open within one write.", "30s"),
 			"maxRecords": integer("How many gathered records are written at once.", 1, 5000),
@@ -240,8 +296,25 @@ func writerSchema() m {
 			},
 			"allOf": []any{
 				m{"if": m{"properties": m{"mode": m{"const": "receiver"}}, "required": []string{"mode"}},
-					"then": m{"required": []string{"stream"}, "properties": m{"archive": false, "keys": false, "catalogues": false}},
-					"else": m{"required": []string{"archive"}}},
+					"then": m{
+						"oneOf": []any{m{"required": []string{"stream"}}, m{"required": []string{"forward"}}},
+						"properties": m{
+							"archive": false, "keys": false, "catalogues": false, "consume": false,
+							// A receiver holds no archive, so archived is not its to promise.
+							"require": m{"enum": []string{"logged", "queued"}},
+						},
+						"allOf": []any{
+							// The log sink is for a deployment that has chosen a log as its record,
+							// and chooses it by saying so.
+							m{"if": m{"required": []string{"forward"}, "properties": m{"forward": m{"required": []string{"log"}}}},
+								"then": m{"required": []string{"require"}, "properties": m{"require": m{"const": "logged"}}}},
+						},
+					},
+					"else": m{
+						"required":   []string{"archive"},
+						"properties": m{"forward": false},
+						"not":        m{"required": []string{"stream", "consume"}},
+					}},
 			},
 		})
 }
@@ -256,6 +329,7 @@ func querySchema() m {
 		"grants":     str("Path to the file naming the trusted issuers and mapping their claims to grants."),
 		"deployment": str("Path to the profile configuration, which a grant preset turns roles into profiles with."),
 		"sink":       def("sink"),
+		"require":    requireEmitter(),
 		"archive": func() m {
 			a := archive(false, false)
 			a["description"] = "The archive the records are in: where a record's standing in the digest chain is read for Get, and what the s3scan searcher reads. Without it Get still answers, with where the copy is and nothing about whether it has been verified."
@@ -284,6 +358,7 @@ func digestSchema() m {
 		"deployment": str("Path to the profile configuration."),
 		"archive":    archive(true, false),
 		"sink":       m{"$ref": "#/$defs/sink", "description": "The writer this job records what it sealed through (audit.digest.written)."},
+		"require":    requireEmitter(),
 		"signer": obj("What the digests are signed with: exactly one. An unsigned chain proves nothing, and one chain has one signer.", m{
 			"keyFile": obj("A PEM ed25519 private key.", m{
 				"path": str("The key file."),
@@ -300,7 +375,7 @@ func digestSchema() m {
 	}
 	s := document("audit-digest", "audit digest",
 		"The configuration of `audit digest --config`, which seals windows into the signed chain."+secretsNote,
-		props, []string{"deployment", "archive", "signer"}, []string{"sink", "openbao", "duration"}, nil)
+		props, []string{"deployment", "archive", "signer"}, []string{"sink", "openbao", "duration"}, m{"dependentRequired": m{"require": []string{"sink"}}})
 	s["properties"].(m)["signer"].(m)["oneOf"] = []any{
 		m{"required": []string{"keyFile"}}, m{"required": []string{"kmsKey"}}, m{"required": []string{"transit"}},
 	}
@@ -312,6 +387,7 @@ func verifySchema() m {
 		"deployment":    str("Path to the profile configuration; the check holds each object's lock to what its profile demands."),
 		"archive":       archive(true, false),
 		"sink":          m{"$ref": "#/$defs/sink", "description": "The writer this job records what it checked through."},
+		"require":       requireEmitter(),
 		"publicKeyFile": str("The PEM public key the digests were signed with."),
 		"profiles":      m{"type": "array", "minItems": 1, "uniqueItems": true, "items": str("A profile name."), "description": "The profiles whose chains to walk. Unset walks every profile the deployment composes."},
 		"last":          duration("Check the windows of the last this long, ending at the hour that has closed.", "24h"),
@@ -320,7 +396,7 @@ func verifySchema() m {
 	}
 	return document("audit-verify", "audit verify",
 		"The configuration of `audit verify --config`, which walks digest chains and reports what it finds."+secretsNote,
-		props, []string{"deployment", "archive", "publicKeyFile"}, []string{"sink", "duration"}, nil)
+		props, []string{"deployment", "archive", "publicKeyFile"}, []string{"sink", "duration"}, m{"dependentRequired": m{"require": []string{"sink"}}})
 }
 
 func purgeSchema() m {
@@ -339,12 +415,13 @@ func clockSyncSchema() m {
 	props := m{
 		"ntp":       m{"type": "array", "minItems": 1, "items": str("A time reference, host or host:port."), "description": "Time references; the quickest to answer is believed, and one being unreachable is survivable."},
 		"sink":      m{"$ref": "#/$defs/sink", "description": "The writer the reading is recorded through."},
+		"require":   requireEmitter(),
 		"maxOffset": duration("How far the clock may be out before the run fails; 0s accepts any offset and only records it.", "1s"),
 		"timeout":   duration("How long to wait for a reference.", "5s"),
 	}
 	return document("audit-clock-sync", "audit clock-sync",
 		"The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer."+secretsNote,
-		props, []string{"ntp"}, []string{"sink", "duration"}, nil)
+		props, []string{"ntp"}, []string{"sink", "duration"}, m{"dependentRequired": m{"require": []string{"sink"}}})
 }
 
 func migrateSchema() m {

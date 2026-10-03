@@ -22,12 +22,12 @@ target architecture is 📄.
 |---|---|---|---|
 | `http` sink (Connect to the receiver) | ✅ | 📄 | 📄 |
 | `nats` sink and consumer (JetStream) | ✅ | — | 📄 |
-| `sqs` sink and consumer | — | 🧪 | — |
+| `sqs` sink and consumer, selectable as `forward.sqs` and `consume.sqs` (untested live) | — | 🧪 | — |
 | `lambda` sink (direct invocation of the writer) | — | 📄 | — |
 | `s3` sink (in process: the writer puts the object) | ✅ | ✅ | ✅ |
 | `log` sink | 🧪 | 🧪 | 🧪 |
 | acknowledgement carries Archived, Queued or Logged | 🧪 | 🧪 | 🧪 |
-| `require:` start-up guard (`sink.Require`, `sink.Guard`; not yet read from configuration) | 🧪 | 🧪 | 🧪 |
+| `require:` start-up guard, read from configuration (`require`, `forward`, `consume`, `sink.expect`) | ✅ | 🧪 | 🧪 |
 | sink conformance suite (`sink/sinktest`) | 🧪 | 🧪 | 🧪 |
 | a full spool fails the write | 📄 | 📄 | 📄 |
 | deduplication on Postgres or in memory | ✅ | 📄 | 📄 |

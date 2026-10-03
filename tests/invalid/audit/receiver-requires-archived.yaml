@@ -1,0 +1,5 @@
+# refuse: value must be one of 'logged', 'queued'
+# base: sqs-base
+receiver:
+  config:
+    require: archived

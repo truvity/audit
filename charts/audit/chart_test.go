@@ -27,6 +27,7 @@ var shapes = []string{
 	"testdata/values/e2e.yaml",
 	"examples/direct.yaml",
 	"examples/stream.yaml",
+	"examples/sqs.yaml",
 }
 
 // What each ConfigMap is named for: where its config lives in the values, and

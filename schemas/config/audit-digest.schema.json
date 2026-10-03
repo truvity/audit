@@ -94,6 +94,14 @@
       "additionalProperties": false,
       "description": "The writer this process records through.",
       "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
         "tokenFile": {
           "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
           "minLength": 1,
@@ -114,6 +122,11 @@
   "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-digest.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "dependentRequired": {
+    "require": [
+      "sink"
+    ]
+  },
   "description": "The configuration of `audit digest --config`, which seals windows into the signed chain. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
   "properties": {
     "archive": {
@@ -156,6 +169,14 @@
       "description": "How many windows one run may seal when catching up.",
       "minimum": 1,
       "type": "integer"
+    },
+    "require": {
+      "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+      "enum": [
+        "logged",
+        "queued",
+        "archived"
+      ]
     },
     "signer": {
       "additionalProperties": false,

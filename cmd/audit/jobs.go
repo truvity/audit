@@ -98,7 +98,9 @@ func digestFromConfig(path string, asJSON bool) error {
 		if run.Catalogue, err = catalogue.Common(); err != nil {
 			return err
 		}
-		run.Sink = cli.SinkFrom(*cfg.Sink)
+		if run.Sink, err = cli.SinkFrom(*cfg.Sink, cfg.Require); err != nil {
+			return err
+		}
 	}
 	if run.Store, err = cli.OpenArchiveFrom(ctx, cfg.Archive); err != nil {
 		return err
@@ -161,7 +163,9 @@ func verifyFromConfig(path string, asJSON bool) error {
 			if run.Catalogue, err = catalogue.Common(); err != nil {
 				return err
 			}
-			run.Sink = cli.SinkFrom(*cfg.Sink)
+			if run.Sink, err = cli.SinkFrom(*cfg.Sink, cfg.Require); err != nil {
+				return err
+			}
 		}
 		n, err := run.Run(ctx)
 		if err != nil {
@@ -232,7 +236,9 @@ func clockSyncFromConfig(path string, asJSON bool) error {
 		Instance: record.InstanceName(), JSON: asJSON,
 	}
 	if cfg.Sink != nil {
-		run.Sink = cli.SinkFrom(*cfg.Sink)
+		if run.Sink, err = cli.SinkFrom(*cfg.Sink, cfg.Require); err != nil {
+			return err
+		}
 	}
 	_, err = run.Run(context.Background())
 	return err

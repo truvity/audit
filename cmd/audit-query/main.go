@@ -128,11 +128,17 @@ func run() error {
 		}
 	}
 
+	// The writer this service records through, held to `require` before the
+	// service opens: one that cannot give it is a start-up error.
+	recordTo, err := cli.SinkFrom(cfg.Sink, cfg.Require)
+	if err != nil {
+		return err
+	}
 	service, err := query.New(query.Config{
 		Searcher:      found,
 		Authenticator: authenticator,
 		Authorizer:    access.Rules,
-		Sink:          cli.SinkFrom(cfg.Sink),
+		Sink:          recordTo,
 		Archive:       archive,
 		Keys:          sealer,
 		Exports:       exportTo,

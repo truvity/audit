@@ -119,12 +119,16 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	}
 
 	// ---- keys
+	// Both are protected in every mode, like the bucket: a key scheduled for
+	// deletion makes everything it encrypted, or signed, unreadable or
+	// unverifiable.
+	protect := pulumi.Protect(true)
 	archiveKey, err := kms.NewKey(ctx, name+"-archive", &kms.KeyArgs{
 		Description:          pulumi.Sprintf("%s: the key the archive's objects are encrypted with", name),
 		EnableKeyRotation:    pulumi.Bool(true),
 		DeletionWindowInDays: pulumi.Int(30),
 		Tags:                 tags,
-	}, child)
+	}, child, protect)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +144,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		DeletionWindowInDays:  pulumi.Int(30),
 		Policy:                notaryRole.Arn.ApplyT(func(arn string) string { return sealKeyPolicy(accountRoot, arn) }).(pulumi.StringOutput),
 		Tags:                  tags,
-	}, child)
+	}, child, protect)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +198,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	}
 
 	// ---- each role's policy
+	locked := a.Archive.ObjectLockMode != None
 	audience := ""
 	if a.Telemetry != nil {
 		audience = a.Telemetry.STSAudience
@@ -201,7 +206,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	if _, err := iam.NewRolePolicy(ctx, name+"-writer", &iam.RolePolicyArgs{
 		Role: writerRole.Name,
 		Policy: pulumi.All(bucket.Arn, archiveKey.Arn, table.Arn, queue.Arn, writerLogs.Arn).ApplyT(func(v []any) string {
-			return writerPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), v[4].(string), audience)
+			return writerPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), v[4].(string), audience, locked)
 		}).(pulumi.StringOutput),
 	}, child); err != nil {
 		return nil, err
@@ -209,7 +214,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	if _, err := iam.NewRolePolicy(ctx, name+"-notary", &iam.RolePolicyArgs{
 		Role: notaryRole.Name,
 		Policy: pulumi.All(bucket.Arn, archiveKey.Arn, sealKey.Arn, notaryLogs.Arn).ApplyT(func(v []any) string {
-			return notaryPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), audience)
+			return notaryPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), audience, locked)
 		}).(pulumi.StringOutput),
 	}, child); err != nil {
 		return nil, err
@@ -282,23 +287,26 @@ func newRole(ctx *pulumi.Context, name, path, assume string, tags pulumi.StringM
 	}, opts...)
 }
 
-// newArchive is the bucket: Object Lock in the given mode, versioned, encrypted
-// under the archive key, closed to the public and to plain HTTP, with the
-// lifecycle of ADR 0023 written per profile prefix.
+// newArchive is the bucket: versioned in every mode, with Object Lock in the
+// given mode unless it is NONE, encrypted under the archive key, closed to the
+// public and to plain HTTP, with the lifecycle of ADR 0023 written per profile
+// prefix.
+//
+// The bucket's own `objectLockEnabled` is never set: it is ForceNew, so a bucket
+// created with it off could only get the lock by being replaced. Object Lock is
+// a separate resource instead, which S3 accepts on an existing versioned bucket,
+// so moving NONE -> GOVERNANCE adds that resource and touches nothing else.
 func newArchive(ctx *pulumi.Context, name string, a *Args, key *kms.Key, tags pulumi.StringMap, opts ...pulumi.ResourceOption) (*s3.Bucket, error) {
 	ar := a.Archive
-	// A COMPLIANCE bucket is the one resource here that cannot be undone, so it
-	// is protected from a stack's own destroy: Pulumi refuses to delete it until
-	// the protection is lifted by hand, which is a decision and not an accident.
-	// (S3 would refuse to delete the objects anyway; this refuses sooner.)
-	bopts := append([]pulumi.ResourceOption{}, opts...)
-	if ar.ObjectLockMode == Compliance {
-		bopts = append(bopts, pulumi.Protect(true))
-	}
+	// The bucket is protected from a stack's own destroy in every mode, NONE
+	// included: Pulumi refuses to delete it until the protection is lifted by
+	// hand, which is a decision and not an accident. It is cheap insurance for a
+	// trial bucket and the only thing between a COMPLIANCE bucket and a destroy
+	// that S3 would refuse later anyway.
+	bopts := append([]pulumi.ResourceOption{pulumi.Protect(true)}, opts...)
 	bucket, err := s3.NewBucket(ctx, name+"-archive", &s3.BucketArgs{
-		Bucket:            pulumi.String(ar.BucketName),
-		ObjectLockEnabled: pulumi.Bool(true),
-		// A bucket with objects under lock cannot be emptied; never offer to.
+		Bucket: pulumi.String(ar.BucketName),
+		// A bucket with objects in it cannot be emptied by a destroy; never offer to.
 		ForceDestroy: pulumi.Bool(false),
 		Tags:         tags,
 	}, bopts...)
@@ -312,19 +320,21 @@ func newArchive(ctx *pulumi.Context, name string, a *Args, key *kms.Key, tags pu
 	if err != nil {
 		return nil, err
 	}
-	lock := &s3.BucketObjectLockConfigurationArgs{
-		Bucket: bucket.ID(), ObjectLockEnabled: pulumi.String("Enabled"),
-	}
-	if ar.DefaultRetentionDays > 0 {
-		lock.Rule = &s3.BucketObjectLockConfigurationRuleArgs{
-			DefaultRetention: &s3.BucketObjectLockConfigurationRuleDefaultRetentionArgs{
-				Mode: pulumi.String(ar.ObjectLockMode), Days: pulumi.Int(ar.DefaultRetentionDays),
-			},
+	if ar.ObjectLockMode != None {
+		lock := &s3.BucketObjectLockConfigurationArgs{
+			Bucket: bucket.ID(), ObjectLockEnabled: pulumi.String("Enabled"),
 		}
-	}
-	if _, err := s3.NewBucketObjectLockConfiguration(ctx, name+"-archive", lock,
-		append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{versioning})}, opts...)...); err != nil {
-		return nil, err
+		if ar.DefaultRetentionDays > 0 {
+			lock.Rule = &s3.BucketObjectLockConfigurationRuleArgs{
+				DefaultRetention: &s3.BucketObjectLockConfigurationRuleDefaultRetentionArgs{
+					Mode: pulumi.String(ar.ObjectLockMode), Days: pulumi.Int(ar.DefaultRetentionDays),
+				},
+			}
+		}
+		if _, err := s3.NewBucketObjectLockConfiguration(ctx, name+"-archive", lock,
+			append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{versioning})}, opts...)...); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := s3.NewBucketServerSideEncryptionConfiguration(ctx, name+"-archive", &s3.BucketServerSideEncryptionConfigurationArgs{
 		Bucket: bucket.ID(),

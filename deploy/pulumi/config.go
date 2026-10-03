@@ -32,8 +32,11 @@ func archiveConfig(name, bucket, lockMode string) map[string]any {
 }
 
 func lowerMode(m string) string {
-	if m == Compliance {
+	switch m {
+	case Compliance:
 		return "compliance"
+	case None:
+		return "none"
 	}
 	return "governance"
 }

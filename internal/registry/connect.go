@@ -10,6 +10,7 @@ import (
 
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
+	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/wire"
 )
 
@@ -21,7 +22,7 @@ type Handler struct {
 
 // NewHandler returns the path and handler to mount.
 func NewHandler(r *Registry, opts ...connect.HandlerOption) (string, http.Handler) {
-	return auditv1connect.NewRegistryServiceHandler(&Handler{Registry: r}, append(wire.HandlerOptions(), opts...)...)
+	return auditv1connect.NewRegistryServiceHandler(&Handler{Registry: r}, append(append(wire.HandlerOptions(), telemetry.ConnectOptions()...), opts...)...)
 }
 
 // RegisterCatalogue implements the service.

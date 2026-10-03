@@ -274,3 +274,22 @@ func (b *Builder) Check() error {
 	}
 	return nil
 }
+
+// NewestEnd is where the newest sealed window of a profile ended, found by
+// asking for each hour's digest from the one that has just closed backwards,
+// up to lookback. It is the cheap form of LastWindow: a healthy chain answers
+// at the first or second request, where a listing reads every digest ever
+// written. ok is false when none is found within the lookback. An error other
+// than "no such object" is returned, so a caller can tell an archive that did
+// not answer from a chain that stopped.
+func NewestEnd(ctx context.Context, s store.Store, profile string, now time.Time, lookback time.Duration) (end time.Time, ok bool, err error) {
+	closed := now.UTC().Truncate(time.Hour)
+	for start := closed.Add(-time.Hour); !start.Before(closed.Add(-lookback)); start = start.Add(-time.Hour) {
+		if _, err := s.Head(ctx, Key(profile, start)); err == nil {
+			return start.Add(time.Hour), true, nil
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return time.Time{}, false, err
+		}
+	}
+	return time.Time{}, false, nil
+}

@@ -29,7 +29,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
 )
@@ -49,6 +54,9 @@ type API interface {
 
 // RecordIDAttribute is the message attribute that carries the record's id.
 const RecordIDAttribute = "record-id"
+
+// maxLinks bounds the links on a consume span.
+const maxLinks = 16
 
 // SQS accepts at most ten entries in a batch and, in total, 256 KiB of body.
 const (
@@ -107,12 +115,24 @@ func (p *Publisher) Guarantees() sink.Durability { return sink.Queued }
 // publisher's attempts; if it still fails the write fails, and the caller
 // retries the batch, which the record id makes harmless.
 func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
+	ctx, done := sink.Observe(ctx, sink.TransportSQS, trace.SpanKindProducer, req)
+	res, err := p.write(ctx, req)
+	done(res, err)
+	return res, err
+}
+
+func (p *Publisher) write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
 	result := &sink.Result{Durability: sink.Queued}
 	if len(req.Records) == 0 {
 		return result, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
+
+	// The producing span's context travels as message attributes, which is
+	// where SQS has room for it, so that the consumer continues the trace.
+	carrier := attributeCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
 
 	var pending []outgoing
 	for _, r := range req.Records {
@@ -129,7 +149,7 @@ func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result,
 			})
 			continue
 		}
-		pending = append(pending, outgoing{id: r.GetId(), tenant: r.GetTenantId(), body: line})
+		pending = append(pending, outgoing{id: r.GetId(), tenant: r.GetTenantId(), body: line, trace: carrier})
 	}
 
 	pause := 50 * time.Millisecond
@@ -163,7 +183,28 @@ type outgoing struct {
 	id     string
 	tenant string
 	body   []byte
+	trace  attributeCarrier
 }
+
+// attributeCarrier is a message's attributes as a W3C trace-context carrier:
+// `traceparent` and `tracestate` as String attributes, which SQS allows
+// beside the record-id one (ten are permitted).
+type attributeCarrier map[string]types.MessageAttributeValue
+
+func (a attributeCarrier) Get(key string) string { return aws.ToString(a[key].StringValue) }
+func (a attributeCarrier) Set(key, value string) {
+	a[key] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(value)}
+}
+func (a attributeCarrier) Keys() []string {
+	keys := make([]string, 0, len(a))
+	for k := range a {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// traceAttributes are the names a receive asks for, so that SQS returns them.
+var traceAttributes = []string{"traceparent", "tracestate"}
 
 // chunks splits records into batches SQS will take: ten entries, 256 KiB.
 func chunks(all []outgoing) [][]outgoing {
@@ -203,6 +244,9 @@ func (p *Publisher) send(ctx context.Context, batch []outgoing, result *sink.Res
 			}
 			e.MessageGroupId = aws.String(group)
 			e.MessageDeduplicationId = aws.String(o.id)
+		}
+		for k, v := range o.trace {
+			e.MessageAttributes[k] = v
 		}
 		entries[i] = e
 	}
@@ -331,10 +375,11 @@ func (c *Consumer) Run(ctx context.Context) error {
 			return nil
 		}
 		out, err := c.api.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
-			QueueUrl:            aws.String(c.queue),
-			MaxNumberOfMessages: c.batch,
-			WaitTimeSeconds:     c.wait,
-			VisibilityTimeout:   c.visibility,
+			QueueUrl:              aws.String(c.queue),
+			MaxNumberOfMessages:   c.batch,
+			WaitTimeSeconds:       c.wait,
+			VisibilityTimeout:     c.visibility,
+			MessageAttributeNames: traceAttributes,
 		})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -373,15 +418,44 @@ func (c *Consumer) handle(ctx context.Context, msgs []types.Message) {
 	if len(records) == 0 {
 		return
 	}
-	res, err := c.target.Write(ctx, &sink.Request{Records: records, Delivery: sink.Block})
+	// The consume span continues the first message's trace and links up to
+	// maxLinks others'.
+	spanCtx, links := ctx, []trace.Link(nil)
+	var parent trace.SpanContext
+	for _, m := range held {
+		carrier := attributeCarrier(m.MessageAttributes)
+		sc := trace.SpanContextFromContext(otel.GetTextMapPropagator().Extract(context.Background(), carrier))
+		switch {
+		case !sc.IsValid():
+		case !parent.IsValid():
+			parent = sc
+		case len(links) < maxLinks:
+			links = append(links, trace.Link{SpanContext: sc})
+		}
+	}
+	if parent.IsValid() {
+		spanCtx = trace.ContextWithSpanContext(ctx, parent)
+	}
+	spanCtx, span := otel.Tracer("github.com/truvity/audit/sink").Start(spanCtx, "audit.sink.consume sqs",
+		trace.WithSpanKind(trace.SpanKindConsumer), trace.WithLinks(links...),
+		trace.WithAttributes(
+			attribute.String(telemetry.AttrTransport, sink.TransportSQS),
+			attribute.Int(telemetry.AttrRecords, len(records))))
+	res, err := c.target.Write(spanCtx, &sink.Request{Records: records, Delivery: sink.Block})
 	if err == nil {
 		err = res.Err()
 	}
 	if err != nil {
+		span.SetAttributes(attribute.String(telemetry.AttrOutcome, "error"))
+		span.SetStatus(codes.Error, "")
+		span.End()
+		sink.ConsumeFailed(ctx, sink.TransportSQS)
 		c.report(err)
 		c.retrySoon(ctx, held)
 		return
 	}
+	span.SetAttributes(attribute.String(telemetry.AttrOutcome, "ok"))
+	span.End()
 	c.delete(ctx, held)
 }
 

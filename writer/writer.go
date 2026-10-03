@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -39,6 +40,7 @@ import (
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
+	"github.com/truvity/audit/internal/digest"
 	"github.com/truvity/audit/internal/hold"
 	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/internal/registry"
@@ -233,6 +235,21 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		return nil, err
 	}
 
+	// How old the newest sealed digest is, per profile. The writer runs all
+	// day; the job that seals exits in seconds and could not be scraped.
+	names := make([]string, 0, len(c.Profiles))
+	for name := range c.Profiles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	const digestLookback = 24 * time.Hour
+	if err := telemetry.DigestAge(meter, names, digestLookback, 5*time.Minute,
+		func(ctx context.Context, profile string) (time.Time, bool, error) {
+			return digest.NewestEnd(ctx, c.Archive, profile, time.Now(), digestLookback)
+		}, nil); err != nil {
+		return nil, err
+	}
+
 	// The way back from a pseudonym, sealed under the same key, for resolve.
 	var identities inner.Remembering
 	if sealer, ok := c.Keys.(keys.Sealer); ok && !c.ForgetIdentities {
@@ -272,6 +289,7 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 					"repair", "audit reindex --profile <name> --from <day> --to <day>")
 				counts.IndexDeferred(key, rows)
 			},
+			OnIndexed: func(key string, _ int, lag time.Duration) { counts.IndexLag(key, lag) },
 		},
 		Dedupe:     dedupe,
 		DeadLetter: &inner.StoreDeadLetter{Store: c.Archive, Instance: instance, RetainUntil: keep},

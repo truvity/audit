@@ -27,6 +27,7 @@ import (
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
+	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/query"
@@ -59,6 +60,14 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	// Metrics and traces, pushed over OTLP when a collector is named in the
+	// environment and a no-op otherwise.
+	stopTelemetry, err := telemetry.Start(ctx, "audit-query", buildinfo.Version, slog.Default())
+	if err != nil {
+		return err
+	}
+	defer stopTelemetry(context.Background()) //nolint:errcheck // shutting down
 
 	var profiles map[string]*preset.Profile
 	if cfg.Deployment != "" {
@@ -153,7 +162,7 @@ func run() error {
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
-	server := &http.Server{Addr: cfg.Listen.Address, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Addr: cfg.Listen.Address, Handler: telemetry.HTTPHandler(mux, "audit-query"), ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		<-ctx.Done()

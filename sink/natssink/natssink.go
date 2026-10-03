@@ -16,7 +16,12 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
+	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/record"
 	"github.com/truvity/audit/sink"
 )
@@ -75,6 +80,13 @@ func (p *Publisher) Guarantees() sink.Durability { return sink.Queued }
 // back. The message id makes that harmless: a record whose acknowledgement was
 // lost rather than its publish is absorbed by the duplicate window.
 func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
+	ctx, done := sink.Observe(ctx, sink.TransportNATS, trace.SpanKindProducer, req)
+	res, err := p.write(ctx, req)
+	done(res, err)
+	return res, err
+}
+
+func (p *Publisher) write(ctx context.Context, req *sink.Request) (*sink.Result, error) {
 	if len(req.Records) == 0 {
 		return &sink.Result{Durability: sink.Queued}, nil
 	}
@@ -82,6 +94,10 @@ func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result,
 	defer cancel()
 
 	result := &sink.Result{Durability: sink.Queued}
+	// The producing span's context rides in the message's headers, so that the
+	// consumer on the far side of the stream continues the trace.
+	carrier := nats.Header{}
+	otel.GetTextMapPropagator().Inject(ctx, headerCarrier(carrier))
 	pending := make([]outgoing, 0, len(req.Records))
 	for _, r := range req.Records {
 		line, err := record.Canonical(r)
@@ -91,7 +107,7 @@ func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result,
 			})
 			continue
 		}
-		pending = append(pending, outgoing{id: r.GetId(), data: line})
+		pending = append(pending, outgoing{id: r.GetId(), data: line, trace: carrier})
 	}
 
 	pause := retryPause
@@ -117,16 +133,37 @@ func (p *Publisher) Write(ctx context.Context, req *sink.Request) (*sink.Result,
 // every attempt, because the client writes its reply subject into the one it
 // is handed and refuses to publish a message that already carries one.
 type outgoing struct {
-	id   string
-	data []byte
+	id    string
+	data  []byte
+	trace nats.Header
 }
 
 func (o outgoing) msg(subject string) *nats.Msg {
-	return &nats.Msg{
-		Subject: subject,
-		Data:    o.data,
-		Header:  nats.Header{"Nats-Msg-Id": []string{o.id}},
+	h := nats.Header{"Nats-Msg-Id": []string{o.id}}
+	for k, v := range o.trace {
+		h[k] = v
 	}
+	return &nats.Msg{Subject: subject, Data: o.data, Header: h}
+}
+
+// headerCarrier is a message's headers as a W3C trace-context carrier, under
+// the exact lower-case names the specification gives (`traceparent`), which a
+// canonicalising http.Header would not.
+type headerCarrier nats.Header
+
+func (h headerCarrier) Get(key string) string {
+	if v := h[key]; len(v) > 0 {
+		return v[0]
+	}
+	return ""
+}
+func (h headerCarrier) Set(key, value string) { h[key] = []string{value} }
+func (h headerCarrier) Keys() []string {
+	keys := make([]string, 0, len(h))
+	for k := range h {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // publish sends one round and waits for its acknowledgements. It returns the
@@ -443,6 +480,11 @@ func (c *Consumer) waitFor(b *batchInProgress) time.Duration {
 // handed on: the records, the messages that carried them so they can be
 // acknowledged together, and when the first of them arrived.
 type batchInProgress struct {
+	// parent is the trace of the first message that carried one, and links are
+	// the others': a batch is many messages, which may come from many traces,
+	// and a span has one parent.
+	parent   context.Context
+	links    []trace.Link
 	messages []jetstream.Msg
 	records  []*record.Record
 	bytes    int
@@ -455,7 +497,28 @@ func (b *batchInProgress) add(msg jetstream.Msg, r *record.Record, at time.Time)
 	}
 	b.messages = append(b.messages, msg)
 	b.records = append(b.records, r)
+	b.continueTrace(msg)
 	b.bytes += len(msg.Data())
+}
+
+// maxLinks bounds the links on a consume span: a batch may hold thousands of
+// messages and a span of thousands of links is a span nobody opens.
+const maxLinks = 16
+
+func (b *batchInProgress) continueTrace(msg jetstream.Msg) {
+	h := msg.Headers()
+	if len(h) == 0 {
+		return
+	}
+	got := otel.GetTextMapPropagator().Extract(context.Background(), headerCarrier(h))
+	sc := trace.SpanContextFromContext(got)
+	switch {
+	case !sc.IsValid():
+	case b.parent == nil:
+		b.parent = got
+	case len(b.links) < maxLinks:
+		b.links = append(b.links, trace.Link{SpanContext: sc})
+	}
 }
 
 func (b *batchInProgress) reset() {
@@ -490,15 +553,32 @@ func (c *Consumer) roll(ctx context.Context, b *batchInProgress) {
 	if len(b.records) == 0 {
 		return
 	}
-	res, err := c.target.Write(ctx, &sink.Request{Records: b.records, Delivery: sink.Block})
+	// The consume span continues the first producer's trace and links the
+	// rest; the cancellation of ctx still governs the write.
+	spanCtx := ctx
+	if b.parent != nil {
+		spanCtx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(b.parent))
+	}
+	spanCtx, span := otel.Tracer("github.com/truvity/audit/sink").Start(spanCtx, "audit.sink.consume nats",
+		trace.WithSpanKind(trace.SpanKindConsumer), trace.WithLinks(b.links...),
+		trace.WithAttributes(
+			attribute.String(telemetry.AttrTransport, sink.TransportNATS),
+			attribute.Int(telemetry.AttrRecords, len(b.records))))
+	res, err := c.target.Write(spanCtx, &sink.Request{Records: b.records, Delivery: sink.Block})
 	if err == nil {
 		err = res.Err()
 	}
 	if err != nil {
+		span.SetAttributes(attribute.String(telemetry.AttrOutcome, "error"))
+		span.SetStatus(codes.Error, "")
+		span.End()
+		sink.ConsumeFailed(ctx, sink.TransportNATS)
 		c.report(err)
 		b.reset()
 		return
 	}
+	span.SetAttributes(attribute.String(telemetry.AttrOutcome, "ok"))
+	span.End()
 	for _, msg := range b.messages {
 		if err := msg.Ack(); err != nil {
 			c.report(fmt.Errorf("natssink: acknowledge: %w", err))

@@ -697,3 +697,41 @@ func TestObjectsAreNotHeldWithoutAHold(t *testing.T) {
 		t.Fatalf("objects were held with no hold in place: %v", held)
 	}
 }
+
+// The lag the index metric reports is from the object being in the archive to
+// its rows being in the index, and it is reported only for rows that arrived:
+// the ones that did not are the deferred counter's.
+func TestIndexLagIsReportedForRowsThatArrived(t *testing.T) {
+	b := build(t)
+	var indexed, deferred int
+	b.writer.Roller.Indexer = slowIndex{delay: 40 * time.Millisecond}
+	b.writer.Roller.OnIndexed = func(_ string, rows int, lag time.Duration) {
+		indexed += rows
+		if lag < 40*time.Millisecond {
+			t.Errorf("lag %s is less than the index took", lag)
+		}
+	}
+	b.writer.Roller.OnIndexDeferred = func(string, int, error) { deferred++ }
+	b.writer.Roller.Now = nil // the wall clock: the lag is real time
+
+	write(t, b, fresh(t))
+	if indexed == 0 || deferred != 0 {
+		t.Fatalf("indexed %d rows, %d deferred", indexed, deferred)
+	}
+
+	indexed = 0
+	b.writer.Roller.Indexer = failingIndex{}
+	write(t, b, fresh(t))
+	if indexed != 0 || deferred == 0 {
+		t.Fatalf("a failed index reported lag: indexed %d, deferred %d", indexed, deferred)
+	}
+}
+
+type slowIndex struct{ delay time.Duration }
+
+func (s slowIndex) Index(context.Context, string, []index.Row) error {
+	time.Sleep(s.delay)
+	return nil
+}
+
+func (slowIndex) Purge(context.Context, string, time.Time, index.Scope) error { return nil }

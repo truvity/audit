@@ -12,6 +12,7 @@ import (
 	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
 	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/record"
 	jsonwire "github.com/truvity/audit/wire"
 )
@@ -27,7 +28,8 @@ type Handler struct {
 
 // NewHandler returns the path and handler to mount.
 func NewHandler(s *Service, a auth.Authenticator, opts ...connect.HandlerOption) (string, http.Handler) {
-	return auditv1connect.NewQueryServiceHandler(&Handler{Service: s, Authenticator: a}, append(jsonwire.HandlerOptions(), opts...)...)
+	all := append(append(jsonwire.HandlerOptions(), telemetry.ConnectOptions()...), opts...)
+	return auditv1connect.NewQueryServiceHandler(&Handler{Service: s, Authenticator: a}, all...)
 }
 
 // Search implements the service.

@@ -39,6 +39,7 @@ var components = map[string]struct {
 	"writer":     {[]string{"writer", "config"}, "audit-writer"},
 	"receiver":   {[]string{"receiver", "config"}, "audit-writer"},
 	"query":      {[]string{"query", "config"}, "audit-query"},
+	"observe":    {[]string{"observe", "config"}, "audit-observe"},
 	"migrate":    {[]string{"migrate", "config"}, "audit-migrate"},
 	"verify":     {[]string{"jobs", "verify", "config"}, "audit-verify"},
 	"purge":      {[]string{"jobs", "purge", "config"}, "audit-purge"},
@@ -205,7 +206,7 @@ func TestTheReceiverAndTheConsumerRunAsDifferentServiceAccounts(t *testing.T) {
 		for name, sa := range accounts {
 			if strings.HasSuffix(name, "-consumer") {
 				consumer = sa
-			} else if !strings.HasSuffix(name, "-query") {
+			} else if !strings.HasSuffix(name, "-query") && !strings.HasSuffix(name, "-observe") {
 				receiver = sa
 			}
 		}
@@ -219,6 +220,45 @@ func TestTheReceiverAndTheConsumerRunAsDifferentServiceAccounts(t *testing.T) {
 			if !created[sa] {
 				t.Errorf("%s: ServiceAccount %q is used but not rendered", values, sa)
 			}
+		}
+	}
+}
+
+// The indexer holds the index's write credential, so it runs as an identity of
+// its own: not the writer's, which writes the archive, and not the query
+// service's, which faces callers. Each ServiceAccount exists, and what the
+// Deployment's pods are labelled is what selects them.
+func TestTheIndexerRunsAsAServiceAccountOfItsOwn(t *testing.T) {
+	for _, values := range []string{"testdata/values/stream.yaml", "examples/direct.yaml", "examples/stream.yaml", "examples/sqs.yaml"} {
+		accounts := map[string]string{}
+		created := map[string]bool{}
+		for _, doc := range render(t, values) {
+			kind, _ := doc["kind"].(string)
+			name, _ := dig(doc, "metadata", "name")
+			switch kind {
+			case "Deployment":
+				sa, _ := dig(doc, "spec", "template", "spec", "serviceAccountName")
+				accounts[name.(string)] = sa.(string)
+			case "ServiceAccount":
+				created[name.(string)] = true
+			}
+		}
+		var observer string
+		for name, sa := range accounts {
+			if strings.HasSuffix(name, "-observe") {
+				observer = sa
+			}
+		}
+		if observer == "" {
+			t.Fatalf("%s: no indexer Deployment in %v", values, accounts)
+		}
+		for name, sa := range accounts {
+			if !strings.HasSuffix(name, "-observe") && sa == observer {
+				t.Errorf("%s: the indexer runs as %q, which %s runs as too", values, observer, name)
+			}
+		}
+		if !created[observer] {
+			t.Errorf("%s: ServiceAccount %q is used but not rendered", values, observer)
 		}
 	}
 }

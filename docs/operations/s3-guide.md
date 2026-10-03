@@ -199,7 +199,7 @@ first two, and `archive.kmsKey` on the third.
 
 ## IAM per component
 
-Three roles per installation, each bound to its own service account (Pod
+Four roles per installation, each bound to its own service account (Pod
 Identity or IRSA); the chart has a `serviceAccount` per component for it.
 The receiver (stream mode) and the clock-sync job get a service account too, and
 no role: they hold no S3 rights. The purge job works on the index database only
@@ -214,6 +214,7 @@ one.
 |---|---|---|
 | **writer** | `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetObjectRetention`, `s3:PutObjectLegalHold` under `records/`, `catalogue/`, `schema/`, `dlq/`, `holds/` and `identity/` (where there are keys); `s3:GetObject` and `s3:ListBucket` on `records/`, `catalogue/`, `holds/`, `schema/`, and `identity/` where there are keys | `kms:GenerateDataKey`, `kms:Encrypt` on the bucket's key |
 | **verify job** | `s3:GetObject`, `s3:ListBucket`; nothing is put | `kms:Decrypt` on the bucket's key |
+| **indexer** (`audit-observe`) | `s3:GetObject`, `s3:ListBucket` on `records/`, `catalogue/` and `schema/`; nothing is put | `kms:Decrypt` on the bucket's key |
 | **query service** | `s3:GetObject`, `s3:ListBucket` | `s3:PutObject`, `s3:GetObject` on the exports bucket; `kms:Decrypt` |
 
 Only the **writer** holds `s3:PutObjectLegalHold`, and only because it places
@@ -231,7 +232,7 @@ object, takes a 403 and dies, on a loop -- which reads as a broken archive
 rather than a missing verb.
 
 The separations inside that table are the point of it. The writer may put
-objects and may lengthen a lock; the verify job and the query service may read
+objects and may lengthen a lock; the verify job, the indexer and the query service may read
 and may write nothing into the archive at all. And **nobody, including the writer, gets
 `s3:DeleteObject`, `s3:DeleteObjectVersion` or
 `s3:BypassGovernanceRetention`** — not on its own prefix, and not on anyone

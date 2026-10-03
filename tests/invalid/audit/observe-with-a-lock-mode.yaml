@@ -1,0 +1,10 @@
+# refuse: lockMode
+# base: stream
+observe:
+  config:
+    archive:
+      bucket:
+        name: audit-archive
+      lockMode: compliance
+    database:
+      url: postgres://audit_observe@db.example.test:5432/audit?sslmode=verify-full

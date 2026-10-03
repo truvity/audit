@@ -1,0 +1,6 @@
+# refuse: connects as the query service's role
+# base: stream
+observe:
+  config:
+    database:
+      url: postgres://audit_query@db.example.test:5432/audit?sslmode=verify-full

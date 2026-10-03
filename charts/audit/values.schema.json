@@ -83,13 +83,28 @@
     },
     "config-audit-migrate": {
       "additionalProperties": false,
-      "description": "The configuration of `audit migrate --config`, which applies the index schema. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+      "description": "The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "database": {
           "$ref": "#/$defs/config-audit-migrate.postgres"
         },
+        "observe": {
+          "description": "A role to grant what the indexer needs: read and write on the index and its cursors, and the creation of monthly partitions through one function. Must exist and be none of the other roles.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "purge": {
+          "description": "A role to grant what the purge job needs: to delete from the index and the deduplication table. Must exist and be none of the other roles.",
+          "minLength": 1,
+          "type": "string"
+        },
         "reader": {
-          "description": "A role to grant what the query service needs: usage on the schema and select on its tables, now and later, and nothing else. The role must already exist.",
+          "description": "A role to grant what the query service needs: usage on the schema and select on the index's tables, and nothing else. The role must already exist and must not own the tables.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "writer": {
+          "description": "A role to grant what the write path needs: the deduplication table, the catalogue registry and the key directory, and none of the index. Must exist and be none of the other roles.",
           "minLength": 1,
           "type": "string"
         }
@@ -101,6 +116,266 @@
       "type": "object"
     },
     "config-audit-migrate.postgres": {
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does.",
+          "properties": {
+            "maxConnections": {
+              "default": 10,
+              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "passwordEnv": {
+              "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "url": {
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require.",
+              "pattern": "^postgres(ql)?://",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "url": {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          }
+        }
+      ],
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
+    },
+    "config-audit-observe": {
+      "additionalProperties": false,
+      "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "archive": {
+          "additionalProperties": false,
+          "description": "The archive to follow. Observe only reads it: it lists, and gets the objects and the catalogues beside them.",
+          "properties": {
+            "bucket": {
+              "additionalProperties": false,
+              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+              "properties": {
+                "ca": {
+                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "credentialsEnv": {
+                  "additionalProperties": false,
+                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+                  "properties": {
+                    "accessKeyID": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "secretAccessKey": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "accessKeyID",
+                    "secretAccessKey"
+                  ],
+                  "type": "object"
+                },
+                "endpoint": {
+                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+                  "format": "uri",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The bucket. It exists already: a service does not create its own store.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "pathStyle": {
+                  "default": false,
+                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+                  "type": "boolean"
+                },
+                "region": {
+                  "description": "The region the bucket is in.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "prefix": {
+              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "batch": {
+          "default": 500,
+          "description": "How many rows are written in one transaction. A transaction ends at an object's end, so an object is never split.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "database": {
+          "$ref": "#/$defs/config-audit-observe.postgres",
+          "description": "The index, as the role `audit migrate --observe` granted: read and write on the index and its cursors, and nothing of the deduplication table. Not the owner, and not the writer's or the query service's."
+        },
+        "interval": {
+          "$ref": "#/$defs/config-audit-observe.duration",
+          "default": "30s",
+          "description": "How often a pass runs when nothing woke it. A lost wake-up costs at most this."
+        },
+        "listen": {
+          "additionalProperties": false,
+          "description": "A TCP listener. `address` is a host:port the service binds; an empty host binds every interface.",
+          "properties": {
+            "address": {
+              "description": "host:port, for example \":8080\" or \"127.0.0.1:8080\".",
+              "pattern": "^[^\\s]*:[0-9]{1,5}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address"
+          ],
+          "type": "object"
+        },
+        "profiles": {
+          "description": "The profiles to follow. Unset follows every profile the archive has, found by listing.",
+          "items": {
+            "description": "A profile name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "settle": {
+          "$ref": "#/$defs/config-audit-observe.duration",
+          "default": "2m",
+          "description": "How far behind now the cursor stays. An object's key is fixed when its put starts and it is visible when the put ends, so a later key can be visible before an earlier one; this must be longer than a writer's put can take and than the clocks of the writers and of this process can disagree. It is the least time between a record's acknowledgement and its appearance in search."
+        },
+        "wake": {
+          "additionalProperties": false,
+          "description": "Where bucket notifications arrive, to make a pass run now instead of at the next interval. Optional, and only ever a shortcut: nothing a pass does depends on a notification, so a lost or repeated one costs latency and nothing else.",
+          "maxProperties": 1,
+          "minProperties": 1,
+          "properties": {
+            "nats": {
+              "additionalProperties": false,
+              "description": "A NATS subject carrying bucket notifications. Core NATS: the messages are not read, and one missed is the poll's to make up.",
+              "properties": {
+                "nats": {
+                  "additionalProperties": false,
+                  "description": "A NATS connection, and nothing else. What a service does with the connection — publish to a subject, bind a durable consumer to a stream — differs per component and is described beside it: a publisher with a `consumer` field it never reads is a field somebody will eventually set.",
+                  "properties": {
+                    "tls": {
+                      "additionalProperties": false,
+                      "description": "Connect over TLS and authenticate with the service's own workload identity instead of a token. The certificate presented is the one the service's own top-level `tls` block loads (its mode must not be `off`); the broker maps the identity in it to a user with its own permissions, so what the service may do is the broker's decision and nothing in this file. The certificate is re-read on every connect, so the platform's rotation is picked up without a restart and a rotation drops no connection already made. Only a service that declares this key in its own schema acts on it.",
+                      "properties": {
+                        "caFile": {
+                          "description": "Path to the trust bundle the BROKER's certificate is verified against. The broker's, not the workload identity's: a broker has a name and no workload identity, and usually a different chain.",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "description": "The name the broker's certificate was issued for, when that is not the host in `url`. Empty verifies the host dialled.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "caFile"
+                      ],
+                      "type": "object"
+                    },
+                    "tokenFile": {
+                      "description": "Path to a file holding the token the client authenticates with, mounted by the platform and re-read on every reconnect so that a rotated token is picked up without a restart. It is the workload's own account token: the broker asks an authorisation service who the bearer is, and that service answers from the account rather than from anything the client claims. Unset with `tls` unset means no authentication, which is a test configuration and not a deployment; unset with `tls` set means the certificate is the credential.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "The server URL, for example nats://nats:4222.",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "type": "object"
+                },
+                "subject": {
+                  "description": "The subject.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "nats",
+                "subject"
+              ],
+              "type": "object"
+            },
+            "sqs": {
+              "additionalProperties": false,
+              "description": "An SQS queue of bucket notifications that is observe's own: each message is taken to wake a pass and deleted. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+              "properties": {
+                "fifo": {
+                  "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+                  "type": "boolean"
+                },
+                "queueUrl": {
+                  "description": "The queue's URL.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "queueUrl"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "archive",
+        "database"
+      ],
+      "title": "audit-observe",
+      "type": "object"
+    },
+    "config-audit-observe.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-observe.postgres": {
       "allOf": [
         {
           "additionalProperties": false,
@@ -1197,7 +1472,7 @@
         },
         "database": {
           "$ref": "#/$defs/config-audit-writer.postgres",
-          "description": "The index and the shared deduplication table. Without it the writer indexes nothing, deduplicates in process, and may only run one replica."
+          "description": "The shared deduplication table and the catalogue registry, as the writer's own database role: it holds those and none of the index, which audit-observe writes. Without it the writer deduplicates in process and may only run one replica."
         },
         "deployment": {
           "description": "Path to the profile configuration: which presets each profile is composed from.",
@@ -1972,6 +2247,36 @@
           {
             "if": {
               "properties": {
+                "observe": {
+                  "properties": {
+                    "enabled": {
+                      "const": true
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                }
+              },
+              "required": [
+                "observe"
+              ]
+            },
+            "then": {
+              "properties": {
+                "observe": {
+                  "properties": {
+                    "config": {
+                      "$ref": "#/$defs/config-audit-observe"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
                 "migrate": {
                   "properties": {
                     "enabled": {
@@ -2457,6 +2762,9 @@
         "cli": {
           "$ref": "#/$defs/image"
         },
+        "observe": {
+          "$ref": "#/$defs/image"
+        },
         "pullPolicy": {
           "description": "Pull policy for every image the chart renders.",
           "enum": [
@@ -2485,6 +2793,9 @@
       "description": "Digest-pinned images, written by packaging the chart and never by hand; one wins over `image`.",
       "properties": {
         "audit": {
+          "$ref": "#/$defs/pinned"
+        },
+        "audit-observe": {
           "$ref": "#/$defs/pinned"
         },
         "audit-query": {
@@ -2675,6 +2986,38 @@
       "type": "object"
     },
     "nodeSelector": {
+      "type": "object"
+    },
+    "observe": {
+      "additionalProperties": false,
+      "description": "The indexer: follows the archive by cursor and writes the index the query service reads.",
+      "properties": {
+        "config": {
+          "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-observe's: schemas/config/audit-observe.schema.json.",
+          "type": "object"
+        },
+        "enabled": {
+          "description": "Run it.",
+          "type": "boolean"
+        },
+        "replicas": {
+          "description": "Pods. Several are safe, each reading the same cursors, and one is enough.",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "secretEnv": {
+          "$ref": "#/$defs/secretEnv"
+        },
+        "secretMounts": {
+          "$ref": "#/$defs/secretMounts"
+        },
+        "serviceAccount": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "tokens": {
+          "$ref": "#/$defs/tokens"
+        }
+      },
       "type": "object"
     },
     "podAnnotations": {

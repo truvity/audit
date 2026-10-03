@@ -185,5 +185,7 @@ func migrateFromConfig(path string) error {
 		return err
 	}
 	defer pool.Close()
-	return applyMigration(ctx, pool, cfg.Reader)
+	return applyMigration(ctx, pool, postgres.Roles{
+		Writer: cfg.Writer, Observe: cfg.Observe, Reader: cfg.Reader, Purge: cfg.Purge,
+	})
 }

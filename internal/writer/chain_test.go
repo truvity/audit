@@ -9,6 +9,9 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/truvity/audit/index"
+	"github.com/truvity/audit/index/postgres"
+	"github.com/truvity/audit/internal/observe"
 	"github.com/truvity/audit/internal/pgtest"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/sdk/sink"
@@ -17,7 +20,8 @@ import (
 
 // The write path as one chain, which every other test takes a piece of:
 // published to the stream, consumed by the writer, put as locked objects,
-// indexed into Postgres, every row addressing the line it came from.
+// and found in the bucket by the indexer, which writes them into Postgres with
+// every row addressing the line it came from.
 //
 // The pieces passing separately says each hop does its job; this says they do
 // it together — that what the publisher sends is what the index can find, and
@@ -93,19 +97,43 @@ func TestTheWritePathEndToEnd(t *testing.T) {
 	go func() { done <- consumer.Run(runCtx) }()
 	defer func() { stop(); <-done }()
 
-	indexed := func() int {
-		var n int
-		if err := pool.QueryRow(ctx, `select count(*) from events_core where profile = 'security'`).Scan(&n); err != nil {
-			t.Fatal(err)
+	// The writer's part ends at the archive: wait for the copies to be there.
+	archived := func() int {
+		n := 0
+		for _, c := range decode(t, b.store) {
+			if c.GetProfile() == "security" && sent[c.GetId()] != nil {
+				n++
+			}
 		}
 		return n
 	}
-	for indexed() < len(sent) {
+	for archived() < len(sent) {
 		select {
 		case <-ctx.Done():
-			t.Fatalf("only %d of %d records reached the index", indexed(), len(sent))
+			t.Fatalf("only %d of %d records reached the archive", archived(), len(sent))
 		case <-time.After(50 * time.Millisecond):
 		}
+	}
+
+	// The indexer's: a pass once the settle window has gone by.
+	target, err := postgres.New(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	passes := &observe.Indexer{
+		Store: b.store, Cursors: target,
+		Fields: func(context.Context, *record.Record) (index.Fields, error) { return walletFields(), nil },
+		Now:    func() time.Time { return time.Now().Add(time.Hour) },
+	}
+	if _, err := passes.Pass(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var indexed int
+	if err := pool.QueryRow(ctx, `select count(*) from events_core where profile = 'security'`).Scan(&indexed); err != nil {
+		t.Fatal(err)
+	}
+	if indexed != len(sent) {
+		t.Fatalf("%d of %d records reached the index", indexed, len(sent))
 	}
 
 	rows, err := pool.Query(ctx, `select id, object_key, line from events_core where profile = 'security'`)

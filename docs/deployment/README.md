@@ -40,7 +40,7 @@ Switched on per installation, and neither adds anything to the request path.
 | storage | direct | stream | what it holds |
 |---|---|---|---|
 | S3, with Object Lock where a profile demands it | the environment's bucket, under the application's prefix | the same | **the record**; nothing else is |
-| Postgres | one database, in a cluster of its own if the application has none | one database in the application's existing cluster | index, dedupe table, rollups — rebuildable, not backed up |
+| Postgres | one database, in a cluster of its own if the application has none | one database in the application's existing cluster | index, cursors and rollups (rebuildable, not backed up), and the writer's dedupe table and registry |
 | JetStream | not used | one stream on the application's own account | records not yet archived |
 | Valkey or another cache | not used | the application's existing one, with the quotas extension | counters, corrected hourly |
 | OpenBAO | not used unless the deployment chooses a key provider | the same | pseudonymisation keys, off by default |
@@ -60,8 +60,8 @@ its own prefix.
   profile that demands it, on any S3-compatible store without one where none
   does ([0014](../decisions/0014-lock-modes-and-store-tiers.md)). The
   [S3 guide](../operations/s3-guide.md) has the policy.
-- A **Postgres database** the writer owns, and a **read-only role** for the
-  query service. See [one more database](#one-more-database-in-a-cluster-you-already-run).
+- A **Postgres database**, an owner for the migration, and a role each for the
+  writer, the indexer and the query service (read-only). See [one more database](#one-more-database-in-a-cluster-you-already-run).
 - A **reference clock** for the clock-synchronisation job. Every preset with
   a compliance obligation asks for a daily record of the clock's offset, and
   the job's configuration requires one.
@@ -74,33 +74,40 @@ The index is a projection: `audit reindex` rebuilds it from the archive, so it
 needs no backup and no replica. That makes it cheap to put in a Postgres the
 application already has, rather than running one for it.
 
-Make a database and two roles in that cluster: an owner the writer migrates and
-writes as, and a reader the query service uses. They must be different roles.
-The tenant row-level policies bind the reader; an owner bypasses them, so a
-query service connecting as the owner would have every tenant's isolation rest
-on the service alone. The chart refuses to render when both name the same
-credentials.
+Make a database and four roles in that cluster: an owner the migration runs as,
+and one role each for the parts that use it, the writer, the indexer
+(`audit-observe`) and the query service. They must be different roles. The
+tenant row-level policies bind the query service's role; an owner bypasses them,
+so a part connecting as the owner would hold more than its own tables and would
+have every tenant's isolation rest on the service alone. The chart refuses to
+render when the writer, the indexer or the query service names the owner's, or
+one another's, credentials.
 
 ```sql
 create database audit;
 create role audit_owner login password :'owner';
+create role audit_writer login password :'writer';
+create role audit_observe login password :'observe';
 create role audit_query login password :'reader';
 grant all privileges on database audit to audit_owner;
 ```
 
-Then apply the schema and grant the reader what it needs, in one step:
+Then apply the schema and grant each role what its part needs, in one step:
 
 ```console
-$ audit migrate --database "$OWNER_URL" --reader audit_query
+$ audit migrate --database "$OWNER_URL" --writer audit_writer \
+    --observe audit_observe --reader audit_query
 ```
 
-`--reader` (`reader` in the job's file) grants usage and select and nothing else. The writer refuses to
-start against a schema version it does not know and never migrates itself:
-several replicas would race.
+`--writer` gives the deduplication table, the registry and the key directory,
+and none of the index; `--observe` gives the index and its cursors, and the one
+function that creates a month's partition; `--reader` gives select on the
+index and nothing else (each is a key of the job's file as well). The writer
+and the indexer refuse to start against a schema version they do not know and
+never migrate themselves: several replicas would race.
 
 With an operator that manages clusters declaratively, the same thing is a
 database and two users in the cluster's own manifest, and the migration is the
-chart's pre-install hook (`migrate`, whose config carries the `reader`). Name
-the owner's password variable in `database.passwordEnv` of the writer and the
-reader's in the query service's, and supply each from its Secret with
-`secretEnv`.
+chart's pre-install hook (`migrate`, whose config carries the roles). Name each
+role's password variable in `database.passwordEnv` of its own component, and
+supply each from its Secret with `secretEnv`.

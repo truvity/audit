@@ -60,6 +60,7 @@ func TestTheTypesAndTheSchemasDescribeTheSameKeys(t *testing.T) {
 		{"writer consuming SQS", "audit-writer.consume.full.yaml", &config.Writer{}, "audit-writer"},
 		{"receiver forwarding to SQS", "audit-writer.receiver.full.yaml", &config.Writer{}, "audit-writer"},
 		{"query", "audit-query.full.yaml", &config.Query{}, "audit-query"},
+		{"observe", "audit-observe.full.yaml", &config.Observe{}, "audit-observe"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("testdata", c.file))
@@ -124,13 +125,15 @@ func TestEveryJobTakesAValidFile(t *testing.T) {
 		"verify":  func(p string) error { _, err := config.LoadVerify(p); return err },
 		"purge":   func(p string) error { _, err := config.LoadPurge(p); return err },
 		"clock":   func(p string) error { _, err := config.LoadClockSync(p); return err },
+		"observe": func(p string) error { _, err := config.LoadObserve(p); return err },
 		"migrate": func(p string) error { _, err := config.LoadMigrate(p); return err },
 	} {
 		body := map[string]string{
 			"verify":  "deployment: /d.yaml\n" + archive,
 			"purge":   "deployment: /d.yaml\ndatabase: {url: 'postgres://u@h/db'}\n",
 			"clock":   "ntp: [time.example.test]\n",
-			"migrate": "database: {url: 'postgres://u@h/db'}\nreader: audit_query\n",
+			"migrate": "database: {url: 'postgres://u@h/db'}\nreader: audit_query\nwriter: audit_writer\nobserve: audit_observe\n",
+			"observe": "archive: {bucket: {name: b}}\ndatabase: {url: 'postgres://u@h/db'}\n",
 		}[name]
 		if err := load(write(t, body)); err != nil {
 			t.Errorf("%s: %v", name, err)
@@ -403,5 +406,28 @@ func TestAnEmitterRequireNeedsWhatTheWriterIsSaidToGive(t *testing.T) {
 	}
 	if _, err := config.LoadClockSync(write(t, "ntp: [t.example.test]\nrequire: queued\nsink: {url: 'http://a', expect: archived}\n")); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestObserveTakesItsDefaultsAndRefusesWhatItCannotUse(t *testing.T) {
+	const base = "archive: {bucket: {name: b}}\ndatabase: {url: 'postgres://u@h/db'}\n"
+	o, err := config.LoadObserve(write(t, base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Settle.D().String() != "2m0s" || o.Interval.D().String() != "30s" || o.Batch != 500 || o.Listen.Address != ":8080" {
+		t.Errorf("defaults not applied: %+v", o)
+	}
+	for name, body := range map[string]string{
+		"no database":       "archive: {bucket: {name: b}}\n",
+		"no archive":        "database: {url: 'postgres://u@h/db'}\n",
+		"two wake sources":  base + "wake: {sqs: {queueUrl: 'https://sqs.example/q'}, nats: {subject: s, nats: {url: 'nats://n'}}}\n",
+		"a lock mode":       "archive: {bucket: {name: b}, lockMode: compliance}\ndatabase: {url: 'postgres://u@h/db'}\n",
+		"a password in url": "archive: {bucket: {name: b}}\ndatabase: {url: 'postgres://u:p@h/db'}\n",
+		"a typo":            base + "setle: 1m\n",
+	} {
+		if _, err := config.LoadObserve(write(t, body)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

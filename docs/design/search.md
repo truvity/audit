@@ -12,18 +12,22 @@ derived again from the archive objects, and those are the ones under an object
 lock. Three things follow, and they are
 the reason the rest of this design looks the way it does.
 
-A writer whose index is unreachable still writes the archive. The object is put,
-the records are safe, and the rows are deferred; the deployment is told so it
-can repair that day. Failing the write instead would let an outage of a search
-database stop an audit trail, which is the wrong way round.
+The writer does not index, so an index that is unreachable, behind or absent
+cannot touch the archive: the object is put and the records are safe, and the
+indexer (`audit-observe`) follows the bucket from its cursor when the database
+is back, and the deployment is told when it cannot
+([0020](../decisions/0020-observe-follows-the-bucket.md)). Failing the write
+instead would let an outage of a search database stop an audit trail, which is
+the wrong way round.
 
 The shape of the index can change without migrating the trail. A new column, a
 new facet, a different database: rebuild and the old one goes away.
 
-An operator can throw the database away. `audit reindex` is not a recovery tool
-kept for emergencies — it is the definition of what the index contains, and a
-test asserts that what the writer indexed and what a rebuild produces are equal
-row for row and count for count.
+An operator can throw the database away. Following the bucket again from an
+empty cursor, or `audit reindex`, is not a recovery tool kept for emergencies —
+it is the definition of what the index contains, and a test asserts that what
+the indexer produced and what a rebuild produces are equal row for row and
+count for count.
 
 ## Interfaces
 

@@ -18,7 +18,9 @@ flowchart LR
   R -- "direct mode" --> W["writer"]
   R -- "stream mode" --> N[("JetStream")] --> W
   W --> S3[("Object-Locked bucket<br/>THE RECORD")]
-  W --> PG[("index — rebuildable")]
+  W -- "dedupe" --> PG[("database")]
+  O["indexer<br/>(audit-observe)"] -- "follows by cursor" --> S3
+  O -- "index — rebuildable" --> PG
   D["verify, nightly"] --> S3
   Q["query service"] --> PG
   Q --> S3
@@ -44,7 +46,8 @@ An **installation** is one deployment of this chart, in one application's
 namespace, in one of the two **shapes** (`direct` or `stream`). It writes
 **records** — validated against the application's **catalogue** — through a
 **receiver** into the **archive** (an Object-Locked bucket) and an
-**index** (Postgres, rebuildable, not itself evidence). A **query service**
+**index** (Postgres, rebuildable, not itself evidence), which an **indexer**
+(`audit-observe`) writes by following the bucket. A **query service**
 reads the index and the archive back out, behind grants the installation's
 values declare.
 

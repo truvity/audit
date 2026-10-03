@@ -1,0 +1,6 @@
+# refuse: the writer's `database.url` connects as the migration's role, which owns the tables
+# base: stream
+migrate:
+  config:
+    database:
+      url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full

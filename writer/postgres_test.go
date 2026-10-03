@@ -9,17 +9,19 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/truvity/audit/internal/pgtest"
+	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/keys"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
 	"github.com/truvity/audit/writer"
 )
 
-// With a database, replicas share one deduplication table and one index, and
-// a replica that brings a key directory other than the deployment's is refused:
-// it would give the same person a second pseudonym.
+// With a database, replicas share one deduplication table, and a replica that
+// brings a key directory other than the deployment's is refused: it would give
+// the same person a second pseudonym.
 func TestReplicasShareTheDatabaseAndItsKeyDirectory(t *testing.T) {
 	pool := pgtest.Open(t)
 	ctx := context.Background()
@@ -71,12 +73,38 @@ func TestReplicasShareTheDatabaseAndItsKeyDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var copies int
-	if err := pool.QueryRow(ctx, `select count(*) from events_core where id = $1`, r.GetId()).Scan(&copies); err != nil {
-		t.Fatal(err)
+	// The second replica found the record in the shared table and wrote nothing,
+	// so the archive holds one copy per profile and not two.
+	copies := map[string]int{}
+	for _, key := range archive.Keys() {
+		if !strings.HasPrefix(key, store.RecordsPrefix) {
+			continue
+		}
+		body, err := archive.Get(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		lines, err := recobj.Decode(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range lines {
+			c, err := line.Decoded()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if c.GetId() == r.GetId() {
+				copies[c.GetProfile()]++
+			}
+		}
 	}
-	if copies != 1 {
-		t.Fatalf("the same record through two replicas is indexed %d times, want once", copies)
+	if len(copies) == 0 {
+		t.Fatal("the record reached no profile")
+	}
+	for profile, n := range copies {
+		if n != 1 {
+			t.Fatalf("the same record through two replicas is kept %d times under %s, want once", n, profile)
+		}
 	}
 	for _, w := range []*writer.Writer{one, two} {
 		if err := w.Close(ctx); err != nil {

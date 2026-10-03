@@ -21,13 +21,28 @@
   "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-migrate.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The configuration of `audit migrate --config`, which applies the index schema. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "description": "The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
   "properties": {
     "database": {
       "$ref": "#/$defs/postgres"
     },
+    "observe": {
+      "description": "A role to grant what the indexer needs: read and write on the index and its cursors, and the creation of monthly partitions through one function. Must exist and be none of the other roles.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "purge": {
+      "description": "A role to grant what the purge job needs: to delete from the index and the deduplication table. Must exist and be none of the other roles.",
+      "minLength": 1,
+      "type": "string"
+    },
     "reader": {
-      "description": "A role to grant what the query service needs: usage on the schema and select on its tables, now and later, and nothing else. The role must already exist.",
+      "description": "A role to grant what the query service needs: usage on the schema and select on the index's tables, and nothing else. The role must already exist and must not own the tables.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "writer": {
+      "description": "A role to grant what the write path needs: the deduplication table, the catalogue registry and the key directory, and none of the index. Must exist and be none of the other roles.",
       "minLength": 1,
       "type": "string"
     }

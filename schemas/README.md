@@ -14,7 +14,7 @@ than compiled; the first three are in `sdk/schemas/`:
 | `extension.schema.json` | the constraints every extension-slot schema must satisfy, including the `x-audit-*` annotation vocabulary |
 
 `config/` holds the schema of each binary's configuration file
-(`audit-writer`, `audit-query`, and one for each scheduled job of `audit`).
+(`audit-writer`, `audit-query`, `audit-observe`, and one for each scheduled job of `audit`).
 They are generated from `internal/config/schema` by `just config-schemas` and
 committed; `just drift` fails when they differ. The binaries embed them and the
 chart's `values.schema.json` embeds them under each component's `config`. See

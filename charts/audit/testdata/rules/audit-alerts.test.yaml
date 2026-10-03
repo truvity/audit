@@ -89,16 +89,19 @@ tests:
         exp_alerts: []
 
   # ---------------------------------------------------------------- index lag
-  - name: an index whose p99 is above thirty seconds fires
+  # The indexer does not look at an object younger than its settle window (2m
+  # by default), so a healthy p99 sits a little above that; the alert is for an
+  # indexer that has stopped or is stuck, at ten minutes.
+  - name: an index whose p99 is above ten minutes fires
     interval: 1m
     input_series:
-      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="0.5"}'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="180"}'
         values: '0x40'
-      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="30"}'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="600"}'
         values: '0x40'
-      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="60"}'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="1800"}'
         values: '0+10x40'
-      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="+Inf"}'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="+Inf"}'
         values: '0+10x40'
     alert_rule_test:
       - eval_time: 25m
@@ -111,34 +114,40 @@ tests:
               k8s_cluster_name: example
               profile: security
             exp_annotations:
-              summary: 'The audit index of profile security is 59.7s behind (p99)'
+              summary: 'The audit index of profile security is 29m 48s behind (p99)'
               description: >-
-                Writing rows into the index takes longer than
-                30s at the 99th percentile. The archive
+                Objects reach the index more than
+                600s after they were put, at the 99th
+                percentile. The archive
                 is unaffected; search answers from an index that is behind. Look at
-                the database's load and its connection pool.
+                whether audit-observe is running, at its log,
+                and at the database's load.
               runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexlaghigh
 
-  - name: an index that answers in milliseconds does not fire
+  - name: an index a settle window behind does not fire
     interval: 1m
     input_series:
-      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="0.5"}'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="60"}'
+        values: '0x40'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="180"}'
         values: '0+10x40'
-      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="30"}'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="600"}'
         values: '0+10x40'
-      - series: 'audit_writer_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="+Inf"}'
+      - series: 'audit_observe_index_lag_seconds_bucket{namespace="audit",k8s_cluster_name="example",profile="security",le="+Inf"}'
         values: '0+10x40'
     alert_rule_test:
       - eval_time: 25m
         alertname: AuditIndexLagHigh
         exp_alerts: []
 
-  # ---------------------------------------------------------------- rows deferred
-  - name: rows the index did not take fire, by profile
+  # ---------------------------------------------------------------- objects deferred
+  - name: objects the indexer could not take fire, by profile
     interval: 1m
     input_series:
-      - series: 'audit_writer_index_deferred_total{namespace="audit",k8s_cluster_name="example",profile="history"}'
-        values: '0 0 40 40 40 40'
+      - series: 'audit_observe_index_deferred_total{namespace="audit",k8s_cluster_name="example",profile="history",reason="retry"}'
+        values: '0 0 3 3 3 3'
+      - series: 'audit_observe_index_deferred_total{namespace="audit",k8s_cluster_name="example",profile="history",reason="unreadable"}'
+        values: '0 0 1 1 1 1'
     alert_rule_test:
       - eval_time: 5m
         alertname: AuditIndexRowsDeferred
@@ -150,24 +159,24 @@ tests:
               k8s_cluster_name: example
               profile: history
             exp_annotations:
-              summary: '40 audit row(s) of profile history are in the archive and not the index'
+              summary: '4 audit object(s) of profile history are in the archive and not the index'
               description: >-
-                The index refused or could not take rows of objects the archive
-                holds. Repair the day with
-                `audit reindex --profile <name> --from <day> --to <day>` once the
-                database is back.
+                The indexer could not index objects the archive holds. Its log names
+                each. A retry resumes by itself once the cause (the bucket, a
+                catalogue, the database) is fixed; an unreadable object is skipped and
+                `audit reindex --profile <name> --from <day> --to <day>` is
+                how a range is read again.
               runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexrowsdeferred
 
   - name: a deferred counter that stopped rising an hour ago does not fire
     interval: 1m
     input_series:
-      - series: 'audit_writer_index_deferred_total{namespace="audit",k8s_cluster_name="example",profile="history"}'
+      - series: 'audit_observe_index_deferred_total{namespace="audit",k8s_cluster_name="example",profile="history",reason="retry"}'
         values: '40x80'
     alert_rule_test:
       - eval_time: 60m
         alertname: AuditIndexRowsDeferred
         exp_alerts: []
-
   # ---------------------------------------------------------------- rejections
   - name: a tenth of the records refused fires
     interval: 1m

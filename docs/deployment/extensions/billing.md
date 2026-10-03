@@ -13,7 +13,7 @@ Nothing here is in the request path.
 |---|---|---|---|
 | 1 | **catalogue** | on each billable action: `meter: {name, quantity_path, outcomes: [success]}` and `profiles: [security, billing]` | built |
 | 2 | **emit** | nothing — the record carries `meter{name, quantity, unit}` | built |
-| 3 | **writer** | nothing — it splits a `billing` copy (tenant and meter, no actor, the metering profile's retention), indexes the meter fields, and the dedupe table makes it exactly-once | built |
+| 3 | **writer** | nothing — it splits a `billing` copy (tenant and meter, no actor, the metering profile's retention), and the dedupe table makes it exactly-once; the indexer then reads the meter fields from the object | built |
 | 4 | **rollups and statement** | a rollup row per tenant, meter and hour, filled at index time; a monthly CronJob writes an immutable statement object naming the seal of the archive it was computed from (once seals exist) | rollups partly built; the statement not built |
 | 5 | **export** | push the statement's totals to a billing system, or invoice from the statement object | the application's |
 
@@ -75,9 +75,11 @@ actions:
 
 ## What to watch
 
-- **The rollup lag**: rollups are written at index time, so a writer that
-  cannot index is also a writer that is not counting. The runbook's
-  `audit.writer.index.deferred` counter is the one to alert on.
+- **The rollup lag**: rollups are written at index time, by the indexer
+  (`audit-observe`), a settle window after the object is put, so an indexer
+  that is behind or cannot index is a count that is not counting. The runbook's
+  `audit.observe.index.deferred` counter and the `audit.observe.index.lag`
+  histogram are the ones to alert on.
 - **The monthly close**: a statement is written after the period ends and
   after the last hour of it is sealed
   ([0019](../../decisions/0019-seals.md)). Running it earlier produces a

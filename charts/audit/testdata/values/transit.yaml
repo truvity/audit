@@ -10,7 +10,7 @@ replicas: 3
 trust:
   configMap: private-ca-bundle
 x-database: &database
-  url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full&sslrootcert=/etc/audit/trust/ca.crt
+  url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full&sslrootcert=/etc/audit/trust/ca.crt
   passwordEnv: AUDIT_DATABASE_PASSWORD
 x-archive: &archive
   bucket:
@@ -44,10 +44,13 @@ writer:
 migrate:
   enabled: true
   config:
-    database: *database
+    database:
+      url: postgres://audit_owner@db.example.test:5432/audit?sslmode=verify-full&sslrootcert=/etc/audit/trust/ca.crt
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    writer: audit_writer
   secretEnv:
     - name: AUDIT_DATABASE_PASSWORD
-      secretName: audit-database
+      secretName: audit-owner-database
       key: password
 jobs:
   verify:

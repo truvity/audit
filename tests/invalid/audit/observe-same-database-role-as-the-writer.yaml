@@ -1,0 +1,6 @@
+# refuse: connects as the writer's role
+# base: stream
+observe:
+  config:
+    database:
+      url: postgres://audit_writer@other.example.test:5432/audit?sslmode=verify-full

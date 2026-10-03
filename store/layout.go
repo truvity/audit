@@ -50,6 +50,12 @@ func RecordKey(profile, tenant string, at time.Time, id string) string {
 // CatalogueKey is where an application's catalogue at a version lives.
 func CatalogueKey(app, version string) string { return CataloguePrefix + app + "/" + version }
 
+// SchemaDir is where the extension schemas of an application's catalogue at a
+// version are kept, beside the catalogue and outside the contract: a reader
+// that wants only the contract ignores it, and one that reads a catalogue's
+// data columns needs it.
+func SchemaDir(app, version string) string { return "schema/" + app + "/" + version + "/" }
+
 // KeyComponent reports why a string cannot be a profile, a tenant, an
 // application or a version in a key, or "" when it can. Only the slash is
 // refused: it is the one character a key's grammar gives a meaning to.

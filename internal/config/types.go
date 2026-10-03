@@ -248,6 +248,37 @@ type Query struct {
 	Keys       *Keys     `json:"keys,omitempty"`
 }
 
+// WakeNATS is a subject of bucket notifications on a NATS server.
+type WakeNATS struct {
+	NATS    NATS   `json:"nats"`
+	Subject string `json:"subject"`
+}
+
+// Wake is what makes observe look sooner than its next poll: exactly one of its
+// fields. What it carries is never read, so a lost notification costs latency.
+type Wake struct {
+	NATS *WakeNATS `json:"nats,omitempty"`
+	SQS  *SQS      `json:"sqs,omitempty"`
+}
+
+// Observe is the configuration of audit-observe: the indexer, which follows the
+// archive by cursor and writes the index.
+type Observe struct {
+	Listen   Listen   `json:"listen,omitzero"`
+	Archive  Archive  `json:"archive"`
+	Database Postgres `json:"database"`
+	// Settle keeps the cursor this far behind now: longer than a put can take,
+	// and than the clocks involved can disagree.
+	Settle Duration `json:"settle,omitzero"`
+	// Interval is the poll.
+	Interval Duration `json:"interval,omitzero"`
+	// Batch is how many rows are written in one transaction.
+	Batch int `json:"batch,omitempty"`
+	// Profiles limits what is followed; unset follows every profile.
+	Profiles []string `json:"profiles,omitempty"`
+	Wake     *Wake    `json:"wake,omitempty"`
+}
+
 // Verify is the configuration of `audit verify`.
 type Verify struct {
 	Deployment string   `json:"deployment"`
@@ -278,5 +309,11 @@ type ClockSync struct {
 // Migrate is the configuration of `audit migrate`.
 type Migrate struct {
 	Database Postgres `json:"database"`
-	Reader   string   `json:"reader,omitempty"`
+	// Roles name the database roles of the parts, each granted what its part
+	// needs and nothing else. Reader is the query service's; Writer, Observe and
+	// Purge are the write path's, the indexer's and the retention job's.
+	Reader  string `json:"reader,omitempty"`
+	Writer  string `json:"writer,omitempty"`
+	Observe string `json:"observe,omitempty"`
+	Purge   string `json:"purge,omitempty"`
 }

@@ -99,10 +99,10 @@ func Values() []byte {
 
 	props := m{
 		"images": obj("Digest-pinned images, written by packaging the chart and never by hand; one wins over `image`.", m{
-			"audit-writer": def("pinned"), "audit-query": def("pinned"), "audit": def("pinned"),
+			"audit-writer": def("pinned"), "audit-query": def("pinned"), "audit-observe": def("pinned"), "audit": def("pinned"),
 		}),
 		"image": obj("Images.", m{
-			"writer": def("image"), "cli": def("image"), "query": def("image"),
+			"writer": def("image"), "cli": def("image"), "query": def("image"), "observe": def("image"),
 			"pullPolicy": m{"enum": []string{"Always", "IfNotPresent", "Never"}, "description": "Pull policy for every image the chart renders."},
 		}),
 		"imagePullSecrets": m{"type": "array", "items": m{"type": "object"}},
@@ -122,6 +122,11 @@ func Values() []byte {
 			"service":        obj("Its Service.", m{"port": integer("The Service's port.", 1, nil)}),
 			"grants":         m{"type": "object", "description": "The grants file a config names as `grants`: issuers, presets and rules. See docs/guides/read.md#access."},
 			"keysVolume":     boolean("Mount the writer's key directory read-only, for resolve with the local key provider."),
+			"serviceAccount": def("serviceAccount"),
+		})),
+		"observe": obj("The indexer: follows the archive by cursor and writes the index the query service reads.", with(platform("audit-observe", true, true), m{
+			"enabled":        boolean("Run it."),
+			"replicas":       integer("Pods. Several are safe, each reading the same cursors, and one is enough.", 0, nil),
 			"serviceAccount": def("serviceAccount"),
 		})),
 		"workloadIdentity": obj("Who is calling the writer: the document a config names as `workloads`.", m{
@@ -182,7 +187,7 @@ func Values() []byte {
 	// A component's config is held to its binary's schema where the component
 	// is rendered, and is free to be empty where it is not.
 	embedded := map[string]string{}
-	for _, name := range []string{"audit-writer", "audit-query", "audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate"} {
+	for _, name := range []string{"audit-writer", "audit-query", "audit-observe", "audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate"} {
 		embedded[name] = "config-" + name
 		flatten(defs, name)
 	}
@@ -206,6 +211,7 @@ func Values() []byte {
 		configOf("audit-writer", "writer"),
 		when(m{"properties": m{"mode": m{"const": "stream"}}, "required": []string{"mode"}}, configOf("audit-writer", "receiver")),
 		when(enabled("query"), configOf("audit-query", "query")),
+		when(enabled("observe"), configOf("audit-observe", "observe")),
 		when(enabled("migrate"), configOf("audit-migrate", "migrate")),
 		when(enabled("jobs", "verify"), configOf("audit-verify", "jobs", "verify")),
 		when(enabled("jobs", "purge"), configOf("audit-purge", "jobs", "purge")),

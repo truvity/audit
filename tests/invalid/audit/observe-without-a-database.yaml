@@ -1,0 +1,5 @@
+# refuse: database
+# base: stream
+observe:
+  config:
+    database: null

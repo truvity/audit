@@ -142,4 +142,49 @@ tenant. */}}
   {{- end -}}
 {{- end -}}
 
+{{/* The indexer holds the index's write credential. It is a part of its own,
+and the separation has to be real at both places an identity lives: the
+ServiceAccount, which on AWS is the cloud identity (Pod Identity, IRSA), and
+the database role. */}}
+{{- if .Values.observe.enabled -}}
+  {{- $observeSA := include "audit.observeServiceAccountName" . -}}
+  {{- if eq $observeSA (include "audit.serviceAccountName" .) -}}
+  {{- fail (printf "audit: the indexer and the writer run as the same ServiceAccount, %q. The writer writes the archive and the indexer reads it and writes the index: whatever cloud role is bound to that account (Pod Identity, IRSA) would give each the other's rights. Give the indexer its own: leave `observe.serviceAccount.create` true with an `observe.serviceAccount.name` that is not the writer's `serviceAccount`." $observeSA) -}}
+  {{- end -}}
+  {{- if and .Values.query.enabled (eq $observeSA (include "audit.queryServiceAccountName" .)) -}}
+  {{- fail (printf "audit: the indexer and the query service run as the same ServiceAccount, %q. The indexer writes the index and the query service faces callers and may only read it; one identity for both would put the index's write credential in the process that parses what callers send." $observeSA) -}}
+  {{- end -}}
+  {{- if and (eq .Values.mode "stream") (eq $observeSA (include "audit.receiverServiceAccountName" .)) -}}
+  {{- fail (printf "audit: the indexer and the receiver run as the same ServiceAccount, %q. The receiver is the front door and holds nothing of the archive or the index." $observeSA) -}}
+  {{- end -}}
+
+  {{- $observe := .Values.observe.config | default dict -}}
+  {{- $observeDatabase := dig "database" nil $observe -}}
+  {{- $observeUser := include "audit.databaseUser" (dig "url" "" ($observeDatabase | default dict)) -}}
+  {{- if and $observeDatabase $database (or (eq (dig "url" "" $observeDatabase) (dig "url" "" $database)) (eq $observeUser (include "audit.databaseUser" (dig "url" "" $database)))) -}}
+  {{- fail "audit: the indexer's `database.url` connects as the writer's role. The writer's role has the deduplication table and the registry and none of the index, and the indexer's the index and none of those: one role for both is the separation in name only. Give the indexer a role of its own, named in `migrate.config.observe`." -}}
+  {{- end -}}
+  {{- if and $observeDatabase .Values.query.enabled .Values.query.config -}}
+    {{- $queryDatabase := dig "database" nil .Values.query.config -}}
+    {{- if and $queryDatabase (eq $observeUser (include "audit.databaseUser" (dig "url" "" $queryDatabase))) -}}
+    {{- fail "audit: the indexer's `database.url` connects as the query service's role. The query service reads the index as a role that can write nothing, bound by row-level security; the indexer writes it. They must not share a role." -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if and $observeDatabase .Values.migrate.enabled -}}
+    {{- $owner := dig "database" nil (.Values.migrate.config | default dict) -}}
+    {{- if and $owner (eq $observeUser (include "audit.databaseUser" (dig "url" "" $owner))) -}}
+    {{- fail "audit: the indexer's `database.url` connects as the migration's role, which owns the tables. An owner is bound by no grant and no row-level security, so the indexer would hold more than the index. Give it the role `migrate.config.observe` names." -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+
+{{/* The owner of the tables is the migration's, and nobody else's: the writer
+that connected as it would hold the index it must not touch. */}}
+{{- if and .Values.migrate.enabled $database -}}
+  {{- $owner := dig "database" nil (.Values.migrate.config | default dict) -}}
+  {{- if and $owner (eq (include "audit.databaseUser" (dig "url" "" $owner)) (include "audit.databaseUser" (dig "url" "" $database))) -}}
+  {{- fail "audit: the writer's `database.url` connects as the migration's role, which owns the tables. An owner is bound by no grant, so the writer would hold the whole index, which it must not write and the indexer does. Give the writer the role `migrate.config.writer` names, and the migration an owner of its own." -}}
+  {{- end -}}
+{{- end -}}
+
 {{- end -}}

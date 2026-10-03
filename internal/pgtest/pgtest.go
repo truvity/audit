@@ -79,12 +79,30 @@ func Open(t *testing.T) *pgxpool.Pool {
 // about isolation has to come in as somebody else, and this is the somebody.
 const Reader = "audit_reader"
 
+// The roles of the parts, as a deployment's migration job names them.
+const (
+	Writer  = "audit_writer"
+	Observe = "audit_observe"
+	Purge   = "audit_purge"
+)
+
 // AsReader returns a pool on the same schema connected as a role that row-level
 // security applies to, with select granted and nothing else.
 //
 // It is deliberately not given insert: a reader that could write the trail it
 // reads is not a reader, and the grant is the place that has to say so.
 func AsReader(t *testing.T, pool *pgxpool.Pool) *pgxpool.Pool {
+	t.Helper()
+	// The grant a deployment's migration job makes (audit migrate --reader),
+	// so every isolation test runs through it.
+	return AsRole(t, pool, Reader, func(ctx context.Context) error {
+		return postgres.GrantReader(ctx, pool, Reader)
+	})
+}
+
+// AsRole returns a pool on the same schema connected as a role of its own, one
+// the tables' owner has granted what grant says and nothing else.
+func AsRole(t *testing.T, pool *pgxpool.Pool, role string, grant func(context.Context) error) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
 	dsn := os.Getenv(URLEnv)
@@ -94,13 +112,11 @@ func AsReader(t *testing.T, pool *pgxpool.Pool) *pgxpool.Pool {
 	// creating it races. Losing the race is fine: what matters is that it is
 	// there afterwards.
 	if _, err := pool.Exec(ctx, `do $$ begin
-		create role `+Reader+` login password 'reader' nosuperuser nocreatedb nocreaterole;
+		create role `+role+` login password 'test' nosuperuser nocreatedb nocreaterole;
 	exception when duplicate_object then null; end $$`); err != nil {
 		t.Fatal(err)
 	}
-	// The grant a deployment's migration job makes (audit migrate --reader),
-	// so every isolation test runs through it.
-	if err := postgres.GrantReader(ctx, pool, Reader); err != nil {
+	if err := grant(ctx); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,15 +124,15 @@ func AsReader(t *testing.T, pool *pgxpool.Pool) *pgxpool.Pool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config.ConnConfig.User = Reader
-	config.ConnConfig.Password = "reader"
+	config.ConnConfig.User = role
+	config.ConnConfig.Password = "test"
 	config.ConnConfig.RuntimeParams["search_path"] = schema
-	reader, err := pgxpool.NewWithConfig(ctx, config)
+	connected, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(reader.Close)
-	return reader
+	t.Cleanup(connected.Close)
+	return connected
 }
 
 // schemaName turns a test's name into an identifier Postgres will take.

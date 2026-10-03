@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Stands in for the platform on the local kind box: the database and its two
-# roles, the wide stream and the archive bucket — created under the EXACT names
+# Stands in for the platform on the local kind box: the database and its four
+# roles (the owner's, the writer's, the indexer's and the query service's), the wide stream and the archive bucket — created under the EXACT names
 # charts/audit/testdata/values/e2e.yaml gives the chart, read through
 # e2e/fixture/names.go rather than repeated here by hand.
 #
@@ -20,51 +20,58 @@ eval "$(go run ./e2e/fixture/cmd/resolve -namespace "${NS:-audit-e2e}" -release 
 
 kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$NAMESPACE"
 
-step "the writer role's credential"
-if ! kubectl -n "$NAMESPACE" get secret "$WRITER_SECRET" >/dev/null 2>&1; then
-  password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
-  # The chart reads the password (the config names the variable it arrives in,
-  # and carries the URL without it); the suite that connects from outside reads
-  # the whole connection string.
-  kubectl -n "$NAMESPACE" create secret generic "$WRITER_SECRET" \
-    --from-literal=password="$password" \
-    --from-literal=url="postgres://$WRITER_ROLE:$password@$DATABASE_HOST:5432/$DATABASE?sslmode=require"
-fi
+# One credential per role, and one role per part: the owner of the tables (the
+# migration's, and nobody else's), the writer, the indexer and the query
+# service. The chart reads the password (the config names the variable it
+# arrives in, and carries the URL without it); the suite that connects from
+# outside reads the whole connection string.
+role_secret() { # <secret> <role>
+  if ! kubectl -n "$NAMESPACE" get secret "$1" >/dev/null 2>&1; then
+    password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
+    kubectl -n "$NAMESPACE" create secret generic "$1" \
+      --from-literal=password="$password" \
+      --from-literal=url="postgres://$2:$password@$DATABASE_HOST:5432/$DATABASE?sslmode=require"
+  fi
+}
+# A password read back from its Secret rather than the one just generated: on a
+# re-run the Secret already existed and the new one was thrown away, so this is
+# the only copy the role must actually agree with.
+role_password() { # <secret>
+  kubectl -n "$NAMESPACE" get secret "$1" -o jsonpath='{.data.url}' | base64 -d | sed -n 's#.*://[^:]*:\([^@]*\)@.*#\1#p'
+}
 
-step "the query role's credential"
-if ! kubectl -n "$NAMESPACE" get secret "$QUERY_SECRET" >/dev/null 2>&1; then
-  password=$(head -c 24 /dev/urandom | base64 | tr -d '/+=')
-  kubectl -n "$NAMESPACE" create secret generic "$QUERY_SECRET" \
-    --from-literal=password="$password" \
-    --from-literal=url="postgres://$QUERY_ROLE:$password@$DATABASE_HOST:5432/$DATABASE?sslmode=require"
-fi
+step "each role's credential"
+role_secret "$OWNER_SECRET" "$OWNER_ROLE"
+role_secret "$WRITER_SECRET" "$WRITER_ROLE"
+role_secret "$OBSERVE_SECRET" "$OBSERVE_ROLE"
+role_secret "$QUERY_SECRET" "$QUERY_ROLE"
+owner_password=$(role_password "$OWNER_SECRET")
+writer_password=$(role_password "$WRITER_SECRET")
+observe_password=$(role_password "$OBSERVE_SECRET")
+query_password=$(role_password "$QUERY_SECRET")
 
-# The two roles' passwords, read back from the Secrets above rather than
-# the local variables above them: on a re-run those Secrets already existed
-# and the passwords just generated were thrown away, so this is the only
-# copy the roles below must actually agree with.
-writer_password=$(kubectl -n "$NAMESPACE" get secret "$WRITER_SECRET" -o jsonpath='{.data.url}' | base64 -d | sed -n 's#.*://[^:]*:\([^@]*\)@.*#\1#p')
-query_password=$(kubectl -n "$NAMESPACE" get secret "$QUERY_SECRET" -o jsonpath='{.data.url}' | base64 -d | sed -n 's#.*://[^:]*:\([^@]*\)@.*#\1#p')
-
-step "the database and its two roles"
+step "the database and its four roles"
 # Idempotent by construction rather than by catching an error: Postgres has
 # no `CREATE ROLE IF NOT EXISTS`, so existence is asked first. The password
 # is (re)applied every run, converging a role an earlier run created onto
-# whatever the Secret actually hands the chart this run.
+# whatever the Secret actually hands the chart this run. The database is the
+# OWNER's, so that no part of the installation owns what it is granted.
 kubectl -n postgres exec -i deploy/postgres -c postgres -- psql -U postgres -v ON_ERROR_STOP=1 <<SQL
 DO \$\$
+DECLARE r text;
 BEGIN
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$WRITER_ROLE') THEN
-    CREATE ROLE $WRITER_ROLE LOGIN;
-  END IF;
-  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$QUERY_ROLE') THEN
-    CREATE ROLE $QUERY_ROLE LOGIN;
-  END IF;
+  FOREACH r IN ARRAY ARRAY['$OWNER_ROLE', '$WRITER_ROLE', '$OBSERVE_ROLE', '$QUERY_ROLE'] LOOP
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('CREATE ROLE %I LOGIN', r);
+    END IF;
+  END LOOP;
 END
 \$\$;
+ALTER ROLE $OWNER_ROLE WITH PASSWORD '$owner_password';
 ALTER ROLE $WRITER_ROLE WITH PASSWORD '$writer_password';
+ALTER ROLE $OBSERVE_ROLE WITH PASSWORD '$observe_password';
 ALTER ROLE $QUERY_ROLE WITH PASSWORD '$query_password';
-SELECT 'CREATE DATABASE $DATABASE OWNER $WRITER_ROLE'
+SELECT 'CREATE DATABASE $DATABASE OWNER $OWNER_ROLE'
   WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DATABASE') \gexec
 SQL
 
@@ -97,4 +104,4 @@ kubectl -n "$NAMESPACE" get secret "$S3_CREDS_SECRET" >/dev/null 2>&1 || \
     --from-literal=AWS_SECRET_ACCESS_KEY=test
 
 echo
-echo "the fixture is in place: $DATABASE_HOST/$DATABASE, roles $WRITER_ROLE and $QUERY_ROLE, stream $STREAM, bucket $BUCKET"
+echo "the fixture is in place: $DATABASE_HOST/$DATABASE, roles $OWNER_ROLE, $WRITER_ROLE, $OBSERVE_ROLE and $QUERY_ROLE, stream $STREAM, bucket $BUCKET"

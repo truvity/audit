@@ -74,9 +74,8 @@ func (a *SchemaArchive) EnsureCatalogue(ctx context.Context, c *catalogue.Catalo
 	if err := a.putCatalogue(ctx, c); err != nil {
 		return err
 	}
-	base := fmt.Sprintf("%s/%s/%s", SchemaPrefix, c.Source, c.Version)
 	for id, raw := range c.Schemas() {
-		if err := a.put(ctx, base+"/"+schemaFileName(id), raw, "application/schema+json"); err != nil {
+		if err := a.put(ctx, store.SchemaDir(c.Source, c.Version)+schemaFileName(id), raw, "application/schema+json"); err != nil {
 			return err
 		}
 	}

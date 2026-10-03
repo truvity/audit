@@ -12,7 +12,7 @@ profiles:
     presets: [history]
 
 x-database: &database
-  url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
+  url: postgres://audit_writer@db.example.test:5432/audit?sslmode=verify-full
   passwordEnv: AUDIT_DATABASE_PASSWORD
 x-stream: &stream
   nats:
@@ -79,12 +79,41 @@ keysVolume:
 migrate:
   enabled: true
   config:
-    database: *database
+    database:
+      url: postgres://audit_owner@db.example.test:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    writer: audit_writer
+    observe: audit_observe
     reader: audit_query
+    purge: audit_purge
   secretEnv:
     - name: AUDIT_DATABASE_PASSWORD
-      secretName: audit-database
+      secretName: audit-owner-database
       key: password
+observe:
+  enabled: true
+  config:
+    archive: *archive
+    database:
+      url: postgres://audit_observe@db.example.test:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 2m
+    wake:
+      nats:
+        nats:
+          url: nats://nats.audit.svc:4222
+          tokenFile: /var/run/audit/stream/token
+        subject: audit.bucket.created
+  secretEnv:
+    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+      secretName: audit-observe-database
+      key: password
+  tokens:
+    - audience: nats
+      mountPath: /var/run/audit/stream
+  serviceAccount:
+    annotations:
+      iam.example.com/role: audit-observe
 workloadIdentity:
   issuers:
     - url: https://oidc.example.com/id/CLUSTER
@@ -144,11 +173,13 @@ jobs:
   purge:
     config:
       deployment: /etc/audit/deployment.yaml
-      database: *database
+      database:
+        url: postgres://audit_purge@db.example.test:5432/audit?sslmode=verify-full
+        passwordEnv: AUDIT_DATABASE_PASSWORD
       dedupeWindow: 336h
     secretEnv:
       - name: AUDIT_DATABASE_PASSWORD
-        secretName: audit-database
+        secretName: audit-purge-database
         key: password
   clockSync:
     config:

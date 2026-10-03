@@ -191,7 +191,7 @@ func ID(n int) string {
 	return fmt.Sprintf("018f0000-0000-7000-8000-000000000%02xa", n)
 }
 
-// Index loads the corpus into an indexer, as the writer's index sink does.
+// Index loads the corpus into an indexer, as observe does.
 func Index(t *testing.T, idx index.Indexer, corpus []Placed) {
 	t.Helper()
 	rows := make([]index.Row, 0, len(corpus))

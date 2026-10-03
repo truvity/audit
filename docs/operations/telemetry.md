@@ -32,8 +32,9 @@ Names are as the gateway stores them: dots become underscores, a counter gains
 | `audit_sink_records_rejected_total` | counter | `transport` | records refused for their own sake |
 | `audit_sink_write_duration_seconds` | histogram | `transport`, `outcome` | how long a write took at each hop |
 | `audit_sink_consume_failures_total` | counter | `transport` | batches a queue consumer's target failed, to be delivered again |
-| `audit_writer_index_lag_seconds` | histogram | `profile` | seconds from an object in the archive to its rows in the index |
-| `audit_writer_index_deferred_total` | counter | `profile` | rows that reached the archive and not the index |
+| `audit_observe_index_lag_seconds` | histogram | `profile` | seconds from an object's put into the archive to its rows being in the index, as `audit-observe` measures it; the settle window is its floor |
+| `audit_observe_index_deferred_total` | counter | `profile`, `reason` | objects the indexer could not index: `retry` is tried again, `unreadable` was skipped |
+| `audit_observe_objects_indexed_total`, `audit_observe_records_indexed_total` | counter | `profile` | the indexer's output |
 | `audit_writer_dead_lettered_total` | counter | | records the writer could not process |
 | `audit_writer_objects_written_total`, `audit_writer_records_written_total` | counter | `profile` | the writer's output |
 | `audit_emit_records_dropped_total` | counter | `action` | records an emitter's queue gave up |
@@ -51,9 +52,15 @@ labels used here have a handful of values each: profiles are the few names a
 deployment chose, transports are four, durabilities three. The tenant is on the
 span, where it costs nothing.
 
-**Index lag** is the insert's own time after the put. It is a histogram and
-is recorded only for rows that arrived; rows that did not are
-`audit_writer_index_deferred_total`.
+**Index lag** is the time from an object's put to its rows being in the index,
+taken from the object's own timestamp in the archive. It is a histogram and is
+recorded only for objects that arrived; the ones that did not are
+`audit_observe_index_deferred_total`. The indexer does not look at an object
+younger than its settle window (`settle`, default 2 minutes,
+[0020](../decisions/0020-observe-follows-the-bucket.md)), so the lag never
+reads below that and a healthy p99 sits a little above it. The writer does not
+index and counts no index metrics: they come from `audit-observe`, which
+publishes over OTLP like the others.
 
 ## Traces
 
@@ -89,8 +96,8 @@ in the comment above the rule in `charts/audit/templates/alerts.yaml`.
 |---|---|---|---|
 | `AuditRecordsDeadLettered` | any increase in 15m | zero is the only healthy count: the writer accepts every well-formed record | critical |
 | `AuditEmitterDroppingRecords` | any increase in 15m, any namespace | a dropped record never exists | critical |
-| `AuditIndexLagHigh` | p99 index lag above 30s, for 10m | the insert takes milliseconds; 30s is two orders over | warning |
-| `AuditIndexRowsDeferred` | any increase in 15m | search answers wrongly until a reindex | warning |
+| `AuditIndexLagHigh` | p99 index lag above 600s, for 10m | the settle window (default 2m) is the floor of the lag, so ten minutes is an indexer that has stopped or is stuck; raise it with `settle` | warning |
+| `AuditIndexRowsDeferred` | any increase in 15m | an object the indexer could not take: search is late or missing it | warning |
 | `AuditWriterRejectingRecords` | over 5% of records refused and at least 10, for 10m | a share, so one buggy producer on a busy stream is seen and one bad record on a quiet one is not | warning |
 | `AuditQueueConsumerFailing` | a NATS or SQS consumer failing for 15m | one failure is a restart or an election; fifteen minutes is batches going round | critical |
 
@@ -138,16 +145,20 @@ queue over a dead sink only delays the loss.
 
 #### AuditIndexLagHigh
 
-Index inserts are slow. Rows still arrive and the archive is unaffected. Look at
-the database's CPU, locks and connection pool, and the writer's replicas count
-against the pool size.
+Objects reach the index long after they were put, well past the settle window.
+The archive is unaffected. Look at whether `audit-observe` is running and at its
+log, then at the database's CPU, locks and connection pool. A large backlog (a
+new index, a reset cursor) shows here too until the indexer has caught up.
 
 #### AuditIndexRowsDeferred
 
-The index refused or could not take rows of objects the archive holds. The log
-line `object written but not indexed` names the object key. Once the database is
-healthy repair the day: `audit reindex --profile <name> --from <day> --to <day>`
-([runbook](runbook.md#the-index-is-behind)).
+The indexer could not index objects the archive holds. Its log line
+`an object was not indexed` names each, and `reason` says what to do:
+`retry` resumes by itself once the cause (the bucket's permissions, the
+database, a catalogue missing from the archive) is fixed, and `unreadable` is an
+object that does not decode and has been skipped, which is the thing to
+investigate. `audit reindex --profile <name> --from <day> --to <day>` reads a
+range again ([runbook](runbook.md#the-index-is-behind)).
 
 #### AuditWriterRejectingRecords
 

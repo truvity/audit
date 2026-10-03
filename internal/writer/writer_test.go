@@ -16,6 +16,7 @@ import (
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/identity"
+	"github.com/truvity/audit/internal/observe"
 	"github.com/truvity/audit/internal/recobj"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
@@ -29,7 +30,6 @@ type built struct {
 	writer        *writer.Writer
 	store         *storetest.Memory
 	dedupe        *writer.MemoryDedupe
-	index         *index.Memory
 	deadLetter    []string
 	duplicates    int
 	unhandled     map[string][]string
@@ -37,11 +37,10 @@ type built struct {
 	identities    *identity.Map
 }
 
-// parts lets a test swap in the real index and deduplication store, or share a
+// parts lets a test swap in the real deduplication store, or share a
 // store between two writers. Everything a test leaves out is the in-memory one.
 type parts struct {
 	store    *storetest.Memory
-	indexer  index.Indexer
 	dedupe   writer.Dedupe
 	instance string
 	identity func(context.Context) string
@@ -90,14 +89,10 @@ func buildWith(t *testing.T, p parts) *built {
 	b := &built{
 		store:         s,
 		dedupe:        &writer.MemoryDedupe{},
-		index:         index.NewMemory(),
 		unhandled:     map[string][]string{},
 		unhandledKept: map[string][]string{},
 	}
-	indexer, dedupe := index.Indexer(b.index), writer.Dedupe(b.dedupe)
-	if p.indexer != nil {
-		indexer = p.indexer
-	}
+	dedupe := writer.Dedupe(b.dedupe)
 	if p.dedupe != nil {
 		dedupe = p.dedupe
 	}
@@ -122,7 +117,7 @@ func buildWith(t *testing.T, p parts) *built {
 		Catalogues:        registry,
 		Splitter:          splitter,
 		Roller: &writer.Roller{
-			Store: s, Instance: instance, Indexer: indexer,
+			Store: s, Instance: instance,
 			Now: func() time.Time { return at },
 		},
 		Dedupe:     dedupe,
@@ -579,73 +574,37 @@ func TestARepeatWithinOneBatchIsAbsorbed(t *testing.T) {
 	}
 }
 
-// The index is written after the object and says where in it each record is,
-// so that an answer can be checked against the copy the digest chain accounts
-// for.
-func TestWrittenRecordsAreIndexed(t *testing.T) {
-	b := build(t)
-	r := fresh(t)
-	write(t, b, r)
-
-	rows := b.index.Rows("security")
-	if len(rows) != 1 {
-		t.Fatalf("%d rows indexed, want 1", len(rows))
-	}
-	row := rows[0]
-	if row.ID != r.GetId() || row.Action != r.GetAction() {
-		t.Fatalf("the row is not the record: %+v", row)
-	}
-	if row.ObjectKey == "" || row.Line != 1 {
-		t.Fatalf("the row does not say where the copy is: %+v", row)
-	}
-	if _, found := b.store.Object(row.ObjectKey); !found {
-		t.Fatalf("the row points at %q, which is not in the archive", row.ObjectKey)
-	}
-}
-
-// The index is a projection that a reindex rebuilds. Failing the write when it
-// is unreachable would let an outage of the search database stop the audit
-// trail, which is the wrong way round.
-func TestAnIndexFailureDoesNotFailTheWrite(t *testing.T) {
-	b := build(t)
-	var deferred int
-	b.writer.Roller.Indexer = failingIndex{}
-	b.writer.Roller.OnIndexDeferred = func(string, int, error) { deferred++ }
-
-	write(t, b, fresh(t))
-	if len(decode(t, b.store)) == 0 {
-		t.Fatal("an unreachable index stopped the archive")
-	}
-	// One report per object, so that a deployment can tell a single unlucky
-	// object from an index that has stopped accepting anything.
-	if deferred != b.store.Len() {
-		t.Fatalf("%d of %d written objects were reported as deferred", deferred, b.store.Len())
-	}
-}
-
-type failingIndex struct{}
-
-func (failingIndex) Index(context.Context, string, []index.Row) error {
-	return errors.New("the index is unreachable")
-}
-
-func (failingIndex) Purge(context.Context, string, time.Time, index.Scope) error { return nil }
-
-// The index is a projection, and this is what that claim means: what the writer
-// put in the index is exactly what a rebuild from the archive produces. If the
-// two ever diverged, the archive would have stopped being the record and the
-// database would have quietly become one.
-func TestAReindexReproducesWhatTheWriterIndexed(t *testing.T) {
+// The index is observe's, not the writer's: the writer puts the object and
+// nothing else, and the cursor indexer that follows the bucket produces exactly
+// what a batch reindex of the same objects produces. If the two ever diverged
+// the archive would have stopped being the record and the database would have
+// quietly become one.
+func TestTheCursorIndexerAndAReindexAgree(t *testing.T) {
 	b := build(t)
 	for i := 0; i < 5; i++ {
 		write(t, b, fresh(t))
+	}
+	fields := func(context.Context, *record.Record) (index.Fields, error) { return walletFields(), nil }
+
+	// Observe, a pass after the settle window has gone by.
+	followed := index.NewMemory()
+	later := fixedDay(t).Add(time.Hour)
+	passes := &observe.Indexer{
+		Store: b.store, Cursors: &observe.Memory{Index: followed}, Fields: fields,
+		Now: func() time.Time { return later },
+	}
+	pass, err := passes.Pass(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pass.Rows == 0 {
+		t.Fatal("the indexer read nothing")
 	}
 
 	rebuilt := index.NewMemory()
 	day := fixedDay(t)
 	report, err := cli.Reindex{
-		Store: b.store, Index: rebuilt,
-		Fields:  func(context.Context, *record.Record) (index.Fields, error) { return walletFields(), nil },
+		Store: b.store, Index: rebuilt, Fields: fields,
 		Profile: "security", From: day, To: day, Out: io.Discard,
 	}.Run(context.Background())
 	if err != nil {
@@ -655,17 +614,20 @@ func TestAReindexReproducesWhatTheWriterIndexed(t *testing.T) {
 		t.Fatal("the rebuild read nothing")
 	}
 
-	was, now := b.index.Rows("security"), rebuilt.Rows("security")
-	if len(was) != len(now) {
-		t.Fatalf("the writer indexed %d rows and the rebuild produced %d", len(was), len(now))
+	was, now := followed.Rows("security"), rebuilt.Rows("security")
+	if len(was) != len(now) || len(was) != 5 {
+		t.Fatalf("the indexer produced %d rows and the rebuild %d, want 5 each", len(was), len(now))
 	}
 	for i := range was {
 		if diff := cmp.Diff(was[i], now[i]); diff != "" {
-			t.Fatalf("row %d differs between the writer and the rebuild (-writer +rebuild):\n%s", i, diff)
+			t.Fatalf("row %d differs between the indexer and the rebuild (-indexer +rebuild):\n%s", i, diff)
+		}
+		if _, found := b.store.Object(was[i].ObjectKey); !found || was[i].Line != 1 {
+			t.Fatalf("the row does not say where the copy is: %+v", was[i])
 		}
 	}
-	if diff := cmp.Diff(b.index.Counts("security"), rebuilt.Counts("security")); diff != "" {
-		t.Fatalf("the facet counts differ (-writer +rebuild):\n%s", diff)
+	if diff := cmp.Diff(followed.Counts("security"), rebuilt.Counts("security")); diff != "" {
+		t.Fatalf("the facet counts differ (-indexer +rebuild):\n%s", diff)
 	}
 }
 
@@ -720,41 +682,3 @@ func TestObjectsAreNotHeldWithoutAHold(t *testing.T) {
 		t.Fatalf("objects were held with no hold in place: %v", held)
 	}
 }
-
-// The lag the index metric reports is from the object being in the archive to
-// its rows being in the index, and it is reported only for rows that arrived:
-// the ones that did not are the deferred counter's.
-func TestIndexLagIsReportedForRowsThatArrived(t *testing.T) {
-	b := build(t)
-	var indexed, deferred int
-	b.writer.Roller.Indexer = slowIndex{delay: 40 * time.Millisecond}
-	b.writer.Roller.OnIndexed = func(_ string, rows int, lag time.Duration) {
-		indexed += rows
-		if lag < 40*time.Millisecond {
-			t.Errorf("lag %s is less than the index took", lag)
-		}
-	}
-	b.writer.Roller.OnIndexDeferred = func(string, int, error) { deferred++ }
-	b.writer.Roller.Now = nil // the wall clock: the lag is real time
-
-	write(t, b, fresh(t))
-	if indexed == 0 || deferred != 0 {
-		t.Fatalf("indexed %d rows, %d deferred", indexed, deferred)
-	}
-
-	indexed = 0
-	b.writer.Roller.Indexer = failingIndex{}
-	write(t, b, fresh(t))
-	if indexed != 0 || deferred == 0 {
-		t.Fatalf("a failed index reported lag: indexed %d, deferred %d", indexed, deferred)
-	}
-}
-
-type slowIndex struct{ delay time.Duration }
-
-func (s slowIndex) Index(context.Context, string, []index.Row) error {
-	time.Sleep(s.delay)
-	return nil
-}
-
-func (slowIndex) Purge(context.Context, string, time.Time, index.Scope) error { return nil }

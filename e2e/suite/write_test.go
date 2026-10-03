@@ -2,9 +2,10 @@
 // application would embed it, hands a record to the writer's Service over
 // HTTP; in `mode: stream` that receiver publishes it to JetStream; a
 // consumer Deployment on the other end takes it from the stream and puts
-// it in the archive AND the Postgres index. Nothing here calls the writer
-// in process or reaches into a Pod — every hop crosses a real Service, the
-// same claim truvity/policy's own example suite proves for its chart.
+// it in the archive, from which the indexer, a Deployment of its own that
+// follows the bucket, puts it in the Postgres index. Nothing here calls the
+// writer in process or reaches into a Pod — every hop crosses a real Service,
+// the same claim truvity/policy's own example suite proves for its chart.
 package suite
 
 import (
@@ -82,18 +83,20 @@ func writerEmitter(ctx context.Context, t *testing.T) *emit.Emitter {
 // own view of the index — the two things a query service would answer
 // from. `audit.search` is `delivery: async` (catalogue/common.yaml), so
 // this polls rather than asserting once; in `mode: stream` the record also
-// crosses JetStream before a consumer Deployment ever sees it.
+// crosses JetStream before a consumer Deployment ever sees it, and once it is
+// in the archive the indexer finds it by listing, a settle window later.
 //
 // It reads back through the QUERY role, not the writer's — proving, in the
 // same call, that migrate's `--reader` grant actually lets that role select
-// what the writer role wrote (row-level security binds only a role that
+// what the indexer role wrote (row-level security binds only a role that
 // does not own the tables; see index/postgres/postgres.go's GrantReader).
 func TestRecordIsWrittenAndIndexed(t *testing.T) {
 	// The consumer only rolls what it gathered from the stream every
 	// roll.interval (30s, charts/audit/testdata/values/e2e.yaml's chart
 	// default) or 5000 records, whichever comes first — so a record
 	// submitted just after a roll can take most of the next one to reach
-	// the archive and the index. 2 minutes leaves margin over that.
+	// the archive, and the indexer's settle window (10s here) and poll (5s)
+	// before the index. 2 minutes leaves margin over that.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 

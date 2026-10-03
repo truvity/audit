@@ -12,8 +12,10 @@
 // cluster. See drift_test.go, which renders that file through the chart and
 // fails if the chart stops honouring a name this package gives it.
 //
-// The database, its host and the writer's role are one fact, the URL in the
-// writer's config; the query role is the migration's `reader`. What each
+// The database and its host are one fact, the URL in the migration's config,
+// whose role is the owner of the tables; the writer's role is the URL in the
+// writer's config and the indexer's the URL in its own; the query role is the
+// migration's `reader`. What each
 // Secret holds is this package's own choice beyond its name and its key: the
 // database password under `password`, and the connection string too, under
 // `url`, for the suite that connects from outside.
@@ -68,6 +70,9 @@ type secretEnv struct {
 type chartValues struct {
 	Writer struct {
 		Config struct {
+			Database struct {
+				URL string `json:"url"`
+			} `json:"database"`
 			Archive struct {
 				Bucket struct {
 					Name      string `json:"name"`
@@ -97,6 +102,15 @@ type chartValues struct {
 		} `json:"config"`
 		SecretEnv []secretEnv `json:"secretEnv"`
 	} `json:"migrate"`
+	Observe struct {
+		Config struct {
+			Database struct {
+				URL         string `json:"url"`
+				PasswordEnv string `json:"passwordEnv"`
+			} `json:"database"`
+		} `json:"config"`
+		SecretEnv []secretEnv `json:"secretEnv"`
+	} `json:"observe"`
 	Jobs struct {
 	} `json:"jobs"`
 }
@@ -122,12 +136,16 @@ type Names struct {
 	Options
 
 	// Database.
-	DatabaseHost string // the box's one Postgres server
-	DatabaseName string // fixture's own choice: the database the writer's role owns
-	WriterRole   string // fixture's own choice: owns the schema, migrates, and writes the index
-	QueryRole    string // read the values file's own query.database.role: the migrate job grants THIS role, by name
-	WriterSecret string // database.existingSecret
-	QuerySecret  string // query.database.existingSecret
+	DatabaseHost  string // the box's one Postgres server
+	DatabaseName  string // fixture's own choice: the database the owner's role owns
+	OwnerRole     string // owns the schema and migrates; no part of the installation connects as it
+	OwnerSecret   string // the migration's credential
+	WriterRole    string // the deduplication table and the registry, none of the index
+	ObserveRole   string // the index and its cursors, as audit-observe reads and writes them
+	QueryRole     string // read the values file's own query.database.role: the migrate job grants THIS role, by name
+	WriterSecret  string // the writer's credential
+	ObserveSecret string // the indexer's credential
+	QuerySecret   string // the query role's credential
 
 	// The wide stream.
 	StreamURL      string
@@ -173,7 +191,17 @@ func Resolve(o Options) (Names, error) {
 	if err != nil {
 		return Names{}, fmt.Errorf("%s: migrate.config.database.url: %w", valuesFilePath(), err)
 	}
-	writerSecret := secretOf(v.Migrate.SecretEnv, v.Migrate.Config.Database.PasswordEnv)
+	writer, err := url.Parse(v.Writer.Config.Database.URL)
+	if err != nil {
+		return Names{}, fmt.Errorf("%s: writer.config.database.url: %w", valuesFilePath(), err)
+	}
+	observer, err := url.Parse(v.Observe.Config.Database.URL)
+	if err != nil {
+		return Names{}, fmt.Errorf("%s: observe.config.database.url: %w", valuesFilePath(), err)
+	}
+	ownerSecret := secretOf(v.Migrate.SecretEnv, v.Migrate.Config.Database.PasswordEnv)
+	writerSecret := secretOf(v.Writer.SecretEnv, "AUDIT_DATABASE_PASSWORD")
+	observeSecret := secretOf(v.Observe.SecretEnv, v.Observe.Config.Database.PasswordEnv)
 	s3Secret := secretOf(v.Writer.SecretEnv, "AUDIT_S3_ACCESS_KEY_ID")
 
 	for field, got := range map[string]string{
@@ -181,7 +209,11 @@ func Resolve(o Options) (Names, error) {
 		"migrate.config.database.url (host)":                 db.Host,
 		"migrate.config.database.url (user)":                 db.User.Username(),
 		"migrate.config.database.url (database)":             strings.TrimPrefix(db.Path, "/"),
-		"migrate.secretEnv (the database password's Secret)": writerSecret,
+		"migrate.secretEnv (the owner's password Secret)":    ownerSecret,
+		"writer.config.database.url (user)":                  writer.User.Username(),
+		"writer.secretEnv (the writer's password Secret)":    writerSecret,
+		"observe.config.database.url (user)":                 observer.User.Username(),
+		"observe.secretEnv (the indexer's password Secret)":  observeSecret,
 		"writer.secretEnv (AUDIT_S3_ACCESS_KEY_ID's Secret)": s3Secret,
 		"writer.config.stream.nats.url":                      v.Writer.Config.Stream.NATS.URL,
 		"writer.config.stream.name":                          v.Writer.Config.Stream.Name,
@@ -196,12 +228,16 @@ func Resolve(o Options) (Names, error) {
 	return Names{
 		Options: o,
 
-		DatabaseHost: strings.TrimSuffix(db.Host, ":"+db.Port()),
-		DatabaseName: strings.TrimPrefix(db.Path, "/"),
-		WriterRole:   db.User.Username(),
-		QueryRole:    v.Migrate.Config.Reader,
-		WriterSecret: writerSecret,
-		QuerySecret:  queryDatabaseSecret,
+		DatabaseHost:  strings.TrimSuffix(db.Host, ":"+db.Port()),
+		DatabaseName:  strings.TrimPrefix(db.Path, "/"),
+		OwnerRole:     db.User.Username(),
+		OwnerSecret:   ownerSecret,
+		WriterRole:    writer.User.Username(),
+		ObserveRole:   observer.User.Username(),
+		QueryRole:     v.Migrate.Config.Reader,
+		WriterSecret:  writerSecret,
+		ObserveSecret: observeSecret,
+		QuerySecret:   queryDatabaseSecret,
 
 		StreamURL:      v.Writer.Config.Stream.NATS.URL,
 		StreamName:     v.Writer.Config.Stream.Name,

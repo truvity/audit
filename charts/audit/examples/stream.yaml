@@ -29,13 +29,18 @@ workloadIdentity:
 migrate:
   enabled: true
   config:
+    # The OWNER of the tables, which no part connects as. Each role below must
+    # exist, and is granted what its part needs and nothing else.
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
+    writer: audit_writer
+    observe: audit_observe
     reader: audit_query
+    purge: audit_purge
   secretEnv:
     - name: AUDIT_DATABASE_PASSWORD
-      secretName: audit-db
+      secretName: audit-db-owner
       key: password
 
 # The receiver holds neither the bucket nor a key, so a compromised front door
@@ -46,7 +51,7 @@ receiver:
     deployment: /etc/audit/deployment.yaml
     workloads: /etc/audit/workloads.yaml
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
     stream:
       nats:
@@ -78,7 +83,7 @@ writer:
       prefix: audit/app
       kmsKey: alias/audit-archive
     database:
-      url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+      url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
       passwordEnv: AUDIT_DATABASE_PASSWORD
     stream:
       nats:
@@ -102,6 +107,27 @@ writer:
   tokens:
     - audience: nats
       mountPath: /var/run/audit/stream
+
+# The indexer: follows the archive by listing and writes the index the query
+# service reads. A Deployment of its own, as a database role of its own
+# (`migrate.config.observe`) and under its own ServiceAccount, because the
+# writer holds neither the index nor this identity.
+observe:
+  enabled: true
+  config:
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-example-1
+      prefix: audit/app
+    database:
+      url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 2m
+  secretEnv:
+    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+      secretName: audit-db-observe
+      key: password
 
 query:
   enabled: true
@@ -154,11 +180,11 @@ jobs:
     config:
       deployment: /etc/audit/deployment.yaml
       database:
-        url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
+        url: postgres://audit_purge@db.example.com:5432/audit?sslmode=verify-full
         passwordEnv: AUDIT_DATABASE_PASSWORD
     secretEnv:
       - name: AUDIT_DATABASE_PASSWORD
-        secretName: audit-db
+        secretName: audit-db-purge
         key: password
   clockSync:
     enabled: true

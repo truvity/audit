@@ -2,7 +2,7 @@
 
 The receiver publishes to a JetStream stream and acknowledges when the
 stream says the record is replicated. Writers are separate pods that consume
-the stream, put the objects and index them. Nothing in the application's
+the stream and put the objects; the indexer follows the bucket. Nothing in the application's
 request path waits for S3.
 
 This is the shape for a product: many application pods, a record rate that
@@ -22,7 +22,7 @@ flowchart TB
     W["writer ×N<br/>consumer mode"]
     U["usage consumer ×1<br/>quotas only"]
     Q["audit-query ×2"]
-    PG[("the application's Postgres<br/>database audit:<br/>index, dedupe, rollups")]
+    PG[("the application's Postgres<br/>database audit:<br/>index, cursors, dedupe, rollups")]
     VK[("cache<br/>quotas only")]
     CJ["CronJobs<br/>verify, purge, clock-sync"]
     ST["statement CronJob<br/>billing only, monthly"]
@@ -58,7 +58,8 @@ sequenceDiagram
   participant N as JetStream
   participant W as writer
   participant S3 as bucket
-  participant PG as index and rollups
+  participant PG as database
+  participant O as indexer
 
   C->>A: an operation that is billed
   A->>A: validate, the record carries meter quantity 1
@@ -69,8 +70,10 @@ sequenceDiagram
   A-->>C: result
   N->>W: a batch, moments later
   W->>S3: put the security copy and the billing copy
-  W->>PG: rows, dedupe by id, rollup per tenant, meter and hour
+  W->>PG: dedupe by id
   W-->>N: acknowledge the batch
+  O->>S3: list from the cursor, once the object is past the settle window
+  O->>PG: rows, facet counts, rollup per tenant, meter and hour, and the cursor
 ```
 
 The writer acknowledges to the stream only after the objects are in the

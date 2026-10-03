@@ -36,7 +36,6 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
 	"github.com/truvity/audit/internal/hold"
@@ -76,10 +75,12 @@ type Config struct {
 	// describes the writer's own actions, is always registered.
 	Catalogues []*catalogue.Catalogue
 
-	// Database, when given, is the index and the deduplication table shared
-	// by every replica, and where catalogues registered through the registry
-	// service are read from. Without it the writer indexes nothing and
-	// deduplicates in process, and so may run as one instance only.
+	// Database, when given, is the deduplication table shared by every
+	// replica, and where catalogues registered through the registry service
+	// are read from. The writer's role needs those tables and none of the
+	// index: observe indexes, by following the bucket. Without a database
+	// the writer deduplicates in process, and so may run as one instance
+	// only.
 	Database *pgxpool.Pool
 	// Replicas is how many writers share one stream of records. Above one it
 	// needs Database, and keys every replica sees the same way.
@@ -112,7 +113,6 @@ type Config struct {
 	// Logger, default slog.Default().
 	Logger *slog.Logger
 	// Meter is where the writer's counters go, default the global provider.
-	// The one to alert on is audit.writer.index.deferred; see the runbook.
 	Meter metric.MeterProvider
 }
 
@@ -171,16 +171,12 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 	}
 
 	dedupe := inner.Dedupe(&inner.MemoryDedupe{})
-	var indexer index.Indexer
 	var shared *registry.Registry
 	if c.Database != nil {
 		// A writer whose database is at another schema version refuses to
 		// start. Migrating is a step an operator takes, not something several
 		// replicas race each other to do.
 		if err := postgres.CheckVersion(ctx, c.Database); err != nil {
-			return nil, err
-		}
-		if indexer, err = postgres.New(c.Database); err != nil {
 			return nil, err
 		}
 		shared = &registry.Registry{Store: registry.Postgres{DB: c.Database}}
@@ -242,12 +238,10 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		identities = &identity.Map{Store: c.Archive, Keys: sealer, RetainUntil: keep}
 	}
 
-	// An addendum names earlier records by id. The index answers where each
-	// is directly; without one, a scan of the archive looks within its budget.
+	// An addendum names earlier records by id. The writer has no index to ask
+	// (observe's, which lags the archive by its settle window and which this
+	// role may not read), so a scan of the archive looks within its budget.
 	var records inner.Locator = &s3scan.Scanner{Store: c.Archive}
-	if located, ok := indexer.(inner.Locator); ok {
-		records = located
-	}
 
 	// The catalogues this writer runs with are written to the bucket now, once
 	// each, and compared when they are already there: a catalogue version that
@@ -275,19 +269,11 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		Splitter:   &inner.Splitter{Profiles: c.Profiles, Keys: c.Keys, Identities: identities},
 		Roller: &inner.Roller{
 			Store: c.Archive, Instance: instance, Interval: c.RollInterval,
-			Indexer: indexer, Held: holds.Held,
+			Held: holds.Held,
 			OnPut: func(key string, n int) {
 				log.Info("object written", "key", key, "records", n)
 				counts.Written(key, n)
 			},
-			// The object is durable and the records are safe; what is behind
-			// is the index, which a reindex of that day repairs.
-			OnIndexDeferred: func(key string, rows int, err error) {
-				log.Error("object written but not indexed", "key", key, "rows", rows, "error", err,
-					"repair", "audit reindex --profile <name> --from <day> --to <day>")
-				counts.IndexDeferred(key, rows)
-			},
-			OnIndexed: func(key string, _ int, lag time.Duration) { counts.IndexLag(key, lag) },
 		},
 		Dedupe:     dedupe,
 		DeadLetter: &inner.StoreDeadLetter{Store: c.Archive, Instance: instance, RetainUntil: keep},

@@ -21,7 +21,7 @@ const policy = "https://github.com/truvity/policy/schemas/"
 // Names are the binaries and commands that read a file, as the schema files are
 // named: schemas/config/<name>.schema.json.
 var Names = []string{
-	"audit-writer", "audit-query",
+	"audit-writer", "audit-query", "audit-observe",
 	"audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate",
 }
 
@@ -251,7 +251,7 @@ func writerSchema() m {
 		"catalogues":      str("A directory of catalogues to register at start-up."),
 		"archive":         archive(true, true),
 		"database": m{"$ref": "#/$defs/postgres",
-			"description": "The index and the shared deduplication table. Without it the writer indexes nothing, deduplicates in process, and may only run one replica."},
+			"description": "The shared deduplication table and the catalogue registry, as the writer's own database role: it holds those and none of the index, which audit-observe writes. Without it the writer deduplicates in process and may only run one replica."},
 		"replicas":         integer("How many writers share this stream. Above one it needs a database, and with local keys a directory every replica shares.", 1, 1),
 		"keys":             def("keys"),
 		"forgetIdentities": boolean("Do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it."),
@@ -353,6 +353,37 @@ func querySchema() m {
 		}})
 }
 
+func observeSchema() m {
+	props := m{
+		"listen": listen(),
+		"archive": func() m {
+			a := archive(false, false)
+			a["description"] = "The archive to follow. Observe only reads it: it lists, and gets the objects and the catalogues beside them."
+			return a
+		}(),
+		"database": m{"$ref": "#/$defs/postgres",
+			"description": "The index, as the role `audit migrate --observe` granted: read and write on the index and its cursors, and nothing of the deduplication table. Not the owner, and not the writer's or the query service's."},
+		"settle":   duration("How far behind now the cursor stays. An object's key is fixed when its put starts and it is visible when the put ends, so a later key can be visible before an earlier one; this must be longer than a writer's put can take and than the clocks of the writers and of this process can disagree. It is the least time between a record's acknowledgement and its appearance in search.", "2m"),
+		"interval": duration("How often a pass runs when nothing woke it. A lost wake-up costs at most this.", "30s"),
+		"batch":    integer("How many rows are written in one transaction. A transaction ends at an object's end, so an object is never split.", 1, 500),
+		"profiles": m{"type": "array", "minItems": 1, "uniqueItems": true, "items": str("A profile name."), "description": "The profiles to follow. Unset follows every profile the archive has, found by listing."},
+		"wake": m{
+			"type": "object", "additionalProperties": false, "minProperties": 1, "maxProperties": 1,
+			"description": "Where bucket notifications arrive, to make a pass run now instead of at the next interval. Optional, and only ever a shortcut: nothing a pass does depends on a notification, so a lost or repeated one costs latency and nothing else.",
+			"properties": m{
+				"nats": obj("A NATS subject carrying bucket notifications. Core NATS: the messages are not read, and one missed is the poll's to make up.", m{
+					"nats":    ref(policy + "fragments/nats.json"),
+					"subject": str("The subject."),
+				}, "nats", "subject"),
+				"sqs": sqs("An SQS queue of bucket notifications that is observe's own: each message is taken to wake a pass and deleted.", nil),
+			},
+		},
+	}
+	return document("audit-observe", "audit-observe",
+		"The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020)."+secretsNote,
+		props, []string{"archive", "database"}, []string{"postgres", "duration"}, nil)
+}
+
 func verifySchema() m {
 	props := m{
 		"deployment": str("Path to the profile configuration; the check holds each object's lock to what its profile demands."),
@@ -395,10 +426,13 @@ func clockSyncSchema() m {
 func migrateSchema() m {
 	props := m{
 		"database": def("postgres"),
-		"reader":   str("A role to grant what the query service needs: usage on the schema and select on its tables, now and later, and nothing else. The role must already exist."),
+		"reader":   str("A role to grant what the query service needs: usage on the schema and select on the index's tables, and nothing else. The role must already exist and must not own the tables."),
+		"writer":   str("A role to grant what the write path needs: the deduplication table, the catalogue registry and the key directory, and none of the index. Must exist and be none of the other roles."),
+		"observe":  str("A role to grant what the indexer needs: read and write on the index and its cursors, and the creation of monthly partitions through one function. Must exist and be none of the other roles."),
+		"purge":    str("A role to grant what the purge job needs: to delete from the index and the deduplication table. Must exist and be none of the other roles."),
 	}
 	return document("audit-migrate", "audit migrate",
-		"The configuration of `audit migrate --config`, which applies the index schema."+secretsNote,
+		"The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more."+secretsNote,
 		props, []string{"database"}, []string{"postgres"}, nil)
 }
 
@@ -412,6 +446,8 @@ func Schema(name string) ([]byte, bool) {
 		s = writerSchema()
 	case "audit-query":
 		s = querySchema()
+	case "audit-observe":
+		s = observeSchema()
 	case "audit-verify":
 		s = verifySchema()
 	case "audit-purge":

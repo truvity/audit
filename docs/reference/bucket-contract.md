@@ -87,7 +87,7 @@ and its payload is `audit.v1.Seal` in proto JSON with the proto field names:
 | `tenant`, `profile` | what the seal covers |
 | `hour` | the start of the hour covered, RFC 3339, UTC |
 | `count` | the number of records in the seal's scope; zero for an empty hour |
-| `root` | the root of a binary Merkle tree whose leaves are the record hashes (the `hash` field of each record line) of every record in the seal's scope, in key order by object, then line order within each object, hashed as in RFC 6962; the hash of nothing for an empty hour |
+| `root` | the root of a binary Merkle tree (RFC 6962 §2.1), encoded as hex; for an empty hour, the SHA-256 of the empty string |
 | `first`, `last` | the first and last object key of the hour; empty for an empty hour |
 | `prev` | hex SHA-256 of the previous seal's bytes for the same profile and tenant; empty for the first seal |
 | `sealed_at` | when the seal was made, RFC 3339 |
@@ -97,13 +97,34 @@ A seal for an hour is written when the hour has settled
 ([0020](../decisions/0020-observe-follows-the-bucket.md)). An hour with no
 objects still gets a seal, so a missing seal is a fault and never silence.
 
+### Merkle tree construction
+
+The tree is computed from all records in the hour, in key order by object
+key (ULID), then line order within each object. Each record's `hash` field
+is the hex-encoded SHA-256 of its record; it is decoded to its 32 raw bytes
+before hashing.
+
+**Leaf:** SHA-256(0x00 || leaf input), where leaf input is the 32 raw bytes of
+a record's hash.
+
+**Interior node:** SHA-256(0x01 || left || right), where left and right are
+the 32-byte hashes of the child nodes.
+
+**Tree shape:** Following RFC 6962 §2.1, the split point is the largest power
+of two smaller than n (the number of leaves). The tree is unbalanced when n is
+not a power of two; no leaf is duplicated.
+
+**Empty hour:** When count is zero, the root is SHA-256(""), the hash of an
+empty byte string.
+
 ### Inclusion proof
 
 A single record is proven by its leaf index (0-based position among all
 records in the hour, in key order by object, then line order within each
-object) plus the RFC 6962 audit path: a sequence of at most log₂(count)
-hashes needed to recompute the root. Its object can still be verified by
-that object's sha256 in the object metadata.
+object) plus the RFC 6962 audit path: at most ⌈log₂(count)⌉ hashes needed to
+recompute the root. Its object can still be verified by that object's sha256
+in the object metadata. The conformance suite carries test vectors for n = 0,
+1, 2, 3 and 5.
 
 ### Trust
 

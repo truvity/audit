@@ -37,9 +37,10 @@ same file. The fields are in
 [the bucket contract](../reference/bucket-contract.md#seals).
 
 **2026-10-03: the root is over per-record hashes**, so one record can be
-proven with a short audit path. The root is now a Merkle tree of the record
-hashes (the `hash` field of each record line) in all objects for the hour, in
-key order by object, then line order within each object.
+proven with a short audit path. The root is a Merkle tree (RFC 6962) of the
+record hashes from all objects in the hour, ordered by object key (ULID), then
+line order within each object. The specification is in
+[the bucket contract](../reference/bucket-contract.md#merkle-tree-construction).
 
 **Trust anchors are pinned.** `keys/roots.jwks` lists root public keys, and
 **observe's configuration pins them by thumbprint** (RFC 7638). The file in

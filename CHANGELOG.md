@@ -4,7 +4,7 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.6.1
 
 - `go run github.com/truvity/audit/cmd/audit@<version>` works again; v0.6.0's root go.mod carried a replace directive for the SDK, which Go refuses for `go run` and `go install` of a package. The root now requires `github.com/truvity/audit/sdk` at a released version, and a committed `go.work` joins the two modules for development. CI builds the root without the workspace (`just installable`) and fails a change to `sdk/` that leaves the root's require behind (`just sdk-require`).
 - **Behaviour change:** the default trace sampler, when `OTEL_TRACES_SAMPLER` is unset, is a parent-based `always_on` (the OpenTelemetry SDK default) and keeps every trace; it was a parent-based ratio of 0.1. To thin traces again, set `OTEL_TRACES_SAMPLER=parentbased_traceidratio` and `OTEL_TRACES_SAMPLER_ARG=0.1`.

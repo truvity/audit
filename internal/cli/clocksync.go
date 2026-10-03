@@ -12,12 +12,12 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/truvity/audit/catalogue"
-	"github.com/truvity/audit/emit"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/clock"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/emit"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // ClockSync compares this machine's clock with UTC and records the answer.

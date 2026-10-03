@@ -12,8 +12,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/truvity/audit/sink"
-	"github.com/truvity/audit/sink/sinktest"
+	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/sdk/sink/sinktest"
 )
 
 // The trace crosses the queue: what the publisher is called under is the

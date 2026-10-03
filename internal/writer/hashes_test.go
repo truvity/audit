@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/internal/writer"
+	"github.com/truvity/audit/sdk/catalogue"
 )
 
 // A catalogue that asks for a property to be hashed needs a key provider, the

@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/truvity/audit/authn"
+
 	"sigs.k8s.io/yaml"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // WorkloadsFile says which issuers the writer and the registry trust to name a
@@ -30,7 +32,7 @@ type WorkloadEntry struct {
 
 // Workloads is a workloads file read and checked.
 type Workloads struct {
-	Issuers []auth.Issuer
+	Issuers []authn.Issuer
 	Map     auth.Workloads
 }
 
@@ -51,7 +53,7 @@ func LoadWorkloads(path string) (Workloads, error) {
 	var out Workloads
 	names := make([]string, 0, len(file.Issuers))
 	for _, is := range file.Issuers {
-		out.Issuers = append(out.Issuers, auth.Issuer{URL: is.URL, Audience: is.Audience})
+		out.Issuers = append(out.Issuers, authn.Issuer{URL: is.URL, Audience: is.Audience})
 		names = append(names, is.URL)
 	}
 	for _, w := range file.Workloads {

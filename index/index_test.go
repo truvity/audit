@@ -8,9 +8,9 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
-	"github.com/truvity/audit/record"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
 )
 
 func at(t *testing.T, value string) time.Time {

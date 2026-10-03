@@ -24,7 +24,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/truvity/audit/index"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
 )
 

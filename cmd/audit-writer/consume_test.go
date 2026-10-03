@@ -10,9 +10,9 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/sink/natssink"
 )
 

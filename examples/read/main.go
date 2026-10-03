@@ -22,8 +22,8 @@ import (
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
-	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/gen/audit/v1/auditv1connect"
 )
 
 func main() {

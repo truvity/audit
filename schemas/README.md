@@ -1,7 +1,11 @@
 # Schemas
 
+The schemas of each binary's configuration file. The three meta-schemas, which
+govern formats the SDK also reads, are in [`sdk/schemas/`](../sdk/schemas/):
+a Go module can embed only files inside its own directory.
+
 JSON Schema (draft 2020-12) for everything that is loaded at runtime rather
-than compiled:
+than compiled; the first three are in `sdk/schemas/`:
 
 | file | describes |
 |---|---|

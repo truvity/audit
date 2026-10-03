@@ -9,13 +9,13 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/record"
 )
 
 const walletSchema = `{

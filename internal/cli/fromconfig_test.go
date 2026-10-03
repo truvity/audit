@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/truvity/audit/internal/config"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 func TestSinkFromMapsExpectAndGuardsRequire(t *testing.T) {

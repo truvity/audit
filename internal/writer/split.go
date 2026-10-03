@@ -11,10 +11,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // clearField removes one core field from a copy. The map is written out rather

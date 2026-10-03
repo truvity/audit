@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/query"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // A query service missing a part refuses to start: one that did not know who

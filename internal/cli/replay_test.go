@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/truvity/audit/internal/cli"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
 )

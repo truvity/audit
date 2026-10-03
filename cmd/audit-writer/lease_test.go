@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // jwtExpiring is a token shaped like a projected ServiceAccount token: three

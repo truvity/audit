@@ -5,7 +5,7 @@ import (
 	"path"
 
 	"github.com/truvity/audit"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // OutDir is where the generated schema lives, with the other generated code.

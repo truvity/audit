@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/truvity/audit/internal/registry"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // The writer's own record of a registration is a record like any other: it

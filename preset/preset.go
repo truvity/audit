@@ -21,7 +21,8 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/truvity/audit"
-	"github.com/truvity/audit/internal/metaschema"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/metaschema"
 )
 
 // Treatment is what happens to an identifier of a given actor category in a
@@ -45,30 +46,32 @@ const (
 // strictness orders treatments so that composing presets can take the strictest.
 var strictness = map[Treatment]int{Clear: 0, Scoped: 1, Pseudonym: 2, Omit: 3}
 
-// Category is the kind of actor a treatment applies to. An actor kind declares
-// its category in the catalogue; the treatment follows the category, never a
-// field name.
-type Category string
+// Category, Class and their values are defined by the catalogue, which declares
+// them on its actor kinds and extension properties; they are re-exported here
+// because a preset sets a treatment for each.
+type (
+	// Category is the kind of actor a treatment applies to.
+	Category = catalogue.Category
+	// Class is the field class an extension property declares with x-audit-class.
+	Class = catalogue.Class
+)
 
 // Internal, External and Machine are the actor categories a preset sets a
 // treatment for.
 const (
-	Internal Category = "internal" // staff, operators
-	External Category = "external" // end users, a customer's people
-	Machine  Category = "machine"  // services, API keys, the system
+	Internal = catalogue.Internal
+	External = catalogue.External
+	Machine  = catalogue.Machine
 )
-
-// Class is the field class an extension property declares with x-audit-class.
-type Class string
 
 // Shared, Audit, Metering, History and Evidence are the field classes an
 // extension property declares and a preset keeps.
 const (
-	Shared   Class = "shared"
-	Audit    Class = "audit"
-	Metering Class = "metering"
-	History  Class = "history"
-	Evidence Class = "evidence"
+	Shared   = catalogue.Shared
+	Audit    = catalogue.Audit
+	Metering = catalogue.Metering
+	History  = catalogue.History
+	Evidence = catalogue.Evidence
 )
 
 // Preset is one framework's requirements.

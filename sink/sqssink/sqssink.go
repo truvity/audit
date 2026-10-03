@@ -35,8 +35,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/truvity/audit/internal/telemetry"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // API is the part of the SQS client this package calls; *sqs.Client satisfies
@@ -436,7 +436,7 @@ func (c *Consumer) handle(ctx context.Context, msgs []types.Message) {
 	if parent.IsValid() {
 		spanCtx = trace.ContextWithSpanContext(ctx, parent)
 	}
-	spanCtx, span := otel.Tracer("github.com/truvity/audit/sink").Start(spanCtx, "audit.sink.consume sqs",
+	spanCtx, span := otel.Tracer("github.com/truvity/audit/sdk/sink").Start(spanCtx, "audit.sink.consume sqs",
 		trace.WithSpanKind(trace.SpanKindConsumer), trace.WithLinks(links...),
 		trace.WithAttributes(
 			attribute.String(telemetry.AttrTransport, sink.TransportSQS),

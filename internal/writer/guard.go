@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/sdk/catalogue"
 )
 
 // GuardReplicas refuses a configuration whose deduplication cannot do its job.

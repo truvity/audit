@@ -18,7 +18,7 @@ catalogue.
 
 ## Rules an extension schema must satisfy
 
-Enforced by [extension.schema.json](../../schemas/extension.schema.json):
+Enforced by [extension.schema.json](../../sdk/schemas/extension.schema.json):
 
 - A closed object (`additionalProperties: false`) with a URI `$id` under
   the source's namespace.

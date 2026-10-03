@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/sdk/catalogue"
 )
 
 const walletDoc = `

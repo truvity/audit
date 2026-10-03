@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/truvity/audit/catalogue"
+	"github.com/truvity/audit/sdk/catalogue"
 )
 
 // CheckEmitters finds the action names a source's code emits and holds them to

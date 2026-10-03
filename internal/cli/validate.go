@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/sdk/catalogue"
 )
 
 // Validate holds every preset and catalogue under the given paths to the

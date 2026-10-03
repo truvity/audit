@@ -16,7 +16,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // dir is testdata/records, found from this file rather than from the test's

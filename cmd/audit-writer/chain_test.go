@@ -8,13 +8,15 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/truvity/audit/sinkserver"
+
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
 	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/internal/registry"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/sink/sqssink"
 )
 
@@ -76,7 +78,7 @@ func chain(t *testing.T, cfg *config.Writer) (sink.Sink, error) {
 		return nil, err
 	}
 	t.Cleanup(stop)
-	return guard(&sink.Receiver{To: to}, cfg.Require)
+	return guard(&sinkserver.Receiver{To: to}, cfg.Require)
 }
 
 func oneRecord() *sink.Request {
@@ -128,7 +130,7 @@ func TestTheLogSinkIsOnlyForRequireLogged(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stop()
-	if _, err := guard(&sink.Receiver{To: to}, "queued"); err == nil || !strings.Contains(err.Error(), "refusing to start") {
+	if _, err := guard(&sinkserver.Receiver{To: to}, "queued"); err == nil || !strings.Contains(err.Error(), "refusing to start") {
 		t.Errorf("a log chain was accepted at require: queued: %v", err)
 	}
 }
@@ -141,7 +143,7 @@ func TestTheGuardRefusesAReceiverThatCannotGiveWhatIsRequired(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer stop()
-	_, err = guard(&sink.Receiver{To: to}, "archived")
+	_, err = guard(&sinkserver.Receiver{To: to}, "archived")
 	if err == nil || !strings.Contains(err.Error(), "queued at best") {
 		t.Fatalf("a queue-only chain was accepted at require: archived: %v", err)
 	}

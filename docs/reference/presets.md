@@ -1,6 +1,6 @@
 # Presets reference
 
-Format: [preset.schema.json](../../schemas/preset.schema.json). Files:
+Format: [preset.schema.json](../../sdk/schemas/preset.schema.json). Files:
 [presets/](../../presets/). This page is the mechanism — what a preset says
 and what composing two of them produces. Which presets an installation is
 expected to compose, and what each costs to run, is

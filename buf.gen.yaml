@@ -3,15 +3,17 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/truvity/audit/gen
+      value: github.com/truvity/audit/sdk/gen
 plugins:
   # Local plugins (installed via devbox: protoc-gen-go, protoc-gen-connect-go)
-  # to avoid BSR rate limits.
+  # to avoid BSR rate limits. The Go types are the SDK module's (sdk/), so they
+  # are written there; the JSON Schema stays at the root, where the writer
+  # embeds it.
   - local: protoc-gen-go
-    out: gen
+    out: sdk/gen
     opt: paths=source_relative
   - local: protoc-gen-connect-go
-    out: gen
+    out: sdk/gen
     opt: paths=source_relative
   # The record's JSON Schema, with the proto's comments as descriptions. Run
   # here and not in the binary, because only the plugin sees the comments.

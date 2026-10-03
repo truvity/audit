@@ -18,9 +18,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/truvity/audit/authn"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
@@ -92,7 +93,7 @@ func run() error {
 			"the grants file names no issuers, so nobody could ever authenticate: " +
 				"a query service nobody can use is a misconfiguration, not a safe default")
 	}
-	authenticator, err := auth.NewJWT(ctx, access.Issuers, slog.Default())
+	authenticator, err := authn.NewJWT(ctx, access.Issuers, slog.Default())
 	if err != nil {
 		return err
 	}

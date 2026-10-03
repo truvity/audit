@@ -23,7 +23,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // Indexer writes the projection.

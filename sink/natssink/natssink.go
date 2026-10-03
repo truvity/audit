@@ -22,8 +22,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/truvity/audit/internal/telemetry"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // Publisher is a Sink that puts records on a stream.
@@ -559,7 +559,7 @@ func (c *Consumer) roll(ctx context.Context, b *batchInProgress) {
 	if b.parent != nil {
 		spanCtx = trace.ContextWithSpanContext(ctx, trace.SpanContextFromContext(b.parent))
 	}
-	spanCtx, span := otel.Tracer("github.com/truvity/audit/sink").Start(spanCtx, "audit.sink.consume nats",
+	spanCtx, span := otel.Tracer("github.com/truvity/audit/sdk/sink").Start(spanCtx, "audit.sink.consume nats",
 		trace.WithSpanKind(trace.SpanKindConsumer), trace.WithLinks(b.links...),
 		trace.WithAttributes(
 			attribute.String(telemetry.AttrTransport, sink.TransportNATS),

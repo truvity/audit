@@ -11,7 +11,7 @@
 //		Searcher:      postgres.NewReader(pool), // or &s3scan.Scanner{Store: archive}
 //		Archive:       archive,
 //		Authenticator: session,   // the application's own sign-in
-//		Authorizer:    grants,    // e.g. auth.AccessRoster, or auth.Declarative
+//		Authorizer:    grants,    // e.g. authn.AccessRoster, or auth.Declarative
 //		Sink:          w,         // the writer: every read is recorded
 //	})
 //	path, handler := q.Handler()
@@ -24,13 +24,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/identity"
 	inner "github.com/truvity/audit/internal/query"
 	"github.com/truvity/audit/keys"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store"
 )
 

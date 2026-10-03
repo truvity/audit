@@ -30,7 +30,7 @@ jobs:
       # Required: the component contract (C1-C13) is judged, shown in the job summary, and fails this job when a rule fails.
       policy-conformance: true
       policy-conformance-strict: true
-      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "telemetry", "leak-canary"]'
+      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "telemetry", "leak-canary", "sdk-closure"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
   # everything else builds with cgo off — which is what makes the binaries
@@ -86,6 +86,8 @@ jobs:
           want=$(sed -n 's/^go \([0-9.]*\).*/\1/p' go.mod)
           have=$(python3 -c 'import json;print(json.load(open("devbox.json"))["packages"]["go"])')
           [ "$want" = "$have" ] || { echo "go.mod wants go $want, devbox.json pins $have"; exit 1; }
+          sdk=$(sed -n 's/^go \([0-9.]*\).*/\1/p' sdk/go.mod)
+          [ "$sdk" = "$have" ] || { echo "sdk/go.mod wants go $sdk, devbox.json pins $have"; exit 1; }
       - name: go test ./... with a database
         run: go test ./...
       - name: the Postgres tests must have run, not skipped

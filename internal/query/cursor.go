@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/truvity/audit/index"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // cursor is what a page hands back so the next one can be asked for.

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // tally is a target that remembers how many times each record was handed to

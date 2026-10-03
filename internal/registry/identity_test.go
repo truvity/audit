@@ -12,10 +12,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/emit"
+	"github.com/truvity/audit/authn"
+
 	"github.com/truvity/audit/internal/authtest"
 	"github.com/truvity/audit/internal/registry"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/emit"
 )
 
 // The registry decides whose catalogue a document is from the caller's
@@ -25,7 +27,7 @@ import (
 func TestTheRegistryBelievesTheServiceAccountNotTheCaller(t *testing.T) {
 	cluster := authtest.NewIssuer(t)
 	ctx := context.Background()
-	authn, err := auth.NewJWT(ctx, []auth.Issuer{{URL: cluster.URL, Audience: "audit"}},
+	authn, err := authn.NewJWT(ctx, []authn.Issuer{{URL: cluster.URL, Audience: "audit"}},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)

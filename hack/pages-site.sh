@@ -23,12 +23,12 @@ publish() { # <source file> <path under schemas/v1>
 
 publish gen/jsonschema/record.v1.schema.json record.schema.json
 for f in catalogue extension preset; do
-  publish "schemas/$f.schema.json" "$f.schema.json"
+  publish "sdk/schemas/$f.schema.json" "$f.schema.json"
 done
 for f in schemas/config/*.schema.json; do
   publish "$f" "config/$(basename "$f")"
 done
-for f in catalogue/*.json; do
+for f in sdk/catalogue/*.json; do
   publish "$f" "common/$(basename "$f")"
 done
 

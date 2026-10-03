@@ -4,7 +4,12 @@ How an application records what it does. The working code is
 [`examples/emit`](../../examples/emit/main.go), compiled and tested on every
 run of the gate; this page walks through it.
 
-The emitter is a **library in the application's own process**. Everything
+The emitter is a **library in the application's own process**, and it is a Go
+module of its own: `go get github.com/truvity/audit/sdk`. An application imports
+`sdk/emit`, `sdk/record`, `sdk/catalogue`, `sdk/sink` and `sdk/gen/audit/v1`,
+and what that brings in is Connect, protobuf and the OpenTelemetry API — not
+the writer's database driver, stream server or object-store client
+([layout](../development/layout.md#the-sdk-module)). Everything
 after it — the receiver, the writer, the query service — is a Deployment in
 the application's namespace
 ([0011](../decisions/0011-one-installation-per-service-or-product.md)), so the

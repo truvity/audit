@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/internal/cli"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // reference answers as a time server with a clock a given amount ahead.

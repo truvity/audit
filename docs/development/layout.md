@@ -198,6 +198,14 @@ for the SDK, at the same commit and the same version
 `release.yaml` pushes the second after the first succeeds. An SDK consumer pins
 `github.com/truvity/audit/sdk vX.Y.Z`.
 
+**Releasing by hand: push the root tag only.** The root `vX.Y.Z` is the only
+tag a person pushes. The `sdk-tag` job of the Release workflow creates
+`sdk/vX.Y.Z` and `deploy/pulumi/vX.Y.Z` at the same commit; do not push them
+yourself. The job accepts a tag that already peels to the release commit
+(skips it) and fails on one at another commit. goreleaser ignores `sdk/*` and
+`deploy/*` tags (`git.ignore_tags`), so the version only ever comes from a root
+tag.
+
 **Public and internal.** A package a third party implements against or an
 application imports is a top-level package and part of the compatibility
 promise: `sdk/record`, `sdk/catalogue`, `preset`, `sdk/emit`, `sdk/sink`, `keys`,

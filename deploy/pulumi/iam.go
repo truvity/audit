@@ -89,16 +89,25 @@ func writerPolicy(bucketArn, archiveKeyArn, tableArn, queueArn, logGroupArn stri
 		allow(put, under(bucketArn, writerPrefixes...), nil),
 		allow([]string{"s3:GetObject"}, under(bucketArn, append(append([]string{}, writerPrefixes...), "holds/")...), nil),
 		allow([]string{"s3:ListBucket"}, []string{bucketArn}, nil),
-		allow([]string{"kms:GenerateDataKey", "kms:Decrypt"}, []string{archiveKeyArn}, nil),
 		allow([]string{"dynamodb:GetItem", "dynamodb:BatchGetItem", "dynamodb:PutItem"}, []string{tableArn}, nil),
 		allow([]string{"sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:GetQueueAttributes", "sqs:ChangeMessageVisibility"},
 			[]string{queueArn}, nil),
 		logsStatement(logGroupArn),
 	}
+	st = append(st, archiveKeyStatements(archiveKeyArn, "kms:GenerateDataKey", "kms:Decrypt")...)
 	if audience != "" {
 		st = append(st, webIdentityStatement(audience))
 	}
 	return policyJSON(st...)
+}
+
+// archiveKeyStatements is the grant on the archive key, and nothing when there is
+// no key (Archive.Encryption "s3": the empty ARN).
+func archiveKeyStatements(archiveKeyArn string, actions ...string) []statement {
+	if archiveKeyArn == "" {
+		return nil
+	}
+	return []statement{allow(actions, []string{archiveKeyArn}, nil)}
 }
 
 // notaryPolicy is what the notary function may do: read the records it seals and
@@ -114,10 +123,10 @@ func notaryPolicy(bucketArn, archiveKeyArn, sealKeyArn, logGroupArn string, audi
 		allow([]string{"s3:GetObject"}, under(bucketArn, "records/", "seals/", "keys/"), nil),
 		allow([]string{"s3:ListBucket"}, []string{bucketArn}, nil),
 		allow(put, under(bucketArn, sealPrefixes...), nil),
-		allow([]string{"kms:GenerateDataKey", "kms:Decrypt"}, []string{archiveKeyArn}, nil),
 		allow([]string{"kms:Sign", "kms:GetPublicKey", "kms:DescribeKey"}, []string{sealKeyArn}, nil),
 		logsStatement(logGroupArn),
 	}
+	st = append(st, archiveKeyStatements(archiveKeyArn, "kms:GenerateDataKey", "kms:Decrypt")...)
 	if audience != "" {
 		st = append(st, webIdentityStatement(audience))
 	}
@@ -125,32 +134,87 @@ func notaryPolicy(bucketArn, archiveKeyArn, sealKeyArn, logGroupArn string, audi
 }
 
 // observeReaderPolicy is what audit-observe reads the archive with, across the
-// accounts: list and get on records/, catalogue/, seals/ and keys/, and decrypt
-// under the archive key. It writes nothing, which is what ADR 0020 means by
-// observe following the bucket.
+// accounts or from a cluster: list and get on records/, catalogue/, schema/,
+// seals/ and keys/, and decrypt under the archive key when there is one. It
+// writes nothing, which is what ADR 0020 means by observe following the bucket.
 func observeReaderPolicy(bucketArn, archiveKeyArn string) string {
-	prefixes := []string{"records/", "catalogue/", "seals/", "keys/"}
+	prefixes := []string{"records/", "catalogue/", "schema/", "seals/", "keys/"}
 	lists := make([]string, len(prefixes))
 	for i, p := range prefixes {
 		lists[i] = p + "*"
 	}
-	return policyJSON(
+	st := []statement{
 		allow([]string{"s3:GetObject"}, under(bucketArn, prefixes...), nil),
 		allow([]string{"s3:ListBucket"}, []string{bucketArn}, map[string]any{
 			"StringLike": map[string]any{"s3:prefix": lists},
 		}),
-		allow([]string{"kms:Decrypt"}, []string{archiveKeyArn}, nil),
-	)
+	}
+	st = append(st, archiveKeyStatements(archiveKeyArn, "kms:Decrypt")...)
+	return policyJSON(st...)
 }
 
-// trustPolicy lets one principal assume a role, with an external id when there
-// is one.
-func trustPolicy(principalArn, externalID string) string {
-	s := statement{"Effect": "Allow", "Principal": map[string]any{"AWS": principalArn}, "Action": "sts:AssumeRole"}
-	if externalID != "" {
-		s["Condition"] = map[string]any{"StringEquals": map[string]any{"sts:ExternalId": externalID}}
+// archiveWriterPolicy is what a workload outside AWS that writes part of the
+// archive may do: put under the given prefixes only (with the retention
+// permission when the bucket is locked), read what it must chain to or compare
+// (records/ and the prefixes it writes), list, and use the archive key. It has no
+// delete, no legal hold, no seal key, and no queue or table.
+func archiveWriterPolicy(bucketArn, archiveKeyArn string, prefixes []string, locked bool) string {
+	put := []string{"s3:PutObject"}
+	if locked {
+		put = append(put, "s3:PutObjectRetention")
 	}
-	return policyJSON(s)
+	reads := append([]string{"records/"}, prefixes...)
+	st := []statement{
+		allow(put, under(bucketArn, prefixes...), nil),
+		allow([]string{"s3:GetObject"}, under(bucketArn, dedupe(reads)...), nil),
+		allow([]string{"s3:ListBucket"}, []string{bucketArn}, nil),
+	}
+	st = append(st, archiveKeyStatements(archiveKeyArn, "kms:GenerateDataKey", "kms:Decrypt")...)
+	return policyJSON(st...)
+}
+
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// trustPolicy lets the given principal (when there is one) assume a role, with an
+// external id when there is one, and the one ServiceAccount of irsa (when there
+// is one) assume it by web identity.
+func trustPolicy(principalArn, externalID string, irsa *IRSAArgs, providerArn string) string {
+	var st []statement
+	if principalArn != "" {
+		s := statement{"Effect": "Allow", "Principal": map[string]any{"AWS": principalArn}, "Action": "sts:AssumeRole"}
+		if externalID != "" {
+			s["Condition"] = map[string]any{"StringEquals": map[string]any{"sts:ExternalId": externalID}}
+		}
+		st = append(st, s)
+	}
+	if irsa != nil {
+		st = append(st, irsaTrustStatement(*irsa, providerArn))
+	}
+	return policyJSON(st...)
+}
+
+// irsaTrustStatement is the web identity trust of one ServiceAccount. BOTH
+// conditions matter: without the sub pin any ServiceAccount of the cluster could
+// assume the role, and without the aud pin a token minted for another audience
+// would be accepted.
+func irsaTrustStatement(i IRSAArgs, providerArn string) statement {
+	return statement{
+		"Effect": "Allow", "Principal": map[string]any{"Federated": providerArn}, "Action": "sts:AssumeRoleWithWebIdentity",
+		"Condition": map[string]any{"StringEquals": map[string]any{
+			i.IssuerHost + ":aud": i.Audience,
+			i.IssuerHost + ":sub": "system:serviceaccount:" + i.Namespace + ":" + i.ServiceAccount,
+		}},
+	}
 }
 
 // invokePolicy is what the scheduler's role may do: invoke the notary.

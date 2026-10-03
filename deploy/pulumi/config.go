@@ -23,12 +23,16 @@ const (
 // archiveConfig is the `archive` block of both functions: the bucket the library
 // created, the lock mode it was created with, and the key objects are encrypted
 // with, which is named by alias so that the file is known before the key exists.
-func archiveConfig(name, bucket, lockMode string) map[string]any {
-	return map[string]any{
-		"bucket":   map[string]any{"name": bucket},
-		"lockMode": lowerMode(lockMode),
-		"kmsKey":   archiveKeyAlias(name),
+func archiveConfig(name string, a *Args) map[string]any {
+	out := map[string]any{
+		"bucket":   map[string]any{"name": a.Archive.BucketName},
+		"lockMode": lowerMode(a.Archive.ObjectLockMode),
 	}
+	// With SSE-S3 there is no key to name: the bucket's default encryption applies.
+	if a.Archive.Encryption == EncryptionKMS {
+		out["kmsKey"] = archiveKeyAlias(name)
+	}
+	return out
 }
 
 func lowerMode(m string) string {
@@ -56,7 +60,7 @@ func writerConfig(name string, a *Args) ([]byte, error) {
 	}
 	doc := map[string]any{
 		"deployment": packageRoot + "/" + deploymentFile,
-		"archive":    archiveConfig(name, a.Archive.BucketName, a.Archive.ObjectLockMode),
+		"archive":    archiveConfig(name, a),
 		"dedupe":     map[string]any{"dynamodb": dyn},
 		"require":    "archived",
 	}
@@ -76,7 +80,7 @@ func writerConfig(name string, a *Args) ([]byte, error) {
 // same schema as the Job's, with `signer.kms` naming the seal key by alias.
 func notaryConfig(name string, a *Args) ([]byte, error) {
 	doc := map[string]any{
-		"archive": archiveConfig(name, a.Archive.BucketName, a.Archive.ObjectLockMode),
+		"archive": archiveConfig(name, a),
 		"signer":  map[string]any{"kms": map[string]any{"key": sealKeyAlias(name)}},
 		"settle":  a.Notary.Settle,
 	}

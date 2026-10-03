@@ -145,7 +145,7 @@ func build(t *testing.T, edit func(*auditpulumi.Args)) (*recorder, outputs, erro
 		}
 	}
 	args := &auditpulumi.Args{
-		Archive: auditpulumi.ArchiveArgs{BucketName: "acme-audit", Profiles: []string{"security", "billing-nl"}},
+		Archive: auditpulumi.ArchiveArgs{BucketName: "acme-audit", ObjectLockMode: auditpulumi.Governance, Profiles: []string{"security", "billing-nl"}},
 		Writer: auditpulumi.WriterArgs{
 			BinaryPath:     filepath.Join(dir, "writer-bootstrap"),
 			DeploymentYAML: "profiles:\n  security:\n    presets: [security]\n",

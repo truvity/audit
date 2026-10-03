@@ -59,7 +59,7 @@ func TestTheArchiveIsLockedVersionedEncryptedAndClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := rec.one(t, "aws:s3/bucket:Bucket", "audit-archive")
-	if !prop(b, "objectLockEnabled").BoolValue() || prop(b, "bucket").StringValue() != "acme-audit" || prop(b, "forceDestroy").BoolValue() {
+	if prop(b, "objectLockEnabled").IsBool() || prop(b, "bucket").StringValue() != "acme-audit" || prop(b, "forceDestroy").BoolValue() {
 		t.Errorf("bucket inputs: %v", b.Inputs)
 	}
 	v := rec.one(t, "aws:s3/bucketVersioning:BucketVersioning", "audit-archive")
@@ -590,10 +590,14 @@ func TestNothingIsCreatedForArgumentsThatCannotWork(t *testing.T) {
 		edit func(*auditpulumi.Args)
 		says string
 	}{
-		"no bucket":       {func(a *auditpulumi.Args) { a.Archive.BucketName = "" }, "BucketName"},
-		"no profiles":     {func(a *auditpulumi.Args) { a.Archive.Profiles = nil }, "Profiles"},
-		"a bad profile":   {func(a *auditpulumi.Args) { a.Archive.Profiles = []string{"a/b"} }, "key component"},
-		"a mode":          {func(a *auditpulumi.Args) { a.Archive.ObjectLockMode = "NONE" }, "GOVERNANCE or COMPLIANCE"},
+		"no bucket":     {func(a *auditpulumi.Args) { a.Archive.BucketName = "" }, "BucketName"},
+		"no profiles":   {func(a *auditpulumi.Args) { a.Archive.Profiles = nil }, "Profiles"},
+		"a bad profile": {func(a *auditpulumi.Args) { a.Archive.Profiles = []string{"a/b"} }, "key component"},
+		"a mode":        {func(a *auditpulumi.Args) { a.Archive.ObjectLockMode = "OFF" }, "NONE, GOVERNANCE or COMPLIANCE"},
+		"no mode":       {func(a *auditpulumi.Args) { a.Archive.ObjectLockMode = "" }, "ObjectLockMode is required"},
+		"retention, no lock": {func(a *auditpulumi.Args) {
+			a.Archive.ObjectLockMode, a.Archive.DefaultRetentionDays = auditpulumi.None, 30
+		}, "needs a lock"},
 		"days":            {func(a *auditpulumi.Args) { a.Archive.GlacierIRDays, a.Archive.DeepArchiveDays = 400, 30 }, "after"},
 		"no deployment":   {func(a *auditpulumi.Args) { a.Writer.DeploymentYAML = " " }, "DeploymentYAML"},
 		"no binary":       {func(a *auditpulumi.Args) { a.Notary.BinaryPath = "" }, "BinaryPath"},
@@ -704,4 +708,137 @@ func keys(m map[string]string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+const lockType = "aws:s3/bucketObjectLockConfiguration:BucketObjectLockConfiguration"
+
+func withMode(mode string) func(*auditpulumi.Args) {
+	return func(a *auditpulumi.Args) { a.Archive.ObjectLockMode = mode }
+}
+
+func TestNoneDeclaresNoLockButStaysVersioned(t *testing.T) {
+	rec, _, err := build(t, withMode(auditpulumi.None))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(rec.ofType(lockType)); n != 0 {
+		t.Errorf("%d Object Lock configurations with mode NONE", n)
+	}
+	b := rec.one(t, "aws:s3/bucket:Bucket", "audit-archive")
+	if prop(b, "objectLockEnabled").IsBool() {
+		t.Errorf("the bucket-level objectLockEnabled is set (it is ForceNew): %v", b.Inputs)
+	}
+	v := rec.one(t, "aws:s3/bucketVersioning:BucketVersioning", "audit-archive")
+	if prop(v, "versioningConfiguration").ObjectValue()["status"].StringValue() != "Enabled" {
+		t.Errorf("versioning: %v", v.Inputs)
+	}
+}
+
+func TestNoneGrantsNoLockPermissionsAndRendersLockModeNone(t *testing.T) {
+	rec, _, err := build(t, withMode(auditpulumi.None))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, role := range []string{"audit-writer", "audit-notary"} {
+		g := grants(policy(t, rec, role))
+		for _, a := range []string{"s3:PutObjectRetention", "s3:PutObjectLegalHold"} {
+			if _, ok := g[a]; ok {
+				t.Errorf("%s may %s with no Object Lock", role, a)
+			}
+		}
+		if _, ok := g["s3:PutObject"]; !ok {
+			t.Errorf("%s may not put objects", role)
+		}
+	}
+	for _, fn := range []string{"audit-writer", "audit-notary"} {
+		if body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]; !strings.Contains(body, "lockMode: none") {
+			t.Errorf("%s: %s", fn, body)
+		}
+	}
+}
+
+// The configuration for NONE is held to the same schemas as the others.
+func TestTheNoneConfigurationsValidateAgainstTheBinariesSchemas(t *testing.T) {
+	rec, _, err := build(t, withMode(auditpulumi.None))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for fn, schema := range map[string]string{"audit-writer": "audit-writer-lambda", "audit-notary": "audit-notary"} {
+		body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]
+		var doc any
+		if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := os.ReadFile(filepath.Join("..", "..", "schemas", "config", schema+".schema.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := policyconfig.Validate(doc, raw); err != nil {
+			t.Errorf("%s: %v\n%s", fn, err, body)
+		}
+	}
+}
+
+func TestGovernanceDeclaresTheLockResourceAndLeavesTheBucketFlagUnset(t *testing.T) {
+	rec, _, err := build(t, withMode(auditpulumi.Governance))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := rec.one(t, lockType, "audit-archive")
+	if prop(lock, "objectLockEnabled").StringValue() != "Enabled" {
+		t.Errorf("lock: %v", lock.Inputs)
+	}
+	if prop(rec.one(t, "aws:s3/bucket:Bucket", "audit-archive"), "objectLockEnabled").IsBool() {
+		t.Error("the bucket-level objectLockEnabled is set")
+	}
+	g := grants(policy(t, rec, "audit-writer"))
+	for _, a := range []string{"s3:PutObjectRetention", "s3:PutObjectLegalHold"} {
+		if _, ok := g[a]; !ok {
+			t.Errorf("the writer lacks %s under GOVERNANCE", a)
+		}
+	}
+	if _, ok := grants(policy(t, rec, "audit-notary"))["s3:PutObjectRetention"]; !ok {
+		t.Error("the notary lacks s3:PutObjectRetention under GOVERNANCE")
+	}
+}
+
+// Turning the lock on later is an edit of ObjectLockMode and nothing else: the
+// bucket and its versioning are declared exactly as before, so Pulumi has no
+// replace to plan, and the one new resource is the lock configuration.
+func TestSwitchingNoneToGovernanceOnlyAddsTheLockResource(t *testing.T) {
+	before, _, err := build(t, withMode(auditpulumi.None))
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _, err := build(t, withMode(auditpulumi.Governance))
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, n := range before.names() {
+		have[n] = true
+	}
+	var added []string
+	for _, n := range after.names() {
+		if !have[n] {
+			added = append(added, n)
+		}
+		delete(have, n)
+	}
+	if len(have) != 0 {
+		t.Errorf("resources gone after the switch: %v", have)
+	}
+	if len(added) != 1 || added[0] != lockType+"/audit-archive" {
+		t.Errorf("resources added by the switch = %v, want only the lock configuration", added)
+	}
+	for _, c := range []struct{ typ, name string }{
+		{"aws:s3/bucket:Bucket", "audit-archive"},
+		{"aws:s3/bucketVersioning:BucketVersioning", "audit-archive"},
+		{"aws:kms/key:Key", "audit-archive"},
+	} {
+		b, a := before.one(t, c.typ, c.name), after.one(t, c.typ, c.name)
+		if !b.Inputs.DeepEquals(a.Inputs) {
+			t.Errorf("%s changed with the switch:\n%v\n%v", c.typ, b.Inputs, a.Inputs)
+		}
+	}
 }

@@ -4,7 +4,9 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.8.0
+
+The Pulumi library gains optional deployment parts and Object Lock can be enabled later without replacement.
 
 - The Pulumi library grows the options a Talos or kernel deployment needs ([deployment/aws.md](docs/deployment/aws.md#the-library)). **The AWS provider:** the one invoke, `aws.GetCallerIdentity`, is now made through the component, so it uses the provider passed to `New` (`pulumi.Provider`, `pulumi.Providers`) and works with the default providers disabled, where it used to fail; `Args.AccountID` skips the lookup, and with the notary off there is none. **`Archive.Encryption`** is `kms` (the default, unchanged) or `s3`: SSE-S3, with no archive key, no `kms` grant for it on any role and no `kmsKey` in the configuration. **IRSA:** `Observe.IRSA` lets a Kubernetes ServiceAccount assume the read role by web identity (`sts:AssumeRoleWithWebIdentity`, `<issuer>:sub` pinned to one `system:serviceaccount:<ns>:<sa>` and `<issuer>:aud` to the audience, default `sts.amazonaws.com`), alone or beside `TrustedPrincipalArn`; `ArchiveWriter` creates `<name>-archive-writer`, an IRSA role that puts only under the prefixes it is given (default `seals/` and `keys/`), for a digest running on Talos. **Optional parts:** `Ingest.Disabled` leaves out the queue, DLQ, dedupe table, writer and their alarms, and `Notary.Disabled` the seal key, notary, schedule and alarms, independently; the archive is always created. Outputs of a part that is off are empty strings. New output `ArchiveWriterRoleArn`. For existing callers nothing changes by default, with one widening: the observe reader's policy also reads `schema/` (read only, in step with the IRSA read role). See [deployment/aws.md](docs/deployment/aws.md#optional-parts).
 

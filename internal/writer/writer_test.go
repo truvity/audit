@@ -51,6 +51,8 @@ type parts struct {
 	// fromStream makes the writer keep a stamp a receiver already made, as a
 	// writer consuming its own installation's stream does.
 	fromStream bool
+	// doc replaces the wallet catalogue's document.
+	doc string
 }
 
 func build(t *testing.T) *built {
@@ -60,7 +62,11 @@ func build(t *testing.T) *built {
 
 func buildWith(t *testing.T, p parts) *built {
 	t.Helper()
-	c, err := catalogue.Load([]byte(walletDoc), [][]byte{[]byte(walletSchema)})
+	doc := walletDoc
+	if p.doc != "" {
+		doc = p.doc
+	}
+	c, err := catalogue.Load([]byte(doc), [][]byte{[]byte(walletSchema)})
 	if err != nil {
 		t.Fatal(err)
 	}

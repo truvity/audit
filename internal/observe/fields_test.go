@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/truvity/audit/internal/observe"
@@ -66,5 +67,54 @@ func TestAGivenCatalogueIsTriedBeforeTheArchives(t *testing.T) {
 	}
 	if _, err := chain.Get(ctx, "shop", "9.9.9"); !errors.Is(err, observe.ErrNoCatalogue) {
 		t.Fatalf("an unknown version: %v", err)
+	}
+}
+
+// A record written under a former name of its source is indexed under the
+// current one, and the archive resolves the former name to the same catalogue,
+// so a rebuild reads old records and new alike.
+func TestARecordUnderAFormerSourceNameIsIndexedUnderTheCurrentOne(t *testing.T) {
+	ctx := context.Background()
+	raw, err := os.ReadFile("../../examples/emit/catalogue/shop.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := strings.Replace(string(raw), "source: shop\n", "source: store\naliases: [shop]\n", 1)
+	doc = strings.ReplaceAll(doc, "shop.", "store.")
+	schema, err := os.ReadFile("../../examples/emit/catalogue/order-placed.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := catalogue.Load([]byte(doc), [][]byte{schema})
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := storetest.NewMemory()
+	if err := (&writer.SchemaArchive{Store: archive}).EnsureCatalogue(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+
+	from := &observe.ArchiveCatalogues{Store: archive}
+	fields := observe.FieldsFrom(from)
+	old := &record.Record{Source: "shop", CatalogueVersion: "1.0.0", Action: "shop.order.placed"}
+	got, err := fields(ctx, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != "store" || got.Action != "store.order.placed" {
+		t.Fatalf("indexed under %q, %q", got.Source, got.Action)
+	}
+	current := &record.Record{Source: "store", CatalogueVersion: "1.0.0", Action: "store.order.placed"}
+	if got, err = fields(ctx, current); err != nil || got.Source != "" {
+		t.Fatalf("a record under the current name is rewritten: %+v, %v", got, err)
+	}
+
+	// The query side learns the aliases from the archive.
+	names, err := from.Aliased(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := names.CanonicalSource("shop"); got != "store" {
+		t.Fatalf("the archive's aliases resolve shop to %q", got)
 	}
 }

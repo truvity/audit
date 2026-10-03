@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/truvity/audit/index"
@@ -64,6 +65,12 @@ func FieldsFrom(from Catalogues) Fields {
 		fields := index.Fields{}
 		if x.Data != nil {
 			fields = index.Fields{Filter: x.Data.Filterable(), Facet: x.Data.Facets()}
+		}
+		// A record under a former name of its source is indexed under the
+		// current one: its catalogue says which that is.
+		if canonical := c.CanonicalSource(r.GetSource()); canonical != r.GetSource() {
+			fields.Source = canonical
+			fields.Action = x.Name
 		}
 		mu.Lock()
 		composed[key] = fields
@@ -153,6 +160,38 @@ func (a *ArchiveCatalogues) Get(ctx context.Context, source, version string) (*c
 	a.known[id] = c
 	a.mu.Unlock()
 	return c, nil
+}
+
+// Aliased reads every catalogue in the archive that declares aliases, for a
+// service that must answer a filter by a former name of a source. The archive
+// keeps a catalogue under its source and under each alias, so a catalogue is
+// taken once, from its own source's key.
+func (a *ArchiveCatalogues) Aliased(ctx context.Context) (catalogue.Names, error) {
+	var out catalogue.Names
+	after := ""
+	for {
+		entries, err := a.Store.List(ctx, store.CataloguePrefix, after, 1000)
+		if err != nil {
+			return nil, fmt.Errorf("observe: listing %s: %w", store.CataloguePrefix, err)
+		}
+		if len(entries) == 0 {
+			return out, nil
+		}
+		for _, e := range entries {
+			after = e.Key
+			app, version, ok := strings.Cut(strings.TrimPrefix(e.Key, store.CataloguePrefix), "/")
+			if !ok {
+				continue
+			}
+			c, err := a.Get(ctx, app, version)
+			if err != nil {
+				return nil, err
+			}
+			if len(c.Aliases) > 0 && c.Source == app {
+				out = append(out, c)
+			}
+		}
+	}
 }
 
 // Chain tries each in turn and takes the first that has the catalogue. An error

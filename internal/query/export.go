@@ -222,9 +222,9 @@ func (s *Service) GetExport(ctx context.Context, p auth.Principal, id string) (J
 func (s *Service) collect(
 	ctx context.Context, req *auditv1.ExportRequest, g auth.Grant,
 ) ([]index.Row, error) {
-	compiled, err := Compile(&auditv1.SearchRequest{
+	compiled, err := CompileWith(&auditv1.SearchRequest{
 		Profile: req.GetProfile(), Filter: req.GetFilter(),
-	})
+	}, s.Names)
 	if err != nil {
 		return nil, err
 	}

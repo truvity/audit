@@ -66,17 +66,24 @@ func (a *SchemaArchive) EnsureCatalogue(ctx context.Context, c *catalogue.Catalo
 	if _, seen := a.done.Load(mark); seen {
 		return nil
 	}
-	for what, part := range map[string]string{"source": c.Source, "version": c.Version} {
-		if why := store.KeyComponent(part); why != "" {
-			return fmt.Errorf("writer: the catalogue's %s %q %s, so it has no key", what, part, why)
+	// The catalogue is kept under its source and under each alias, the same
+	// bytes, so that a record written under a former name finds what describes
+	// it where its own source and version say (docs/reference/bucket-contract.md).
+	// A version one of those names already holds with other bytes is refused
+	// like any other: an alias does not make a version new.
+	for _, name := range append([]string{c.Source}, c.Aliases...) {
+		for what, part := range map[string]string{"source": name, "version": c.Version} {
+			if why := store.KeyComponent(part); why != "" {
+				return fmt.Errorf("writer: the catalogue's %s %q %s, so it has no key", what, part, why)
+			}
 		}
-	}
-	if err := a.putCatalogue(ctx, c); err != nil {
-		return err
-	}
-	for id, raw := range c.Schemas() {
-		if err := a.put(ctx, store.SchemaDir(c.Source, c.Version)+schemaFileName(id), raw, "application/schema+json"); err != nil {
+		if err := a.putCatalogue(ctx, name, c); err != nil {
 			return err
+		}
+		for id, raw := range c.Schemas() {
+			if err := a.put(ctx, store.SchemaDir(name, c.Version)+schemaFileName(id), raw, "application/schema+json"); err != nil {
+				return err
+			}
 		}
 	}
 	a.done.Store(mark, true)
@@ -133,8 +140,8 @@ func (a *SchemaArchive) retainUntil() time.Time {
 
 // putCatalogue writes the catalogue document once. A key already present with
 // the same bytes is success; with other bytes, a conflict.
-func (a *SchemaArchive) putCatalogue(ctx context.Context, c *catalogue.Catalogue) error {
-	key := store.CatalogueKey(c.Source, c.Version)
+func (a *SchemaArchive) putCatalogue(ctx context.Context, name string, c *catalogue.Catalogue) error {
+	key := store.CatalogueKey(name, c.Version)
 	body := c.Document()
 	err := a.Store.Put(ctx, store.Object{
 		Key: key, Body: body, RetainUntil: a.retainUntil(), ContentType: "application/yaml",

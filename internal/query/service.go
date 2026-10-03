@@ -42,6 +42,8 @@ type Service struct {
 	// produce a copy of records that the deployment did not configure a place
 	// for.
 	Exporter *Exporter
+	// Names, when given, resolves the former names of a source in a filter.
+	Names Renames
 	// Identities, when given, is where Resolve finds the way back from a
 	// pseudonym. Without it Resolve is not offered.
 	Identities *identity.Map
@@ -127,7 +129,7 @@ func (s *Service) Search(
 	if err != nil {
 		return index.Page{}, g, err
 	}
-	compiled, err := Compile(req)
+	compiled, err := CompileWith(req, s.Names)
 	if err != nil {
 		return index.Page{}, g, err
 	}
@@ -160,7 +162,7 @@ func (s *Service) Search(
 func (s *Service) Cursors(
 	req *auditv1.SearchRequest, g auth.Grant, page index.Page,
 ) (*auditv1.Cursors, error) {
-	compiled, err := Compile(req)
+	compiled, err := CompileWith(req, s.Names)
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +200,9 @@ func (s *Service) Facets(
 	if err != nil {
 		return nil, g, err
 	}
-	compiled, err := Compile(&auditv1.SearchRequest{
+	compiled, err := CompileWith(&auditv1.SearchRequest{
 		Profile: req.GetProfile(), Filter: req.GetFilter(),
-	})
+	}, s.Names)
 	if err != nil {
 		return nil, g, err
 	}

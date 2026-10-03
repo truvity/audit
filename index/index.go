@@ -106,6 +106,13 @@ type Fields struct {
 	Filter []string
 	// Facet are pointers a searcher may count. Every facet is filterable.
 	Facet []string
+	// Source and Action, when set, are what the row is indexed under in place
+	// of what the record says. A record written under a former name of its
+	// source is indexed under the current one, so that a filter by either
+	// finds both and a reader sees one name (docs/decisions/0025). The record
+	// itself is never rewritten.
+	Source string
+	Action string
 }
 
 // Kind is how a value is stored, which decides what a predicate may do with it.
@@ -177,6 +184,12 @@ func RowOf(r *record.Record, at ObjectAt, fields Fields) Row {
 		RequestID:   r.GetContext().GetRequestId(),
 		TraceID:     r.GetContext().GetTraceId(),
 		ObserverID:  r.GetObserver().GetId(),
+	}
+	if fields.Source != "" {
+		row.Source = fields.Source
+	}
+	if fields.Action != "" {
+		row.Action = fields.Action
 	}
 	// The nearest address is the last of the chain, and it is the one a query
 	// means by "where from".

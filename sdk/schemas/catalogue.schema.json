@@ -18,6 +18,15 @@
     "version": {
       "type": "string"
     },
+    "aliases": {
+      "description": "Former names of this source. Records written under an alias are accepted, resolved against this catalogue, and indexed under source; a query naming an alias finds both.",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_-]{1,31}$"
+      }
+    },
     "locales": {
       "type": "array",
       "items": {

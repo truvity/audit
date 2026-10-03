@@ -60,6 +60,11 @@ type Config struct {
 	Keys keys.Sealer
 	// Exports, when given, offers export.
 	Exports *Exports
+	// Aliases are the catalogues whose former source names a filter may use.
+	// The index holds a record under its source's current name, so a filter by
+	// either name finds both; without them a filter by the former name finds
+	// nothing written after the rename.
+	Aliases catalogue.Names
 
 	Version  string
 	Instance string
@@ -112,6 +117,7 @@ func New(c Config) (*Service, error) {
 		Authorizer: c.Authorizer,
 		Sink:       c.Sink,
 		Catalogue:  common,
+		Names:      c.Aliases,
 		Version:    c.Version,
 		Instance:   c.Instance,
 		OnUnrecorded: func(action string, err error) {

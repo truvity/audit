@@ -32,7 +32,12 @@ const arnp = "arn:" + "aws:"
 type recorder struct {
 	mu        sync.Mutex
 	resources []declared
+	calls     []mockCall
 }
+
+// mockCall is an invoke the library made: its token, and the provider it was made
+// through ("" is the default provider, which a stack can disable).
+type mockCall struct{ Token, Provider string }
 
 type declared struct {
 	Type, Name string
@@ -86,6 +91,9 @@ func (r *recorder) NewResource(a pulumi.MockResourceArgs) (string, resource.Prop
 }
 
 func (r *recorder) Call(a pulumi.MockCallArgs) (resource.PropertyMap, error) {
+	r.mu.Lock()
+	r.calls = append(r.calls, mockCall{Token: a.Token, Provider: a.Provider})
+	r.mu.Unlock()
 	if a.Token == "aws:index/getCallerIdentity:getCallerIdentity" {
 		return resource.PropertyMap{
 			"accountId": resource.NewStringProperty(account),
@@ -138,6 +146,13 @@ type outputs map[string]string
 // it exports. edit changes the arguments a test starts from.
 func build(t *testing.T, edit func(*auditpulumi.Args)) (*recorder, outputs, error) {
 	t.Helper()
+	return buildWith(t, edit, nil)
+}
+
+// buildWith is build with options for New, made inside the program (a provider
+// can only be made there).
+func buildWith(t *testing.T, edit func(*auditpulumi.Args), opts func(*pulumi.Context) ([]pulumi.ResourceOption, error)) (*recorder, outputs, error) {
+	t.Helper()
 	dir := t.TempDir()
 	for _, f := range []string{"writer-bootstrap", "notary-bootstrap"} {
 		if err := os.WriteFile(filepath.Join(dir, f), []byte("#!/bin/true\n"), 0o755); err != nil {
@@ -166,13 +181,20 @@ func build(t *testing.T, edit func(*auditpulumi.Args)) (*recorder, outputs, erro
 	got := outputs{}
 	var wg sync.WaitGroup
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
-		a, err := auditpulumi.New(ctx, "audit", args)
+		var ro []pulumi.ResourceOption
+		if opts != nil {
+			var err error
+			if ro, err = opts(ctx); err != nil {
+				return err
+			}
+		}
+		a, err := auditpulumi.New(ctx, "audit", args, ro...)
 		if err != nil {
 			return err
 		}
 		for k, o := range map[string]pulumi.StringOutput{
 			"bucketName": a.BucketName, "bucketArn": a.BucketArn, "archiveKeyArn": a.ArchiveKeyArn, "sealKeyArn": a.SealKeyArn,
-			"sealKeyAlias": a.SealKeyAlias, "queueUrl": a.QueueURL, "queueArn": a.QueueArn, "dlqArn": a.DlqArn,
+			"sealKeyAlias": a.SealKeyAlias, "queueUrl": a.QueueURL, "queueArn": a.QueueArn, "dlqUrl": a.DlqURL, "dlqArn": a.DlqArn, "archiveWriterRole": a.ArchiveWriterRoleArn,
 			"dedupe": a.DedupeTableName, "writerFn": a.WriterFunctionArn, "notaryFn": a.NotaryFunctionArn,
 			"writerRole": a.WriterRoleArn, "notaryRole": a.NotaryRoleArn, "observeRole": a.ObserveReaderRoleArn,
 			"topic": a.AlarmTopicArn, "schedule": a.ScheduleArn,

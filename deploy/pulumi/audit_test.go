@@ -541,7 +541,7 @@ func TestAlarmsReachAlertIngressOverAnHTTPSSubscription(t *testing.T) {
 	}
 }
 
-func TestTheObserveRoleTrustsTheGivenPrincipalAndReadsFourPrefixes(t *testing.T) {
+func TestTheObserveRoleTrustsTheGivenPrincipalAndReadsFivePrefixes(t *testing.T) {
 	rec, out, err := build(t, func(a *auditpulumi.Args) { a.Observe.ExternalID = "kernel-observe" })
 	if err != nil {
 		t.Fatal(err)
@@ -552,7 +552,7 @@ func TestTheObserveRoleTrustsTheGivenPrincipalAndReadsFourPrefixes(t *testing.T)
 		t.Errorf("trust: %s", trust)
 	}
 	g := grants(policy(t, rec, "audit-observe-reader"))
-	for _, p := range []string{"/records/*", "/catalogue/*", "/seals/*", "/keys/*"} {
+	for _, p := range []string{"/records/*", "/catalogue/*", "/schema/*", "/seals/*", "/keys/*"} {
 		if !hasResource(g, "s3:GetObject", p) {
 			t.Errorf("observe cannot read %s", p)
 		}

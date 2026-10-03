@@ -65,6 +65,9 @@ type Finding struct {
 	Rule   string `json:"rule"`
 	Key    string `json:"key"`
 	Detail string `json:"detail"`
+	// Hour is the hour of ingest time the finding is about, when it is about
+	// one: the findings of the seals are.
+	Hour time.Time `json:"hour,omitzero"`
 }
 
 func (f Finding) String() string { return f.Rule + ": " + f.Key + ": " + f.Detail }

@@ -124,10 +124,18 @@ Nothing in the archive can be repaired: that is its point. Record what was
 found and when, place a legal hold on the affected prefix if it may be needed
 as evidence, and fix what let it happen.
 
-`audit verify` checks what is in a range of ingest time; it does not find an
-object that was removed or one added beside the others. Seals are what will
-([0019](../decisions/0019-seals.md)); until they exist, the bucket's own
-access log and versioning are the evidence for those two.
+`audit verify` checks, by itself, what is in a range of ingest time: it does not
+find an object that was removed or one added beside the others. Seals are what
+does ([0019](../decisions/0019-seals.md)): with `--root` (or `seals.roots` in the
+job's file) it checks them too, and a `seal.root` finding is exactly an object
+added to, removed from or changed in an hour after it was sealed, with the seal's
+count and the hour's count side by side. A `seal.missing` finding is an hour with
+no seal when it should have one: look for the notary having stopped
+(`AuditSealStale`), and failing that for a seal removed (the bucket's access log
+and versioning say who). A `seal.signature` finding is a seal signed by a key
+the verifier does not pin or whose delegation has lapsed or was revoked: it is a
+failure to take seriously, because the only thing the bucket's writer cannot do
+is sign as a pinned root.
 
 The check covers one installation's prefix. An application whose records
 share a bucket with another application's is not affected by a problem under

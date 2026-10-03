@@ -53,6 +53,27 @@ migrate:
       secretName: audit-owner-database
       key: password
 jobs:
+  # The notary signs with a transit key under a role of its own, which is not
+  # the writer's.
+  notary:
+    enabled: true
+    config:
+      archive: *archive
+      signer:
+        transit:
+          key: audit-seal
+          openbao:
+            address: https://openbao.example:8200
+            namespace: devel
+            caFile: /etc/audit/trust/ca.crt
+            login:
+              mount: jwt-devel
+              role: audit-notary
+              jwtFile: /var/run/openbao/token
+    tokens:
+      - audience: openbao
+        mountPath: /var/run/openbao
+        expirationSeconds: 600
   verify:
     config:
       deployment: /etc/audit/deployment.yaml

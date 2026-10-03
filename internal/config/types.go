@@ -279,14 +279,72 @@ type Observe struct {
 	Wake     *Wake    `json:"wake,omitempty"`
 }
 
+// Seals is what `audit verify` is given to check seals with: the roots it
+// pins, and how late a seal may be before its absence is a finding.
+type Seals struct {
+	// Roots are the RFC 7638 thumbprints of the root keys this verifier trusts.
+	// Nothing else in the bucket is.
+	Roots []string `json:"roots"`
+	// Settle is the notary's settle window: an hour is sealable once it has
+	// ended and this long has passed.
+	Settle Duration `json:"settle,omitzero"`
+	// Grace is how long after that a seal may still be missing before it is
+	// reported: the notary runs hourly, so a seal is up to an hour behind.
+	Grace Duration `json:"grace,omitzero"`
+}
+
 // Verify is the configuration of `audit verify`.
 type Verify struct {
 	Deployment string   `json:"deployment"`
 	Archive    Archive  `json:"archive"`
+	Seals      *Seals   `json:"seals,omitempty"`
 	Sink       *Sink    `json:"sink,omitempty"`
 	Require    string   `json:"require,omitempty"`
 	Profiles   []string `json:"profiles,omitempty"`
 	Last       Duration `json:"last,omitzero"`
+}
+
+type (
+	// KMSSigner is an AWS KMS key that signs seals: ECC_NIST_P384, SIGN_VERIFY.
+	KMSSigner struct {
+		Key    string `json:"key"`
+		Region string `json:"region,omitempty"`
+	}
+
+	// TransitSigner is an OpenBAO transit key that signs seals: ecdsa-p384.
+	TransitSigner struct {
+		Key     string  `json:"key"`
+		OpenBAO OpenBAO `json:"openbao"`
+	}
+
+	// FileSigner is a P-384 private key in a PEM file, for development and for
+	// a deployment small enough to accept that the key lives beside the archive.
+	FileSigner struct {
+		Path string `json:"path"`
+	}
+
+	// Signer is where the notary's key is: exactly one of its fields.
+	Signer struct {
+		KMS     *KMSSigner     `json:"kms,omitempty"`
+		Transit *TransitSigner `json:"transit,omitempty"`
+		File    *FileSigner    `json:"file,omitempty"`
+	}
+)
+
+// Notary is the configuration of `audit-notary`: the archive it reads and puts
+// seals in, and the key it signs them with.
+type Notary struct {
+	Archive Archive `json:"archive"`
+	Signer  Signer  `json:"signer"`
+	// Profiles to seal; unset is every profile the archive has records for.
+	Profiles []string `json:"profiles,omitempty"`
+	// Settle is how long after an hour has ended it is sealed, so that a batch
+	// put late in the hour it is keyed by is in the seal.
+	Settle Duration `json:"settle,omitzero"`
+	Sink   *Sink    `json:"sink,omitempty"`
+	// Require is the weakest durability the notary's own records may be
+	// acknowledged with.
+	Require string `json:"require,omitempty"`
 }
 
 // Purge is the configuration of `audit purge`.

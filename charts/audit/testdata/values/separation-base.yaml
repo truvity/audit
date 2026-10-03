@@ -1,6 +1,5 @@
-# A valid install whose writer holds its keys in OpenBAO and whose digest job
-# signs with a transit key under a role of its own: the base the refusals about
-# separation of duties are laid over (tests/invalid/audit).
+# A valid install whose writer holds its keys in OpenBAO: the base the refusals
+# about separation of duties are laid over (tests/invalid/audit).
 mode: direct
 externalIdentifiersAreOpaque: true
 writer:
@@ -20,6 +19,8 @@ writer:
             role: audit-writer
             jwtFile: /var/run/openbao/token
 jobs:
+  notary:
+    enabled: false
   verify:
     enabled: false
   purge:

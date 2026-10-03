@@ -36,6 +36,9 @@ Names are as the gateway stores them: dots become underscores, a counter gains
 | `audit_observe_index_deferred_total` | counter | `profile`, `reason` | objects the indexer could not index: `retry` is tried again, `unreadable` was skipped |
 | `audit_observe_objects_indexed_total`, `audit_observe_records_indexed_total` | counter | `profile` | the indexer's output |
 | `audit_writer_dead_lettered_total` | counter | | records the writer could not process |
+| `audit_seal_age_seconds` | gauge | `profile` | seconds since the end of the newest sealed hour, of the tenant furthest behind, **as of the notary's last run** |
+| `audit_seal_written_total` | counter | `profile` | seals the notary wrote |
+| `audit_seal_failures_total` | counter | `profile` | tenants a notary run could not seal further |
 | `audit_writer_objects_written_total`, `audit_writer_records_written_total` | counter | `profile` | the writer's output |
 | `audit_emit_records_dropped_total` | counter | `action` | records an emitter's queue gave up |
 | `audit_emit_queue_pending` | gauge | | records an emitter holds, unacknowledged |
@@ -51,6 +54,17 @@ with too many labels is dropped by the store while the write answers 200. The
 labels used here have a handful of values each: profiles are the few names a
 deployment chose, transports are four, durabilities three. The tenant is on the
 span, where it costs nothing.
+
+**Seal age** is pushed by the notary, which is an hourly job: it reports what it
+found when it ran, over OTLP at exit, and the series then stops. The alert and
+the dashboard therefore add the time since the last sample
+(`last_over_time(m[1d]) + (time() - tlast_over_time(m[1d]))`), so a notary that
+no longer runs shows as an age that keeps climbing and not as a series that
+vanished. Each profile reports the tenant furthest behind, so one stalled tenant
+is seen. What the notary does not report, because it did not run, is whether it
+ran: a notary that never reported at all (no collector configured for it, a job
+that cannot start) leaves no series to age, and the CronJob's own state is the
+evidence then.
 
 **Index lag** is the time from an object's put to its rows being in the index,
 taken from the object's own timestamp in the archive. It is a histogram and is
@@ -89,13 +103,14 @@ instrumentation and the exporter to the list.
 
 ## Alerts
 
-Six rules in one group, `audit.write-path`. Each threshold and its reason is
+Seven rules in one group, `audit.write-path`. Each threshold and its reason is
 in the comment above the rule in `charts/audit/templates/alerts.yaml`.
 
 | alert | fires when | threshold and why | severity |
 |---|---|---|---|
 | `AuditRecordsDeadLettered` | any increase in 15m | zero is the only healthy count: the writer accepts every well-formed record | critical |
 | `AuditEmitterDroppingRecords` | any increase in 15m, any namespace | a dropped record never exists | critical |
+| `AuditSealStale` | the newest sealed hour of a profile older than 3h, for 10m | the hourly notary seals an hour about ten minutes after it ends, so a healthy newest seal is at most about 1h20m old and one missed run leaves it near 2h20m; three hours fires on the second, when a gap in the chain has opened that no later seal can close | critical |
 | `AuditIndexLagHigh` | p99 index lag above 600s, for 10m | the settle window (default 2m) is the floor of the lag, so ten minutes is an indexer that has stopped or is stuck; raise it with `settle` | warning |
 | `AuditIndexRowsDeferred` | any increase in 15m | an object the indexer could not take: search is late or missing it | warning |
 | `AuditWriterRejectingRecords` | over 5% of records refused and at least 10, for 10m | a share, so one buggy producer on a busy stream is seen and one bad record on a quiet one is not | warning |
@@ -143,6 +158,18 @@ preceded it and at the sink for why it was away: the receiver down, the stream
 full, the network. Raise the queue depth only after fixing the sink; a deeper
 queue over a dead sink only delays the loss.
 
+#### AuditSealStale
+
+No hour has been sealed for a profile for three hours. An hour with no seal cannot
+be told from one whose seal was removed. Look at the notary CronJob
+(`kubectl get cronjob`, then the last Job's log). The usual causes are the seal
+key (a KMS or OpenBAO policy, a key that is gone, a role the notary does not
+have), the archive (a `Put` refused), and an object of the profile that does not
+match its own metadata, which the notary refuses to seal past: its log names the
+object and the rule (`hour ... is not sealed: ... problem(s) in its objects`).
+The notary resumes from the last seal on its own once the cause is fixed, and
+needs no operator to catch up; `audit verify --root ...` then confirms the chain.
+
 #### AuditIndexLagHigh
 
 Objects reach the index long after they were put, well past the settle window.
@@ -178,9 +205,10 @@ and its oldest message ages; both are the broker's own metrics.
 ## The dashboard
 
 `charts/audit/dashboards/audit-overview.json`, "Audit overview - $cluster": dead
-letters, rejections, index rows deferred, emitter drops and consumer failures as
-tiles; ingest rate by transport, the durability mix, rejection and dead-letter
-rates, write latency, index lag, and each application's emitter queue and drops.
+letters, rejections, index rows deferred, the newest seal's age, emitter drops and
+consumer failures as tiles; ingest rate by transport, the durability mix, rejection
+and dead-letter rates, write latency, index lag, the age of the newest seal by
+profile, and each application's emitter queue and drops.
 It is generated by `hack/dashboards/audit-overview.py`, so thresholds, units and
 descriptions are decided once.
 

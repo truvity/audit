@@ -93,14 +93,20 @@ stat("Index objects deferred (1h)",
      "Objects the archive holds and the indexer (audit-observe) could not index: a fetch or a catalogue it will try again, or an object that "
      "does not decode and was skipped. The archive is fine; search is behind or missing it until the cause is fixed or `audit reindex` reads the range.",
      "sum(increase(audit_observe_index_deferred_total{%s}[1h]))" % W, 8, y)
+stat("Newest seal age",
+     "How old the newest sealed hour is, per profile and the worst of them, as of the notary's last run plus the time since. The hourly notary seals "
+     "an hour about ten minutes after it ends, so up to about an hour and a half is normal. Past three hours the chain has stopped growing: look at "
+     "the notary CronJob.",
+     "max(last_over_time(audit_seal_age_seconds{%s}[1d]) + (time() - tlast_over_time(audit_seal_age_seconds{%s}[1d])))" % (W, W), 12, y, unit="s",
+     steps=[(None, GREEN), (3600 * 2.5, ORANGE), (10800, RED)])
 stat("Emitters dropping (1h)",
      "Records emitters gave up because their queue overflowed, across every namespace of the cluster. Healthy is zero: a drop is a record "
      "that will never exist. Look at the per-application panel below for who.",
-     "sum(increase(audit_emit_records_dropped_total{%s}[1h]))" % K, 12, y)
+     "sum(increase(audit_emit_records_dropped_total{%s}[1h]))" % K, 16, y)
 stat("Consumers failing (1h)",
      "Batches a queue consumer's target refused or failed, to be delivered again. A few across a writer restart are normal; a count that "
      "keeps growing is a consumer going round in circles.",
-     "sum(increase(audit_sink_consume_failures_total{%s}[1h]))" % W, 16, y, steps=[(None, GREEN), (5, ORANGE), (30, RED)])
+     "sum(increase(audit_sink_consume_failures_total{%s}[1h]))" % W, 20, y, steps=[(None, GREEN), (5, ORANGE), (30, RED)])
 y += 4
 
 row("Ingest", y)
@@ -136,7 +142,7 @@ series("Consumer failures per second",
        12, y, 12, "ops")
 y += 8
 
-row("Index and writes", y)
+row("Index, writes and seals", y)
 y += 1
 series("Index lag, p50 and p99",
        "Seconds from an object being put into the archive to its rows being searchable, as the indexer measures it. The indexer does not look at an "
@@ -151,12 +157,17 @@ series("Index objects deferred, by profile and reason",
        [('sum by (profile, reason) (increase(audit_observe_index_deferred_total{%s}[$__rate_interval]))' % W, "{{profile}} {{reason}}")],
        12, y, 12, "short")
 y += 8
+series("Seal age, by profile",
+       "Seconds since the end of the newest sealed hour, per profile (the tenant furthest behind), as of the notary's last run plus the time since. "
+       "A sawtooth under about an hour and a half is the hourly notary; a line that climbs past three hours is a chain that stopped.",
+       [('max by (profile) (last_over_time(audit_seal_age_seconds{%s}[1d]) + (time() - tlast_over_time(audit_seal_age_seconds{%s}[1d])))' % (W, W), "{{profile}}")],
+       0, y, 12, "s")
 series("Objects and records written per second",
        "Objects the writer put into the archive and the record copies in them. Many records per object is the roll working; one record per "
        "object is a roll interval too short for the traffic.",
        [('sum(rate(audit_writer_objects_written_total{%s}[$__rate_interval]))' % W, "objects"),
         ('sum(rate(audit_writer_records_written_total{%s}[$__rate_interval]))' % W, "records")],
-       0, y, 12, "ops")
+       12, y, 12, "ops")
 y += 8
 
 row("Emitters, by application namespace", y)
@@ -207,7 +218,7 @@ def var_namespace():
 dashboard = {
     "uid": "audit-overview",
     "title": "Audit overview - $cluster",
-    "description": "The audit trail's write path: ingest, rejections, durability, dead letters, index lag, and what the emitters of each application are queueing and dropping.",
+    "description": "The audit trail's write path: ingest, rejections, durability, dead letters, index lag, seal age, and what the emitters of each application are queueing and dropping.",
     "editable": False, "graphTooltip": 1, "refresh": "1m", "schemaVersion": 39,
     "time": {"from": "now-6h", "to": "now"}, "timezone": "", "annotations": {"list": []},
     "links": [], "tags": ["audit"],

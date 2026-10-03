@@ -41,6 +41,7 @@ var components = map[string]struct {
 	"query":      {[]string{"query", "config"}, "audit-query"},
 	"observe":    {[]string{"observe", "config"}, "audit-observe"},
 	"migrate":    {[]string{"migrate", "config"}, "audit-migrate"},
+	"notary":     {[]string{"jobs", "notary", "config"}, "audit-notary"},
 	"verify":     {[]string{"jobs", "verify", "config"}, "audit-verify"},
 	"purge":      {[]string{"jobs", "purge", "config"}, "audit-purge"},
 	"clock-sync": {[]string{"jobs", "clockSync", "config"}, "audit-clock-sync"},

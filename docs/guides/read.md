@@ -141,10 +141,14 @@ curl -s …/audit.v1.QueryService/Get -H "Authorization: Bearer $TOKEN" -H 'Cont
   -d '{"profile": "security", "id": "0199b100-0000-7000-8000-00000000001a"}'
 ```
 
-`provenance.object_key` and `line` locate the copy in the archive;
-`digest_id` and `verified_at` are empty for now: they are for seals
-([0019](../decisions/0019-seals.md)), which are not built yet, and the
-digest chain that used to set them was removed with the v0 layout.
+`provenance.object_key` and `line` locate the copy in the archive. `digest_id`
+(named from before seals) is the key of the seal that covers the object's hour,
+when the service is given the archive and the hour is sealed
+([0019](../decisions/0019-seals.md)); empty means not sealed yet, the ordinary
+state of the current hour. It says an hour is sealed, not that anyone has
+checked the seal: `verified_at` stays empty until a verifier marks it, which
+`audit verify` does not do and the follower's verification marks will, and a
+reader should take empty as not verified.
 
 **Export** starts a job, **GetExport** polls it and returns a short-lived
 download link:

@@ -42,6 +42,7 @@ func telemetryValues() m {
 				"indexDeferred":    rule("Rows reached the archive and not the index.", nil),
 				"writerRejections": rule("The writer refuses a share of the records it is sent.", m{"ratio": m{"type": "number", "minimum": 0, "maximum": 1, "description": "The share refused."}, "minRecords": integer("The fewest refusals in the window that count.", 1, nil)}),
 				"consumerFailing":  rule("A queue consumer's target keeps failing its batches.", nil),
+				"sealStale":        rule("The newest sealed hour of a profile is too old: the notary has stopped.", m{"maxAgeSeconds": integer("The age of the newest sealed hour, in seconds, past which the notary is taken to have stopped.", 1, nil)}),
 			}),
 		}),
 		"dashboards": obj("Grafana dashboards, rendered with `renders: dashboards`.", m{

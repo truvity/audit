@@ -6,6 +6,7 @@ bin/
 /audit
 /audit-query
 /audit-observe
+/audit-notary
 /audit-registry
 /audit-writer
 /embed

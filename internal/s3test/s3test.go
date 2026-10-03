@@ -30,6 +30,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
+	kmstypes "github.com/aws/aws-sdk-go-v2/service/kms/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
@@ -225,4 +227,33 @@ func Fill(t *testing.T, s store.Store, profile, tenant string, hour time.Time, n
 		keys = append(keys, key)
 	}
 	return keys
+}
+
+// KMS is a KMS client on the same endpoint as the S3 tests, which skips the test
+// when there is none.
+func KMS(t *testing.T) *kms.Client {
+	t.Helper()
+	endpoint := os.Getenv(URLEnv)
+	if endpoint == "" {
+		t.Skip("set " + URLEnv + " to run the KMS tests (a LocalStack endpoint)")
+	}
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("test", "test", "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return kms.NewFromConfig(cfg, func(o *kms.Options) { o.BaseEndpoint = aws.String(endpoint) })
+}
+
+// SigningKey creates a KMS key of the given spec for signing and returns its id.
+func SigningKey(t *testing.T, c *kms.Client, spec kmstypes.KeySpec) string {
+	t.Helper()
+	out, err := c.CreateKey(context.Background(), &kms.CreateKeyInput{
+		KeySpec: spec, KeyUsage: kmstypes.KeyUsageTypeSignVerify,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return aws.ToString(out.KeyMetadata.KeyId)
 }

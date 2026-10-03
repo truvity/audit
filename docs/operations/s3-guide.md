@@ -83,10 +83,20 @@ Everything one installation writes, beneath its `prefix`:
 |---|---|---|---|
 | `records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>/<ULID>` | writer | one object per ingest batch, by the hour of ingest ([the contract](../reference/bucket-contract.md)) | the profile's, per object at PUT (years after expiry for an `after_expiry` profile) |
 | `catalogue/<app>/<version>` | writer | the application's catalogue at that version, written once | the longest profile |
+| `seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws` | notary | one signed seal per profile, tenant and hour, empty hours too, chained through `prev` | that of the records it covers, per object at PUT |
+| `keys/roots.jwks` | the notary, once, if absent; otherwise the operator | the root public keys, as a JWK Set: distribution, not trust | none; the bucket versions it |
+| `keys/delegations/<thumbprint>/<ULID>.jws`, `keys/revocations/<ULID>.jws` | a root | statements about keys a verifier checks | none |
 | `schema/…` | writer | extension schemas and the record schema the records were written under | the longest profile |
 | `dlq/year=/month=/day=/…` | writer | records the writer could not take | the longest profile |
 | `holds/<id>/…` | `audit hold` | legal holds placed and released | the longest profile |
 | `identity/tenant=<t>/purpose=<p>/<pseudonym>` | writer | the sealed identity behind a pseudonym, for resolve | the longest profile |
+
+The notary is a fourth identity beside the writer, the verifier and the query
+service: it may get and list under the prefix, put under `seals/` and the one
+object `keys/roots.jwks`, decrypt, and use the seal key, and it may not put under
+`records/`, which is the writer's. The writer may not put under `seals/` or
+`keys/`: whoever writes the archive and can also seal it can choose what to seal.
+The lifecycle rules for seals are those of the records they cover.
 
 A record's own date does not decide where it lives: a reader finds it by the
 hour it was ingested. A profile's name is a key component, so it must not

@@ -61,6 +61,8 @@ func TestTheTypesAndTheSchemasDescribeTheSameKeys(t *testing.T) {
 		{"receiver forwarding to SQS", "audit-writer.receiver.full.yaml", &config.Writer{}, "audit-writer"},
 		{"query", "audit-query.full.yaml", &config.Query{}, "audit-query"},
 		{"observe", "audit-observe.full.yaml", &config.Observe{}, "audit-observe"},
+		{"notary", "audit-notary.full.yaml", &config.Notary{}, "audit-notary"},
+		{"verify with seals", "audit-verify.full.yaml", &config.Verify{}, "audit-verify"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join("testdata", c.file))
@@ -127,6 +129,7 @@ func TestEveryJobTakesAValidFile(t *testing.T) {
 		"clock":   func(p string) error { _, err := config.LoadClockSync(p); return err },
 		"observe": func(p string) error { _, err := config.LoadObserve(p); return err },
 		"migrate": func(p string) error { _, err := config.LoadMigrate(p); return err },
+		"notary":  func(p string) error { _, err := config.LoadNotary(p); return err },
 	} {
 		body := map[string]string{
 			"verify":  "deployment: /d.yaml\n" + archive,
@@ -134,6 +137,7 @@ func TestEveryJobTakesAValidFile(t *testing.T) {
 			"clock":   "ntp: [time.example.test]\n",
 			"migrate": "database: {url: 'postgres://u@h/db'}\nreader: audit_query\nwriter: audit_writer\nobserve: audit_observe\n",
 			"observe": "archive: {bucket: {name: b}}\ndatabase: {url: 'postgres://u@h/db'}\n",
+			"notary":  archive + "signer: {file: {path: /etc/audit/seal.pem}}\n",
 		}[name]
 		if err := load(write(t, body)); err != nil {
 			t.Errorf("%s: %v", name, err)
@@ -429,5 +433,44 @@ func TestObserveTakesItsDefaultsAndRefusesWhatItCannotUse(t *testing.T) {
 		if _, err := config.LoadObserve(write(t, body)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// The notary names exactly one place its key is, and gets the defaults a
+// notary should not have to say: a ten-minute settle window and the record
+// tier's lock.
+func TestTheNotaryHasOneSignerAndItsDefaults(t *testing.T) {
+	n, err := config.LoadNotary(write(t, "archive: {bucket: {name: b}}\nsigner: {kms: {key: alias/seal}}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Settle.D() != config.DefaultSettle || n.Archive.LockMode != "compliance" {
+		t.Errorf("defaults not applied: %+v", n)
+	}
+	for name, body := range map[string]string{
+		"two signers": "archive: {bucket: {name: b}}\nsigner: {kms: {key: k}, file: {path: /k.pem}}\n",
+		"no signer":   "archive: {bucket: {name: b}}\nsigner: {}\n",
+		"no archive":  "signer: {file: {path: /k.pem}}\n",
+		"typo":        "archive: {bucket: {name: b}}\nsigner: {kms: {key: k}}\nsettel: 5m\n",
+	} {
+		if _, err := config.LoadNotary(write(t, body)); err == nil {
+			t.Errorf("%s: the file was accepted", name)
+		}
+	}
+}
+
+// A verifier that checks seals pins at least one root: an empty list would
+// trust nothing and say so only by failing every seal.
+func TestSealVerificationPinsARoot(t *testing.T) {
+	base := "deployment: /d.yaml\narchive: {bucket: {name: b}}\n"
+	if _, err := config.LoadVerify(write(t, base+"seals: {roots: []}\n")); err == nil {
+		t.Error("an empty list of roots was accepted")
+	}
+	v, err := config.LoadVerify(write(t, base+"seals: {roots: [AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA]}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Seals.Settle.D() != config.DefaultSettle || v.Seals.Grace.D() != config.DefaultGrace {
+		t.Errorf("defaults not applied: %+v", v.Seals)
 	}
 }

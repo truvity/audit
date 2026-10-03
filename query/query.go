@@ -50,7 +50,8 @@ type Config struct {
 	// records none is half a service.
 	Sink sink.Sink
 
-	// Archive, when given, is where resolve finds sealed identities.
+	// Archive, when given, is where resolve finds sealed identities, and where
+	// a record's provenance finds the seal that covers its hour.
 	Archive store.Store
 	// Keys, when given together with Archive, offers resolve: the way back
 	// from a pseudonym to the identity behind it. It must open what the
@@ -119,6 +120,8 @@ func New(c Config) (*Service, error) {
 			log.Error("a read was not recorded", "action", action, "error", err)
 		},
 	}
+	// With the archive, a record says which seal covers its hour.
+	s.Seals = c.Archive
 	if c.Keys != nil {
 		s.Identities = &identity.Map{Store: c.Archive, Keys: c.Keys}
 	}

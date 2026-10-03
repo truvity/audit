@@ -26,9 +26,10 @@ import (
 // It needs the archive and nothing else. An auditor runs it with read-only
 // credentials and their own copy of this command, which is what makes the
 // answer worth having: nothing in the result depends on trusting the operator
-// of the archive. What it cannot say is that nothing was omitted or added: that
-// is what seals vouch for (docs/decisions/0019-seals.md), and they come with
-// the notary.
+// of the archive. What the objects alone cannot say is that nothing was omitted
+// or added: that is what seals vouch for (docs/decisions/0019-seals.md), and
+// with Seals set this checks them too, against the roots it is given and
+// nothing else.
 type Verify struct {
 	Store   store.Store
 	Profile string
@@ -53,6 +54,22 @@ type Verify struct {
 	Instance  string
 	JSON      bool
 	Out       io.Writer
+	// Seals, when set, makes the check cover the seals of the range too.
+	Seals *SealCheck
+	// Now is the clock the missing-seal rule reads; nil is the wall clock.
+	Now func() time.Time
+}
+
+// SealCheck is what a verifier needs to check seals: the roots it trusts, and
+// when a seal is late enough that its absence is a fault.
+type SealCheck struct {
+	// Roots are the thumbprints of the root keys the verifier pins. Nothing else
+	// in the bucket is trusted, however it is signed.
+	Roots []string
+	// Settle is the notary's settle window and Grace how much later than that a
+	// seal may still be missing: an hour is due once it has ended, Settle has
+	// passed and Grace has passed.
+	Settle, Grace time.Duration
 }
 
 // VerifyFinding is one thing wrong, or one object checked and right.
@@ -75,6 +92,8 @@ type VerifyReport struct {
 	To      time.Time `json:"to"`
 	Objects int       `json:"objects"`
 	Records int       `json:"records"`
+	// Seals is how many seals were checked; zero when seals were not.
+	Seals int `json:"seals,omitempty"`
 	// Windows are the hours that had objects, in the order they were checked.
 	// A caller that reports per window needs to know which were looked at, not
 	// only which had something wrong.
@@ -183,6 +202,11 @@ func (v Verify) verify(ctx context.Context) (*VerifyReport, error) {
 			return nil, fmt.Errorf("verify: %w", err)
 		}
 	}
+	if v.Seals != nil {
+		if err := v.checkSeals(ctx, report, windows); err != nil {
+			return nil, fmt.Errorf("verify: %w", err)
+		}
+	}
 	// Windows come tenant by tenant; a window is reported in time order.
 	sort.Strings(report.Windows)
 	return report, nil
@@ -261,10 +285,15 @@ func ParseDay(v string) (time.Time, error) {
 // window with nothing wrong is recorded too, since a verification that never
 // ran and one that found nothing wrong are indistinguishable otherwise.
 //
-// The events are the common catalogue's audit.digest.verified and
-// audit.digest.failed, which seals will replace; the window is named as the
-// prefix of its hour.
+// The events are the common catalogue's audit.seal.verified and
+// audit.seal.failed, and they say what they name: they are recorded only when
+// seals were checked. A run that checked objects alone has said nothing about
+// any seal, and a record that claimed it had would be the false assurance this
+// exists to prevent. The window is named as the prefix of its hour.
 func (v Verify) record(ctx context.Context, report *VerifyReport) error {
+	if v.Seals == nil {
+		return nil
+	}
 	reporter, err := newReporter(v.Catalogue, v.Sink, v.Version, v.instance())
 	if err != nil {
 		return fmt.Errorf("verify: %w", err)
@@ -292,12 +321,12 @@ func (v Verify) record(ctx context.Context, report *VerifyReport) error {
 			continue
 		}
 		reporter.record(ctx, succeeded(
-			reporter.event("audit.digest.verified", "digest", window),
+			reporter.event("audit.seal.verified", "seal", window),
 			auditv1.Operation_OPERATION_ACCESS))
 	}
 	for _, window := range order {
 		reporter.record(ctx, failed(
-			reporter.event("audit.digest.failed", "digest", window),
+			reporter.event("audit.seal.failed", "seal", window),
 			auditv1.Operation_OPERATION_ACCESS,
 			strings.Join(reasons[window], "; ")))
 	}

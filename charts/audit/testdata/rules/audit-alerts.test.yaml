@@ -88,6 +88,61 @@ tests:
         alertname: AuditEmitterDroppingRecords
         exp_alerts: []
 
+  # ---------------------------------------------------------------- seal age
+  - name: a notary that stopped reporting fires on the age it would have by now
+    interval: 1m
+    input_series:
+      # The notary's last run saw the newest seal at 4000s old and has not run
+      # since: one sample, then nothing for three hours. The series is gone and
+      # the alert must not be.
+      - series: 'audit_seal_age_seconds{namespace="audit",k8s_cluster_name="example",profile="security"}'
+        values: '4000 _x400'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: AuditSealStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: platform
+              namespace: audit
+              k8s_cluster_name: example
+              profile: security
+            exp_annotations:
+              summary: 'The newest audit seal of profile security is 4h 6m 40s old'
+              description: >-
+                No hour has been sealed for profile security
+                for longer than 10800s. An hour with no
+                seal cannot be told from one whose seal was removed. Check the
+                notary CronJob (`kubectl get cronjob`), its last Job's log, the
+                seal key it signs with and whether an object of the profile does not
+                match its own metadata, which the notary refuses to seal past.
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditsealstale
+
+  - name: a healthy hourly notary, one missed run, and another namespace's stale series do not fire
+    interval: 1m
+    input_series:
+      # An hourly job: each run finds the newest seal 17 minutes old, then the
+      # age climbs by the minute until the next run, which the rule adds.
+      - series: 'audit_seal_age_seconds{namespace="audit",k8s_cluster_name="example",profile="security"}'
+        values: '1020 _x59 1020 _x59 1020 _x59 1020'
+      # One missed run, then the next one repairs it: at its worst the age is
+      # 1h57m, under the three hours.
+      - series: 'audit_seal_age_seconds{namespace="audit",k8s_cluster_name="example",profile="billing"}'
+        values: '1020 _x59 1020 _x119 1020'
+      # An old install's series in a namespace that is not this one's.
+      - series: 'audit_seal_age_seconds{namespace="other",k8s_cluster_name="example",profile="security"}'
+        values: '99999 _x400'
+    alert_rule_test:
+      - eval_time: 55m
+        alertname: AuditSealStale
+        exp_alerts: []
+      - eval_time: 175m
+        alertname: AuditSealStale
+        exp_alerts: []
+      - eval_time: 3h
+        alertname: AuditSealStale
+        exp_alerts: []
+
   # ---------------------------------------------------------------- index lag
   # The indexer does not look at an object younger than its settle window (2m
   # by default), so a healthy p99 sits a little above that; the alert is for an

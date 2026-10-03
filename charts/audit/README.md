@@ -38,8 +38,14 @@ the application. The deployment pages show the values each shape takes:
   given the keys — resolve, behind the grants in `query.grants`. Every read is
   recorded through the writer. It reads the index as **its own database
   role**, which must not own the tables (`query.config.database`).
+- **`audit-notary`** (`jobs.notary.enabled`, off by default), an hourly CronJob in
+  an image of its own that seals every closed hour into a signed chain
+  ([0019](../../docs/decisions/0019-seals.md)). It signs, so it runs as an identity
+  of its own that the chart refuses to be the writer's, with a P-384 key in KMS
+  or OpenBAO.
 - **Three CronJobs**: `audit verify` nightly (one job
-  for the profiles it lists, or every profile), `audit purge` daily,
+  for the profiles it lists, or every profile; with `seals.roots` it checks the
+  seals too), `audit purge` daily,
   `audit clock-sync` daily. Each runs `--config` against its own file and
   records what it did through the writer's own sink. `clock-sync` needs at
   least one reference clock (`jobs.clockSync.config.ntp`): every preset with a
@@ -54,7 +60,7 @@ Service keeps its name and the receiver keeps the `writer` component label in
 both, because it is the address records are written to and that should not move
 when a deployment changes shape.
 
-Three images, one per binary: `image.writer`, `image.query`, `image.cli`. The
+Four images, one per binary: `image.writer`, `image.query`, `image.notary`, `image.cli`. The
 receiver serves `RegisterCatalogue`, so there is no fourth.
 
 **Whose catalogue is whose.** The writer takes it from the caller's verified
@@ -113,13 +119,14 @@ The chart takes references; it creates none of these.
 | **a role for the writer**: the dedupe table, the registry and the key directory, and none of the index | `writer.config.database` and `passwordEnv`, with `secretEnv`; `migrate.config.writer` names the role |
 | **a role for the indexer**: read and write on the index and its cursors | `observe.config.database` and `passwordEnv`, with `observe.secretEnv`; `migrate.config.observe` names the role |
 | **a separate read-only role** for the query service: `usage` on the schema, `select` on the index's tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.config.database` and `passwordEnv`, with `query.secretEnv`; `migrate.config.reader` names the role |
+| a P-384 signing key the notary may use and the writer may not (KMS `ECC_NIST_P384`, or OpenBAO `ecdsa-p384`), and the thumbprint of its public half for every verifier to pin | `jobs.notary.config.signer`, `jobs.verify.config.seals.roots` |
 | the JetStream stream, already created, with `mode: stream` | `writer.config.stream`, `receiver.config.stream` |
 | **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.nats.tokenFile` and a `tokens` entry of the broker's audience |
 | the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
 | an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsEnv` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
-| the images | `image.writer`, `image.query`, `image.observe`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
-| a role per component — writer, indexer, query and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver, and the indexer, sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `observe.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
+| the images | `image.writer`, `image.query`, `image.observe`, `image.notary`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
+| a role per component — writer, indexer, notary, query and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver, the notary and the indexer, sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `observe.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
 | **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/operations/openbao-keys.md#what-the-engine-needs)) | `keys.local.rootFile` with `secretMounts`, or `keys.provider: transit` with `keys.transit.openbao.login` and a `tokens` entry |
 | a CA bundle, if OpenBAO or Postgres serve from a private chain (e.g. trust-manager's) | `trust.configMap` |
 | a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keysVolume` |

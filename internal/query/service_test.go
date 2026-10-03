@@ -11,11 +11,14 @@ import (
 
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/query"
+	"github.com/truvity/audit/internal/ulid"
 	"github.com/truvity/audit/sdk/auth"
 	"github.com/truvity/audit/sdk/catalogue"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/store"
+	"github.com/truvity/audit/store/storetest"
 )
 
 func at(t *testing.T, value string) time.Time {
@@ -461,5 +464,61 @@ func TestRubbishIsNotACursor(t *testing.T) {
 		&auditv1.SearchRequest{Profile: "security", Cursor: "not-a-cursor"})
 	if err == nil {
 		t.Fatal("a made-up cursor was accepted")
+	}
+}
+
+// A record read from an object whose hour is sealed says which seal covers it.
+// It does not say the seal was verified: that is a verifier's mark, and until
+// one is made VerifiedAt stays empty.
+func TestAGetNamesTheSealThatCoversItsHour(t *testing.T) {
+	common, err := catalogue.Common()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hour := at(t, "2026-09-17T10:00:00Z")
+	objectKey := store.RecordKey("security", "acme", hour, ulid.From(hour.Add(5*time.Minute), 1))
+	rows := index.NewMemory()
+	if err := rows.Index(context.Background(), "security", []index.Row{{
+		ID: "018f0000-0000-7000-8000-00000000000a", TenantID: "acme", OccurredAt: hour, RecordedAt: hour,
+		Source: "wallet", Action: "wallet.credential.issued", Operation: "create", Outcome: "success",
+		ObjectKey: objectKey, Line: 1,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	archive := storetest.NewMemory()
+	newService := func() *query.Service {
+		s, err := query.New(&query.Service{
+			Searcher:   rows,
+			Authorizer: auth.Declarative{Rules: []auth.Rule{{Name: "a-rule", Grant: fullGrant()}}},
+			Sink:       &reads{}, Catalogue: common, Instance: "query-1", Seals: archive,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = s.Close() })
+		return s
+	}
+	get := func() index.Provenance {
+		_, where, _, err := newService().Get(context.Background(), caller(), &auditv1.GetRequest{
+			Profile: "security", Id: "018f0000-0000-7000-8000-00000000000a"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return where
+	}
+
+	if got := get(); got.Digest != "" {
+		t.Fatalf("an hour that is not sealed is covered by %q", got.Digest)
+	}
+	sealKey := store.SealKey("security", "acme", hour)
+	if err := archive.Put(context.Background(), store.Object{Key: sealKey, Body: []byte("x"), RetainUntil: hour.AddDate(1, 0, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	got := get()
+	if got.Digest != sealKey {
+		t.Fatalf("covered by %q, want %q", got.Digest, sealKey)
+	}
+	if !got.VerifiedAt.IsZero() {
+		t.Fatal("a seal that nobody verified is reported as verified")
 	}
 }

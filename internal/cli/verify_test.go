@@ -47,9 +47,14 @@ func copyOf(t *testing.T, id string, at time.Time) *record.Record {
 func verifier(t *testing.T, s *storetest.Memory, from, to time.Time) (cli.Verify, *collector) {
 	t.Helper()
 	into := &collector{}
+	// The seal events are recorded when seals are checked. These tests are about
+	// the objects, so the clock stands before any hour is due a seal: nothing is
+	// missing yet, and the events are the ones a clean or a broken hour makes.
 	return cli.Verify{
 		Store: s, Profile: "security", From: from, To: to,
 		Sink: into, Catalogue: common(t), Instance: "verify-1", Out: &strings.Builder{},
+		Seals: &cli.SealCheck{Roots: []string{"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}, Settle: 10 * time.Minute, Grace: time.Hour},
+		Now:   func() time.Time { return from },
 	}, into
 }
 
@@ -74,14 +79,14 @@ func TestVerifyAcceptsWhatTheWriterWritesAndRecordsEveryWindow(t *testing.T) {
 	if problems != 0 {
 		t.Fatalf("%d problems on a clean archive:\n%s", problems, run.Out)
 	}
-	verified := events(into, "audit.digest.verified")
+	verified := events(into, "audit.seal.verified")
 	if len(verified) != 2 {
 		t.Fatalf("%d verified events for 2 hours with objects", len(verified))
 	}
 	if want := "records/security/2026/09/17/10"; verified[0].GetTargets()[0].GetId() != want {
 		t.Fatalf("target %q, want %q", verified[0].GetTargets()[0].GetId(), want)
 	}
-	if len(events(into, "audit.digest.failed")) != 0 {
+	if len(events(into, "audit.seal.failed")) != 0 {
 		t.Fatal("a clean archive recorded a failure")
 	}
 }
@@ -145,14 +150,14 @@ func TestVerifyReportsAnObjectThatChanged(t *testing.T) {
 	if !strings.Contains(report, "sha256 is") || !strings.Contains(report, "count is") {
 		t.Fatalf("the report does not say what changed:\n%s", report)
 	}
-	bad := events(into, "audit.digest.failed")
+	bad := events(into, "audit.seal.failed")
 	if len(bad) != 1 {
 		t.Fatalf("%d failure events, want 1 for the one hour in doubt", len(bad))
 	}
 	if bad[0].GetOutcome().GetResult() != auditv1.Outcome_RESULT_FAILURE || bad[0].GetOutcome().GetReason() == "" {
 		t.Fatalf("outcome %v", bad[0].GetOutcome())
 	}
-	if len(events(into, "audit.digest.verified")) != 0 {
+	if len(events(into, "audit.seal.verified")) != 0 {
 		t.Fatal("the hour in doubt was also recorded as verified")
 	}
 }

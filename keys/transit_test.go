@@ -56,7 +56,7 @@ func transitKey(t *testing.T, url, token, kind string) string {
 	bao(t, url, token, http.MethodPost, "sys/mounts/transit", map[string]string{"type": "transit"})
 	// Unique per run: a dev server outlives a test run, and a key left from
 	// the last one has been rotated already.
-	name := "digest-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")) + "-" + strings.ToLower(rand.Text()[:6])
+	name := "seal-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")) + "-" + strings.ToLower(rand.Text()[:6])
 	bao(t, url, token, http.MethodPost, "transit/keys/"+name, map[string]string{"type": kind})
 	return name
 }
@@ -127,7 +127,37 @@ func TestATransitKeyOfTheWrongTypeIsRefused(t *testing.T) {
 	url, token := openbao(t)
 	name := transitKey(t, url, token, "aes256-gcm96")
 	_, err := keys.NewTransitSigner(context.Background(), &keys.TransitSigner{Address: url, Key: name, Token: token})
-	if err == nil || !strings.Contains(err.Error(), "ed25519") {
+	if err == nil || !strings.Contains(err.Error(), "ecdsa-p384") {
 		t.Fatalf("an encryption key was accepted as a signer: %v", err)
+	}
+}
+
+// An ecdsa-p384 transit key signs ES384: transit hashes with SHA-384 and
+// returns ASN.1, and the exported public half verifies it.
+func TestATransitP384SignatureVerifiesWithItsPublicHalf(t *testing.T) {
+	url, token := openbao(t)
+	name := transitKey(t, url, token, "ecdsa-p384")
+	ctx := context.Background()
+	s, err := keys.NewTransitSigner(ctx, &keys.TransitSigner{Address: url, Key: name, Token: token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := []byte("eyJhbGciOiJFUzM4NCJ9.eyJ0ZW5hbnQiOiJhY21lIn0")
+	signature, err := s.Sign(ctx, message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	public, err := s.PublicKey(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := keys.ParseECPublic(public); err != nil {
+		t.Fatal(err)
+	}
+	if err := keys.Verify(public, message, signature); err != nil {
+		t.Fatalf("a transit P-384 signature did not verify: %v", err)
+	}
+	if err := keys.Verify(public, append(message, ' '), signature); err == nil {
+		t.Fatal("a signature verified over a message it was not made for")
 	}
 }

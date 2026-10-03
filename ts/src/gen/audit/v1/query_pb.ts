@@ -1056,8 +1056,8 @@ export const GetResponseSchema: GenMessage<GetResponse> = /*@__PURE__*/
   messageDesc(file_audit_v1_query, 28);
 
 /**
- * Provenance says where the copy was read from and whether a digest has
- * covered it.
+ * Provenance says where the copy was read from and whether a seal has covered
+ * it.
  *
  * @generated from message audit.v1.Provenance
  */
@@ -1073,11 +1073,17 @@ export type Provenance = Message<"audit.v1.Provenance"> & {
   line: bigint;
 
   /**
+   * The key of the seal that covers the object's hour, when the hour is sealed
+   * (seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws); empty until it is. The
+   * name is from before seals, when it was a digest's.
+   *
    * @generated from field: string digest_id = 3;
    */
   digestId: string;
 
   /**
+   * When a verifier last found the seal clean; empty when none has.
+   *
    * @generated from field: google.protobuf.Timestamp verified_at = 4;
    */
   verifiedAt?: Timestamp | undefined;

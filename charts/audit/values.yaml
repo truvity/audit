@@ -40,6 +40,11 @@ images:
     repository: ""
     tag: ""
     digest: ""
+  audit-notary:
+    registry: ""
+    repository: ""
+    tag: ""
+    digest: ""
   audit-observe:
     registry: ""
     repository: ""
@@ -63,6 +68,11 @@ image:
     tag: ""
   query:
     repository: ghcr.io/truvity/audit/audit-query
+    tag: ""
+  # The notary has an image of its own: it is a part of the system that signs,
+  # and it holds nothing else.
+  notary:
+    repository: ghcr.io/truvity/audit/audit-notary
     tag: ""
   observe:
     repository: ghcr.io/truvity/audit/audit-observe
@@ -162,6 +172,16 @@ alerts:
       enabled: true
       severity: critical
       for: 15m
+      labels: {}
+    sealStale:
+      enabled: true
+      severity: critical
+      # 3h: the notary runs hourly and seals an hour once it has ended and
+      # settled, so a healthy newest seal is at most about 1h20m old and one
+      # missed run leaves it near 2h20m. Three hours fires on the second miss,
+      # when a gap in the chain has opened that a later seal cannot close.
+      maxAgeSeconds: 10800
+      for: 10m
       labels: {}
 
 # Grafana dashboards, rendered only with `renders: dashboards`: one ConfigMap
@@ -445,6 +465,33 @@ service:
 # did through the writer's own sink, so each needs to reach it (`sink` in its
 # config, and a token if the writer verifies callers).
 jobs:
+  # Hourly. Seals every closed and settled hour since the last seal, per
+  # profile and tenant, into a signed chain (docs/decisions/0019-seals.md): the
+  # one part that signs. It runs as `audit-notary --config`, in an image of its
+  # own, and as an identity of its own: whoever can write the archive and can
+  # also sign for it can choose what to sign, so the chart refuses a notary that
+  # runs as the writer. Built and tested, not yet run live, so it is off until
+  # you give it a key.
+  notary:
+    enabled: false
+    # Seventeen minutes past: an hour is sealed ten minutes after it ends (the
+    # config's `settle`), and the job then has seven minutes of slack.
+    schedule: "17 * * * *"
+    # Its own identity: read the records, put seals/ and keys/, and use the
+    # seal key. Nothing the writer has. Bind the cloud role (Pod Identity, IRSA)
+    # or the OpenBAO role here; `create: false` is refused, because the job
+    # would then run as the writer.
+    serviceAccount:
+      create: true
+      name: ""
+      annotations: {}
+    # schemas/config/audit-notary.schema.json. Its `signer` is an AWS KMS key
+    # (ECC_NIST_P384: the private half never leaves KMS), an OpenBAO transit
+    # key (ecdsa-p384), or a P-384 key file for development.
+    config: {}
+    secretEnv: []
+    secretMounts: []
+    tokens: []
   verify:
     enabled: true
     schedule: "23 3 * * *"
@@ -455,7 +502,8 @@ jobs:
       annotations: {}
     # schemas/config/audit-verify.schema.json. One job checks every profile it
     # names, or every profile the deployment composes, over the objects ingested
-    # in the last `last` (default 24h).
+    # in the last `last` (default 24h). With `seals.roots` it checks the seals
+    # too, against the root thumbprints it pins and nothing else.
     config: {}
     secretEnv: []
     secretMounts: []

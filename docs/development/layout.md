@@ -14,7 +14,7 @@ stream server, no object-store client and no JWT library. See
 [the SDK module](#the-sdk-module) below.
 
 ```
-proto/audit/v1/       the contracts: record, sink, registry, query
+proto/audit/v1/       the contracts: record, sink, registry, query, seal (seals, delegations, revocations)
 gen/jsonschema/       the record's JSON Schema, generated, committed
 schemas/config/       each binary's configuration file schema
 presets/              the framework presets
@@ -41,8 +41,9 @@ sink/natssink/        the NATS JetStream publisher
 sink/sqssink/         the SQS publisher
 preset/               presets, profile composition, the deployment document
 keys/                 pseudonymisation providers (local, OpenBAO transit) and signers, for seals
-                      (key file, AWS KMS, OpenBAO transit)
-store/                the object store interface and the v1 archive layout; s3store/ the bucket;
+                      (P-384 key file, AWS KMS ECC_NIST_P384, OpenBAO transit ecdsa-p384)
+store/                the object store interface and the v1 archive layout, seals and keys
+                      included; s3store/ the bucket;
                       storetest/ a memory store a test writes to and can tamper with
 index/                Indexer and Searcher; memory; postgres/ the index, searcher, dedupe,
                       migrations; s3scan/ a searcher over the archive; indextest/ the
@@ -58,6 +59,9 @@ internal/observe/     the cursor indexer: list from a cursor behind a settle win
                       is held to over memory, S3 and Postgres
 internal/query/       search, facets, get, export, resolve, behind grants
 internal/recobj/      a record object: the key, the metadata, the body, encoded and decoded
+internal/merkle/      the RFC 6962 tree over SHA-256: root, audit paths, the vectors
+internal/seal/        seals, delegations and revocations as JWS (ES384): signing, parsing,
+                      thumbprints, JWK Sets, what an hour holds, and which keys to believe
 internal/bucketcontract/
                       the check of the bucket contract, which is also its
                       conformance suite (memory store and LocalStack S3)
@@ -67,7 +71,7 @@ internal/registry/    registered catalogues: validation, storage, the archive co
                       served by the writer, not by a service of its own
 internal/clock/       an SNTP client for the daily clock check
 internal/telemetry/   OTLP export and the writer's metrics; re-exports the SDK's names
-internal/cli/         the commands of cmd/audit
+internal/cli/         the commands of cmd/audit, and the notary's run (cmd/audit-notary)
 internal/config/      each binary's configuration: the types, the loader, and the
                       schema generator behind schemas/config/
 internal/corpus/      the record corpus (testdata/records) for transport tests
@@ -83,10 +87,11 @@ cmd/audit-writer/     the receiver and the writer (one binary, two modes), and
                       RegisterCatalogue
 cmd/audit-observe/    the indexer
 cmd/audit-query/      the query service
+cmd/audit-notary/     the notary: seals each closed hour, once per run
 cmd/protoc-gen-audit-jsonschema/   the buf plugin for the record's JSON Schema
 
 charts/audit/         the installation an application's own chart instantiates:
-                      receiver, writer, indexer, query service, the four jobs
+                      receiver, writer, indexer, query service, the notary and the other three jobs
 ts/                   @truvity/audit: client, qualifier box, sentences, React hooks and view
 examples/             emit, read — compiled and tested by the gate
 testdata/             the record corpus; the template fixture both scanners share

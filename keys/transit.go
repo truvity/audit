@@ -15,22 +15,24 @@ import (
 	"sync"
 )
 
-// TransitSigner signs the digest chain with an OpenBAO (or Vault) transit key.
+// TransitSigner signs seals with an OpenBAO (or Vault) transit key.
 //
 // Like the KMS signer it keeps the private half out of the archive's reach:
-// the key lives in the transit engine, the digest job's policy may call
+// the key lives in the transit engine, the notary's policy may call
 // transit/sign on it, and the writer's may not. It is the signer for a
 // deployment whose secrets live in OpenBAO rather than a cloud's KMS.
 //
-// The key is an ed25519 transit key, which signs the message itself — so its
-// signatures are checked by the same Verify as a local key, with only the
-// public half this exports.
+// The key is an ecdsa-p384 transit key, which is what ES384 is: transit hashes
+// the message with SHA-384 and returns the signature ASN.1 encoded, as the
+// other signers do. An ed25519 key still signs the message itself, for the
+// callers that predate seals. Either way the signature is checked by the same
+// Verify as a local key, with only the public half this exports.
 //
 // A transit key can be rotated, and transit signs with the newest version
 // unless told otherwise. So the signer reads the key's latest version once and
 // pins every signature to it: the public half it exports and the signatures it
 // makes always belong together, and KeyID names the version, so a verifier can
-// tell which public half a digest wants after a rotation.
+// tell which public half a seal wants after a rotation.
 type TransitSigner struct {
 	// Address is the server, e.g. https://openbao.example:8200.
 	Address string
@@ -55,13 +57,14 @@ type TransitSigner struct {
 	state   baoState
 	once    sync.Once
 	version int
+	kind    string
 	public  []byte
 	err     error
 }
 
 // NewTransitSigner returns a signer that has already read its key.
 //
-// Loading first matters: a digest names its signer before it is signed, and the
+// Loading first matters: a seal names its signer before it is signed, and the
 // name carries the key version, which is only known once the key has been read.
 // It also means a key of the wrong type, or a token that cannot read it, stops
 // the job before any window is sealed.
@@ -106,8 +109,8 @@ func (s *TransitSigner) load(ctx context.Context) error {
 			s.err = err
 			return
 		}
-		if key.Type != "ed25519" {
-			s.err = fmt.Errorf("keys: transit key %s is %s; the digest chain is signed with ed25519", s.Key, key.Type)
+		if key.Type != "ecdsa-p384" && key.Type != "ed25519" {
+			s.err = fmt.Errorf("keys: transit key %s is %s; seals are signed with an ecdsa-p384 key", s.Key, key.Type)
 			return
 		}
 		var version struct {
@@ -117,18 +120,28 @@ func (s *TransitSigner) load(ctx context.Context) error {
 			s.err = fmt.Errorf("keys: transit key %s v%d: %w", s.Key, key.LatestVersion, err)
 			return
 		}
-		raw, err := base64.StdEncoding.DecodeString(version.PublicKey)
-		if err != nil || len(raw) != ed25519.PublicKeySize {
-			s.err = fmt.Errorf("keys: transit key %s v%d has no ed25519 public key", s.Key, key.LatestVersion)
-			return
-		}
-		der, err := x509.MarshalPKIXPublicKey(ed25519.PublicKey(raw))
-		if err != nil {
-			s.err = err
-			return
+		if key.Type == "ecdsa-p384" {
+			// An ECDSA key's public half is already PEM.
+			if _, err := ParseECPublic([]byte(version.PublicKey)); err != nil {
+				s.err = fmt.Errorf("keys: transit key %s v%d: %w", s.Key, key.LatestVersion, err)
+				return
+			}
+			s.public = []byte(version.PublicKey)
+		} else {
+			raw, err := base64.StdEncoding.DecodeString(version.PublicKey)
+			if err != nil || len(raw) != ed25519.PublicKeySize {
+				s.err = fmt.Errorf("keys: transit key %s v%d has no ed25519 public key", s.Key, key.LatestVersion)
+				return
+			}
+			der, err := x509.MarshalPKIXPublicKey(ed25519.PublicKey(raw))
+			if err != nil {
+				s.err = err
+				return
+			}
+			s.public = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
 		}
 		s.version = key.LatestVersion
-		s.public = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+		s.kind = key.Type
 	})
 	return s.err
 }
@@ -141,10 +154,18 @@ func (s *TransitSigner) Sign(ctx context.Context, message []byte) ([]byte, error
 	var out struct {
 		Signature string `json:"signature"`
 	}
-	if err := s.call(ctx, http.MethodPost, "sign/"+s.Key, map[string]any{
+	request := map[string]any{
 		"input":       base64.StdEncoding.EncodeToString(message),
 		"key_version": s.version,
-	}, &out); err != nil {
+	}
+	if s.kind == "ecdsa-p384" {
+		// ES384 is ECDSA over SHA-384; transit's default is ASN.1, which is
+		// what Verify reads, and it is asked for so that a changed default is
+		// not a changed signature.
+		request["hash_algorithm"] = "sha2-384"
+		request["marshaling_algorithm"] = "asn1"
+	}
+	if err := s.call(ctx, http.MethodPost, "sign/"+s.Key, request, &out); err != nil {
 		return nil, err
 	}
 	// "vault:v<N>:<base64>", whichever server it came from.
@@ -164,7 +185,7 @@ func (s *TransitSigner) PublicKey(ctx context.Context) ([]byte, error) {
 }
 
 // KeyID implements Signer. It names the version, so that after a rotation a
-// verifier can tell which public half a digest was signed with.
+// verifier can tell which public half a seal was signed with.
 func (s *TransitSigner) KeyID() string {
 	if s.version == 0 {
 		return "transit:" + s.Key

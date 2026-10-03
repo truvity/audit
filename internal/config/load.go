@@ -59,6 +59,9 @@ func LoadObserve(file string) (*Observe, error) {
 // LoadVerify reads and validates the configuration of `audit verify`.
 func LoadVerify(file string) (*Verify, error) { return load(file, "audit-verify", (*Verify).finish) }
 
+// LoadNotary reads and validates audit-notary's configuration.
+func LoadNotary(file string) (*Notary, error) { return load(file, "audit-notary", (*Notary).finish) }
+
 // LoadPurge reads and validates the configuration of `audit purge`.
 func LoadPurge(file string) (*Purge, error) { return load(file, "audit-purge", (*Purge).finish) }
 
@@ -354,12 +357,40 @@ func (o *Observe) finish() error {
 	return checkDatabase(&o.Database)
 }
 
+// DefaultSettle is how long after an hour has ended it is sealed.
+const DefaultSettle = 10 * time.Minute
+
+// DefaultGrace is how long a verifier waits after an hour is sealable before it
+// calls a missing seal a fault: the notary runs hourly.
+const DefaultGrace = time.Hour
+
+func (n *Notary) finish() error {
+	if err := checkRequire(n.Require, n.Sink); err != nil {
+		return err
+	}
+	if n.Settle == 0 {
+		n.Settle = Duration(DefaultSettle)
+	}
+	if n.Archive.LockMode == "" {
+		n.Archive.LockMode = "compliance"
+	}
+	return nil
+}
+
 func (v *Verify) finish() error {
 	if err := checkRequire(v.Require, v.Sink); err != nil {
 		return err
 	}
 	if v.Last == 0 {
 		v.Last = Duration(24 * 60 * 60 * time.Second)
+	}
+	if v.Seals != nil {
+		if v.Seals.Settle == 0 {
+			v.Seals.Settle = Duration(DefaultSettle)
+		}
+		if v.Seals.Grace == 0 {
+			v.Seals.Grace = Duration(DefaultGrace)
+		}
 	}
 	return v.Archive.finish(false)
 }

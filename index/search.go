@@ -176,11 +176,11 @@ type FacetValue struct {
 type Provenance struct {
 	ObjectKey string
 	Line      int
-	// Digest is the key of the digest that accounts for the object, when one
-	// does. Empty means no digest covers it yet, which is the ordinary state of
-	// the current hour and a finding in any other.
+	// Digest is the key of the seal that accounts for the object's hour, when
+	// there is one. Empty means no seal covers it yet, which is the ordinary
+	// state of the current hour and a finding in any other.
 	Digest string
-	// VerifiedAt is when that digest was last verified clean. Zero means it
+	// VerifiedAt is when that seal was last verified clean. Zero means it
 	// has not been, or the last verification found a problem.
 	VerifiedAt time.Time
 }

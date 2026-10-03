@@ -22,7 +22,7 @@ const policy = "https://github.com/truvity/policy/schemas/"
 // named: schemas/config/<name>.schema.json.
 var Names = []string{
 	"audit-writer", "audit-query", "audit-observe",
-	"audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate",
+	"audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate", "audit-notary",
 }
 
 type m = map[string]any
@@ -392,10 +392,59 @@ func verifySchema() m {
 		"require":    requireEmitter(),
 		"profiles":   m{"type": "array", "minItems": 1, "uniqueItems": true, "items": str("A profile name."), "description": "The profiles whose objects to check. Unset checks every profile the deployment composes."},
 		"last":       duration("Check the objects ingested in the last this long, ending at the hour that has closed.", "24h"),
+		"seals": obj("Check the seals too: each one's signature, the chain through `prev`, its count and root against the objects, and that no sealed hour is missing. Unset checks no seal.", m{
+			"roots": m{"type": "array", "minItems": 1, "uniqueItems": true,
+				"items":       m{"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$", "description": "The RFC 7638 thumbprint of a root key (`audit key public --thumbprint`)."},
+				"description": "The roots this verifier trusts, by thumbprint. A seal is believed only if a pinned root signed it or delegated to its key; `keys/roots.jwks` in the bucket is how the keys are distributed and is never what is trusted."},
+			"settle": duration("The notary's settle window: an hour is sealable once it has ended and this long has passed. Keep it equal to the notary's.", "10m"),
+			"grace":  duration("How long after an hour is sealable its seal may still be missing before that is a finding: the notary runs hourly, so a seal is up to an hour behind.", "1h"),
+		}, "roots"),
 	}
 	return document("audit-verify", "audit verify",
 		"The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds."+secretsNote,
 		props, []string{"deployment", "archive"}, []string{"sink", "duration"}, m{"dependentRequired": m{"require": []string{"sink"}}})
+}
+
+// signer is where the notary's key is: exactly one way.
+func signer() m {
+	return m{
+		"type":                 "object",
+		"additionalProperties": false,
+		"description":          "The key seals are signed with, a P-384 key (ES384). The private half should never be on the notary's disk: a managed key (`kms`, `transit`) keeps it where the writer's role cannot reach it, which a `file` cannot.",
+		"properties": m{
+			"kms": obj("An AWS KMS key: ECC_NIST_P384, SIGN_VERIFY, signing ECDSA_SHA_384. The credentials are the SDK's ambient ones: in a cluster, the notary's Pod Identity or IRSA role, which is not the writer's.", m{
+				"key":    str("The key's ARN, ID or alias."),
+				"region": str("The key's region, when it is not the SDK's."),
+			}, "key"),
+			"transit": obj("An OpenBAO transit key of type ecdsa-p384.", m{
+				"key":     str("The transit key's name."),
+				"openbao": def("openbao"),
+			}, "key", "openbao"),
+			"file": obj("A P-384 private key in a PEM file (PKCS#8 or SEC 1), for development.", m{
+				"path": str("The file."),
+			}, "path"),
+		},
+		"oneOf": []any{
+			m{"required": []string{"kms"}},
+			m{"required": []string{"transit"}},
+			m{"required": []string{"file"}},
+		},
+	}
+}
+
+func notarySchema() m {
+	props := m{
+		"archive": archive(true, true),
+		"signer":  signer(),
+		"profiles": m{"type": "array", "minItems": 1, "uniqueItems": true, "items": str("A profile name."),
+			"description": "The profiles to seal. Unset seals every profile the archive has records for."},
+		"settle":  duration("How long after an hour has ended it is sealed, so that a batch put late in the hour it is keyed by is in the seal. An hour is never sealed sooner.", "10m"),
+		"sink":    m{"$ref": "#/$defs/sink", "description": "The writer this job records what it sealed through (`audit.seal.written`)."},
+		"require": requireEmitter(),
+	}
+	return document("audit-notary", "audit-notary",
+		"The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`."+secretsNote,
+		props, []string{"archive", "signer"}, []string{"sink", "duration", "openbao"}, m{"dependentRequired": m{"require": []string{"sink"}}})
 }
 
 func purgeSchema() m {
@@ -450,6 +499,8 @@ func Schema(name string) ([]byte, bool) {
 		s = observeSchema()
 	case "audit-verify":
 		s = verifySchema()
+	case "audit-notary":
+		s = notarySchema()
 	case "audit-purge":
 		s = purgeSchema()
 	case "audit-clock-sync":

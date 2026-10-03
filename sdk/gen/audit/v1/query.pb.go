@@ -2442,13 +2442,17 @@ func (x *GetResponse) GetProvenance() *Provenance {
 	return nil
 }
 
-// Provenance says where the copy was read from and whether a digest has
-// covered it.
+// Provenance says where the copy was read from and whether a seal has covered
+// it.
 type Provenance struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ObjectKey     string                 `protobuf:"bytes,1,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
-	Line          int64                  `protobuf:"varint,2,opt,name=line,proto3" json:"line,omitempty"`
-	DigestId      string                 `protobuf:"bytes,3,opt,name=digest_id,json=digestId,proto3" json:"digest_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ObjectKey string                 `protobuf:"bytes,1,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
+	Line      int64                  `protobuf:"varint,2,opt,name=line,proto3" json:"line,omitempty"`
+	// The key of the seal that covers the object's hour, when the hour is sealed
+	// (seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws); empty until it is. The
+	// name is from before seals, when it was a digest's.
+	DigestId string `protobuf:"bytes,3,opt,name=digest_id,json=digestId,proto3" json:"digest_id,omitempty"`
+	// When a verifier last found the seal clean; empty when none has.
 	VerifiedAt    *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=verified_at,json=verifiedAt,proto3" json:"verified_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

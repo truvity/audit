@@ -437,9 +437,41 @@ audience and expiry. That library allows no clock skew.
 
 ## Scheduled jobs
 
-Each job is `audit <command> --config <file>`, runs to completion and records
-what it did through the writer's own sink, so each needs `sink` and, where
-the writer verifies callers, a `tokenFile`. Each has its own identity.
+Each job is `audit <command> --config <file>` (the notary is its own binary,
+`audit-notary --config <file>`), runs to completion and records what it did
+through the writer's own sink, so each needs `sink` and, where the writer
+verifies callers, a `tokenFile`. Each has its own identity.
+
+### audit-notary
+
+Seals the archive ([0019](../decisions/0019-seals.md)): for every profile and
+tenant, and every hour that has ended and settled since the last seal, one
+signed seal of what the hour holds, chained to the one before, written to
+`seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws`
+([bucket contract](bucket-contract.md#seals)). Hourly in the chart. It is the one
+part that signs, so its `signer` is a managed key the writer's identity cannot
+use ([key custody](../operations/key-custody.md#signing-key)), and it runs as an
+identity of its own, which the chart enforces. A rerun writes nothing new, and an
+hour whose objects do not match their metadata is not sealed, nor is any hour
+after it.
+
+| key | type | default | meaning |
+|---|---|---|---|
+| `archive` | `archive`, required | | the archive to read and to put seals in (`bucket`, `prefix`, `lockMode`, `kmsKey`); `lockMode` defaults to `compliance`, and a seal is locked as long as the records it covers |
+| `signer` | object, required | | exactly one of `kms`, `transit` and `file` |
+| `signer.kms` | `{key, region}` | | an AWS KMS key, `ECC_NIST_P384` `SIGN_VERIFY`, by ARN, ID or alias; the credentials are the SDK's ambient ones, the notary's role |
+| `signer.transit` | `{key, openbao}` | | an OpenBAO transit key of type `ecdsa-p384`; `openbao` is the [shared block](#shared-blocks) |
+| `signer.file` | `{path}` | | a P-384 private key in PEM (PKCS#8 or SEC 1), for development |
+| `profiles` | list of strings, at least one, unique | every profile the archive has records for | the profiles to seal |
+| `settle` | duration | `10m` | how long after an hour has ended it is sealed, so that a batch put late in the hour it is keyed by is in the seal |
+| `sink` | `sink` | none | the writer the job records each seal through (`audit.seal.written`) |
+| `require` | `logged`, `queued` or `archived` | none | the weakest durability the writer's acknowledgements may carry; needs `sink` and `sink.expect` |
+
+It reports `audit.seal.age` (the age of the newest sealed hour, per profile, of
+the tenant furthest behind), `audit.seal.written` and `audit.seal.failures`
+over OTLP ([telemetry](../operations/telemetry.md)). The first seal of a tenant is
+of the hour of its first object; an hour with no objects is sealed too, from then
+on.
 
 ### audit verify
 
@@ -456,12 +488,14 @@ deployment composes.
 | `archive` | `archive`, required | | the archive to read (`bucket`, `prefix`) |
 | `profiles` | list of strings, at least one, unique | every profile the deployment composes | the profiles whose objects to check |
 | `last` | duration | `24h` | check the objects ingested in the last this long, ending at the hour that has closed |
-| `sink` | `sink` | none | the writer the job records what it checked through (`audit.digest.verified` or `audit.digest.failed` per ingest hour) |
+| `seals` | object | none | also check the seals of the range: `roots` (list of thumbprints, at least one, required) are the only keys trusted; `settle` (default `10m`, keep it equal to the notary's) and `grace` (default `1h`) say when a seal is due. Without it no seal is checked |
+| `sink` | `sink` | none | the writer the job records what it checked through (`audit.seal.verified` or `audit.seal.failed` per ingest hour, recorded only with `seals`) |
 | `require` | `logged`, `queued` or `archived` | none | the weakest durability the writer's acknowledgements may carry; needs `sink` and `sink.expect` ([durability](#durability-require-forward-consume)) |
 
 The keys `publicKeyFile`, `lookback` and `record` of the v0 job are gone: the
-check needs no key, the range is of ingest time so there is nothing to look
-back over, and there is no `verified/` prefix to write.
+check needs no key (`seals.roots` are thumbprints), the range is of ingest time
+so there is nothing to look back over, and there is no `verified/` prefix to
+write.
 
 ### audit purge
 
@@ -604,6 +638,7 @@ none of it.
 | `query` | `audit-query` | `query.enabled` |
 | `observe` | `audit-observe` | `observe.enabled`: one Deployment, `<fullname>-observe`, with a ServiceAccount of its own and no Service |
 | `migrate` | `audit migrate` | `migrate.enabled`, a pre-install and pre-upgrade hook Job |
+| `jobs.notary` | `audit-notary`, in its own image | one CronJob, hourly, off by default (`jobs.notary.enabled`), under a ServiceAccount of its own that the chart refuses to be the writer's |
 | `jobs.verify`, `jobs.purge`, `jobs.clockSync` | `audit verify`, `purge`, `clock-sync` | one CronJob each. The verify job is one CronJob (`<fullname>-verify`) covering the `profiles` its config lists, or every profile |
 
 ### What is a value and what is configuration
@@ -681,6 +716,11 @@ The chart checks what only the platform can see, in
   writer's, the query service's or the migration's role (an owner), and a
   writer that connects as the migration's role: each part's identity is its
   own, at the cloud role and at the database role;
+- the notary running as the writer: `jobs.notary.serviceAccount.create: false`
+  (it would run as the release's account), a notary account that carries the
+  writer's annotations (the same cloud role), or a notary that signs in to
+  OpenBAO under the writer's role or token: whoever writes the archive and can
+  also sign for it can choose what to sign;
 - `extensions.billing` without a profile composed from a metering preset, and
   `extensions.quotas` without `mode: stream`.
 
@@ -901,7 +941,7 @@ on the command line for a person: they are not scheduled work and have no key.
 | `roll.interval`, `roll.maxRecords` | `writer.config.roll.interval`, `.maxRecords` |
 | `workloadIdentity.expirationSeconds` | `expirationSeconds` of each component's `tokens` entry |
 | `jobs.verify.publicKey.*`, `.window` | `jobs.verify.config.last` (no key: verify reads the archive only) |
-| `jobs.digest.*` | removed with the v1 layout: the digest job read the v0 layout and seals replace it |
+| `jobs.digest.*` | removed with the v1 layout: the digest job read the v0 layout. `jobs.notary` replaces it (`audit-notary`, its own image, `signer` with a P-384 key) |
 | `jobs.purge.identifyingAfter`, `.dedupeWindow` | `jobs.purge.config.identifyingAfter`, `.dedupeWindow` |
 | `jobs.clockSync.ntp`, `.maxOffset` | `jobs.clockSync.config.ntp`, `.maxOffset` |
 | `telemetry.*` | `OTEL_*` environment, set on the pods by the platform |

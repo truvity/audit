@@ -29,6 +29,23 @@ metadata:
 
 ---
 # Source: audit/templates/serviceaccount.yaml
+# Sealing is a different privilege from writing: whoever can write the archive
+# and can also sign for it can choose what to sign. This identity reads the
+# records, puts seals and keys/roots.jwks, and uses the seal key; the writer's
+# role has no use of that key, and this one has no write to records/.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-notary
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+
+---
+# Source: audit/templates/serviceaccount.yaml
 # Verification needs to read the archive and nothing else. An auditor running
 # the same command must get the same answer, which is what makes the answer
 # worth having.
@@ -123,11 +140,53 @@ data:
 
 ---
 # Source: audit/templates/cronjobs.yaml
+# Hourly. Seals the hours that have closed and settled since the last seal, for
+# every profile and tenant, into the signed chain: one seal per hour, empty
+# hours too, each naming the one before. It resumes past a missed run on its
+# own, so a failed hour needs no operator, and a rerun of a sealed hour writes
+# nothing. It signs, and it runs as an identity of its own that the writer's is
+# not: whoever can write the archive and can also sign for it can choose what
+# to sign.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-notary-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: notary
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-archive
+    signer:
+      transit:
+        key: audit-seal
+        openbao:
+          address: https://openbao.example:8200
+          caFile: /etc/audit/trust/ca.crt
+          login:
+            jwtFile: /var/run/openbao/token
+            mount: jwt-devel
+            role: audit-notary
+          namespace: devel
+
+---
+# Source: audit/templates/cronjobs.yaml
 # Nightly. Checks each profile's record objects of the last day against the
-# bucket contract (key, metadata, sha256, the hash of every record) and reports
-# what it finds; a non-zero exit is the alert. It reads the archive and nothing
-# else, which is what lets an auditor run the same command and get the same
-# answer.
+# bucket contract (key, metadata, sha256, the hash of every record) and, with
+# `seals.roots`, the seals too: their signatures against the pinned roots, the
+# chain, each hour's count and root against its objects, and that no due seal is
+# missing. It reports what it finds; a non-zero exit is the alert. It reads the
+# archive and nothing else, which is what lets an auditor run the same command
+# and get the same answer.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -520,6 +579,85 @@ spec:
                   expirationSeconds: 600
         - name: tmp
           emptyDir: {}
+
+---
+# Source: audit/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-notary
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "17 * * * *"
+  # A run that overlaps itself only does the same work twice.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: 0f42ff682efcc41e52865a175b2bca2d6dcbca407f08285eda8838b973f75917
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-notary
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: notary
+              image: ghcr.io/truvity/audit/audit-notary:0.0.0
+              imagePullPolicy: IfNotPresent
+              args:
+                - --config=/etc/audit/config.yaml
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                
+                - name: trust
+                  mountPath: /etc/audit/trust
+                  readOnly: true
+                
+                - name: token-0
+                  mountPath: /var/run/openbao
+                  readOnly: true
+          volumes:
+            - name: config
+              configMap:
+                name: audit-notary-config
+            
+            - name: trust
+              configMap:
+                name: private-ca-bundle
+            
+            - name: token-0
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "openbao"
+                      expirationSeconds: 600
 
 ---
 # Source: audit/templates/cronjobs.yaml

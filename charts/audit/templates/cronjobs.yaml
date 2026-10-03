@@ -2,7 +2,9 @@
 A scheduled job: `audit <command> --config`, in the toolchain's image, with the
 configuration of its own. Takes (dict "root" $ "name" "verify" "command"
 "verify" "comp" <the job's values> "account" <service account> "profiles" bool).
-`profiles` mounts the profile document, for a job whose config names it.
+`profiles` mounts the profile document, for a job whose config names it. A job
+with an image of its own (the notary) passes "image" and no "command": the
+image's one binary takes `--config`.
 */}}
 {{- define "audit.cronjob" -}}
 {{- $ := .root -}}
@@ -32,10 +34,12 @@ spec:
           {{- include "audit.podDefaults" $ | nindent 10 }}
           containers:
             - name: {{ .name }}
-              image: {{ include "audit.cliImage" $ }}
+              image: {{ .image | default (include "audit.cliImage" $) }}
               imagePullPolicy: {{ $.Values.image.pullPolicy }}
               args:
-                - {{ .command }}
+                {{- with .command }}
+                - {{ . }}
+                {{- end }}
                 - --config=/etc/audit/config.yaml
               {{- with include "audit.secretEnv" .comp }}
               env:
@@ -59,13 +63,27 @@ spec:
             {{- include "audit.extraVolumes" .comp | nindent 12 }}
 {{- end -}}
 {{- if eq .Values.renders "app" -}}
+{{- if .Values.jobs.notary.enabled }}
+# Hourly. Seals the hours that have closed and settled since the last seal, for
+# every profile and tenant, into the signed chain: one seal per hour, empty
+# hours too, each naming the one before. It resumes past a missed run on its
+# own, so a failed hour needs no operator, and a rerun of a sealed hour writes
+# nothing. It signs, and it runs as an identity of its own that the writer's is
+# not: whoever can write the archive and can also sign for it can choose what
+# to sign.
+{{ include "audit.configMap" (dict "root" . "name" "notary" "config" .Values.jobs.notary.config) }}
+---
+{{ include "audit.cronjob" (dict "root" . "name" "notary" "image" (include "audit.notaryImage" .) "comp" .Values.jobs.notary "account" (include "audit.notaryServiceAccountName" .) "profiles" false) }}
+{{- end }}
 {{- if .Values.jobs.verify.enabled }}
 ---
 # Nightly. Checks each profile's record objects of the last day against the
-# bucket contract (key, metadata, sha256, the hash of every record) and reports
-# what it finds; a non-zero exit is the alert. It reads the archive and nothing
-# else, which is what lets an auditor run the same command and get the same
-# answer.
+# bucket contract (key, metadata, sha256, the hash of every record) and, with
+# `seals.roots`, the seals too: their signatures against the pinned roots, the
+# chain, each hour's count and root against its objects, and that no due seal is
+# missing. It reports what it finds; a non-zero exit is the alert. It reads the
+# archive and nothing else, which is what lets an auditor run the same command
+# and get the same answer.
 {{ include "audit.configMap" (dict "root" . "name" "verify" "config" .Values.jobs.verify.config) }}
 ---
 {{ include "audit.cronjob" (dict "root" . "name" "verify" "command" "verify" "comp" .Values.jobs.verify "account" (include "audit.verifyServiceAccountName" .) "profiles" true) }}

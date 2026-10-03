@@ -194,8 +194,9 @@ func buildWith(t *testing.T, edit func(*auditpulumi.Args), opts func(*pulumi.Con
 		}
 		for k, o := range map[string]pulumi.StringOutput{
 			"bucketName": a.BucketName, "bucketArn": a.BucketArn, "archiveKeyArn": a.ArchiveKeyArn, "sealKeyArn": a.SealKeyArn,
-			"sealKeyAlias": a.SealKeyAlias, "queueUrl": a.QueueURL, "queueArn": a.QueueArn, "dlqUrl": a.DlqURL, "dlqArn": a.DlqArn, "archiveWriterRole": a.ArchiveWriterRoleArn,
-			"dedupe": a.DedupeTableName, "writerFn": a.WriterFunctionArn, "notaryFn": a.NotaryFunctionArn,
+			"sealKeyAlias": a.SealKeyAlias, "queueUrl": a.QueueURL, "queueArn": a.QueueArn, "dlqUrl": a.DlqURL, "dlqArn": a.DlqArn,
+			"archiveWriterRole": a.ArchiveWriterRoleArn,
+			"dedupe":            a.DedupeTableName, "writerFn": a.WriterFunctionArn, "notaryFn": a.NotaryFunctionArn,
 			"writerRole": a.WriterRoleArn, "notaryRole": a.NotaryRoleArn, "observeRole": a.ObserveReaderRoleArn,
 			"topic": a.AlarmTopicArn, "schedule": a.ScheduleArn,
 		} {

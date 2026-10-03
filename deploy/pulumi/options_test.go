@@ -427,8 +427,9 @@ func TestEveryCombinationOfIngestAndNotary(t *testing.T) {
 			roles:     []string{"audit-notary", "audit-observe-reader", "audit-scheduler", "audit-writer"},
 			keys:      []string{"audit-archive", "audit-seal"}, functions: []string{"audit-notary", "audit-writer"},
 			queues: []string{"audit-ingest", "audit-ingest-dlq"},
-			alarms: []string{"ingest-dlq-not-empty", "ingest-oldest-message-age", "notary-errors", "notary-silent", "notary-throttles", "writer-errors", "writer-throttles"},
-			table:  true, schedule: true, mapping: true, topic: true,
+			alarms: []string{"ingest-dlq-not-empty", "ingest-oldest-message-age", "notary-errors", "notary-silent",
+				"notary-throttles", "writer-errors", "writer-throttles"},
+			table: true, schedule: true, mapping: true, topic: true,
 		}},
 		"ingest only (hive: the notary runs on Talos)": {false, true, want{
 			resources: 29,

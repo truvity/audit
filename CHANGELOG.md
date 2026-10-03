@@ -4,7 +4,9 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.6.0
+
+This release splits the consumer SDK into its own module with independent import paths, configures every binary from one validated YAML file, adds durability guarantees on every acknowledgement with the `require:` guard, adds the `log` and `sqs` sinks for flexible routing, and adds traces and metrics through an OpenTelemetry exporter allowlist, plus the chart's `alerts` and `dashboards` render modes.
 
 - **Breaking:** the Go packages an application imports to emit records are a module of their own, `github.com/truvity/audit/sdk`, which does not depend on the writer's database driver, NATS server, AWS SDK, OpenBAO client, JWT library or the OpenTelemetry SDK and exporters. Take the step: `go get github.com/truvity/audit/sdk@<version>`, rewrite the import paths below, and drop `github.com/truvity/audit` from your `go.mod` if nothing else in it is imported. The root module is no longer an import target for these packages (it carries a `replace` for the SDK and is consumed as binaries, images and the chart), and the SDK is tagged `sdk/vX.Y.Z` at the same commit and version as `vX.Y.Z`. `just sdk-closure` fails the gate if a server-only dependency enters the SDK.
 

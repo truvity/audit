@@ -30,7 +30,7 @@ jobs:
       # Required: the component contract (C1-C13) is judged, shown in the job summary, and fails this job when a rule fails.
       policy-conformance: true
       policy-conformance-strict: true
-      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "telemetry", "leak-canary", "sdk-closure"]'
+      recipes: '["build", "test", "lint", "proto", "drift", "schemas", "chart", "telemetry", "leak-canary", "sdk-closure", "installable", "sdk-require"]'
 
   # The race detector is the one thing here that needs a C toolchain, and
   # everything else builds with cgo off — which is what makes the binaries

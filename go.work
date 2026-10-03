@@ -8,4 +8,4 @@ use (
 // The root's go.mod requires the SDK at the version the next release will tag,
 // and until the release job tags it that version cannot be fetched, so the
 // workspace says where it is. Remove the line once the version is released.
-replace github.com/truvity/audit/sdk v0.7.0 => ./sdk
+replace github.com/truvity/audit/sdk v0.8.0 => ./sdk

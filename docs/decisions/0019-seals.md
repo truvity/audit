@@ -42,6 +42,18 @@ record hashes from all objects in the hour, ordered by object key (ULID), then
 line order within each object. The specification is in
 [the bucket contract](../reference/bucket-contract.md#merkle-tree-construction).
 
+**2026-10-03, built.** The notary (`audit-notary`) writes seals and `audit verify
+--root` checks them; the delegation and revocation statements are checked by the
+verifier and **not yet signed by anything**: a notary signs with the key it is
+given, which is a root listed in `keys/roots.jwks`, and the daily delegated key
+(decision L3) is a change to the notary and not to this decision. Three
+details settled in the build: a verifier also takes the bucket's time of writing
+a seal as a second witness to `sealed_at`, which a key signs for itself; an
+hour whose objects do not match their own metadata is not sealed, nor is any
+hour after it, so the chain stops where the notary cannot vouch; and the payload
+writes every field (a count of zero is `"0"`, an empty `prev` is `""`), so a
+reader that does not know the proto defaults reads what the seal says.
+
 **Trust anchors are pinned.** `keys/roots.jwks` lists root public keys, and
 **observe's configuration pins them by thumbprint** (RFC 7638). The file in
 the bucket is a convenience for distribution; a root that is not pinned by

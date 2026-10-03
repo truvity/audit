@@ -211,7 +211,7 @@ func LoadFS(fsys fs.FS, doc string) (*Catalogue, error) {
 
 // Common is the catalogue of the component's own events: reads and exports of
 // the trail, registrations, profile and preset changes, key destruction, legal
-// holds, digests, writer lifecycle and the daily clock check. Every deployment
+// holds, seals, writer lifecycle and the daily clock check. Every deployment
 // carries it.
 func Common() (*Catalogue, error) { return LoadFS(sdk.Catalogue, "catalogue/common.yaml") }
 

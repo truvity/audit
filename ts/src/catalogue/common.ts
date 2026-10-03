@@ -3,7 +3,7 @@ import type { Sentences } from "../sentences.js";
 
 export const common: Sentences = {
   "source": "audit",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "locales": [
     "en"
   ],
@@ -18,24 +18,6 @@ export const common: Sentences = {
       "summary": "The daily clock-synchronisation check ran.",
       "message": {
         "en": "clock on {observer_instance} synchronised with UTC, offset {data_offset_ms} ms"
-      }
-    },
-    "audit.digest.failed": {
-      "summary": "Digest verification failed.",
-      "message": {
-        "en": "digest window {targets_0_id} FAILED verification: {outcome_reason}"
-      }
-    },
-    "audit.digest.verified": {
-      "summary": "A digest chain window was verified.",
-      "message": {
-        "en": "digest window {targets_0_id} verified"
-      }
-    },
-    "audit.digest.written": {
-      "summary": "An hourly digest was signed and written.",
-      "message": {
-        "en": "digest {targets_0_id} written covering {data_objects} objects"
       }
     },
     "audit.export.completed": {
@@ -102,6 +84,24 @@ export const common: Sentences = {
       "summary": "The lock on an object holding an earlier record was lengthened because a later record relies on it.",
       "message": {
         "en": "the lock on record {targets_0_id} was lengthened for record {targets_1_id}"
+      }
+    },
+    "audit.seal.failed": {
+      "summary": "Verification of the seals of an hour failed.",
+      "message": {
+        "en": "the seals of {targets_0_id} FAILED verification: {outcome_reason}"
+      }
+    },
+    "audit.seal.verified": {
+      "summary": "The seals of an hour were verified.",
+      "message": {
+        "en": "the seals of {targets_0_id} verified"
+      }
+    },
+    "audit.seal.written": {
+      "summary": "A seal was signed and written for an hour.",
+      "message": {
+        "en": "seal {targets_0_id} written covering {data_objects} objects"
       }
     },
     "audit.search": {

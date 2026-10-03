@@ -59,6 +59,36 @@ spec:
               away longer than the queue is deep: see audit_emit_queue_pending for
               the climb, and the sink's own health.
             runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditemitterdroppingrecords"
+        # The notary seals the hour that has just closed once it has settled, so
+        # the newest sealed hour's age runs from about 17 minutes to about 1h20m
+        # between runs of an hourly job. One missed run (a node drain, a slow KMS)
+        # leaves it near 2h20m, and three hours fires on the second, which is when
+        # the chain has a gap that no later seal can close. The notary is a job,
+        # so it reports the age as of its last run and goes away: the rule adds the
+        # time since that report, and a notary that no longer runs shows as an age
+        # that keeps climbing and not as a series that vanished. Each profile
+        # reports its laggard tenant, so one stalled tenant fires too.
+        - alert: AuditSealStale
+          expr: >-
+            max by (k8s_cluster_name, namespace, profile) (
+              last_over_time(audit_seal_age_seconds{namespace="audit"}[1d])
+              + (time() - tlast_over_time(audit_seal_age_seconds{namespace="audit"}[1d]))
+            ) > 10800
+          for: 10m
+          labels:
+            k8s_cluster_name: example
+            severity: critical
+            team: platform
+          annotations:
+            summary: 'The newest audit seal of profile {{ $labels.profile }} is {{ $value | humanizeDuration }} old'
+            description: >-
+              No hour has been sealed for profile {{ $labels.profile }}
+              for longer than 10800s. An hour with no
+              seal cannot be told from one whose seal was removed. Check the
+              notary CronJob (`kubectl get cronjob`), its last Job's log, the
+              seal key it signs with and whether an object of the profile does not
+              match its own metadata, which the notary refuses to seal past.
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditsealstale"
         # The lag is from an object being put into the archive to its rows being
         # in the index, as audit-observe measures it. The indexer does not look at
         # an object younger than its settle window (default 2m), so that window is

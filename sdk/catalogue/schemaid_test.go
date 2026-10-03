@@ -7,9 +7,9 @@ import (
 
 func TestCanonicalID(t *testing.T) {
 	for in, want := range map[string]string{
-		"https://schemas.truvity.com/audit/v1/common/digest-written.json": SchemaBase + "common/digest-written.json",
-		SchemaBase + "common/digest-written.json":                         SchemaBase + "common/digest-written.json",
-		"https://schemas.example/wallet/credential-issued.json":           "https://schemas.example/wallet/credential-issued.json",
+		"https://schemas.truvity.com/audit/v1/common/seal-written.json": SchemaBase + "common/seal-written.json",
+		SchemaBase + "common/seal-written.json":                         SchemaBase + "common/seal-written.json",
+		"https://schemas.example/wallet/credential-issued.json":         "https://schemas.example/wallet/credential-issued.json",
 	} {
 		if got := CanonicalID(in); got != want {
 			t.Errorf("CanonicalID(%q) = %q, want %q", in, got, want)

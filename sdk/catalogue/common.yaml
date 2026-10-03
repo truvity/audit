@@ -1,5 +1,5 @@
 source: audit
-version: "1.0.0"
+version: "2.0.0"
 locales: [en]
 
 actor_kinds:
@@ -22,7 +22,7 @@ target_types:
   preset: { description: "A framework preset." }
   catalogue: { description: "A registered source catalogue and version." }
   export: { description: "An export job." }
-  digest: { description: "One hourly digest object." }
+  seal: { description: "A seal, by its object key, or the seals of one hour, by the records/<profile>/<yyyy>/<mm>/<dd>/<hh> prefix of the hour they cover." }
   key: { description: "A pseudonymisation or signing key, by identifier." }
   hold: { description: "A legal hold on a prefix or object." }
   record: { description: "One audit record, by id." }
@@ -127,29 +127,29 @@ actions:
     target_types: [hold]
     delivery: block
     message: { en: "{actor} released hold {targets_0_id}" }
-  audit.digest.written:
-    summary: An hourly digest was signed and written.
+  audit.seal.written:
+    summary: A seal was signed and written for an hour.
     operation: create
     categories: [logging_control]
     profiles: [security, evidence]
-    target_types: [digest]
-    data_schema: https://truvity.github.io/audit/schemas/v1/common/digest-written.json
-    message: { en: "digest {targets_0_id} written covering {data_objects} objects" }
-  audit.digest.verified:
-    summary: A digest chain window was verified.
+    target_types: [seal]
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/seal-written.json
+    message: { en: "seal {targets_0_id} written covering {data_objects} objects" }
+  audit.seal.verified:
+    summary: The seals of an hour were verified.
     operation: access
     categories: [logging_control]
     profiles: [security, evidence]
-    target_types: [digest]
-    message: { en: "digest window {targets_0_id} verified" }
-  audit.digest.failed:
-    summary: Digest verification failed.
+    target_types: [seal]
+    message: { en: "the seals of {targets_0_id} verified" }
+  audit.seal.failed:
+    summary: Verification of the seals of an hour failed.
     operation: access
     categories: [logging_control]
     profiles: [security, evidence]
-    target_types: [digest]
+    target_types: [seal]
     delivery: block
-    message: { en: "digest window {targets_0_id} FAILED verification: {outcome_reason}" }
+    message: { en: "the seals of {targets_0_id} FAILED verification: {outcome_reason}" }
   audit.retention.extended:
     summary: The lock on an object holding an earlier record was lengthened because a later record relies on it.
     operation: modify

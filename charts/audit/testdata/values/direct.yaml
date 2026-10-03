@@ -11,6 +11,17 @@ writer:
       bucket:
         name: audit-archive
 jobs:
+  notary:
+    enabled: true
+    config:
+      archive:
+        bucket:
+          name: audit-archive
+      signer:
+        kms:
+          key: alias/audit-seal
+      sink:
+        url: http://audit:8080
   verify:
     config:
       deployment: /etc/audit/deployment.yaml

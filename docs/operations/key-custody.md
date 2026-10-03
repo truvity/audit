@@ -182,35 +182,82 @@ impossible.
 
 ### The requirement
 
-The v0 archive was vouched for by an hourly signed digest chain, written by a
-digest job and walked by `audit verify`. That job and chain were removed with
-the v1 layout, because they read the v0 layout, and seals replace them. What
-the key will sign is decided by [0019](../decisions/0019-seals.md); the
-requirement that carries over is the one on who may hold it.
+A seal ([0019](../decisions/0019-seals.md)) is signed ES384, with a **P-384**
+key, by the notary (`audit-notary`), which runs hourly. The v0 digest job and
+its ed25519 and P-256 keys were removed with the v0 layout.
 
 The signing key must be one the **writer cannot use**. Whoever can write the
-archive and also sign for it can choose what to sign. So the signer will have
-its own identity and its own credentials, and the writer's have no path to the
-key.
+archive and also sign for it can choose what to sign. So the notary has its
+own identity and its own credentials, and the writer's have no path to the key;
+the chart refuses a notary that runs as the writer (the same ServiceAccount, the
+same cloud role annotations, or the same OpenBAO role).
 
 ### Where it lives
 
-- **A key file** (ed25519 PEM in a Secret): fine for a trial; the private
-  half is then in the cluster.
-- **AWS KMS** (`ECC_NIST_P256`, sign/verify): the private half never leaves
-  KMS; the signer's role may `kms:Sign`, the writer's may not.
-- **OpenBAO transit** (ed25519): the same separation for a deployment whose
-  secrets live in OpenBAO; the signer's policy may `transit/sign/<key>`.
+- **AWS KMS** (`ECC_NIST_P384`, `SIGN_VERIFY`) is the one to use on AWS. The
+  private half never leaves KMS. Create it once, outside the chart:
 
-`audit key public` prints the public half for any auditor.
+  ```sh
+  aws kms create-key --key-spec ECC_NIST_P384 --key-usage SIGN_VERIFY \
+    --description "audit seals"
+  aws kms create-alias --alias-name alias/audit-seal --target-key-id <key id>
+  ```
+
+  The notary signs a SHA-384 digest (`MessageType DIGEST`, `ECDSA_SHA_384`), so
+  the signing input can be any size. Its role needs `kms:Sign` and
+  `kms:GetPublicKey` on that key and nothing else of KMS; the writer's role
+  needs neither, and the key policy should say so rather than rely on what an
+  IAM policy omits. Every signature is in KMS's own log, and CloudTrail's
+  `Sign` events against the key are the independent record of when the notary
+  signed. A key of another spec is refused at start, before anything is signed.
+- **OpenBAO transit** (`ecdsa-p384`): the same separation for a deployment
+  whose secrets live in OpenBAO. The notary's policy may `update` on
+  `transit/sign/<key>` and `read` on `transit/keys/<key>`; the writer's may not.
+  `bao write transit/keys/audit-seal type=ecdsa-p384`.
+- **A key file** (a P-384 private key in PEM, PKCS#8 or SEC 1, from a Secret):
+  for development, and for a deployment that accepts that the private half is in
+  the cluster beside the archive's credentials. It proves the objects have not
+  changed since they were sealed, and not that the operator did not choose what
+  to seal.
+
+`audit key public --kms-key alias/audit-seal --thumbprint` prints the RFC 7638
+thumbprint a verifier pins, and `--jwks` the JWK Set that goes in
+`keys/roots.jwks`; the default is the PEM. The notary writes
+`keys/roots.jwks` itself, once, if the bucket has none; if the bucket has one
+that does not list the notary's key, it refuses to sign, because the file is the
+operator's.
+
+### Trust is the pin, not the bucket
+
+An auditor believes a key because **they pinned its thumbprint**, which they
+took from you out of band (the output of `audit key public --thumbprint`, in
+their contract or their configuration), and not because the key is in the
+bucket. `keys/roots.jwks` and everything under `keys/` is distribution. A
+verifier ignores a key that is not pinned, so someone with write access to the
+bucket cannot add a root. Give the thumbprint to every verifier, and tell them
+before it changes.
+
+### Delegation
+
+A root can delegate: a statement, signed by the root, that another key may sign
+seals for some profiles and tenants for at most 25 hours, which a notary then
+holds in place of the root, renewed daily, with the root offline or in a
+hardware module. `audit verify` already checks them: the window, the scope,
+the 25-hour limit, a revocation by a root from a time, and that no root but a
+pinned one counts. **The notary does not take a delegation yet**: it signs with
+the key it is given, which must be listed in `keys/roots.jwks` as a root, so
+today the KMS key above is the root, and the day it is a delegate is a change
+to the notary and not to the contract.
 
 ### Replaced, not rotated
 
-A signing key can be replaced: what it signed names the key version it was
-signed with, and verification with the right public half per version still
-holds. What must never happen is losing a
-public half: keep every one that ever signed, beside the archive, for as
-long as the archive lives.
+A signing key can be replaced. A seal names its key by thumbprint, so seals
+made by the old key still verify as long as the verifier pins the old
+thumbprint as well as the new one. What must never happen is losing a public
+half: keep every one that ever signed, beside the archive, for as long as the
+archive lives, and keep every verifier's pins for as long as there are seals
+under them. Replacing the key does not break the chain: `prev` is a hash of the
+previous seal's bytes, whoever signed it.
 
 ## Identities on the platform
 

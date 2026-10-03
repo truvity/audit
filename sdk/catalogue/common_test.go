@@ -15,7 +15,7 @@ func TestCommonCatalogueLoads(t *testing.T) {
 	}
 	for _, want := range []string{
 		"audit.search", "audit.export.requested", "audit.catalogue.registered",
-		"audit.key.destroyed", "audit.digest.written", "audit.clock.synchronised",
+		"audit.key.destroyed", "audit.seal.written", "audit.clock.synchronised",
 		"audit.writer.dead_lettered",
 	} {
 		if _, ok := c.Action(want); !ok {

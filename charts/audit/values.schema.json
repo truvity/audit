@@ -155,6 +155,330 @@
       ],
       "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
     },
+    "config-audit-notary": {
+      "additionalProperties": false,
+      "dependentRequired": {
+        "require": [
+          "sink"
+        ]
+      },
+      "description": "The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "archive": {
+          "additionalProperties": false,
+          "description": "Where the archive is and how it is written.",
+          "properties": {
+            "bucket": {
+              "additionalProperties": false,
+              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+              "properties": {
+                "ca": {
+                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "credentialsEnv": {
+                  "additionalProperties": false,
+                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+                  "properties": {
+                    "accessKeyID": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "secretAccessKey": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "accessKeyID",
+                    "secretAccessKey"
+                  ],
+                  "type": "object"
+                },
+                "endpoint": {
+                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+                  "format": "uri",
+                  "type": "string"
+                },
+                "name": {
+                  "description": "The bucket. It exists already: a service does not create its own store.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "pathStyle": {
+                  "default": false,
+                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+                  "type": "boolean"
+                },
+                "region": {
+                  "description": "The region the bucket is in.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "type": "object"
+            },
+            "kmsKey": {
+              "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "lockMode": {
+              "default": "compliance",
+              "description": "The Object Lock mode every object is written in: compliance (the record tier), governance (a lock a privileged role can shorten), or none (the attested tier, for a store without Object Lock). A process refuses to start when a profile demands a stricter mode than this.",
+              "enum": [
+                "compliance",
+                "governance",
+                "none"
+              ]
+            },
+            "prefix": {
+              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "profiles": {
+          "description": "The profiles to seal. Unset seals every profile the archive has records for.",
+          "items": {
+            "description": "A profile name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "settle": {
+          "$ref": "#/$defs/config-audit-notary.duration",
+          "default": "10m",
+          "description": "How long after an hour has ended it is sealed, so that a batch put late in the hour it is keyed by is in the seal. An hour is never sealed sooner."
+        },
+        "signer": {
+          "additionalProperties": false,
+          "description": "The key seals are signed with, a P-384 key (ES384). The private half should never be on the notary's disk: a managed key (`kms`, `transit`) keeps it where the writer's role cannot reach it, which a `file` cannot.",
+          "oneOf": [
+            {
+              "required": [
+                "kms"
+              ]
+            },
+            {
+              "required": [
+                "transit"
+              ]
+            },
+            {
+              "required": [
+                "file"
+              ]
+            }
+          ],
+          "properties": {
+            "file": {
+              "additionalProperties": false,
+              "description": "A P-384 private key in a PEM file (PKCS#8 or SEC 1), for development.",
+              "properties": {
+                "path": {
+                  "description": "The file.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "type": "object"
+            },
+            "kms": {
+              "additionalProperties": false,
+              "description": "An AWS KMS key: ECC_NIST_P384, SIGN_VERIFY, signing ECDSA_SHA_384. The credentials are the SDK's ambient ones: in a cluster, the notary's Pod Identity or IRSA role, which is not the writer's.",
+              "properties": {
+                "key": {
+                  "description": "The key's ARN, ID or alias.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The key's region, when it is not the SDK's.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "transit": {
+              "additionalProperties": false,
+              "description": "An OpenBAO transit key of type ecdsa-p384.",
+              "properties": {
+                "key": {
+                  "description": "The transit key's name.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "openbao": {
+                  "$ref": "#/$defs/config-audit-notary.openbao"
+                }
+              },
+              "required": [
+                "key",
+                "openbao"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "sink": {
+          "$ref": "#/$defs/config-audit-notary.sink",
+          "description": "The writer this job records what it sealed through (`audit.seal.written`)."
+        }
+      },
+      "required": [
+        "archive",
+        "signer"
+      ],
+      "title": "audit-notary",
+      "type": "object"
+    },
+    "config-audit-notary.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-notary.openbao": {
+      "additionalProperties": false,
+      "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
+      "oneOf": [
+        {
+          "required": [
+            "login"
+          ]
+        },
+        {
+          "required": [
+            "tokenFile"
+          ]
+        },
+        {
+          "required": [
+            "tokenEnv"
+          ]
+        }
+      ],
+      "properties": {
+        "address": {
+          "description": "The server, for example https://openbao.example:8200.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "caFile": {
+          "description": "A PEM bundle trusted beside the system roots, for a server on a private chain.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "additionalProperties": false,
+          "description": "Sign in with a JWT: the pod's projected service-account token, presented to an auth mount. Nothing is stored.",
+          "properties": {
+            "jwtFile": {
+              "description": "The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "mount": {
+              "description": "The JWT auth mount, for example jwt-devel.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "role": {
+              "description": "The role on that mount.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "mount",
+            "role",
+            "jwtFile"
+          ],
+          "type": "object"
+        },
+        "mount": {
+          "default": "transit",
+          "description": "Where the transit engine is mounted.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The OpenBAO namespace the engine and the auth mount are in. Unset is the root namespace.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenEnv": {
+          "description": "The NAME of the environment variable holding a token.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenFile": {
+          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "config-audit-notary.sink": {
+      "additionalProperties": false,
+      "description": "The writer this process records through.",
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
     "config-audit-observe": {
       "additionalProperties": false,
       "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
@@ -1100,6 +1424,37 @@
             "queued",
             "archived"
           ]
+        },
+        "seals": {
+          "additionalProperties": false,
+          "description": "Check the seals too: each one's signature, the chain through `prev`, its count and root against the objects, and that no sealed hour is missing. Unset checks no seal.",
+          "properties": {
+            "grace": {
+              "$ref": "#/$defs/config-audit-verify.duration",
+              "default": "1h",
+              "description": "How long after an hour is sealable its seal may still be missing before that is a finding: the notary runs hourly, so a seal is up to an hour behind."
+            },
+            "roots": {
+              "description": "The roots this verifier trusts, by thumbprint. A seal is believed only if a pinned root signed it or delegated to its key; `keys/roots.jwks` in the bucket is how the keys are distributed and is never what is trusted.",
+              "items": {
+                "description": "The RFC 7638 thumbprint of a root key (`audit key public --thumbprint`).",
+                "pattern": "^[A-Za-z0-9_-]{43}$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "settle": {
+              "$ref": "#/$defs/config-audit-verify.duration",
+              "default": "10m",
+              "description": "The notary's settle window: an hour is sealable once it has ended and this long has passed. Keep it equal to the notary's."
+            }
+          },
+          "required": [
+            "roots"
+          ],
+          "type": "object"
         },
         "sink": {
           "$ref": "#/$defs/config-audit-verify.sink",
@@ -2309,6 +2664,47 @@
               "properties": {
                 "jobs": {
                   "properties": {
+                    "notary": {
+                      "properties": {
+                        "enabled": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "enabled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "notary"
+                  ]
+                }
+              },
+              "required": [
+                "jobs"
+              ]
+            },
+            "then": {
+              "properties": {
+                "jobs": {
+                  "properties": {
+                    "notary": {
+                      "properties": {
+                        "config": {
+                          "$ref": "#/$defs/config-audit-notary"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "jobs": {
+                  "properties": {
                     "verify": {
                       "properties": {
                         "enabled": {
@@ -2431,7 +2827,7 @@
       }
     }
   ],
-  "description": "The audit trail's write path: the writer, the query service, and the jobs that verify and prune what it writes. Each component's `config` is the schema its binary validates its file against, embedded; everything else is the platform's. Names follow docs/reference/configuration.md.",
+  "description": "The audit trail's write path: the writer, the query service, and the jobs that seal, verify and prune what it writes. Each component's `config` is the schema its binary validates its file against, embedded; everything else is the platform's. Names follow docs/reference/configuration.md.",
   "patternProperties": {
     "^x-": {}
   },
@@ -2631,6 +3027,37 @@
               },
               "type": "object"
             },
+            "sealStale": {
+              "additionalProperties": false,
+              "description": "The newest sealed hour of a profile is too old: the notary has stopped.",
+              "properties": {
+                "enabled": {
+                  "description": "Render the rule.",
+                  "type": "boolean"
+                },
+                "for": {
+                  "description": "How long the condition holds before the alert fires, as a duration.",
+                  "type": "string"
+                },
+                "labels": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "description": "Labels added to this rule only.",
+                  "type": "object"
+                },
+                "maxAgeSeconds": {
+                  "description": "The age of the newest sealed hour, in seconds, past which the notary is taken to have stopped.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "severity": {
+                  "description": "The severity label.",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
             "writerRejections": {
               "additionalProperties": false,
               "description": "The writer refuses a share of the records it is sent.",
@@ -2762,6 +3189,9 @@
         "cli": {
           "$ref": "#/$defs/image"
         },
+        "notary": {
+          "$ref": "#/$defs/image"
+        },
         "observe": {
           "$ref": "#/$defs/image"
         },
@@ -2795,6 +3225,9 @@
         "audit": {
           "$ref": "#/$defs/pinned"
         },
+        "audit-notary": {
+          "$ref": "#/$defs/pinned"
+        },
         "audit-observe": {
           "$ref": "#/$defs/pinned"
         },
@@ -2813,7 +3246,7 @@
       "properties": {
         "clockSync": {
           "additionalProperties": false,
-          "description": "A scheduled job: `audit <command> --config`.",
+          "description": "A scheduled job: `audit <command> --config`, or `audit-notary --config` for the notary.",
           "properties": {
             "config": {
               "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-clock-sync's: schemas/config/audit-clock-sync.schema.json.",
@@ -2843,9 +3276,41 @@
           },
           "type": "object"
         },
+        "notary": {
+          "additionalProperties": false,
+          "description": "A scheduled job: `audit <command> --config`, or `audit-notary --config` for the notary.",
+          "properties": {
+            "config": {
+              "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-notary's: schemas/config/audit-notary.schema.json.",
+              "type": "object"
+            },
+            "enabled": {
+              "description": "Run it.",
+              "type": "boolean"
+            },
+            "schedule": {
+              "description": "A cron schedule.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretEnv": {
+              "$ref": "#/$defs/secretEnv"
+            },
+            "secretMounts": {
+              "$ref": "#/$defs/secretMounts"
+            },
+            "serviceAccount": {
+              "$ref": "#/$defs/serviceAccount"
+            },
+            "tokens": {
+              "$ref": "#/$defs/tokens"
+            }
+          },
+          "type": "object"
+        },
         "purge": {
           "additionalProperties": false,
-          "description": "A scheduled job: `audit <command> --config`.",
+          "description": "A scheduled job: `audit <command> --config`, or `audit-notary --config` for the notary.",
           "properties": {
             "config": {
               "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-purge's: schemas/config/audit-purge.schema.json.",
@@ -2874,7 +3339,7 @@
         },
         "verify": {
           "additionalProperties": false,
-          "description": "A scheduled job: `audit <command> --config`.",
+          "description": "A scheduled job: `audit <command> --config`, or `audit-notary --config` for the notary.",
           "properties": {
             "config": {
               "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-verify's: schemas/config/audit-verify.schema.json.",

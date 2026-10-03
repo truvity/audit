@@ -7,7 +7,7 @@
 // the billing copy of one sign-in carry different pseudonyms for the same
 // subject, and nothing short of both keys relates them.
 //
-// A Signer gives the asymmetric key the digest chain is signed with.
+// A Signer gives the asymmetric key seals are signed with.
 //
 // Keys are never rotated. Rotation would break linkability across time for one
 // person, which is the property the security copy is kept for. They are

@@ -1,0 +1,18 @@
+# refuse: the notary's ServiceAccount carries the writer's annotations
+# base: separation-base
+serviceAccount:
+  annotations:
+    example.test/cloud-role: audit-writer
+jobs:
+  notary:
+    enabled: true
+    serviceAccount:
+      annotations:
+        example.test/cloud-role: audit-writer
+    config:
+      archive:
+        bucket:
+          name: audit-archive
+      signer:
+        kms:
+          key: alias/audit-seal

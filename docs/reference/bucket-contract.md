@@ -6,11 +6,13 @@ an installation share nothing else
 ([0016](../decisions/0016-three-parts-installed-independently.md)), so this
 page is the whole of what a second implementation of any part must know.
 
-The records and catalogue parts of this contract are built and tested (the
-writer writes them, `audit verify`, `audit reindex` and the scan searcher read
-them, and a conformance suite holds them to it); seals and keys are specified
-here and not built. The [capabilities](../capabilities.md) page says what
-exists. The reasons are in
+The records, catalogue, seals and keys parts of this contract are built and
+tested: the writer writes records and catalogues, the notary (`audit-notary`)
+writes seals, `audit verify`, `audit reindex` and the scan searcher read them,
+and a conformance suite holds all of it to the contract. Signing a delegation
+is the one thing here that is specified and not built: a verifier checks one,
+and nothing in this repository writes one. The
+[capabilities](../capabilities.md) page says what exists. The reasons are in
 [0018](../decisions/0018-v1-bucket-layout.md) (the layout),
 [0019](../decisions/0019-seals.md) (seals) and
 [0020](../decisions/0020-observe-follows-the-bucket.md) (reading it).
@@ -103,7 +105,23 @@ and its payload is `audit.v1.Seal` in proto JSON with the proto field names:
 | `first`, `last` | the first and last object key of the hour; empty for an empty hour |
 | `prev` | hex SHA-256 of the previous seal's bytes for the same profile and tenant; empty for the first seal |
 | `sealed_at` | when the seal was made, RFC 3339 |
-| `meters` | optional: a map of counters for the hour (objects, records, bytes) that metering may read without a body |
+| `meters` | optional: a map of counters for the hour (`objects`, `records`, `bytes`) that metering may read without a body; absent for an empty hour |
+
+The payload is the proto JSON mapping, so a 64-bit integer (`count`, each
+meter) is a decimal **string**, and every field is written, an empty `prev` as
+`""`. The members are in canonical order (RFC 8785), but a verifier checks the
+signature over the payload bytes as they are and never re-encodes them.
+`sealed_at` is whole seconds and is never before the end of the hour the seal
+covers.
+
+A seal is put with a conditional put (`If-None-Match: *`) and locked as long as
+the records it covers: its retention is the latest of the hour's objects, and for
+an empty hour that of the seal before it. The notary reads the hour's objects
+before it signs and refuses to seal an hour whose objects do not match their own
+metadata (the sha256 of their bytes, their count, the hash of every record):
+it vouches only for what it has checked, and seals nothing past an hour it
+cannot. The chain therefore stops at a fault, and the age of the newest seal says
+so.
 
 A seal for an hour is written when the hour has settled
 ([0020](../decisions/0020-observe-follows-the-bucket.md)). An hour with no
@@ -129,6 +147,56 @@ not a power of two; no leaf is duplicated.
 **Empty hour:** When count is zero, the root is SHA-256(""), the hash of an
 empty byte string.
 
+The vectors, for the leaf inputs `input(i) = SHA-256("<i>")` (the ASCII decimal
+`i`, not a record's hash: the vectors are about the tree), `i` from 0:
+
+| n | root |
+|---|---|
+| 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| 1 | `13a77175e35eb1d9da91ee14df0d7772cea71289800206e2b45c882ecb06efbf` |
+| 2 | `bbb441530bdded54e6e2bfcdc829819ff39b30768eb9f023071dffc16b410f10` |
+| 3 | `8be871f13785b4c81a1700459c76ac2b3ae2caebb7876c376e223c6adff98c47` |
+| 5 | `4e23fb40d8876f1299cca9b3c28432a01b11d1a20126606914612892ff2e09a7` |
+
+The inputs and every leaf's audit path are in
+[`internal/merkle/testdata/vectors.json`](../../internal/merkle/testdata/vectors.json),
+and a test holds the code to them and to RFC 6962 written out as it is.
+
+### Worked example
+
+Two real seals of one tenant, synthetic data and a throwaway key, in
+[`internal/seal/testdata`](../../internal/seal/testdata): the hour `10` holds two
+objects and three records whose tree is the n = 3 vector above, and the hour
+`11` is quiet and chained to it. `keys/roots.jwks`:
+
+```json
+{"keys": [{"kty": "EC", "crv": "P-384", "alg": "ES384", "use": "sig",
+  "kid": "o2yB9qPIG1yB95LuYok20fSC80yOxCu7VF8rmi5LyGg",
+  "x": "CGbXeVcyaJ3FX1fp6aFwTmOd2o4Az9onclXvRWez9zb1zHXkRIatexKJnvf6gVXn",
+  "y": "25YgRZW8Wuk4VGnjnSBJpeLYg_5_0_1Ur3tSC3fBjK8h0Fc8wSDqtztpKL_rrWfC"}]}
+```
+
+`seals/security/acme/2026/09/17/10.jws`, header and payload decoded:
+
+```json
+{"alg": "ES384", "kid": "o2yB9qPIG1yB95LuYok20fSC80yOxCu7VF8rmi5LyGg", "typ": "audit-seal+jws"}
+{"count":"3","first":"records/security/acme/2026/09/17/10/01M2QDGD6000000000033XR4JR",
+ "hour":"2026-09-17T10:00:00Z","last":"records/security/acme/2026/09/17/10/01M2QEBW3000000000034XR5BY",
+ "meters":{"bytes":"1536","objects":"2","records":"3"},"prev":"","profile":"security",
+ "root":"8be871f13785b4c81a1700459c76ac2b3ae2caebb7876c376e223c6adff98c47",
+ "sealed_at":"2026-09-17T11:17:04Z","tenant":"acme"}
+```
+
+and `.../11.jws`, whose `prev` is the SHA-256 of the whole compact serialisation
+of the first:
+
+```json
+{"count":"0","first":"","hour":"2026-09-17T11:00:00Z","last":"","meters":{},
+ "prev":"dc2b3969dd9edd1197a4bf6a8778189508a9104500a2709e14b20bb4c87f9326",
+ "profile":"security","root":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+ "sealed_at":"2026-09-17T12:17:03Z","tenant":"acme"}
+```
+
 ### Inclusion proof
 
 A single record is proven by its leaf index (0-based position among all
@@ -145,7 +213,9 @@ trust: a verifier trusts only the roots whose thumbprints its own
 configuration pins, and ignores any other key in the file or the bucket.
 
 A seal is valid when its signature verifies under the key named by `kid`, and
-either that key is a pinned root, or a **delegation** chains it to one.
+either that key is a pinned root, or a **delegation** chains it to one. A
+verifier computes a key's thumbprint from the key and never takes it from the
+file's own `kid`.
 
 ### Delegation
 
@@ -162,7 +232,10 @@ payload is `audit.v1.Delegation`:
 
 A seal signed by a delegate is valid only if `sealed_at` lies within the
 window and the seal's profile and tenant are in scope. A delegation whose
-window exceeds 25 hours is invalid.
+window exceeds 25 hours is invalid. A key signs its own `sealed_at`, so a
+verifier also takes the bucket's time of writing the seal as a witness, within
+five minutes of skew: a seal written after the window closed is not valid
+however it dates itself. Signing a delegation is not built; verifying one is.
 
 ### Revocation
 
@@ -170,7 +243,9 @@ A revocation is a JWS signed by a root (`typ: audit-revocation+jws`) whose
 payload is `audit.v1.Revocation`: `iss` (the root), `revokes` (the revoked
 key's thumbprint), `revoked_at` (RFC 3339) and an optional `reason`. A seal
 signed by the revoked key with `sealed_at` at or after `revoked_at` is
-invalid. A root is revoked only by removing the pin.
+invalid, and so is one the bucket says was written at or after it, within the
+same skew. A root is revoked only by removing the pin. A delegation or a
+revocation that no pinned root signed is ignored: it is only in the bucket.
 
 ## Reading the archive
 
@@ -194,12 +269,21 @@ including the refusals (a second catalogue put with other bytes, a delegation
 of more than 25 hours, a seal signed by a revoked or unpinned key). A part
 that passes it may be installed beside the others.
 
-The half for records and the catalogue is built: `internal/bucketcontract`
-holds a bucket to the key grammar, the envelope, the metadata, the sha256, the
-hash of every record, the uniqueness and order of keys and the presence of the
-catalogue a record names, and names the rule each finding breaks. Its tests run
-it, together with the refusals above for the conditional puts, against the
-in-memory store and against S3 (LocalStack in CI); `audit verify` applies the
-same checker to each object. The half for seals, delegations and revocations,
-with the Merkle vectors for n = 0, 1, 2, 3 and 5, comes with the notary and is
-[designed, not built](../capabilities.md).
+`internal/bucketcontract` is that suite, in two halves, each naming the rule
+every finding breaks. The half for records and the catalogue holds a bucket to
+the key grammar, the envelope, the metadata, the sha256, the hash of every
+record, the uniqueness and order of keys and the presence of the catalogue a
+record names; `audit verify` applies the same checker to each object. The half
+for seals (`CheckSeals`) holds it to the seal key grammar, the JWS, the
+payload, the signature against the roots a checker pins (and delegations and
+revocations), the chain, the count and root recomputed from the objects as they
+are now, the lock and the missing seals; `audit verify --root` applies it to
+the seals of a range. The tests run both against the in-memory store and
+against S3 (LocalStack in CI), with the notary signing once with a key on the
+machine and once with an `ECC_NIST_P384` key in KMS, run the notary and check
+what it wrote, check a seal by hand with the standard library and no code of
+this repository's, and hand the checker each broken seal in turn: a key nobody
+pinned, a broken chain, a root that is not the hour's, an object added to a
+sealed hour, a seal made before its hour ended, a stray key, a delegation outside
+its window or scope or of more than 25 hours, and a delegate whose key was
+revoked. The Merkle vectors are in `internal/merkle`.

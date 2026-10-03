@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 
 	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/keys"
@@ -130,6 +131,36 @@ func OpenKeysFrom(ctx context.Context, k *config.Keys) (keys.Provider, error) {
 			CAFile: t.OpenBAO.CAFile, Prefix: prefix, Login: login, Token: token, TokenFile: tokenFile,
 		})
 	}
+}
+
+// OpenSignerFrom opens the key the configuration says seals are signed with.
+// The private half of a managed key (kms, transit) never reaches this process;
+// the file is the exception, and the one to leave to development.
+func OpenSignerFrom(ctx context.Context, s config.Signer) (keys.Signer, error) {
+	switch {
+	case s.KMS != nil:
+		cfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("signer.kms: %w", err)
+		}
+		if s.KMS.Region != "" {
+			cfg.Region = s.KMS.Region
+		}
+		return &keys.KMSSigner{Client: kms.NewFromConfig(cfg), Key: s.KMS.Key}, nil
+	case s.Transit != nil:
+		login, token, tokenFile, err := openBAOCredentials(s.Transit.OpenBAO)
+		if err != nil {
+			return nil, err
+		}
+		o := s.Transit.OpenBAO
+		return keys.NewTransitSigner(ctx, &keys.TransitSigner{
+			Address: o.Address, Mount: mountOrTransit(o.Mount), Namespace: o.Namespace, CAFile: o.CAFile,
+			Key: s.Transit.Key, Login: login, Token: token, TokenFile: tokenFile,
+		})
+	case s.File != nil:
+		return keys.LoadLocalSignerFile("", s.File.Path)
+	}
+	return nil, fmt.Errorf("signer: name one of kms, transit and file")
 }
 
 // SinkFrom is a client to the writer the configuration names, presenting the

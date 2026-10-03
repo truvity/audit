@@ -110,11 +110,27 @@ ServiceAccount (Pod Identity, IRSA), so the two must be different accounts. */}}
 {{- fail (printf "audit: the receiver and the writer run as the same ServiceAccount, %q. A receiver must not hold the archive's write identity: whatever cloud role is bound to that account (Pod Identity, IRSA) would let a compromised front door write the archive directly. Give the receiver its own: leave `receiver.serviceAccount.create` true with a `receiver.serviceAccount.name` that is not the writer's `serviceAccount`." (include "audit.serviceAccountName" .)) -}}
 {{- end -}}
 
-{{/* Separation of duties. Whoever writes the archive and can also open what it
-sealed can read what the writer must not, so the query service's resolve signs
-in as itself, never as the writer. Only the chart sees both configurations. */}}
+{{/* Separation of duties. Whoever writes the archive and can also sign for it
+can choose what to sign, so the notary signs in as itself, never as the writer;
+and whoever writes it and can also open what it sealed can read what the writer
+must not, so the query service's resolve does too. Only the chart sees both
+configurations. */}}
 {{- $writerBao := dig "transit" "openbao" nil (dig "keys" nil $writer | default dict) -}}
 {{- $writerWho := include "audit.baoIdentity" (dict "bao" $writerBao "env" .Values.writer.secretEnv) -}}
+{{- if .Values.jobs.notary.enabled -}}
+  {{- $notary := .Values.jobs.notary.config | default dict -}}
+  {{- if eq (include "audit.notaryServiceAccountName" .) (include "audit.serviceAccountName" .) -}}
+  {{- fail (printf "audit: the notary runs as the writer's ServiceAccount, %q. Whoever writes the archive and can also sign for it can choose what to sign; give the notary its own: leave `jobs.notary.serviceAccount.create` true, or name an account that is not the writer's." (include "audit.serviceAccountName" .)) -}}
+  {{- end -}}
+  {{- $notaryRole := .Values.jobs.notary.serviceAccount.annotations | default dict -}}
+  {{- if and $notaryRole (eq (toJson $notaryRole) (toJson (.Values.serviceAccount.annotations | default dict))) -}}
+  {{- fail "audit: the notary's ServiceAccount carries the writer's annotations, so it would bind the writer's cloud role (Pod Identity, IRSA). Whoever writes the archive and can also sign for it can choose what to sign; bind the notary to a role of its own." -}}
+  {{- end -}}
+  {{- $notaryWho := include "audit.baoIdentity" (dict "bao" (dig "signer" "transit" "openbao" nil $notary) "env" .Values.jobs.notary.secretEnv) -}}
+  {{- if and $notaryWho $writerWho (eq $notaryWho $writerWho) -}}
+  {{- fail "audit: the notary signs in to OpenBAO as the writer. Whoever writes the archive and can also sign for it can choose what to sign; give the notary its own role." -}}
+  {{- end -}}
+{{- end -}}
 {{- if and .Values.query.enabled .Values.query.config -}}
   {{- $queryKeys := dig "keys" nil .Values.query.config | default dict -}}
   {{- $queryWho := include "audit.baoIdentity" (dict "bao" (dig "transit" "openbao" nil $queryKeys) "env" .Values.query.secretEnv) -}}

@@ -28,12 +28,17 @@ backlog rather than a hole.
 
 {{ with .Values.writer.config.archive -}}
 The archive is {{ .bucket.name }}{{ with .prefix }} under {{ . }}/{{ end }}.
-{{- if .prefix }} Four identities need rights beneath that prefix, and none of
+{{- if .prefix }} {{ if $.Values.jobs.notary.enabled }}Five{{ else }}Four{{ end }} identities need rights beneath that prefix, and none of
 them may delete anything:
 
   writer   put objects, under records/ and catalogue/ among others; put and get
            retention; put legal holds; get and list under the prefix; encrypt
            with the bucket's key
+{{- if $.Values.jobs.notary.enabled }}
+  notary   get and list under the prefix; put under {{ .prefix }}/seals/ and
+           {{ .prefix }}/keys/roots.jwks; decrypt; sign with the seal key (and
+           no put under records/, which is the writer's)
+{{- end }}
   verify   get and list under the prefix; decrypt
   observe  get and list under the prefix; decrypt
   query    get and list under the prefix; decrypt

@@ -270,12 +270,16 @@ message GetResponse {
   Provenance provenance = 2;
 }
 
-// Provenance says where the copy was read from and whether a digest has
-// covered it.
+// Provenance says where the copy was read from and whether a seal has covered
+// it.
 message Provenance {
   string object_key = 1;
   int64 line = 2;
+  // The key of the seal that covers the object's hour, when the hour is sealed
+  // (seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws); empty until it is. The
+  // name is from before seals, when it was a digest's.
   string digest_id = 3;
+  // When a verifier last found the seal clean; empty when none has.
   google.protobuf.Timestamp verified_at = 4;
 }
 

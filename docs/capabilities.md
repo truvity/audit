@@ -13,8 +13,9 @@ going.
 | ✅ supported | built, tested in CI and run in an installation |
 | — | does not apply to that platform |
 
-Today's state is that the ingest path writes the v1 layout (🧪), the
-readers around it follow it, observe follows the bucket by cursor (🧪), and the rest of the target architecture is 📄. The
+Today's state is that the ingest path writes the v1 layout (🧪), the notary seals
+it (🧪), the readers around it follow it, observe follows the bucket by cursor (🧪),
+and the rest of the target architecture is 📄. The
 v0 archive is not read or written by anything in this release: it is readable
 only with the previous release's CLI (v0.6.x).
 
@@ -38,7 +39,7 @@ only with the previous release's CLI (v0.6.x).
 | one configuration file against a schema | ✅ | 📄 | 📄 |
 | metrics over OTLP: acknowledgements by durability, write latency per transport, index lag, consumer failures | 🧪 | 🧪 | 🧪 |
 | traces over OTLP: server and client spans, `traceparent` across NATS headers and SQS attributes, no personal data on a span | 🧪 | 🧪 | 🧪 |
-| chart `renders: alerts`: six alert rules as a `VMRule` or `PrometheusRule`, unit-tested on vmalert-tool | 🧪 | 🧪 | 🧪 |
+| chart `renders: alerts`: seven alert rules as a `VMRule` or `PrometheusRule`, unit-tested on vmalert-tool | 🧪 | 🧪 | 🧪 |
 | chart `renders: dashboards`: the audit overview for Grafana's sidecar, held to the observability dashboard lint | 🧪 | 🧪 | 🧪 |
 
 The `s3` sink works against any store that speaks the S3 API; on a store
@@ -52,28 +53,40 @@ without Object Lock it is the `attested` tier of
 | v1 layout, written and read ([bucket contract](reference/bucket-contract.md)): one object per ingest batch, keyed by ingest time | 🧪 | 🧪 | 🧪 |
 | `catalogue/<app>/<version>`, written once, compared when present | 🧪 | 🧪 | 🧪 |
 | `audit verify`: key, metadata, sha256 and per-record hashes of every object | 🧪 | 🧪 | 🧪 |
+| `audit verify --root`: the seals of a range, against pinned roots (below) | 🧪 | 🧪 | 🧪 |
 | Object Lock, compliance mode | ✅ | ✅ | — |
 | governance trial, then compliance ([0023](decisions/0023-archive-retention-and-lifecycle.md)) | 📄 | 📄 | — |
 | lifecycle to Glacier Instant Retrieval and Deep Archive | — | 📄 | — |
 | bucket-contract conformance suite (records, catalogue and ordering, against the memory store and S3) | 🧪 | 🧪 | 🧪 |
-| conformance of seals, delegation and revocation | 📄 | 📄 | 📄 |
+| conformance of seals, delegation and revocation: against the memory store and S3, with a key file and a KMS P-384 key (LocalStack) | 🧪 | 🧪 | 🧪 |
 
 ## Notary
 
-The v0 digest job was removed with the v0 layout; seals replace it and are not
-built yet. The signers stay for them.
+The v0 digest job was removed with the v0 layout; seals replace it
+([0019](decisions/0019-seals.md)). The notary is `audit-notary`, a binary and an
+image of its own.
 
 | feature | Kubernetes | AWS | self-hosted |
 |---|---|---|---|
-| seals, chained through `prev` ([0019](decisions/0019-seals.md)) | 📄 | 📄 | 📄 |
-| delegation and revocation | 📄 | 📄 | 📄 |
-| signer: AWS KMS | ✅ | ✅ | — |
-| signer: OpenBAO transit | ✅ | — | ✅ |
-| signer: key file | ✅ | ✅ | ✅ |
+| seals, chained through `prev`, one per profile, tenant and hour, empty hours too; settle window; idempotent; refuses to seal what does not match its metadata | 🧪 | 🧪 | 🧪 |
+| Merkle root over per-record hashes (RFC 6962), inclusion proofs and the vectors for n = 0, 1, 2, 3 and 5 (`internal/merkle`) | 🧪 | 🧪 | 🧪 |
+| `keys/roots.jwks`, written once; thumbprints pinned by the verifier | 🧪 | 🧪 | 🧪 |
+| chart: `jobs.notary`, an hourly CronJob under an identity of its own, refused if it is the writer's | 🧪 | — | — |
+| seal age: `audit.seal.age`, the `AuditSealStale` alert and a dashboard panel | 🧪 | 🧪 | 🧪 |
+| verifying a delegation (window, scope, 25 hours) and a revocation | 🧪 | 🧪 | 🧪 |
+| signing a delegation: a notary on a short-lived delegated key (decision L3: daily) | 📄 | 📄 | 📄 |
+| signer: AWS KMS `ECC_NIST_P384` | 🧪 | 🧪 | — |
+| signer: OpenBAO transit `ecdsa-p384` | 🧪 | — | 🧪 |
+| signer: P-384 key file | 🧪 | 🧪 | 🧪 |
 | signer: PKCS#11 | — | — | 📄 |
 | signer: TPM | — | — | 📄 |
 | notary as a function on a schedule | — | 📄 | — |
-| `audit verify` of seals | 📄 | 📄 | 📄 |
+| `audit verify` of seals: signature, chain, count and root against the objects, missing seals | 🧪 | 🧪 | 🧪 |
+
+The seals are tested against the in-memory store and against LocalStack S3, with
+the notary signing with a key file and with a KMS key; they have not run in an
+installation, which is what ✅ asks for. The signers that predate seals (an
+ed25519 or P-256 key) still sign and verify in `keys`, and sign no seal.
 
 ## Observe
 

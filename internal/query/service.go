@@ -18,6 +18,7 @@ import (
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/store"
 )
 
 // Service answers queries, within a grant, and records that it did.
@@ -44,8 +45,11 @@ type Service struct {
 	// Identities, when given, is where Resolve finds the way back from a
 	// pseudonym. Without it Resolve is not offered.
 	Identities *identity.Map
-	Version    string
-	Instance   string
+	// Seals, when given, is the archive the seals are looked for in: a record
+	// read from an object whose hour has been sealed says which seal covers it.
+	Seals    store.Store
+	Version  string
+	Instance string
 	// OnUnrecorded is called when a read happened and the trail does not say
 	// so. A deployment alerts on it: the reading of an audit trail going
 	// unrecorded is not a degraded service, it is the service failing at one of
@@ -238,9 +242,14 @@ func (s *Service) Get(
 		err = fmt.Errorf("%w: no record %s in profile %s", ErrNotFound, req.GetId(), req.GetProfile())
 		row, where = index.Row{}, index.Provenance{}
 	}
-	// Where.Digest and where.VerifiedAt stay empty until seals vouch for the
-	// object's hour (docs/decisions/0019-seals.md): a reader takes empty as not
+	// The seal that covers the object's hour, when there is one: its key goes
+	// in Where.Digest. It says the hour is sealed and not that anyone has
+	// checked the seal, so where.VerifiedAt stays empty: that is the verifier's
+	// to set (observe's verification marks), and a reader takes empty as not
 	// verified, the conservative answer.
+	if err == nil {
+		where.Digest = s.sealOf(ctx, where.ObjectKey)
+	}
 	// audit.get declares only the record it read.
 	s.record(ctx, "audit.get", p, g, err, []*record.Target{
 		{Type: "record", Id: req.GetId()},
@@ -469,4 +478,23 @@ func (s *Service) instance() string {
 		return s.Instance
 	}
 	return record.InstanceName()
+}
+
+// sealOf is the key of the seal that covers a record object's hour, or "" when
+// the service looks in no archive, the key is not a record object's, or the
+// hour is not sealed yet: the ordinary state of the current hour, and a finding
+// in any other that `audit verify` makes.
+func (s *Service) sealOf(ctx context.Context, objectKey string) string {
+	if s.Seals == nil {
+		return ""
+	}
+	o, ok := store.ParseRecordKey(objectKey)
+	if !ok {
+		return ""
+	}
+	key := store.SealKey(o.Profile, o.Tenant, o.Hour)
+	if _, err := s.Seals.Head(ctx, key); err != nil {
+		return ""
+	}
+	return key
 }

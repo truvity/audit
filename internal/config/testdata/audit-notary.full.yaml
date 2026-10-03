@@ -1,0 +1,33 @@
+archive:
+  bucket:
+    name: audit-archive
+    region: eu-central-1
+    endpoint: https://s3.example.test
+    pathStyle: true
+    credentialsEnv:
+      accessKeyID: AUDIT_NOTARY_ACCESS_KEY_ID
+      secretAccessKey: AUDIT_NOTARY_SECRET_ACCESS_KEY
+  prefix: app
+  lockMode: compliance
+  kmsKey: alias/audit-archive
+signer:
+  transit:
+    key: audit-seal
+    openbao:
+      address: https://openbao.example.test:8200
+      mount: transit
+      namespace: devel
+      caFile: /etc/audit/trust/ca.crt
+      login:
+        mount: jwt-devel
+        role: audit-notary
+        jwtFile: /var/run/openbao/token
+profiles:
+  - security
+  - billing
+settle: 10m0s
+sink:
+  url: http://audit:8080
+  tokenFile: /var/run/audit/token
+  expect: archived
+require: queued

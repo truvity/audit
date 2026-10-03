@@ -91,6 +91,37 @@
         "archived"
       ]
     },
+    "seals": {
+      "additionalProperties": false,
+      "description": "Check the seals too: each one's signature, the chain through `prev`, its count and root against the objects, and that no sealed hour is missing. Unset checks no seal.",
+      "properties": {
+        "grace": {
+          "$ref": "#/$defs/duration",
+          "default": "1h",
+          "description": "How long after an hour is sealable its seal may still be missing before that is a finding: the notary runs hourly, so a seal is up to an hour behind."
+        },
+        "roots": {
+          "description": "The roots this verifier trusts, by thumbprint. A seal is believed only if a pinned root signed it or delegated to its key; `keys/roots.jwks` in the bucket is how the keys are distributed and is never what is trusted.",
+          "items": {
+            "description": "The RFC 7638 thumbprint of a root key (`audit key public --thumbprint`).",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "settle": {
+          "$ref": "#/$defs/duration",
+          "default": "10m",
+          "description": "The notary's settle window: an hour is sealable once it has ended and this long has passed. Keep it equal to the notary's."
+        }
+      },
+      "required": [
+        "roots"
+      ],
+      "type": "object"
+    },
     "sink": {
       "$ref": "#/$defs/sink",
       "description": "The writer this job records what it checked through."

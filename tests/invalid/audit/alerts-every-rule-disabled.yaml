@@ -8,3 +8,4 @@ alerts:
     indexDeferred: {enabled: false}
     writerRejections: {enabled: false}
     consumerFailing: {enabled: false}
+    sealStale: {enabled: false}

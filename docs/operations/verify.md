@@ -38,19 +38,62 @@ range, in key order, it checks, against the
 What this shows is that each object is the object that was written and each
 record is the record that was hashed. What it cannot show is that nothing was
 removed or added beside them: that is what seals vouch for
-([0019](../decisions/0019-seals.md)), and they are not built yet.
+([0019](../decisions/0019-seals.md)), and `--root` checks them.
 
-Output: one line per object, `valid`, `unlocked` or `INVALID: <reason>`, and a
-summary of the objects and records checked. Exit code non-zero on any invalid
-entry; `unlocked` is information and does not count.
+### Seals
+
+```
+audit verify --profile security --from 2026-09-01 --to 2026-09-17 \
+  --bucket <name> --prefix audit/<application> \
+  --root <thumbprint>[,<thumbprint>...]
+```
+
+With `--root` the command also checks the seals of the range, for every tenant
+of the profile, and the thumbprints are the **only** keys it trusts: the ones
+you were given by the operator out of band (`audit key public --thumbprint` on
+their side). Nothing in the bucket, `keys/roots.jwks` included, can add one.
+For every hour in the range:
+
+1. **A seal exists**, when the hour is due one: it has ended, the notary's
+   settle window (`--settle`, default 10m) has passed and so has a grace for its
+   hourly schedule (`--grace`, default 1h). A quiet hour has a seal too, so a
+   missing seal is a fault and never silence, from the hour of the tenant's first
+   object on. This is what finds a seal that was removed, and a notary that
+   stopped.
+2. **It is signed by a key to be believed**: a pinned root, or a key a pinned
+   root delegated to, for this profile and tenant, within the delegation's
+   window (at most 25 hours) and not revoked as of the seal. The bucket's own
+   time of writing the seal is checked beside the seal's `sealed_at`.
+3. **It chains**: its `prev` is the SHA-256 of the seal of the hour before, and
+   the first seal of a tenant has none.
+4. **It says what the hour holds now**: the count, the first and last key and
+   the Merkle root are recomputed from the objects in the bucket, so that an
+   object added to a sealed hour, removed from it or changed breaks the seal. A
+   changed object whose metadata was made to agree is caught here, by the
+   root, and not by its own sha256.
+5. **The lock**, when given the deployment: a seal is locked as long as the
+   records it covers.
+
+A range in the middle of a chain checks its first seal against the seal just
+before the range. Each finding names the rule it breaks (`seal.signature`,
+`seal.chain`, `seal.root`, `seal.missing`, `seal.key`, `seal.payload`,
+`seal.jws`, `seal.lock`, `keys.roots`, `keys.statement`), the seal's key and the
+tenant.
+
+Output: one line per object and per seal, `valid`, `unlocked` or
+`INVALID: <reason>`, and a summary of the objects and records checked. Exit code
+non-zero on any invalid entry; `unlocked` is information and does not count.
 
 Auditors run it with read-only credentials scoped to the installation's
 prefix. The nightly run inside the cluster (`audit verify --config`, whose
 file has the same settings under their own names) does the same for the
-previous day and records the outcome through the writer, per ingest hour, as
-`audit.digest.verified` or `audit.digest.failed` (the target of each is
-`records/<profile>/<yyyy>/<mm>/<dd>/<hh>`). Those two event names are kept
-until seals replace them.
+previous day and, when it checks seals (`seals.roots` in its file), records the
+outcome through the writer, per ingest hour, as `audit.seal.verified` or
+`audit.seal.failed` (the target of each is
+`records/<profile>/<yyyy>/<mm>/<dd>/<hh>`, the prefix of the hour). These
+events say what they name: a run that checked no seal records none, because a
+record claiming it had would be false assurance. They replace the v0
+`audit.digest.*` events (common catalogue 2.0.0).
 
 | flag | what |
 |---|---|
@@ -58,6 +101,7 @@ until seals replace them.
 | `--from`, `--to` | the range of ingest time, `--to` not included |
 | `--last 24h` | the objects ingested in the last this long, ending at the hour that has closed; instead of `--from` and `--to` |
 | `--prefix <p>` | the installation's prefix in the bucket, as `archive.prefix` of the chart's configuration names it; omit only where the installation is at the bucket's root |
+| `--root <thumbprints>` | also check the seals, trusting only the root keys with these thumbprints, comma separated; `--settle` and `--grace` set when a seal is due |
 | `--sink <writer>` | record what was checked through the writer. The scheduled job does; an auditor's run by hand should not |
 | `--deployment <file>` | the profile configuration, so the check knows what lock the profile demands. The scheduled job passes it; an auditor without it still gets keys, bytes and hashes checked, with nothing said about locks |
 | `--json` | print the report as JSON |
@@ -69,8 +113,9 @@ own retention to check against.
 
 The scheduled job's configuration is `archive` (the bucket and prefix, and
 nothing about a lock mode: it only reads), `deployment`, `last` (default
-`24h`), optionally `profiles`, and `sink` with `require`. It has no key
-settings.
+`24h`), optionally `profiles`, `seals` (`roots`, the thumbprints to pin, and
+`settle` and `grace`) and `sink` with `require`. It holds no key, only the
+thumbprints of public ones.
 
 **The old archive is not read.** An archive written before the v1 layout, with
 `profile=<p>/tenant=<t>/year=…` keys and a signed digest chain under

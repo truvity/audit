@@ -77,17 +77,19 @@ the prefix and none of them with a delete:
 
 Bind each through its ServiceAccount's annotations — `serviceAccount` (the
 writer; the consumers in stream mode), `receiver.serviceAccount`,
-`query.serviceAccount`, `observe.serviceAccount`,
+`query.serviceAccount`, `observe.serviceAccount`, `jobs.notary.serviceAccount`,
 `jobs.verify.serviceAccount`, `jobs.purge.serviceAccount`,
 `jobs.clockSync.serviceAccount` — with Pod Identity or IRSA.
 
 Every component runs as a ServiceAccount of its own, named
-`<fullname>-<component>` (`audit-receiver`, `audit-query`, `audit-observe`,
+`<fullname>-<component>` (`audit-receiver`, `audit-query`, `audit-observe`, `audit-notary`,
 `audit-verify`, `audit-purge`, `audit-clock-sync`); only the writer keeps the
 release's name (`audit`). Each takes `create`, `name` and `annotations`. In
 stream mode the chart refuses a receiver and a writer that share one
 ServiceAccount name: a receiver must not hold the archive's write identity. It
-refuses the indexer, too, under the writer's or the query service's name.
+refuses the indexer, too, under the writer's or the query service's name. The
+same goes for the notary, in either mode: it signs, and whoever writes the
+archive and can also sign for it can choose what to sign.
 The purge job works on the index database only and needs no role; clock sync
 needs none. The indexer needs read on the archive and nothing else.
 
@@ -148,8 +150,9 @@ egress to the reference.
 
 One image per binary, built by ko from `.goreleaser.yaml` under
 `ghcr.io/truvity/audit/`: `audit-writer` (the receiver and the writer),
-`audit` (the toolchain the jobs run) and `audit-query`. Three, because the
-receiver serves `RegisterCatalogue` itself. A release publishes all three
+`audit` (the toolchain the jobs run), `audit-query` and `audit-notary` (the
+notary: it signs, so it is an image of its own). Four, because the
+receiver serves `RegisterCatalogue` itself. A release publishes all four
 under the tag that also stamps the chart, so a deployment pins one version.
 `just snapshot` builds them for a development cluster that cannot pull from
 the registry; then set `image.*.repository` and `image.*.tag`.
@@ -167,11 +170,15 @@ identifiers it receives are opaque. A deployment that must be able to
 crypto-shred configures a provider deliberately
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
 
-**A signing key.** Nothing in v1 signs yet: the digest job that used one was
-removed with the v0 layout, and seals ([0019](../decisions/0019-seals.md)) will
-take its place. The signers (an AWS KMS ECC_NIST_P256 key, an OpenBAO transit
-ed25519 key, or a key file) and `audit key public` are kept for them. `audit
-verify` needs no key.
+**A signing key**, for the notary, which seals each closed hour
+([0019](../decisions/0019-seals.md)). It is a **P-384** key: an AWS KMS
+`ECC_NIST_P384` key, an OpenBAO transit `ecdsa-p384` key, or a key file in
+development, and the notary's identity is not the writer's: the chart refuses
+one that is
+([key custody](../operations/key-custody.md#signing-key)). Turn the notary on
+with `jobs.notary` once you have the key; it is off by default. `audit verify`
+needs no key, only the thumbprints of the public ones it pins
+(`audit key public --thumbprint`).
 
 ## 3. Install
 

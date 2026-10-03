@@ -1,0 +1,14 @@
+# refuse: signer
+# base: separation-base
+jobs:
+  notary:
+    enabled: true
+    config:
+      archive:
+        bucket:
+          name: audit-archive
+      signer:
+        kms:
+          key: alias/audit-seal
+        file:
+          path: /etc/audit/seal.pem

@@ -47,6 +47,10 @@ one `image` names, at the chart's appVersion unless given a tag. Takes (dict
 {{ include "audit.image" (dict "root" . "name" "audit-query" "image" .Values.image.query) }}
 {{- end -}}
 
+{{- define "audit.notaryImage" -}}
+{{ include "audit.image" (dict "root" . "name" "audit-notary" "image" .Values.image.notary) }}
+{{- end -}}
+
 {{- define "audit.observeImage" -}}
 {{ include "audit.image" (dict "root" . "name" "audit-observe" "image" .Values.image.observe) }}
 {{- end -}}
@@ -100,6 +104,10 @@ before it had one of its own. */}}
 archive: it must not be the writer's identity, which writes the archive. */}}
 {{- define "audit.observeServiceAccountName" -}}
 {{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.observe "suffix" "observe") -}}
+{{- end -}}
+
+{{- define "audit.notaryServiceAccountName" -}}
+{{- include "audit.componentServiceAccountName" (dict "root" . "comp" .Values.jobs.notary "suffix" "notary") -}}
 {{- end -}}
 
 {{- define "audit.verifyServiceAccountName" -}}

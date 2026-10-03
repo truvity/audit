@@ -1,0 +1,14 @@
+# refuse: the notary runs as the writer's ServiceAccount
+# base: separation-base
+jobs:
+  notary:
+    enabled: true
+    serviceAccount:
+      create: false
+    config:
+      archive:
+        bucket:
+          name: audit-archive
+      signer:
+        kms:
+          key: alias/audit-seal

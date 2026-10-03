@@ -50,6 +50,7 @@ flowchart LR
 | **bucket** | one per environment, Object Lock in compliance mode where a profile demands it | every record, one copy per profile, locked where the profile demands it | — |
 | **indexer** | `audit-observe`, one pod ([0020](decisions/0020-observe-follows-the-bucket.md), [0024](decisions/0024-indexer-and-query-are-separate-processes.md)) | read on the archive, its own database role: the index and its cursors | write on the archive, the dedupe table |
 | **index** | one database in the application's existing Postgres | rows, facet counts, cursors, rollups, and the writer's dedupe table and registry beside them under another role | anything that is not rebuildable |
+| **notary** | `audit-notary`, an hourly CronJob | read on the prefix, put under `seals/`, the seal key | write on `records/`; the writer's identity |
 | **verify** | a CronJob | read on the prefix, and nothing else | write rights on the archive |
 | **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive or the index |
 | **Audit page** | a React component in the application's console | nothing — it calls the query service with the console's own token | credentials of its own |

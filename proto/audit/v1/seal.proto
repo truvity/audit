@@ -1,0 +1,87 @@
+// Seals, delegations and revocations: the three statements the notary and a
+// root sign, as docs/reference/bucket-contract.md specifies them and
+// docs/decisions/0019-seals.md decides them.
+//
+// Each is the payload of a JWS in compact serialisation (RFC 7515), ES384,
+// written as the proto JSON mapping with the field names as written here. The
+// payload is in canonical form (RFC 8785) when this repository writes it, but a
+// verifier checks the signature over the payload bytes as they are and never
+// re-encodes them.
+//
+// JSON encoding of the numbers: the proto JSON mapping writes a 64-bit integer
+// as a decimal string, so `count`, the `meters` and `nbf` and `exp` are strings
+// in the payload. A reader generated from this file reads them without ceremony;
+// a reader that is not should expect the string.
+syntax = "proto3";
+
+package audit.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+// Seal vouches for what one profile and tenant had in the archive in one hour.
+message Seal {
+  // The tenant the seal covers.
+  string tenant = 1;
+  // The profile the seal covers.
+  string profile = 2;
+  // The start of the hour covered, in UTC. The hour is the hour of ingest time
+  // the object keys name.
+  google.protobuf.Timestamp hour = 3;
+  // The number of records in the hour; zero for an hour with no objects.
+  int64 count = 4;
+  // The root of the Merkle tree (RFC 6962 section 2.1) over the hash of every
+  // record of the hour, in object-key order and then line order, as lower-case
+  // hex. For an empty hour, the SHA-256 of the empty string.
+  string root = 5;
+  // The first object key of the hour; empty for an empty hour.
+  string first = 6;
+  // The last object key of the hour; empty for an empty hour.
+  string last = 7;
+  // The lower-case hex SHA-256 of the bytes of the previous seal of the same
+  // profile and tenant; empty for the first.
+  string prev = 8;
+  // When the seal was made.
+  google.protobuf.Timestamp sealed_at = 9;
+  // Optional counters for the hour that metering may read without a body:
+  // `objects`, `records` and `bytes`.
+  map<string, int64> meters = 10;
+}
+
+// Delegation says that a key may sign seals for a scope for a short while. It
+// is signed by a root.
+message Delegation {
+  // The thumbprint (RFC 7638) of the root that signs the delegation.
+  string iss = 1;
+  // The thumbprint of the delegated key.
+  string sub = 2;
+  // The delegated public key, as a JWK.
+  google.protobuf.Struct jwk = 3;
+  // The start of the window in which the key may sign, in seconds since the
+  // epoch.
+  int64 nbf = 4;
+  // The end of the window, in seconds since the epoch. `exp - nbf` is at most
+  // 25 hours.
+  int64 exp = 5;
+  // What the key may sign for.
+  DelegationScope scope = 6;
+}
+
+// DelegationScope is the profiles and tenants a delegated key may sign seals
+// for; each entry is a name or "*".
+message DelegationScope {
+  repeated string profiles = 1;
+  repeated string tenants = 2;
+}
+
+// Revocation ends the trust in a key from a time. It is signed by a root.
+message Revocation {
+  // The thumbprint of the root that signs the revocation.
+  string iss = 1;
+  // The thumbprint of the revoked key.
+  string revokes = 2;
+  // From when a seal signed by the key is invalid.
+  google.protobuf.Timestamp revoked_at = 3;
+  // Why; optional.
+  string reason = 4;
+}

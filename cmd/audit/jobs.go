@@ -85,6 +85,9 @@ func verifyFromConfig(path string, asJSON bool) error {
 			Instance:     record.InstanceName(),
 			RequiredLock: requiredLocks(profiles),
 		}
+		if cfg.Seals != nil {
+			run.Seals = &cli.SealCheck{Roots: cfg.Seals.Roots, Settle: cfg.Seals.Settle.D(), Grace: cfg.Seals.Grace.D()}
+		}
 		if cfg.Sink != nil {
 			if run.Catalogue, err = catalogue.Common(); err != nil {
 				return err

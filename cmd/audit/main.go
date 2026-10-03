@@ -26,6 +26,8 @@ import (
 
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
+	auditconfig "github.com/truvity/audit/internal/config"
+	"github.com/truvity/audit/internal/seal"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/sdk/auth"
@@ -63,7 +65,9 @@ usage:
         the bucket contract: each object's key and metadata, the sha256 of its
         bytes and the hash on every record. Needs the archive and nothing that
         has to be trusted. With --deployment it also holds each object's lock
-        to what the profile demands.
+        to what the profile demands. With --root it checks the seals too: their
+        signatures against the roots you pin, the chain, each hour's count and
+        root against the objects, and that no due seal is missing.
 
   audit replay --dlq --from <date> --to <date> [flags]
         Send dead letters back to a writer once the cause is fixed. Without
@@ -84,8 +88,10 @@ usage:
         pseudonyms can never be recomputed again: this is what erasure means
         here, and it cannot be undone.
 
-  audit key public --key <file>|--kms-key <id>|--transit-key <name>
-        Print the public half of a signing key.
+  audit key public --key <file>|--kms-key <id>|--transit-key <name> [--thumbprint|--jwks]
+        Print the public half of a signing key: as PEM, as the RFC 7638
+        thumbprint a verifier pins (--thumbprint), or as the JWK Set that goes
+        in keys/roots.jwks (--jwks).
 
   audit hold place|release|list [flags]
         Place a legal hold on a profile's copies, or a tenant's within it, and
@@ -254,7 +260,14 @@ func verify(args []string) error {
 			"the profile configuration; with it, each object's lock is held to what the profile demands")
 		last = flags.Duration("last", 0,
 			"check the windows of the last this long, ending at the hour that has closed; instead of --from and --to")
-		sinkURL    = flags.String("sink", "", "the writer this job records what it checked through")
+		sinkURL = flags.String("sink", "", "the writer this job records what it checked through")
+		pins    = flags.String("root", "",
+			"also check the seals, trusting only the root keys with these thumbprints, comma separated "+
+				"(`audit key public --thumbprint` prints one); nothing else in the bucket is trusted")
+		settle = flags.Duration("settle", auditconfig.DefaultSettle,
+			"with --root: the notary's settle window; keep it equal to the notary's")
+		grace = flags.Duration("grace", auditconfig.DefaultGrace,
+			"with --root: how long after an hour is sealable its seal may still be missing before that is a finding")
 		instance   = flags.String("instance", "", "the name this job records itself under")
 		asJSON     = flags.Bool("json", false, "print the report as JSON")
 		configFile = flags.String("config", "", configUsage)
@@ -315,6 +328,9 @@ func verify(args []string) error {
 			return fmt.Errorf("the deployment has no profile %q", *profile)
 		}
 		run.RequiredLock = requiredLocks(profiles)
+	}
+	if *pins != "" {
+		run.Seals = &cli.SealCheck{Roots: strings.Split(*pins, ","), Settle: *settle, Grace: *grace}
 	}
 	if *sinkURL != "" {
 		if run.Catalogue, err = catalogue.Common(); err != nil {
@@ -624,7 +640,7 @@ type transitOptions struct {
 
 func transitFlags(flags *flag.FlagSet) transitOptions {
 	return transitOptions{
-		key:     flags.String("transit-key", "", "an OpenBAO transit ed25519 key to sign with"),
+		key:     flags.String("transit-key", "", "an OpenBAO transit ecdsa-p384 key to sign with"),
 		openbao: cli.NewOpenBAOFlags(flags, nil),
 	}
 }
@@ -675,6 +691,8 @@ func keyPublic(args []string) error {
 		kmsKey  = flags.String("kms-key", "", "an AWS KMS signing key")
 		region  = flags.String("region", env("AWS_REGION", ""), "the region, when it is not in the environment")
 		transit = transitFlags(flags)
+		pin     = flags.Bool("thumbprint", false, "print the RFC 7638 thumbprint, which is what a verifier pins, and not the PEM")
+		jwks    = flags.Bool("jwks", false, "print the key as a JWK Set, the form of keys/roots.jwks, and not the PEM")
 	)
 	if _, err := parse(flags, args); err != nil {
 		return err
@@ -691,7 +709,24 @@ func keyPublic(args []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = os.Stdout.Write(public)
+	if !*pin && !*jwks {
+		_, err = os.Stdout.Write(public)
+		return err
+	}
+	// A seal key is P-384; any other key has no thumbprint a verifier could pin.
+	pub, err := keys.ParseECPublic(public)
+	if err != nil {
+		return err
+	}
+	if *pin {
+		_, err = fmt.Fprintln(os.Stdout, seal.Thumbprint(pub))
+		return err
+	}
+	body, err := seal.MarshalJWKS(pub)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(os.Stdout, "%s\n", body)
 	return err
 }
 

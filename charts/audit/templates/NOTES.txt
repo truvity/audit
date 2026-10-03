@@ -1,3 +1,8 @@
+{{- if eq .Values.renders "alerts" -}}
+{{ include "audit.fullname" . }} is installed in alerts mode: it renders the alert rules and nothing else.
+{{- else if eq .Values.renders "dashboards" -}}
+{{ include "audit.fullname" . }} is installed in dashboards mode: it renders the Grafana dashboards and nothing else.
+{{- else -}}
 {{ include "audit.fullname" . }} is installed.
 
 The writer keeps {{ len .Values.profiles }} profile(s): {{ keys .Values.profiles | sortAlpha | join ", " }}.
@@ -67,3 +72,4 @@ the writer's has no CLI in it):
 
 Verify the chain yourself, with nothing but the archive and the public key:
   audit verify --profile <name> --from <date> --to <date> --bucket <bucket> --public-key <file>
+{{- end }}

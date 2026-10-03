@@ -1,0 +1,11 @@
+# refuse: every rule disabled
+renders: alerts
+alerts:
+  rules:
+    deadLettered: {enabled: false}
+    emitterDrops: {enabled: false}
+    digestStale: {enabled: false}
+    indexLag: {enabled: false}
+    indexDeferred: {enabled: false}
+    writerRejections: {enabled: false}
+    consumerFailing: {enabled: false}

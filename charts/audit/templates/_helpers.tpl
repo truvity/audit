@@ -280,3 +280,15 @@ file:{{ dig "tokenFile" "" $bao }}
 {{- define "audit.databaseUser" -}}
 {{- regexReplaceAll "^[a-z]+://([^:@/]*).*$" (. | default "") "${1}" -}}
 {{- end -}}
+
+{{- /* Alert mode. A rule's labels: the routing labels the caller sets for every rule, then
+the rule's own severity, then anything the rule's `labels` adds. */ -}}
+{{- define "audit.ruleLabels" -}}
+{{- $l := mergeOverwrite (deepCopy (.root.Values.alerts.ruleLabels | default dict)) (dict "severity" .cfg.severity) (deepCopy (.cfg.labels | default dict)) -}}
+{{- toYaml $l -}}
+{{- end -}}
+{{- define "audit.runbook" -}}
+{{- with .root.Values.alerts.runbookBaseUrl -}}
+runbook_url: {{ printf "%s#%s" . (lower $.alert) | quote }}
+{{- end -}}
+{{- end -}}

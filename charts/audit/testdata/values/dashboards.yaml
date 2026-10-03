@@ -1,0 +1,4 @@
+# Dashboards-only mode, installed into Grafana's namespace.
+renders: dashboards
+dashboards:
+  namespace: monitoring

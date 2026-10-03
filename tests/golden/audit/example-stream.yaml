@@ -10,7 +10,6 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
-
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Reading is a different privilege from writing: this identity reads the
@@ -26,7 +25,6 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
-
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Sealing is a different privilege from writing: whoever can write the archive
@@ -42,7 +40,6 @@ metadata:
     app.kubernetes.io/instance: audit
     app.kubernetes.io/version: "0.0.0"
     app.kubernetes.io/managed-by: Helm
-
 ---
 # Source: audit/templates/serviceaccount.yaml
 # Verification needs to read the archive and nothing else. An auditor running
@@ -94,7 +91,6 @@ data:
     workloads:
       - source: app
         subject: system:serviceaccount:app:api
-
 ---
 # Source: audit/templates/configmap.yaml
 apiVersion: v1
@@ -136,7 +132,6 @@ data:
         tokenFile: /var/run/audit/stream/token
         url: nats://nats.app.svc:4222
     workloads: /etc/audit/workloads.yaml
-
 ---
 # Source: audit/templates/configmap.yaml
 apiVersion: v1
@@ -199,7 +194,6 @@ data:
     sink:
       tokenFile: /var/run/audit/token
       url: http://audit:8080
-
 ---
 # Source: audit/templates/cronjobs.yaml
 # Nightly. Walks each profile's chain and reports what it finds; a non-zero
@@ -231,7 +225,6 @@ data:
     sink:
       tokenFile: /var/run/audit/token
       url: http://audit:8080
-
 ---
 # Source: audit/templates/cronjobs.yaml
 # Daily. Brings the index and the deduplication table back within what the
@@ -257,7 +250,6 @@ data:
       passwordEnv: AUDIT_DATABASE_PASSWORD
       url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
     deployment: /etc/audit/deployment.yaml
-
 ---
 # Source: audit/templates/cronjobs.yaml
 # Daily. Compares this cluster's clock with UTC and records the answer, which is
@@ -284,7 +276,6 @@ data:
     sink:
       tokenFile: /var/run/audit/token
       url: http://audit:8080
-
 ---
 # Source: audit/templates/query.yaml
 # Who may sign in to the query service, and what each caller may read. A
@@ -305,7 +296,6 @@ data:
     issuers:
     - audience: audit
       url: https://gateway.example.com
-
 ---
 # Source: audit/templates/query.yaml
 apiVersion: v1
@@ -337,7 +327,6 @@ data:
     sink:
       tokenFile: /var/run/audit/token
       url: http://audit:8080
-
 ---
 # Source: audit/templates/query.yaml
 apiVersion: v1
@@ -503,7 +492,6 @@ spec:
                   expirationSeconds: 3600
         - name: tmp
           emptyDir: {}
-
 ---
 # Source: audit/templates/writer.yaml
 apiVersion: apps/v1
@@ -616,7 +604,6 @@ spec:
                   expirationSeconds: 3600
         - name: tmp
           emptyDir: {}
-
 ---
 # Source: audit/templates/writer.yaml
 apiVersion: apps/v1
@@ -729,7 +716,6 @@ spec:
                   expirationSeconds: 3600
         - name: tmp
           emptyDir: {}
-
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -810,7 +796,6 @@ spec:
                       path: token
                       audience: "audit"
                       expirationSeconds: 3600
-
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -897,7 +882,6 @@ spec:
                       path: token
                       audience: "audit"
                       expirationSeconds: 3600
-
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -973,9 +957,6 @@ spec:
             - name: deployment
               configMap:
                 name: audit-deployment
-            
-            
-
 ---
 # Source: audit/templates/cronjobs.yaml
 apiVersion: batch/v1
@@ -1076,7 +1057,6 @@ metadata:
     "helm.sh/hook": pre-install,pre-upgrade
     "helm.sh/hook-weight": "-10"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
-
 ---
 # Source: audit/templates/migrate.yaml
 apiVersion: v1
@@ -1103,7 +1083,6 @@ data:
       passwordEnv: AUDIT_DATABASE_PASSWORD
       url: postgres://audit@db.example.com:5432/audit?sslmode=verify-full
     reader: audit_query
-
 ---
 # Source: audit/templates/migrate.yaml
 # The index schema, applied before the writer rolls.

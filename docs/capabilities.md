@@ -34,6 +34,10 @@ target architecture is 📄.
 | deduplication on JetStream (duplicate window, KV with TTL) | 📄 | — | — |
 | deduplication on DynamoDB | — | 📄 | — |
 | one configuration file against a schema | ✅ | 📄 | 📄 |
+| metrics over OTLP: acknowledgements by durability, write latency per transport, index lag, digest age, consumer failures | 🧪 | 🧪 | 🧪 |
+| traces over OTLP: server and client spans, `traceparent` across NATS headers and SQS attributes, no personal data on a span | 🧪 | 🧪 | 🧪 |
+| chart `renders: alerts`: seven alert rules as a `VMRule` or `PrometheusRule`, unit-tested on vmalert-tool | 🧪 | 🧪 | 🧪 |
+| chart `renders: dashboards`: the audit overview for Grafana's sidecar, held to the observability dashboard lint | 🧪 | 🧪 | 🧪 |
 
 The `s3` sink works against any store that speaks the S3 API; on a store
 without Object Lock it is the `attested` tier of

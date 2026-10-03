@@ -65,6 +65,117 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# What this release renders.
+#
+#   app         the write path: everything above and below (the default).
+#   alerts      ONLY the alert rules (`alerts` below), as VMRule objects. For a
+#               second install beside the app's, in the namespace the metrics
+#               store's ruler reads rules from: the rules belong to the
+#               platform that runs the ruler, the write path to the product.
+#   dashboards  ONLY the Grafana dashboard ConfigMaps (`dashboards` below),
+#               labelled for Grafana's sidecar, for the cluster Grafana reads.
+#
+# In `alerts` and `dashboards` mode nothing else is validated or rendered: no
+# `profiles`, no `writer.config`. See docs/operations/telemetry.md. This is not
+# `mode`, which is how the write path is arranged (direct or stream).
+renders: app
+
+# Alert rules, rendered only with `renders: alerts`. Every threshold and the
+# reason for it is in docs/operations/telemetry.md and in the rule's comment in
+# templates/alerts.yaml. The series are what the writer, the receiver and the
+# emitters publish over OTLP (OTEL_EXPORTER_OTLP_ENDPOINT on the pods).
+alerts:
+  # The object's name. Empty: <release>-alerts.
+  name: ""
+  # Where the rule object goes: the namespace the ruler selects rules from.
+  # Empty: the release's.
+  objectNamespace: ""
+  # `vmrule` (operator.victoriametrics.com) or `prometheusrule`.
+  format: vmrule
+  # Labels on the rule object, for a ruler that selects objects by label.
+  labels: {}
+  # Labels added to EVERY rule, for the Alertmanager routing tree: set the
+  # cluster once here, as the openbao-ops chart does.
+  #   ruleLabels:
+  #     k8s_cluster_name: prod
+  ruleLabels: {}
+  interval: 1m
+  # The label that names the cluster on a store that holds several. Every
+  # aggregation keeps it.
+  clusterLabel: k8s_cluster_name
+  # The namespace the audit write path runs in, whose own series the writer
+  # rules read. Empty: the release's namespace. In an alerts-only release in
+  # another namespace, set it.
+  namespace: ""
+  # Extra matchers for the writer's series, e.g. `k8s_cluster_name="prod"`.
+  selector: ""
+  # The namespaces the emitters run in: a regex, because an emitter's series
+  # carry the application's namespace, not the writer's. Default: every one.
+  emitterNamespace: ".+"
+  emitterSelector: ""
+  # Where an alert's runbook entry is. The alert's name, lower-cased, is the
+  # anchor.
+  runbookBaseUrl: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md
+  rules:
+    deadLettered:
+      enabled: true
+      severity: critical
+      for: 0m
+      labels: {}
+    emitterDrops:
+      enabled: true
+      severity: critical
+      for: 0m
+      labels: {}
+    digestStale:
+      enabled: true
+      severity: critical
+      # 2h: the hourly job leaves a healthy chain at most about 1h05m old, so
+      # this tolerates one missed run.
+      maxAgeSeconds: 7200
+      for: 10m
+      labels: {}
+    indexLag:
+      enabled: true
+      severity: warning
+      # p99 of the time from an object in the archive to its rows in the index.
+      thresholdSeconds: 30
+      for: 10m
+      labels: {}
+    indexDeferred:
+      enabled: true
+      severity: warning
+      for: 0m
+      labels: {}
+    writerRejections:
+      enabled: true
+      severity: warning
+      # The share of records refused, over 15m, and the fewest refusals that
+      # count: one bad record in a quiet hour is not a page.
+      ratio: 0.05
+      minRecords: 10
+      for: 10m
+      labels: {}
+    consumerFailing:
+      enabled: true
+      severity: critical
+      for: 15m
+      labels: {}
+
+# Grafana dashboards, rendered only with `renders: dashboards`: one ConfigMap
+# per file in dashboards/, labelled for Grafana's sidecar. Install it into the
+# cluster Grafana runs on.
+dashboards:
+  # Grafana's namespace. Empty: the release's.
+  namespace: ""
+  # The Grafana folder, when the sidecar is set to read the folder annotation.
+  folder: Audit
+  # The label Grafana's sidecar selects ConfigMaps by (its
+  # `sidecar.dashboards.label`, and `labelValue`).
+  sidecarLabel: grafana_dashboard
+  sidecarLabelValue: "1"
+  labels: {}
+
 # How the write path is arranged.
 #
 #   direct  one Deployment: the front door and the write path in one process.

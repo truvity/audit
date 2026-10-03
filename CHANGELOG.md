@@ -4,7 +4,7 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.7.1
 
 - Fixes the broken v0.7.0 release: `go install github.com/truvity/audit/cmd/audit@v0.7.0` failed with a missing `go.sum` entry for `github.com/truvity/audit/sdk v0.7.0`, and the release's `sdk-tag` job failed on a hand-pushed annotated `sdk/v0.7.0` (so `deploy/pulumi/v0.7.0` was never created). v0.7.1 is installable: the root `go.sum` has the SDK's lines, `sdk-tag` compares the tag's peeled commit, and goreleaser ignores `sdk/*` and `deploy/*` tags when choosing the version.
 

@@ -185,3 +185,17 @@ func TestTheHoldsAreReadBeforeAndTelemetryIsFlushedAfterEveryInvocation(t *testi
 		t.Fatalf("order = %v", order)
 	}
 }
+
+func TestOneLine(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                      "",
+		"plain":                 "plain",
+		"a\nb":                  "a b",
+		"a\r\nb":                "a  b",
+		"bad json\n{\"x\":1}\r": "bad json {\"x\":1} ",
+	} {
+		if got := oneLine(in); got != want {
+			t.Errorf("oneLine(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

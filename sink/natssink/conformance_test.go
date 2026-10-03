@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/sdk/sink/sinktest"
 	"github.com/truvity/audit/sink/natssink"
-	"github.com/truvity/audit/sink/sinktest"
 )
 
 func TestConforms(t *testing.T) {

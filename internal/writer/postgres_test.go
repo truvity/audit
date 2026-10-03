@@ -13,7 +13,7 @@ import (
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/pgtest"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store/storetest"
 )
 

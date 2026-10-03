@@ -6,6 +6,25 @@ repository at that version, not the history of edits that got there.
 
 ## Unreleased
 
+- **Breaking:** the Go packages an application imports to emit records are a module of their own, `github.com/truvity/audit/sdk`, which does not depend on the writer's database driver, NATS server, AWS SDK, OpenBAO client, JWT library or the OpenTelemetry SDK and exporters. Take the step: `go get github.com/truvity/audit/sdk@<version>`, rewrite the import paths below, and drop `github.com/truvity/audit` from your `go.mod` if nothing else in it is imported. The root module is no longer an import target for these packages (it carries a `replace` for the SDK and is consumed as binaries, images and the chart), and the SDK is tagged `sdk/vX.Y.Z` at the same commit and version as `vX.Y.Z`. `just sdk-closure` fails the gate if a server-only dependency enters the SDK.
+
+  | old import path | new import path |
+  |---|---|
+  | `github.com/truvity/audit/record` | `github.com/truvity/audit/sdk/record` |
+  | `github.com/truvity/audit/gen/audit/v1` | `github.com/truvity/audit/sdk/gen/audit/v1` |
+  | `github.com/truvity/audit/gen/audit/v1/auditv1connect` | `github.com/truvity/audit/sdk/gen/audit/v1/auditv1connect` |
+  | `github.com/truvity/audit/emit` | `github.com/truvity/audit/sdk/emit` |
+  | `github.com/truvity/audit/catalogue` | `github.com/truvity/audit/sdk/catalogue` |
+  | `github.com/truvity/audit/sink` (`Sink`, `Request`, `Result`, `Client`, `NewClient`, `Memory`, `Discard`, `Func`, `Durability`, `Guard`, `Require`) | `github.com/truvity/audit/sdk/sink` |
+  | `github.com/truvity/audit/sink/logsink`, `.../sink/sinktest` | `github.com/truvity/audit/sdk/sink/logsink`, `.../sdk/sink/sinktest` |
+  | `github.com/truvity/audit/auth` (`Principal`, `Grant`, `Rule`, `Declarative`, `Middleware`, `TokenFile`, `Workload`, `ErrUnauthenticated`) | `github.com/truvity/audit/sdk/auth` |
+  | `auth.JWT`, `auth.NewJWT`, `auth.Issuer`, `auth.AccessRoster` | `github.com/truvity/audit/authn` (`authn.JWT`, `authn.NewJWT`, `authn.Issuer`, `authn.AccessRoster`) |
+  | `sink.NewHandler`, `sink.Handler`, `sink.Receiver` | `github.com/truvity/audit/sinkserver` (`sinkserver.NewHandler`, `.Handler`, `.Receiver`) |
+  | `github.com/truvity/audit/sink/natssink`, `.../sink/sqssink` | unchanged, in the root module: an emitter does not publish to a stream, the receiver does |
+  | `github.com/truvity/audit/internal/metaschema` (internal) | `github.com/truvity/audit/sdk/metaschema` |
+
+  The generated Go moves with its path: `buf.gen*.yaml` write it to `sdk/gen`, and `just drift` and `just drift-ts` check that directory. `preset.Category` and `preset.Class` are now aliases of `catalogue.Category` and `catalogue.Class`; the three meta-schemas move from `schemas/` to `sdk/schemas/`, which `schemas/config/` does not (so the published schema URLs are unchanged).
+
 - Traces. The writer, the receiver and the query service serve HTTP server and Connect spans, `sink.Client` and the NATS and SQS publishers add client and producer spans, and the W3C `traceparent` crosses a queue in the message (NATS headers, SQS message attributes) so a consumer continues the trace and links the other messages of its batch. A tracer provider exists only when `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set; without it nothing is exported and nothing fails. The sampler is the standard `OTEL_TRACES_SAMPLER` (a parent-based ratio of 0.1 when unset). Spans leave the process through an allowlist: only action, outcome, tenant id, durability, delivery, counts, transport and the shape of the request survive, never an actor, a subject, a client address or record data, and events, status text and link attributes are removed. `audit-query` now starts telemetry too.
 - Metrics: `audit.sink.records.acknowledged` (by durability and transport), `audit.sink.records.rejected`, `audit.sink.write.duration` (by transport and outcome), `audit.sink.consume.failures`, `audit.writer.index.lag`, and `audit.digest.age`, observed by the writer from the archive rather than pushed by the digest job. No series is labelled by tenant.
 - The chart renders alert rules and dashboards. `renders: alerts` renders only a `VMRule` (or `PrometheusRule`) of seven rules, with `alerts.ruleLabels` for routing labels such as `k8s_cluster_name`, for a second install beside the write path; `renders: dashboards` renders only the Grafana sidecar ConfigMaps of one audit overview that passes truvity/observability's dashboard lint. The default, `renders: app`, renders exactly what it did. See [telemetry](docs/operations/telemetry.md), which has each alert's threshold and runbook entry. `just telemetry`, a CI recipe, runs the rule unit tests on `vmalert-tool` and the dashboard lint, both at pinned releases.

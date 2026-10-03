@@ -14,9 +14,9 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/truvity/audit/auth"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/query"
+	"github.com/truvity/audit/sdk/auth"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 )
 
 // The examples in docs/reference/api.md, asked of a real handler.

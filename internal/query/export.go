@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/truvity/audit/auth"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/auth"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
 )
 

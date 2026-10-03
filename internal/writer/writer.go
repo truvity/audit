@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/truvity/audit/catalogue"
-	"github.com/truvity/audit/emit"
 	"github.com/truvity/audit/index"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/emit"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // Catalogues resolves the catalogue a record names.

@@ -11,11 +11,11 @@ import (
 
 	"connectrpc.com/connect"
 
-	"github.com/truvity/audit/auth"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
-	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/query"
+	"github.com/truvity/audit/sdk/auth"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/gen/audit/v1/auditv1connect"
 )
 
 // served puts the handler behind a real server and returns a real client, so

@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/truvity/audit/keys"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store"
 )
 

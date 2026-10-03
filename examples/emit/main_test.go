@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/truvity/audit/catalogue"
+	"github.com/truvity/audit/sdk/catalogue"
 )
 
 // The example's catalogue is one the toolchain accepts, so the guide never

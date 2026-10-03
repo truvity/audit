@@ -31,12 +31,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/truvity/audit/sinkserver"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/index/s3scan"
@@ -48,8 +48,10 @@ import (
 	inner "github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store"
 )
 
@@ -377,7 +379,7 @@ func (w *Writer) Write(ctx context.Context, req *sink.Request) (*sink.Result, er
 // it verifies, and the verified subject is stamped as the record's observer;
 // nil accepts anybody, under no name.
 func (w *Writer) Handler(a auth.Authenticator) (string, http.Handler) {
-	path, handler := sink.NewHandler(w)
+	path, handler := sinkserver.NewHandler(w)
 	if a != nil {
 		handler = auth.Middleware(a, handler)
 	}

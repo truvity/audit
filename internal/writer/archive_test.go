@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/internal/writer"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/record"
 	"github.com/truvity/audit/store/storetest"
 )
 

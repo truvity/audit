@@ -11,7 +11,7 @@ import (
 	policyconfig "github.com/truvity/policy/config"
 
 	"github.com/truvity/audit"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // schemaFor reads the committed schema of one binary: the one embedded in the

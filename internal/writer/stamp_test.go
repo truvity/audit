@@ -5,9 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sinkserver"
+
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // stampedByReceiver puts a record through a receiver, as one would arrive on a
@@ -15,7 +17,7 @@ import (
 func stampedByReceiver(t *testing.T, at time.Time, subject string) *record.Record {
 	t.Helper()
 	r := issued(t)
-	rc := &sink.Receiver{
+	rc := &sinkserver.Receiver{
 		To:  sink.Func(func(context.Context, *sink.Request) (*sink.Result, error) { return &sink.Result{}, nil }),
 		Now: func() time.Time { return at },
 	}

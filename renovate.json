@@ -1,4 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>truvity/ci-workflows"]
+  "extends": ["github>truvity/ci-workflows"],
+  "gomod": {
+    "managerFilePatterns": ["/(^|/)go\\.mod$/"]
+  }
 }

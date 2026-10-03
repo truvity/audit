@@ -6,20 +6,40 @@ additions are made.
 
 ## Where things are
 
+The repository is two Go modules. The root, `github.com/truvity/audit`, is the
+installation: the writer, the query service, their stores and the operator's
+command. `sdk/`, `github.com/truvity/audit/sdk`, is what an application
+imports to emit records, and nothing else: it carries no database driver, no
+stream server, no object-store client and no JWT library. See
+[the SDK module](#the-sdk-module) below.
+
 ```
 proto/audit/v1/       the contracts: record, sink, registry, query
-gen/                  generated Go (and ts/src/gen: generated TypeScript), committed
-schemas/              meta-schemas: catalogue, preset, extension slot;
-                      schemas/config/ is each binary's configuration file
+gen/jsonschema/       the record's JSON Schema, generated, committed
+schemas/config/       each binary's configuration file schema
 presets/              the framework presets
-catalogue/            catalogue loading, validation, composition, sentences;
-                      common.yaml, the component's own actions
 
-record/               the canonical record: identifiers, bounds, negative list, canonical form
-preset/               presets, profile composition, the deployment document
-emit/                 the emitter an application imports; the async queue; request
+sdk/                  MODULE github.com/truvity/audit/sdk, tagged sdk/vX.Y.Z
+  gen/                generated Go (ts/src/gen is the generated TypeScript), committed
+  schemas/            meta-schemas: catalogue, preset, extension slot
+  catalogue/          catalogue loading, validation, composition, sentences;
+                      common.yaml, the component's own actions
+  record/             the canonical record: identifiers, bounds, negative list, canonical form
+  emit/               the emitter an application imports; the async queue; request
                       middleware; Register
-sink/                 the write contract and its durability; Connect client and handler; natssink (JetStream), sqssink (SQS), logsink (log lines), sinktest (the conformance suite)
+  sink/               the write contract and its durability; the Connect client; Memory,
+                      Discard, Func; logsink (log lines), sinktest (the conformance suite)
+  auth/               Principal, Authenticator, Authorizer, grants, rules; workload
+                      tokens (TokenFile, Middleware)
+  telemetry/          span attribute names and the Connect trace interceptors
+  metaschema/         validation against the meta-schemas
+  embed.go            the meta-schemas and the common catalogue, embedded
+
+authn/                the JWT authenticator and the access-roster grants preset
+sinkserver/           the SinkService handler and the Receiver (what the writer mounts)
+sink/natssink/        the NATS JetStream publisher
+sink/sqssink/         the SQS publisher
+preset/               presets, profile composition, the deployment document
 keys/                 pseudonymisation providers (local, OpenBAO transit) and digest signers
                       (key file, AWS KMS, OpenBAO transit)
 store/                the object store interface and archive layout; s3store/ the bucket;
@@ -27,8 +47,6 @@ store/                the object store interface and archive layout; s3store/ th
 index/                Indexer and Searcher; memory; postgres/ the index, searcher, dedupe,
                       migrations; s3scan/ a searcher over the archive; indextest/ the
                       conformance suite every searcher runs
-auth/                 Authenticator, Authorizer, grants; JWT; workload tokens; the
-                      access-roster grants preset
 wire/                 the Connect JSON codec (snake_case)
 writer/               the writer as a library: Open(Config)
 query/                the query service as a library: New(Config)
@@ -42,14 +60,14 @@ internal/hold/        legal holds, and the writer's view of them
 internal/registry/    registered catalogues: validation, storage, the archive copy —
                       served by the writer, not by a service of its own
 internal/clock/       an SNTP client for the daily clock check
-internal/telemetry/   OTLP metrics
+internal/telemetry/   OTLP export and the writer's metrics; re-exports the SDK's names
 internal/cli/         the commands of cmd/audit
 internal/config/      each binary's configuration: the types, the loader, and the
                       schema generator behind schemas/config/
 internal/corpus/      the record corpus (testdata/records) for transport tests
 internal/s3test/      a real S3 for the archive walks; internal/pgtest/ a database
 internal/authtest/    token issuers for tests
-internal/metaschema/, internal/schemagen/   meta-schema validation; the record's JSON Schema
+internal/schemagen/   the record's JSON Schema
 
 cmd/audit/            the operator's command: validate, check-emitters, messages, profile,
                       verify, digest, conformance, replay, migrate, reindex, purge,
@@ -67,10 +85,68 @@ testdata/             the record corpus; the template fixture both scanners shar
 hack/                 the leak canary
 ```
 
+(The root's `sink/` holds only the two stream publishers: the rest of the old
+`sink/` moved to `sdk/sink/`, and the handler to `sinkserver/`.)
+
+### The SDK module
+
+An application that reports what it does needs the record, the generated
+types, the emitter, the sink client and the catalogue. It does not need the
+writer's dependencies, and before the split it paid for them: importing
+`emit` resolved a module that required pgx, a NATS server, the AWS SDK, the
+OpenTelemetry SDK and exporters, a JWT library and the access-roster client.
+Now it resolves `sdk/`, whose non-test dependencies are Connect, protobuf,
+the OpenTelemetry API and the Connect interceptor, a JSON Schema validator
+and a YAML reader.
+
+`just sdk-closure` holds that: it lists the packages `sdk/` builds and fails,
+naming them, if any belongs to the server set (database drivers, NATS, the AWS
+SDK, OpenBAO, Helm, gRPC, the OpenTelemetry SDK and exporters, `lestrrat-go`,
+and the root module's own server packages). It also refuses to pass on a list
+too short to be a real closure. CI runs it as its own job.
+
+Where each piece went, and why:
+
+- **The Connect client stays the emitter's default and is in the SDK.**
+  `sink.NewClient` needs only Connect, protobuf and the OpenTelemetry API.
+- **The Connect handler and the Receiver are in `sinkserver/`** (root). They
+  need the verified caller (`auth`), the JSON codec (`wire`) and the server's
+  telemetry, and only a service mounts them.
+- **`natssink` and `sqssink` stay in the root.** They pull the NATS client and
+  the AWS SDK, and an emitter does not publish to a stream: it calls the
+  receiver, which does. An application that really wants to publish directly
+  imports the root module for those two packages, and says so.
+- **`auth` is split.** The types an authorizer and an emitter's HTTP client
+  share (`Principal`, `Grant`, `Rule`, `TokenFile`, `Middleware`) are in the
+  SDK; the JWT authenticator and the access-roster preset, which need the JWT
+  library and access-roster, are `authn/` in the root.
+- **`catalogue` needed `Category` and `Class`,** which were in `preset`, and
+  the meta-schemas, which were embedded from the root. The two types are now
+  defined in `catalogue` and re-exported by `preset`; the three meta-schemas
+  moved to `sdk/schemas/`, because a module cannot embed a file outside its own
+  directory. `schemas/config/` stays at the root with the binaries it describes.
+- **`internal/telemetry` is split:** the span attribute names, the allowlist
+  and the Connect interceptors are `sdk/telemetry`; starting the exporters and
+  the writer's metrics stay internal.
+
+The root requires the SDK with `replace github.com/truvity/audit/sdk => ./sdk`,
+so a change to both is one pull request and the root always builds against the
+SDK beside it. The consequence is that the root module is not an import target
+(a `replace` is ignored by whoever imports it, and `go install …@version` of
+a module with one is refused): it is consumed as binaries, images and a chart,
+which is all it was ever published for. `GOWORK` stays `off`; there is no
+`go.work`.
+
+The two modules are released together: `vX.Y.Z` for the root, and `sdk/vX.Y.Z`
+for the SDK, at the same commit and the same version
+([release contract §1](https://github.com/truvity/policy/blob/master/docs/contracts/release.md)).
+`release.yaml` pushes the second after the first succeeds. An SDK consumer pins
+`github.com/truvity/audit/sdk vX.Y.Z`.
+
 **Public and internal.** A package a third party implements against or an
 application imports is a top-level package and part of the compatibility
-promise: `record`, `catalogue`, `preset`, `emit`, `sink`, `keys`, `store`,
-`index`, `auth`, `writer`, `query`. Everything only this repository's own
+promise: `sdk/record`, `sdk/catalogue`, `preset`, `sdk/emit`, `sdk/sink`, `keys`,
+`store`, `index`, `sdk/auth`, `authn`, `writer`, `query`. Everything only this repository's own
 binaries use is under `internal/`. A helper only a test should use lives in a
 `*test` package beside what it helps (`store/storetest`, `index/indextest`).
 `examples/` imports only public packages, and a test fails if that stops being
@@ -102,7 +178,7 @@ test because a memory store returned everything on one page.
 
 ## How to add
 
-**An action to the common catalogue.** Add it to `catalogue/common.yaml`
+**An action to the common catalogue.** Add it to `sdk/catalogue/common.yaml`
 (template arguments with underscores), emit it from the code with the name as
 a literal, and run `just schemas` (validate, and `check-emitters` over this
 repository) and `just sentences` (the TypeScript copy of the templates).

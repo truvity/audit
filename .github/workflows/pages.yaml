@@ -10,7 +10,8 @@ on:
     branches: [master]
     paths:
       - "schemas/*.json"
-      - "catalogue/*.json"
+      - "sdk/schemas/*.json"
+      - "sdk/catalogue/*.json"
       - "gen/jsonschema/*.json"
       - "hack/pages-site.sh"
       - ".github/workflows/pages.yaml"

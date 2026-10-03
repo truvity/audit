@@ -1,7 +1,7 @@
 # Catalogue reference
 
-Format: [catalogue.schema.json](../../schemas/catalogue.schema.json).
-Example: [common.yaml](../../catalogue/common.yaml).
+Format: [catalogue.schema.json](../../sdk/schemas/catalogue.schema.json).
+Example: [common.yaml](../../sdk/catalogue/common.yaml).
 
 ## Where it lives
 
@@ -52,7 +52,7 @@ the replacement**: `outbox` is `block` where the action may not go
 unrecorded, and `async` otherwise; `best_effort` is `async`. There is no
 file outbox and no volume on the emitting pod.
 
-[catalogue.schema.json](../../schemas/catalogue.schema.json) lists the two
+[catalogue.schema.json](../../sdk/schemas/catalogue.schema.json) lists the two
 and defaults to `async`. A document declaring one of the retired spellings is
 refused where it is loaded, before any emitter sees it.
 

@@ -28,7 +28,7 @@ target architecture is 📄.
 | `log` sink | 🧪 | 🧪 | 🧪 |
 | acknowledgement carries Archived, Queued or Logged | 🧪 | 🧪 | 🧪 |
 | `require:` start-up guard, read from configuration (`require`, `forward`, `consume`, `sink.expect`) | ✅ | 🧪 | 🧪 |
-| sink conformance suite (`sink/sinktest`) | 🧪 | 🧪 | 🧪 |
+| sink conformance suite (`sdk/sink/sinktest`) | 🧪 | 🧪 | 🧪 |
 | a full spool fails the write | 📄 | 📄 | 📄 |
 | deduplication on Postgres or in memory | ✅ | 📄 | 📄 |
 | deduplication on JetStream (duplicate window, KV with TTL) | 📄 | — | — |

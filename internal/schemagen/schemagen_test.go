@@ -9,9 +9,9 @@ import (
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/schemagen"
-	"github.com/truvity/audit/record"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // The published schema carries the proto's comments. Without them an archived

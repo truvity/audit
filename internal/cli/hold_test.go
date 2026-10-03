@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/hold"
-	"github.com/truvity/audit/sink"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/storetest"
 )

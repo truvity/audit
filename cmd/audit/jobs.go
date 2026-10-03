@@ -20,14 +20,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/record"
 )
 
 const configUsage = "the configuration file; with it, nothing else configures the command"

@@ -12,7 +12,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/truvity/audit/catalogue"
+	"github.com/truvity/audit/sdk/catalogue"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/truvity/audit/index"
@@ -20,8 +20,8 @@ import (
 	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/internal/writer"
 	"github.com/truvity/audit/keys"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store/storetest"
 )
 

@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/uuid"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 )
 
 // The kinds of failure a caller can tell apart. They exist so that the wire

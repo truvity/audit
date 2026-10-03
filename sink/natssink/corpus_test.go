@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/truvity/audit/internal/corpus"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/sink/natssink"
 )
 

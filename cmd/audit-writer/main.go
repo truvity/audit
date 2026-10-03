@@ -36,15 +36,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/truvity/audit/authn"
+	"github.com/truvity/audit/sinkserver"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/catalogue"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
@@ -52,8 +52,11 @@ import (
 	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/catalogue"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/sink/natssink"
 	"github.com/truvity/audit/store"
 	"github.com/truvity/audit/store/s3store"
@@ -165,7 +168,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		if authenticated, err = auth.NewJWT(ctx, callers.Issuers, slog.Default()); err != nil {
+		if authenticated, err = authn.NewJWT(ctx, callers.Issuers, slog.Default()); err != nil {
 			return err
 		}
 		sourceOf = callers.Map.SourceFrom
@@ -202,7 +205,7 @@ func run() error {
 		// The receiver stamps before it publishes. The writers on the other
 		// side are reading messages and have no caller to verify, so an
 		// identity not attached here is an identity lost.
-		front = &sink.Receiver{
+		front = &sinkserver.Receiver{
 			To: publisher, Version: version, Instance: record.InstanceName(),
 		}
 		// What this chain can ever promise is what its onward transport does,
@@ -263,7 +266,7 @@ func run() error {
 		}
 	}
 
-	path, handler := sink.NewHandler(front)
+	path, handler := sinkserver.NewHandler(front)
 	if authenticated != nil {
 		handler = auth.Middleware(authenticated, handler)
 	}

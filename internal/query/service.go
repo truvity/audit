@@ -10,15 +10,15 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/catalogue"
-	"github.com/truvity/audit/emit"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/internal/digest"
 	"github.com/truvity/audit/internal/identity"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/emit"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store"
 )
 

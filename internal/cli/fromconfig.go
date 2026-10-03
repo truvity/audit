@@ -9,10 +9,10 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
-	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/keys"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store/s3store"
 )
 

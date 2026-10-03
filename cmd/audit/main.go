@@ -24,14 +24,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/catalogue"
-	"github.com/truvity/audit/gen/audit/v1/auditv1connect"
 	"github.com/truvity/audit/index/postgres"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/catalogue"
+	"github.com/truvity/audit/sdk/gen/audit/v1/auditv1connect"
+	"github.com/truvity/audit/sdk/record"
 )
 
 const usage = `audit — the audit trail toolchain

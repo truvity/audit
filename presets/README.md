@@ -24,7 +24,7 @@ A deployment composes presets into **profiles**. Composition is a union:
   ([0014](../docs/decisions/0014-lock-modes-and-store-tiers.md)).
 - `review`: the most frequent cadence wins.
 
-The validator (`schemas/preset.schema.json` plus the composition rules in
+The validator (`sdk/schemas/preset.schema.json` plus the composition rules in
 [the presets reference](../docs/reference/presets.md)) refuses a profile whose presets both require and
 forbid a field, directly or through an ancestor, and a deployment whose
 catalogues do not emit a category a profile requires. `audit profile explain

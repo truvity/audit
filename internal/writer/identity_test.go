@@ -10,10 +10,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/truvity/audit/auth"
+	"github.com/truvity/audit/authn"
+	"github.com/truvity/audit/sinkserver"
+
 	"github.com/truvity/audit/internal/authtest"
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
 )
 
 // The observer of a record is whoever the cluster says published it, end to
@@ -22,14 +25,14 @@ import (
 // record claimed about itself.
 func TestTheObserverIsTheServiceAccountThatPublished(t *testing.T) {
 	cluster := authtest.NewIssuer(t)
-	authn, err := auth.NewJWT(context.Background(),
-		[]auth.Issuer{{URL: cluster.URL, Audience: "audit"}},
+	authn, err := authn.NewJWT(context.Background(),
+		[]authn.Issuer{{URL: cluster.URL, Audience: "audit"}},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	b := buildWith(t, parts{identity: auth.SubjectFrom})
-	path, handler := sink.NewHandler(b.writer)
+	path, handler := sinkserver.NewHandler(b.writer)
 	mux := http.NewServeMux()
 	mux.Handle(path, auth.Middleware(authn, handler))
 	server := httptest.NewServer(mux)

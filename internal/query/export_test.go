@@ -9,12 +9,12 @@ import (
 
 	"errors"
 
-	"github.com/truvity/audit/auth"
-	"github.com/truvity/audit/catalogue"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
+	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/audit/sdk/catalogue"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
 
 	"github.com/truvity/audit/internal/query"
-	"github.com/truvity/audit/sink"
+	"github.com/truvity/audit/sdk/sink"
 	"github.com/truvity/audit/store/storetest"
 )
 

@@ -11,9 +11,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
-	"github.com/truvity/audit/record"
-	"github.com/truvity/audit/sink"
-	"github.com/truvity/audit/sink/sinktest"
+	"github.com/truvity/audit/sdk/record"
+	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/sdk/sink/sinktest"
 	"github.com/truvity/audit/sink/sqssink"
 )
 

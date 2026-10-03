@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/truvity/audit/auth"
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/internal/identity"
 	"github.com/truvity/audit/keys"
-	"github.com/truvity/audit/record"
+	"github.com/truvity/audit/sdk/auth"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // ErrErased is a pseudonym whose tenant key has been destroyed: the way back

@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/truvity/audit/catalogue"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/sdk/catalogue"
 )
 
 // Entry is a registered catalogue and what it was registered with.

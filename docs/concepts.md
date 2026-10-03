@@ -34,7 +34,7 @@ the schema of its `data`, a sentence template per locale, and an optional
 meter. Also the source's actor kinds, target types, context areas and
 meters. Authored next to the emitting code, validated in that code's CI,
 registered at deploy, copied into the archive on first use. Format:
-[catalogue.schema.json](../schemas/catalogue.schema.json).
+[catalogue.schema.json](../sdk/schemas/catalogue.schema.json).
 
 ## Extension slots
 
@@ -104,4 +104,4 @@ idempotent, all rebuildable from the prefixes.
 
 Reads and exports of the trail, catalogue and profile changes, key
 destruction, legal holds, digests, writer lifecycle and the daily clock
-check are records too, in the [common catalogue](../catalogue/common.yaml).
+check are records too, in the [common catalogue](../sdk/catalogue/common.yaml).

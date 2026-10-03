@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/sdk/auth"
 )
 
 func grantsFile(t *testing.T, body string) string {

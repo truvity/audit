@@ -6,6 +6,9 @@
 #
 # The caller grants the permissions because a reusable workflow can
 # narrow them but never widen them.
+#
+# The repository holds two Go modules, the root and sdk/; the `sdk-tag` job
+# below adds the second's tag, `sdk/vX.Y.Z`, beside the first.
 name: Release
 
 on:
@@ -39,3 +42,37 @@ jobs:
       # Four images under one path, as the chart's values name them:
       # ko appends each command's import-path base to this.
       ko-docker-repo: ghcr.io/truvity/audit
+
+  # A Go module in a subdirectory is released by a tag that carries the
+  # directory: `sdk/vX.Y.Z` is how `go get github.com/truvity/audit/sdk@vX.Y.Z`
+  # finds it, and a plain `vX.Y.Z` does not. release-public.yaml
+  # (truvity/ci-workflows) cuts nothing but the tag that triggered it, so this
+  # job adds the SDK's at the same commit, once the release itself succeeded:
+  # the release contract has one tag stamp everything, at one version.
+  #
+  # Idempotent, so that a re-run of a release does not fail on its own tag. It
+  # refuses a tag that already exists at another commit: a tag fetched once
+  # cannot be taken back, and the proxy remembers the first.
+  sdk-tag:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: tag the SDK module at the release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag="sdk/${GITHUB_REF_NAME}"
+          if existing=$(gh api "repos/$REPO/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
+            if [ "$existing" = "$GITHUB_SHA" ]; then
+              echo "$tag already points at $GITHUB_SHA"
+              exit 0
+            fi
+            echo "::error::$tag exists at $existing, not at the release commit $GITHUB_SHA"
+            exit 1
+          fi
+          gh api "repos/$REPO/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA" --jq .ref

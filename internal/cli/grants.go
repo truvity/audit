@@ -5,10 +5,12 @@ import (
 	"os"
 	"time"
 
+	"github.com/truvity/audit/authn"
+
 	"sigs.k8s.io/yaml"
 
-	"github.com/truvity/audit/auth"
 	"github.com/truvity/audit/preset"
+	"github.com/truvity/audit/sdk/auth"
 )
 
 // GrantsFile is what a deployment writes to say who may read what.
@@ -63,7 +65,7 @@ type GrantRule struct {
 // Access is a grants file read and checked: who may authenticate, and what each
 // of them may see.
 type Access struct {
-	Issuers []auth.Issuer
+	Issuers []authn.Issuer
 	Rules   auth.Declarative
 }
 
@@ -94,14 +96,14 @@ func LoadAccess(path string, profiles map[string]*preset.Profile) (Access, error
 		for name, p := range profiles {
 			composed[name] = append([]string(nil), p.Presets...)
 		}
-		rules.Presets = append(rules.Presets, auth.AccessRoster{
+		rules.Presets = append(rules.Presets, authn.AccessRoster{
 			From: entry.Issuer, Claim: entry.Claim, Profiles: composed,
 		})
 	}
 	out := Access{Rules: rules}
 	names := make([]string, 0, len(file.Issuers))
 	for _, is := range file.Issuers {
-		out.Issuers = append(out.Issuers, auth.Issuer{URL: is.URL, Audience: is.Audience})
+		out.Issuers = append(out.Issuers, authn.Issuer{URL: is.URL, Audience: is.Audience})
 		names = append(names, is.URL)
 	}
 	if err := rules.BoundTo(names); err != nil {

@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/truvity/audit/internal/config"
-	"github.com/truvity/audit/sink"
-	"github.com/truvity/audit/sink/logsink"
+	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/sdk/sink/logsink"
 	"github.com/truvity/audit/sink/sqssink"
 )
 

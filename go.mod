@@ -4,7 +4,6 @@ go 1.27.0
 
 require (
 	connectrpc.com/connect v1.20.0
-	connectrpc.com/otelconnect v0.10.0
 	github.com/aws/aws-sdk-go-v2 v1.47.1
 	github.com/aws/aws-sdk-go-v2/config v1.33.5
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.5
@@ -21,6 +20,7 @@ require (
 	github.com/nats-io/nats.go v1.53.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/truvity/access-roster v1.27.1
+	github.com/truvity/audit/sdk v0.0.0-00010101000000-000000000000
 	github.com/truvity/gateway-auth v0.7.1
 	github.com/truvity/gemaal v0.24.0
 	github.com/truvity/policy v1.37.0
@@ -38,6 +38,7 @@ require (
 )
 
 require (
+	connectrpc.com/otelconnect v0.10.0 // indirect
 	github.com/antithesishq/antithesis-sdk-go v0.8.0-default-no-op // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.0 // indirect
@@ -91,3 +92,5 @@ require (
 )
 
 tool github.com/truvity/ocictl/cmd/helmctl
+
+replace github.com/truvity/audit/sdk => ./sdk

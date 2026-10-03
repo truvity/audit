@@ -8,10 +8,10 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
-	auditv1 "github.com/truvity/audit/gen/audit/v1"
 	"github.com/truvity/audit/index"
 	"github.com/truvity/audit/preset"
-	"github.com/truvity/audit/record"
+	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
+	"github.com/truvity/audit/sdk/record"
 )
 
 // Addenda: lengthening the lock on evidence already written.

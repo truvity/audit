@@ -1,3 +1,4 @@
+apiVersion: v1
 deployment: /var/task/deployment.yaml
 catalogues: /var/task/catalogues
 archive:

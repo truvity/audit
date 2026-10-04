@@ -28,6 +28,11 @@ type reporting struct {
 // resolve its own records the way it resolves anyone else's.
 func buildReporting(t *testing.T) *reporting {
 	t.Helper()
+	return buildReportingWith(t, writer.Evidence{})
+}
+
+func buildReportingWith(t *testing.T, evidence writer.Evidence) *reporting {
+	t.Helper()
 	wallet, err := catalogue.Load([]byte(walletDoc), [][]byte{[]byte(walletSchema)})
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +67,7 @@ func buildReporting(t *testing.T) *reporting {
 		Meta:       common,
 		Identity:   func(context.Context) string { return "workload:wallet" },
 		Version:    "1.0.0",
+		Evidence:   evidence,
 		Now:        func() time.Time { return at },
 		Hooks: writer.Hooks{
 			OnDeadLettered: func(_ *record.Record, reason string) { b.dead = append(b.dead, reason) },
@@ -259,5 +265,51 @@ func TestRegisteringACatalogueIsRecorded(t *testing.T) {
 
 	if b.actions(t)["audit.catalogue.registered"] != 1 {
 		t.Fatalf("the registration was not recorded: %v", b.actions(t))
+	}
+}
+
+// The writer's start-up record says which configuration it ran under, so that
+// the archive answers "what was this written under" with digests a reader can
+// check against the files they were given. A field not known is left out.
+func TestTheStartRecordCarriesTheConfigurationEvidence(t *testing.T) {
+	b := buildReportingWith(t, writer.Evidence{
+		ConfigFile: "/opt/audit/audit.yaml", ConfigDigest: "sha256:aa", DeploymentDigest: "sha256:bb",
+		CataloguesDigest: "sha256:cc", Layer: "arn:aws:lambda:eu-west-1:111111111111:layer:cfg:7",
+	})
+	b.writer.Started(context.Background())
+	b.settle(t)
+	if len(b.dropped) != 0 || len(b.dead) != 0 {
+		t.Fatalf("the start record with evidence was not accepted: dropped %v, dead %v", b.dropped, b.dead)
+	}
+	for _, r := range decode(t, b.store) {
+		if r.GetAction() != "audit.writer.started" {
+			continue
+		}
+		got := r.GetData().AsMap()
+		want := map[string]any{
+			"config_file": "/opt/audit/audit.yaml", "config_digest": "sha256:aa", "deployment_digest": "sha256:bb",
+			"catalogues_digest": "sha256:cc", "layer": "arn:aws:lambda:eu-west-1:111111111111:layer:cfg:7",
+		}
+		if len(got) != len(want) {
+			t.Fatalf("data = %v, want %v", got, want)
+		}
+		for k, v := range want {
+			if got[k] != v {
+				t.Errorf("data[%s] = %v, want %v", k, got[k], v)
+			}
+		}
+		return
+	}
+	t.Fatal("no started record was written")
+}
+
+func TestTheStartRecordWithNoEvidenceCarriesNoData(t *testing.T) {
+	b := buildReporting(t)
+	b.writer.Started(context.Background())
+	b.settle(t)
+	for _, r := range decode(t, b.store) {
+		if r.GetAction() == "audit.writer.started" && r.GetData() != nil {
+			t.Fatalf("a writer with no evidence wrote data: %v", r.GetData())
+		}
 	}
 }

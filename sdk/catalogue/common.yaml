@@ -1,5 +1,5 @@
 source: audit
-version: "2.0.0"
+version: "2.1.0"
 locales: [en]
 
 actor_kinds:
@@ -166,6 +166,7 @@ actions:
     operation: create
     categories: [logging_control]
     profiles: [security]
+    data_schema: https://truvity.github.io/audit/schemas/v1/common/writer-started.json
     message: { en: "writer {observer_instance} started" }
   audit.writer.stopped:
     summary: A split writer instance stopped.

@@ -9,6 +9,13 @@
       },
       "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
+        },
         "maxOffset": {
           "$ref": "#/$defs/config-audit-clock-sync.duration",
           "default": "1s",
@@ -128,6 +135,13 @@
       "additionalProperties": false,
       "description": "The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
+        },
         "database": {
           "$ref": "#/$defs/config-audit-migrate.postgres"
         },
@@ -207,6 +221,13 @@
       },
       "description": "The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
+        },
         "archive": {
           "additionalProperties": false,
           "description": "Where the archive is and how it is written.",
@@ -569,6 +590,13 @@
       "additionalProperties": false,
       "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
+        },
         "archive": {
           "additionalProperties": false,
           "description": "The archive to follow. Observe only reads it: it lists, and gets the objects and the catalogues beside them.",
@@ -829,6 +857,13 @@
       "additionalProperties": false,
       "description": "The configuration of `audit purge --config`, which brings the index and the deduplication table within the profiles. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
+        },
         "database": {
           "$ref": "#/$defs/config-audit-purge.postgres"
         },
@@ -926,6 +961,13 @@
       ],
       "description": "The configuration of audit-query, the read path. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
+        },
         "archive": {
           "additionalProperties": false,
           "description": "The archive the records are in: what the s3scan searcher reads. Get answers where a copy is and, until seals vouch for it, nothing about whether it has been verified.",
@@ -1456,6 +1498,13 @@
       },
       "description": "The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
+        },
         "archive": {
           "additionalProperties": false,
           "description": "Where the archive is and how it is written.",
@@ -1782,6 +1831,13 @@
         "anonymousWrites": {
           "const": true,
           "description": "Accept writes over HTTP from callers nobody verified, stamped with no observer. For a trial install only."
+        },
+        "apiVersion": {
+          "default": "v1",
+          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "v1"
+          ]
         },
         "archive": {
           "additionalProperties": false,

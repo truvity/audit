@@ -28,6 +28,13 @@
   "additionalProperties": false,
   "description": "The configuration of `audit purge --config`, which brings the index and the deduplication table within the profiles. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
   "properties": {
+    "apiVersion": {
+      "default": "v1",
+      "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "enum": [
+        "v1"
+      ]
+    },
     "database": {
       "$ref": "#/$defs/postgres"
     },

@@ -43,18 +43,18 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "", "the configuration file: the one thing that configures this process")
+	configPath := flag.String("config", "", "the configuration file, or AUDIT_CONFIG: the one thing that configures this process")
 	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("audit-query", buildinfo.Version)
 		return nil
 	}
-	if *configPath == "" {
-		return errors.New("give the configuration file with --config: it is the only thing that configures this process " +
-			"(schemas/config/audit-query.schema.json says what it holds)")
+	configFile, err := config.Path(*configPath, "audit-query")
+	if err != nil {
+		return err
 	}
-	cfg, err := config.LoadQuery(*configPath)
+	cfg, err := config.LoadQuery(configFile)
 	if err != nil {
 		return err
 	}

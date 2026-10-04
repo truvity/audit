@@ -1,0 +1,50 @@
+{
+  "$id": "https://truvity.github.io/audit/schemas/v1/common/writer-started.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "config_file": {
+      "type": "string",
+      "description": "The path of the configuration file the writer read.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "config_digest": {
+      "type": "string",
+      "description": "`sha256:` and the SHA-256 of that file's bytes, which is what sha256sum prints for it: the configuration this writer ran under.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none",
+      "x-audit-filter": true
+    },
+    "deployment_digest": {
+      "type": "string",
+      "description": "The digest of the profile document the configuration names, which decides what each profile keeps.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "workloads_digest": {
+      "type": "string",
+      "description": "The digest of the workloads document, when the configuration names one.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "catalogues_digest": {
+      "type": "string",
+      "description": "The digest of the directory of catalogues the configuration names: of each file's name and digest, in name order.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "layer": {
+      "type": "string",
+      "description": "On Lambda, the ARN of the immutable layer version that carried the configuration, as the deployment declared it to the function.",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    },
+    "function_version": {
+      "type": "string",
+      "description": "On Lambda, the function version the platform reports (AWS_LAMBDA_FUNCTION_VERSION).",
+      "x-audit-class": "audit",
+      "x-audit-pii": "none"
+    }
+  }
+}

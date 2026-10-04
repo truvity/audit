@@ -13,7 +13,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -39,7 +38,7 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "", "the configuration file: the one thing that configures this process")
+	configPath := flag.String("config", "", "the configuration file, or AUDIT_CONFIG: the one thing that configures this process")
 	asJSON := flag.Bool("json", false, "print the report as JSON")
 	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
@@ -47,11 +46,11 @@ func run() error {
 		fmt.Println("audit-notary", buildinfo.Version)
 		return nil
 	}
-	if *configPath == "" {
-		return errors.New("give the configuration file with --config: it is the only thing that configures this process " +
-			"(schemas/config/audit-notary.schema.json says what it holds)")
+	configFile, err := config.Path(*configPath, "audit-notary")
+	if err != nil {
+		return err
 	}
-	cfg, err := config.LoadNotary(*configPath)
+	cfg, err := config.LoadNotary(configFile)
 	if err != nil {
 		return err
 	}

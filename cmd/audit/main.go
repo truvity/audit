@@ -276,11 +276,11 @@ func verify(args []string) error {
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
-	if *configFile != "" {
+	if file := jobConfig(flags, *configFile); file != "" {
 		if err := onlyConfig(flags); err != nil {
 			return err
 		}
-		return verifyFromConfig(*configFile, *asJSON)
+		return verifyFromConfig(file, *asJSON)
 	}
 	switch {
 	case *profile == "":
@@ -458,11 +458,11 @@ func migrate(args []string) error {
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
-	if *cfgFile != "" {
+	if file := jobConfig(flags, *cfgFile); file != "" {
 		if err := onlyConfig(flags); err != nil {
 			return err
 		}
-		return migrateFromConfig(*cfgFile)
+		return migrateFromConfig(file)
 	}
 	if *printSQL {
 		fmt.Print(postgres.Schema())
@@ -747,11 +747,11 @@ func purge(args []string) error {
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
-	if *configFile != "" {
+	if file := jobConfig(flags, *configFile); file != "" {
 		if err := onlyConfig(flags); err != nil {
 			return err
 		}
-		return purgeFromConfig(*configFile, *asJSON)
+		return purgeFromConfig(file, *asJSON)
 	}
 	switch {
 	case *deployment == "":
@@ -810,11 +810,11 @@ func clockSync(args []string) error {
 	if _, err := parse(flags, args); err != nil {
 		return err
 	}
-	if *configFile != "" {
+	if file := jobConfig(flags, *configFile); file != "" {
 		if err := onlyConfig(flags); err != nil {
 			return err
 		}
-		return clockSyncFromConfig(*configFile, *asJSON)
+		return clockSyncFromConfig(file, *asJSON)
 	}
 	if len(servers) == 0 {
 		return errors.New("name at least one time reference with --ntp")
@@ -1002,13 +1002,11 @@ func conformance(args []string) error {
 	return nil
 }
 
-// env is a flag's default taken from the environment.
-//
-// The chart runs every scheduled job as this binary and gives it the archive
-// in AUDIT_BUCKET, AUDIT_PREFIX and AWS_REGION, the way audit-writer and
-// audit-query already read them. Without this the jobs got no bucket at all
-// and said so -- `name the archive's bucket with --bucket` -- which reads as
-// a deployment that forgot an argument rather than a binary that ignored one.
+// env is a flag's default taken from the environment: here only AWS_REGION. The
+// archive flags of the interactive commands read AUDIT_BUCKET, AUDIT_PREFIX and
+// the rest through cli.NewArchiveFlags, for a person at a terminal. The jobs a
+// chart runs read none of them: they are configured by one file, --config or
+// AUDIT_CONFIG, whose `archive` block names the bucket.
 func env(name, fallback string) string {
 	if v := os.Getenv(name); v != "" {
 		return v

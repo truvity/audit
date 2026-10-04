@@ -59,6 +59,17 @@ refused. Nothing else configures a process: there are no flags with an
 environment fallback
 ([0021](../decisions/0021-one-validated-configuration-file.md)).
 
+The one variable that is not a fallback is **`AUDIT_CONFIG`**, which says
+*where the file is* and is read by all six binaries (`audit-writer`,
+`audit-query`, `audit-observe`, `audit-notary` and the two Lambdas) and by the
+four jobs of `audit`. `--config` wins when both are given. For a job of `audit`,
+the variable counts only on a command line with no option of its own, so that a
+person who has it exported and runs `audit verify --deployment ...` is not told to
+put that in a file they never named. The Lambda binaries look at `/opt/audit/audit.yaml`
+(where a layer mounts it) and then at `/var/task/audit.yaml` (the function's own
+package, where the previous release put it; kept for one release after the file
+moves to the layer), when neither the flag nor the variable is set.
+
 Each binary's file is YAML, and is validated against that binary's JSON Schema
 before anything starts. The schemas are in `schemas/config/`, one per binary
 or command, and ship in the release:
@@ -69,6 +80,10 @@ or command, and ship in the release:
 | `audit-observe` | `audit-observe.schema.json` |
 | `audit-query` | `audit-query.schema.json` |
 | `audit verify`, `purge`, `clock-sync`, `migrate` | `audit-verify.schema.json`, `audit-purge.schema.json`, `audit-clock-sync.schema.json`, `audit-migrate.schema.json` |
+
+Every file may carry `apiVersion: v1`, and absent means the same. Another
+value is refused, so that a later shape arrives by a version and not by a file
+that quietly means something else.
 
 An unknown key, a missing required key or a value of the wrong type is a
 start-up error that names the path to it. A few rules a schema cannot say run
@@ -107,10 +122,26 @@ on every pod ([telemetry](../operations/telemetry.md#the-chart-sets-the-environm
 on AWS Lambda they are the function's environment
 ([AWS](../deployment/aws.md#telemetry)).
 
+### Evidence: the writer's start-up record
+
+`audit.writer.started` carries, as `data` (schema `writer-started.json`, in
+common catalogue 2.1.0), what the writer was configured with: `config_file` and
+`config_digest` (`sha256:` and the SHA-256 of the file's bytes, which is what
+`sha256sum` prints), the digests of the documents it names (`deployment_digest`,
+`workloads_digest`, and `catalogues_digest`, which is the digest of each file's
+relative name and digest in name order), and on Lambda `layer`
+(the layer version ARN the deployment declares in `AUDIT_CONFIG_LAYER`) and
+`function_version` (`AWS_LAMBDA_FUNCTION_VERSION`). A field that is not known is
+left out. The file is read twice, before and after it is validated, and a file
+that changed in between is refused, so that the digest names the bytes that ran.
+
 ### Documents the file points at
 
 Four things a file names by path are separate documents, each with its own
-contract, and not part of the file:
+contract, and not part of the file. Three of them have a JSON Schema in
+`schemas/config/` (`audit-deployment.schema.json`, `audit-grants.schema.json`,
+`audit-workloads.schema.json`) and carry `apiVersion` as the file does; the code
+that reads them validates against it and then decodes strictly:
 
 | key | document | in the chart |
 |---|---|---|
@@ -291,9 +322,10 @@ The write path as an AWS Lambda function behind an SQS event source mapping
 listener, no registry, no stream, no database, no HTTP front door. A function has
 no process that stays up, so there is nothing to serve and no replica count to
 state; what the Postgres table does for `audit-writer` is a DynamoDB table here.
-The file is in the function's package at `/var/task/audit.yaml` (the one flag,
-`--config`, defaults to it), rendered by the Pulumi library from the stack's own
-arguments.
+The file is read from `--config`, or `AUDIT_CONFIG`, or `/opt/audit/audit.yaml`,
+or `/var/task/audit.yaml`, whichever of them is first to exist; the Pulumi library
+renders it from the stack's own arguments. The writer says which file it read, and
+its digest, in its start-up record ([evidence](#evidence-the-writers-start-up-record)).
 
 | key | type | default | meaning |
 |---|---|---|---|

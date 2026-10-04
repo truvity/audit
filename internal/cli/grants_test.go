@@ -83,7 +83,7 @@ rules:
   - name: auditors
     grant: {all_tenants: true, profiles: [security], operations: [serach]}
 `,
-		says: "not an operation",
+		says: "operations.0", // the schema names the path and the values
 	}} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := LoadAccess(grantsFile(t, c.body), nil)

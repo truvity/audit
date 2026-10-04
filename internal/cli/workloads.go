@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/truvity/audit/authn"
+	"github.com/truvity/audit/internal/config"
 
 	"sigs.k8s.io/yaml"
 
@@ -19,8 +20,10 @@ import (
 // service accounts: a workload presents its projected token, and the kubelet —
 // not the workload — decides whose it is.
 type WorkloadsFile struct {
-	Issuers   []IssuerEntry   `json:"issuers"`
-	Workloads []WorkloadEntry `json:"workloads,omitempty"`
+	// APIVersion is `v1`, or absent, which means the same.
+	APIVersion string          `json:"apiVersion,omitempty"`
+	Issuers    []IssuerEntry   `json:"issuers"`
+	Workloads  []WorkloadEntry `json:"workloads,omitempty"`
 }
 
 // WorkloadEntry is one service account and the source it speaks for.
@@ -44,6 +47,9 @@ func LoadWorkloads(path string) (Workloads, error) {
 		return Workloads{}, err
 	}
 	var file WorkloadsFile
+	if err := config.ValidateDocument("audit-workloads", raw); err != nil {
+		return Workloads{}, fmt.Errorf("%s: %w", path, err)
+	}
 	if err := yaml.UnmarshalStrict(raw, &file); err != nil {
 		return Workloads{}, fmt.Errorf("%s: %w", path, err)
 	}

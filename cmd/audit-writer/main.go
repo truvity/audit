@@ -71,20 +71,20 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "", "the configuration file: the one thing that configures this process")
+	configPath := flag.String("config", "", "the configuration file, or AUDIT_CONFIG: the one thing that configures this process")
 	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("audit-writer", buildinfo.Version)
 		return nil
 	}
-	if *configPath == "" {
-		return errors.New("give the configuration file with --config: it is the only thing that configures this process " +
-			"(schemas/config/audit-writer.schema.json says what it holds)")
+	configFile, err := config.Path(*configPath, "audit-writer")
+	if err != nil {
+		return err
 	}
 	// Everything is checked before anything is opened: a file the schema
 	// refuses never reaches a connection.
-	cfg, err := config.LoadWriter(*configPath)
+	cfg, err := config.LoadWriter(configFile)
 	if err != nil {
 		return err
 	}
@@ -218,6 +218,10 @@ func run() error {
 		}
 		shutdown = func(context.Context) error { return nil }
 	} else {
+		evidence, err := cli.WriterEvidence(cfg.Source, cfg.Deployment, cfg.Workloads, cfg.Catalogues)
+		if err != nil {
+			return err
+		}
 		w, err := writer.Open(ctx, writer.Config{
 			Archive:          archive,
 			Profiles:         profiles,
@@ -228,6 +232,7 @@ func run() error {
 			ForgetIdentities: cfg.ForgetIdentities,
 			RollInterval:     cfg.Roll.Interval.D(),
 			Version:          version,
+			Evidence:         evidence,
 			// Records reaching this writer over the stream were stamped by a
 			// receiver of this installation, which is the only thing that may
 			// publish to it.

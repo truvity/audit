@@ -1,0 +1,51 @@
+{
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-deployment.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The profile document a configuration names as `deployment`: which presets each profile is composed from. Every component that reads profiles reads this one, because retention is a property of the profile and every one of them has to agree about it.",
+  "properties": {
+    "apiVersion": {
+      "default": "v1",
+      "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "enum": [
+        "v1"
+      ]
+    },
+    "external_identifiers_are_opaque": {
+      "description": "The identifiers this deployment receives for people outside the organisation are already pseudonyms an application minted, so a profile asking for `external: pseudonym` gets `clear`. Defaults to false: a deployment arrives at clear identifiers by saying so and not by omission.",
+      "type": "boolean"
+    },
+    "profiles": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "description": "One profile's composition.",
+        "properties": {
+          "presets": {
+            "description": "The presets the profile is composed from.",
+            "items": {
+              "description": "A preset's name.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "presets"
+        ],
+        "type": "object"
+      },
+      "description": "The profiles, by name. A name is the first component of the bucket key, so it holds no `/`.",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[^/]+$"
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "profiles"
+  ],
+  "title": "audit deployment",
+  "type": "object"
+}

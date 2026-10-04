@@ -198,7 +198,7 @@ one an audit trail should not have.
 The writer says which configuration it ran under in its start-up record
 (`audit.writer.started`): the digest of the file, of the profile document and of the
 catalogues, and the layer version's ARN
-([configuration](../reference/configuration.md#evidence-the-writers-start-up-record)).
+([configuration](../reference/configuration.md#the-configuration-file)).
 The platform does not tell a function which layers it has, so the ARN is what the
 library puts in `AUDIT_CONFIG_LAYER`.
 

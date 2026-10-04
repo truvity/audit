@@ -4,6 +4,12 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
+- The Pulumi library takes the application's catalogue from files: `Writer.CataloguePaths` (merged with `Writer.Catalogues` under the files' base names; an unreadable or empty file, or a name given twice with different content, is refused before anything is created). The catalogue is part of the writer function's package, so a changed catalogue redeploys the writer on the next `pulumi up` and reaches it no other way. Tests pin the Truvity shape (both Lambdas, KMS seals, GOVERNANCE) and the hive shape (writer Lambda, SSE-S3, `NONE`, `Notary.Disabled`, an `ArchiveWriter` role), both outside a VPC. See [deployment/aws.md](docs/deployment/aws.md#the-applications-catalogue).
+
+- New [deployment/levels.md](docs/deployment/levels.md): the `full`, `lite` and `log` levels, the decision-tree presets they map to, and what is implemented in code, Pulumi and the chart. The chart already renders the notary CronJob with the OpenBao Transit signer (golden `transit`); nothing was missing there.
+
 ## v0.8.0
 
 The Pulumi library gains optional deployment parts and Object Lock can be enabled later without replacement.

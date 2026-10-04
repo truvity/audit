@@ -619,3 +619,138 @@ func TestOptionsThatCannotWorkAreRefusedBeforeAnythingIsCreated(t *testing.T) {
 		})
 	}
 }
+
+// ---- the two estates
+
+const (
+	functionType = "aws:lambda/function:Function"
+	scheduleType = "aws:scheduler/schedule:Schedule"
+)
+
+// Truvity (stack `access`): both Lambdas, the notary on KMS, SSE-KMS, a lock that
+// begins in GOVERNANCE, observe by IRSA from the kernel cluster.
+func TestTheTruvityShapeIsExpressible(t *testing.T) {
+	rec, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Archive.ObjectLockMode = auditpulumi.Governance
+		a.Observe = &auditpulumi.ObserveArgs{IRSA: irsa("audit", "audit-observe")}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range []string{"audit-writer", "audit-notary"} {
+		f := rec.one(t, functionType, fn)
+		if prop(f, "vpcConfig").IsObject() {
+			t.Errorf("%s is in a VPC", fn)
+		}
+		if !strings.Contains(packageFiles(t, f)["audit.yaml"], "lockMode: governance") {
+			t.Errorf("%s is not in governance mode", fn)
+		}
+	}
+	if n := packageFiles(t, rec.one(t, functionType, "audit-notary"))["audit.yaml"]; !strings.Contains(n, "key: alias/audit-seal") {
+		t.Errorf("the notary does not sign with the KMS seal key:\n%s", n)
+	}
+	if len(rec.ofType(scheduleType)) != 1 || len(rec.ofType(lockType)) != 1 || len(rec.ofType("aws:kms/key:Key")) != 2 {
+		t.Errorf("schedules %d, locks %d, keys %d", len(rec.ofType(scheduleType)), len(rec.ofType(lockType)), len(rec.ofType("aws:kms/key:Key")))
+	}
+}
+
+// hive: the writer Lambda with SSE-S3 and never a lock; the notary is a
+// Kubernetes CronJob on OpenBao Transit, so AWS holds no notary, no seal key
+// and no schedule, and a role for the pod to put seals/ and keys/.
+func TestTheHiveShapeIsExpressible(t *testing.T) {
+	rec, out, err := build(t, func(a *auditpulumi.Args) {
+		a.Archive.ObjectLockMode, a.Archive.Encryption = auditpulumi.None, auditpulumi.EncryptionS3
+		a.Notary = auditpulumi.NotaryArgs{Disabled: true}
+		a.Telemetry = nil
+		a.Observe = &auditpulumi.ObserveArgs{IRSA: irsa("audit", "audit-observe")}
+		a.ArchiveWriter = &auditpulumi.ArchiveWriterArgs{IRSA: *irsa("audit", "audit-notary")}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(rec.ofType(functionType)); n != 1 {
+		t.Errorf("%d functions, want the writer alone", n)
+	}
+	f := rec.one(t, functionType, "audit-writer")
+	if prop(f, "vpcConfig").IsObject() {
+		t.Error("the writer is in a VPC")
+	}
+	if w := packageFiles(t, f)["audit.yaml"]; !strings.Contains(w, "lockMode: none") || strings.Contains(w, "kmsKey") {
+		t.Errorf("the writer's configuration:\n%s", w)
+	}
+	if len(rec.ofType(scheduleType)) != 0 || len(rec.ofType(lockType)) != 0 || len(rec.ofType("aws:kms/key:Key")) != 0 {
+		t.Error("a schedule, a lock or a key exists")
+	}
+	if out["archiveWriterRole"] == "" {
+		t.Error("no archive-writer role for the Kubernetes notary")
+	}
+}
+
+// ---- the application's catalogue
+
+func writeCatalogue(t *testing.T, name, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestCataloguePathsAreDeliveredUnderTheirBaseNames(t *testing.T) {
+	rec, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Writer.CataloguePaths = []string{writeCatalogue(t, "catalogue-roster.yaml", "source: roster\n")}
+		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\n"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := packageFiles(t, rec.one(t, functionType, "audit-writer"))
+	if w["catalogues/catalogue-roster.yaml"] != "source: roster\n" || w["catalogues/catalogue.yaml"] != "source: app\n" {
+		t.Errorf("package has %v", keys(w))
+	}
+	if !strings.Contains(w["audit.yaml"], "catalogues: /var/task/catalogues") {
+		t.Errorf("the configuration does not name the directory:\n%s", w["audit.yaml"])
+	}
+}
+
+// A catalogue change is a change of the package, which is what redeploys the
+// function: it never reaches the writer without a deploy.
+func TestAChangedCatalogueChangesTheWritersPackage(t *testing.T) {
+	pkg := func(body string) map[string]string {
+		rec, _, err := build(t, func(a *auditpulumi.Args) {
+			a.Writer.CataloguePaths = []string{writeCatalogue(t, "catalogue.yaml", body)}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return packageFiles(t, rec.one(t, functionType, "audit-writer"))
+	}
+	a, b := pkg("source: roster\nversion: 1\n"), pkg("source: roster\nversion: 1\nchanged: true\n")
+	if a["catalogues/catalogue.yaml"] == b["catalogues/catalogue.yaml"] {
+		t.Error("a changed catalogue left the package unchanged")
+	}
+}
+
+func TestBadCataloguePathsAreRefused(t *testing.T) {
+	empty := writeCatalogue(t, "catalogue.yaml", " \n")
+	good := writeCatalogue(t, "catalogue.yaml", "a: b\n")
+	for name, c := range map[string]struct {
+		edit func(*auditpulumi.Args)
+		want string
+	}{
+		"missing": {func(a *auditpulumi.Args) { a.Writer.CataloguePaths = []string{"/nonexistent/catalogue.yaml"} }, "CataloguePaths"},
+		"empty":   {func(a *auditpulumi.Args) { a.Writer.CataloguePaths = []string{empty} }, "empty"},
+		"badname": {func(a *auditpulumi.Args) { a.Writer.CataloguePaths = []string{writeCatalogue(t, "x.yaml", "a: b\n")} }, "catalogue"},
+		"conflict": {func(a *auditpulumi.Args) {
+			a.Writer.CataloguePaths = []string{good}
+			a.Writer.Catalogues = map[string]string{"catalogue.yaml": "other: 1\n"}
+		}, "other content"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := build(t, c.edit); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}

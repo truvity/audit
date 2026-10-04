@@ -216,6 +216,33 @@ signs with it. What SSE-S3 gives up is the archive key's own policy and its
 CloudTrail record of every use. Objects already written keep the encryption they
 were written with.
 
+### The application's catalogue
+
+The writer function has no registry: it registers the common catalogue and the
+files in `catalogues/` of its package, and nothing else, so an application's
+catalogue reaches it only through the Pulumi program that deploys it. The
+application (sluis, whose source name is `roster`) hands over its catalogue
+document, from the file its release ships or from a string:
+
+```go
+Writer: auditpulumi.WriterArgs{
+	// ...
+	CataloguePaths: []string{"catalogue/catalogue-roster.yaml"},
+	// or Catalogues: map[string]string{"catalogue-roster.yaml": roster},
+},
+```
+
+File names are `catalogue.yaml` or `catalogue-<name>.yaml`; a name given both ways
+with different content, an unreadable path and an empty file are refused before
+anything is created. The files go into the function's zip beside `audit.yaml`, so
+**a change to a catalogue is a change to the package, and `pulumi up` redeploys the
+writer** with it. Nothing reaches the writer between deploys, which is the point:
+a release of an application that changed its catalogue under an unchanged version
+once crash-looped the application, and a catalogue change should be a deliberate,
+reviewed deploy of this stack, with the new catalogue visible in the preview. Bump
+the catalogue's version when its content changes. Keep the copy the stack reads in
+step with the application's release (pin it to the same tag, or vendor it).
+
 ### Kubernetes workloads (IRSA)
 
 A cluster that is not EKS (Talos) can have an IAM OIDC provider of its own, and a
@@ -295,7 +322,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Ingest.RetentionDays` | 14 | the queue's retention; 14 is SQS's limit and the deduplication window's floor |
 | `Writer.BinaryPath` | **required** unless `Ingest.Disabled` | the linux/arm64 `bootstrap` |
 | `Writer.DeploymentYAML` | **required** unless `Ingest.Disabled` | the profile configuration, the document the chart renders |
-| `Writer.Catalogues` | none | application catalogues by file name (`catalogue.yaml`, `catalogue-<name>.yaml`) |
+| `Writer.Catalogues` | none | application catalogues by file name (`catalogue.yaml`, `catalogue-<name>.yaml`) and content; see [the application's catalogue](#the-applications-catalogue) |
+| `Writer.CataloguePaths` | none | the same, read from files on disk under their base names; merged with `Catalogues` |
 | `Writer.Keys`, `.ForgetIdentities` | none | the `keys` block and `forgetIdentities` of the file |
 | `Writer.DedupeWindow` | the profiles' widest | a Go duration |
 | `Writer.MemoryMB`, `.TimeoutSeconds` | 512, 120 | |

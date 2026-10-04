@@ -3,6 +3,8 @@ package auditpulumi
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -176,6 +178,17 @@ type WriterArgs struct {
 	// by file name (`catalogue.yaml`, `catalogue-<name>.yaml`). The common
 	// catalogue is always registered. A function has no registry service.
 	Catalogues map[string]string
+	// CataloguePaths are catalogue files on disk, read when the stack is
+	// evaluated and merged into Catalogues under their base names (which must be
+	// `catalogue.yaml` or `catalogue-<name>.yaml`). A name given in both places
+	// is refused unless the contents are identical; an unreadable or empty file
+	// is refused before anything is created.
+	//
+	// Either way the catalogue is part of the function's package, so any change
+	// to a catalogue's content changes the package and redeploys the writer on
+	// the next `pulumi up`: a catalogue change reaches the writer deliberately,
+	// as a deploy, never silently (docs/deployment/aws.md#the-applications-catalogue).
+	CataloguePaths []string
 	// Keys is the `keys:` block of the function's configuration, for a
 	// deployment whose profiles pseudonymise. Only a provider reachable from a
 	// function outside a VPC is usable: `transit` over a public address. Nil is
@@ -399,6 +412,27 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 		if strings.TrimSpace(w.DeploymentYAML) == "" {
 			return nil, errors.New("auditpulumi: Writer.DeploymentYAML is required: the profile configuration (or set Ingest.Disabled)")
 		}
+	}
+	if len(w.CataloguePaths) > 0 {
+		merged := make(map[string]string, len(w.Catalogues)+len(w.CataloguePaths))
+		for k, v := range w.Catalogues {
+			merged[k] = v
+		}
+		for _, p := range w.CataloguePaths {
+			body, err := os.ReadFile(p)
+			if err != nil {
+				return nil, fmt.Errorf("auditpulumi: Writer.CataloguePaths: %w", err)
+			}
+			if strings.TrimSpace(string(body)) == "" {
+				return nil, fmt.Errorf("auditpulumi: Writer.CataloguePaths: %s is empty", p)
+			}
+			base := filepath.Base(p)
+			if prev, ok := merged[base]; ok && prev != string(body) {
+				return nil, fmt.Errorf("auditpulumi: Writer.CataloguePaths: %s is also in Writer.Catalogues with other content", base)
+			}
+			merged[base] = string(body)
+		}
+		w.Catalogues = merged
 	}
 	setInt(&w.MemoryMB, 512)
 	setInt(&w.TimeoutSeconds, 120)

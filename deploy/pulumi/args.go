@@ -349,7 +349,7 @@ var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // keyComponent is what the store's keys allow of a profile name.
 // keyArn is a KMS key ARN, which is what an IAM policy can name; an alias ARN is not.
-var keyArn = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
+var keyArn = regexp.MustCompile(`^arn:[a-z-]+:kms:[a-z0-9-]+:[0-9]+:key/[A-Za-z0-9-]+$`)
 
 var keyComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 

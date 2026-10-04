@@ -53,7 +53,14 @@ the application. The deployment pages show the values each shape takes:
   configuration is refused without one.
 
 `mode` chooses between them. In `direct` the chart renders one Deployment that
-serves the sink and writes the archive. In `stream` it renders two: a receiver
+serves the sink and writes the archive. With `writer.enabled: false` the write
+path is not in this release (it runs elsewhere, typically the writer Lambda): no
+writer, receiver, consumers or Service are rendered, and everything that records
+(the query service, the notary and the other jobs) sends to the writer's queue
+with `sink: {sqs: {queueUrl, region}}` under its own pod identity; the chart
+refuses a sink that names the release's own front door
+([AWS](../../docs/deployment/aws.md#observe-and-query-in-kubernetes-writer-on-lambda),
+`examples/external-writer.yaml`). In `stream` it renders two: a receiver
 that serves the sink and publishes, holding neither the bucket nor a key, and
 `writer.consumers` writers that read the stream and put the objects. The
 Service keeps its name and the receiver keeps the `writer` component label in

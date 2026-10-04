@@ -160,7 +160,8 @@ block is present). Both servers default it to `:8080`.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `url` | string, required | | the writer's base URL |
+| `url` | string | | the writer's base URL. Exactly one of `url` and `sqs` |
+| `sqs` | `queueUrl` (required), `region`, `fifo` | | the ingest queue of a writer that runs elsewhere, such as the writer Lambda: records are sent to the queue and acknowledged `queued`. There is no credential in the file: the pod's own identity is it (EKS Pod Identity, or IRSA through the service account's annotation), and its role needs `sqs:SendMessage` on the queue. `tokenFile` is refused with it, and `expect` is `queued` and may be left out |
 | `tokenFile` | path | none: no token, which only an anonymous trial install accepts | the file holding the bearer token, read afresh on every request; in a cluster the pod's projected service-account token |
 | `expect` | `logged`, `queued` or `archived` | none: the client claims nothing | what the writer at `url` is configured to give. A client cannot learn that until it writes, so the file says (`sink.Client.Expecting`); the process's `require` is checked against it at start-up and against every acknowledgement afterwards |
 
@@ -354,7 +355,7 @@ the grants. Every read it serves is recorded through the writer.
 |---|---|---|---|
 | `listen` | `listen` | `:8080` | the address it is served on |
 | `grants` | path, required | | the grants file, below |
-| `sink` | `sink`, required | | the writer every read is recorded through |
+| `sink` | `sink`, required | | the writer every read is recorded through: its `url`, or the ingest `sqs` queue of a writer that runs elsewhere ([AWS](../deployment/aws.md#observe-and-query-in-kubernetes-writer-on-lambda)) |
 | `require` | `logged`, `queued` or `archived` | none: checks nothing | the weakest durability the writer's acknowledgements may carry. Needs `sink.expect` at least as strong ([durability](#durability-require-forward-consume)) |
 | `deployment` | path | none | the profile configuration. A grant preset needs it, because a preset turns roles into the deployment's own profiles |
 | `searcher` | `postgres` or `s3scan` | `postgres` | `postgres` is the index; `s3scan` is the archive, within a budget, for a deployment with no database. The scan orders by `occurred_at` only and refuses `recorded_at`, so a deployment on it can search the trail but cannot follow it: there is no live tail ([search](../design/search.md#tail)) |

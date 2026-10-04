@@ -21,7 +21,7 @@ vocabulary for choosing a deployment, not chart or library options.
 |---|---|---|---|
 | `aws-serverless` | writer and notary Lambdas, S3, DynamoDB dedupe; observe and query where you like | `full` (lock on) or `lite` | [AWS](aws.md) library |
 | `aws-eks` | the chart on EKS, Pod Identity, S3, notary job on KMS | `full` | chart, [direct](direct.md) or [stream](stream.md) |
-| `aws-hybrid` | Lambdas for ingest and the notary in AWS, observe and query on Kubernetes with IRSA | `full` | AWS library plus chart (`observe`, `query`) |
+| `aws-hybrid` | Lambdas for ingest and the notary in AWS, observe and query on Kubernetes with IRSA | `full` | AWS library plus chart (`writer.enabled: false`, `observe`, `query`) |
 | `k8s-openbao` | the chart on any cluster, seals and keys on OpenBao Transit, S3 or compatible | `full` with a lock, else `lite` | chart (`jobs.notary` with `signer.transit`) |
 | `k8s-minimal` | the chart, S3-compatible store, no lock, no notary | `lite` | chart |
 | `server` | the binaries on a host, a local seal key | `lite` | [direct](direct.md) |
@@ -38,6 +38,20 @@ The two production estates:
 
 Both Lambdas run outside a VPC.
 
+### Writer on Lambda, observe and query in Kubernetes
+
+This is what `aws-hybrid` asks of the chart. Set `writer.enabled: false`: the
+release then renders no writer, no receiver, no stream consumers and no writer
+Service, and keeps the indexer (`observe`), the query service, the migration
+hook and the jobs (the notary, with OpenBao Transit or KMS). Everything in the
+release that records, which is the query service's read records and the
+notary's, verify's and clock-sync's, sends to the writer's ingest queue with
+`sink.sqs` and the pod's own identity instead of an in-cluster front door; the
+chart refuses a sink that names the release's own front door, and a
+`writer.enabled: false` release whose components would run as the writer's
+ServiceAccount. The values, the IAM and a worked file are in
+[AWS](aws.md#observe-and-query-in-kubernetes-writer-on-lambda).
+
 ## What is implemented
 
 | capability | code | Pulumi | chart |
@@ -52,6 +66,7 @@ Both Lambdas run outside a VPC.
 | The application's catalogue in the writer Lambda | implemented (`catalogues`) | implemented (`Writer.Catalogues`, `CataloguePaths`) | not applicable |
 | Observe by IRSA from a non-EKS cluster | implemented | implemented (`Observe.IRSA`) | implemented |
 | Observe and query with Postgres | implemented | not applicable | implemented |
+| Observe, query and the notary in Kubernetes, the writer on Lambda | implemented (`sink.sqs` in `audit-query` and the jobs) | `QueueURL`, `QueueArn`, `Ingest.Senders` | implemented (`writer.enabled: false`; example and golden `external-writer`) |
 | An S3-compatible store other than AWS (R2, MinIO) | implemented | not applicable | implemented |
 | `log` level (`logsink`) | implemented | not applicable | not applicable |
 | Pseudonymisation keys on Transit from a Lambda | implemented, needs a public Transit address | `Writer.Keys` | not applicable |

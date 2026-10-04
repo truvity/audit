@@ -4,8 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.10.0
 
+
+The chart can run observe, query and the jobs in Kubernetes while the writer runs elsewhere: writer.enabled false, and every recorder sends its own records over SQS.
 - The chart can run **observe and query (and the notary) in Kubernetes while the writer runs elsewhere**, such as the writer Lambda behind SQS. `writer.enabled: false` renders no writer, no receiver, no stream consumers and no writer Service, and the values schema accepts it (the writer's `config` is then free to be empty). The migration hook never depended on the writer and still runs; observe and query still need Postgres. With the writer elsewhere, the chart refuses `mode: stream`, `workloadIdentity.issuers`, `keysVolume`, `extensions.billing`, a recording component whose `sink` names the release's own front door or is missing (the query service), and a component that would run as the writer's ServiceAccount. New example `charts/audit/examples/external-writer.yaml` (observe, query and a notary CronJob with OpenBao Transit, sinks on SQS) and golden `example-external-writer`.
 - A `sink` in the configuration of `audit-query`, `audit-notary` (and `audit-notary-lambda`), `audit verify` and `audit clock-sync` takes **`sqs`** (`queueUrl`, `region`) in place of `url`: records are sent to the ingest queue of a writer that runs elsewhere and acknowledged `queued`, with the pod's own identity as the credential (`sqs:SendMessage` on the queue). Exactly one of `url` and `sqs` is required; the default, `url`, is unchanged. The JSON Schemas and the chart's values schema carry it. See [deployment/aws.md](docs/deployment/aws.md#observe-and-query-in-kubernetes-writer-on-lambda) and [deployment/levels.md](docs/deployment/levels.md).
 

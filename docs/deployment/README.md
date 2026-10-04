@@ -22,6 +22,13 @@ A third shape is not Kubernetes at all: [AWS](aws.md) runs the writer and the
 notary as Lambda functions behind an SQS queue, built by a Pulumi library. It is
 built and tested and has not run in an account.
 
+The two combine: **writer on Lambda, observe and query in Kubernetes.** The
+chart with `writer.enabled: false` runs only the indexer, the query service, the
+migration and the jobs, and every one of them that records sends to the Lambda's
+ingest queue (`sink.sqs`) under its own pod identity. No writer pod is left
+behind to host a front door. See
+[AWS](aws.md#observe-and-query-in-kubernetes-writer-on-lambda).
+
 How much of the stack an installation runs is a separate axis, the
 [levels](levels.md): `full`, `lite` and `log`.
 

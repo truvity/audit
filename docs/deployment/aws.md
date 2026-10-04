@@ -355,7 +355,7 @@ Required inputs are marked. Anything not listed has the default stated.
 | `BucketName`, `BucketArn` | the archive |
 | `ArchiveKeyArn` | the symmetric key objects are encrypted with (rotation on); empty with `Encryption: s3` |
 | `SealKeyArn`, `SealKeyAlias` | the `ECC_NIST_P384` `SIGN_VERIFY` key and its alias, `alias/<name>-seal`. `audit key public` reads its public half for `keys/roots.jwks` and the verifier's pin |
-| `QueueURL`, `QueueArn` | the ingest queue a receiver or an application sends to (`forward.sqs.queueUrl`) |
+| `QueueURL`, `QueueArn` | the ingest queue a receiver or an application sends to (`forward.sqs.queueUrl`), and what the chart's `sink.sqs` of the query service and the jobs names when the writer runs here ([observe and query in Kubernetes](#observe-and-query-in-kubernetes-writer-on-lambda)): `QueueURL` is the `queueUrl`, `QueueArn` the resource of `sqs:SendMessage` |
 | `DlqURL`, `DlqArn` | the dead-letter queue |
 | `DedupeTableName` | the DynamoDB table |
 | `WriterFunctionArn`, `NotaryFunctionArn` | the functions |
@@ -452,6 +452,82 @@ request carries the audience as a list. `ForAllValues` also passes on an empty
 set, which is safe here only because `Audience` is a required parameter of
 `GetWebIdentityToken`. The algorithm and the lifetime are what the extension asks
 for.
+
+## Observe and query in Kubernetes, writer on Lambda
+
+An installation can keep the write path here and everything that reads in a
+cluster: the chart with `writer.enabled: false` (`charts/audit/examples/external-writer.yaml`,
+golden `example-external-writer`). It renders the indexer, the query service,
+the `migrate` hook (which never depended on the writer: the `writer` role in
+`migrate.config` is optional, and the Lambda has no database) and the jobs. It
+renders **no writer, no receiver, no stream consumers and no writer Service**,
+and `mode` stays `direct`. `keysVolume`, `workloadIdentity` and the writer's
+ServiceAccount do not apply.
+
+Observe and query still need Postgres. What in the release records sends to the
+Lambda's ingest queue instead of an in-cluster front door:
+
+| component | what it records | where |
+|---|---|---|
+| query | every read of the trail (who looked) | `query.config.sink` |
+| notary | `audit.seal.written` | `jobs.notary.config.sink` |
+| verify | `audit.seal.verified`, `audit.seal.failed` | `jobs.verify.config.sink` |
+| clock-sync | the clock's offset | `jobs.clockSync.config.sink` |
+
+Each takes `sink.sqs` (`queueUrl`, `region`; `fifo` is derived from the URL).
+The acknowledgement is `queued`, so `require: queued` is what each can ask for
+and `sink.expect` may be left out. The queue URL is the `QueueURL` output of this
+library. The chart refuses, with a message that says why: a sink whose URL is the
+release's own front door; a query service with no sink; `mode: stream`;
+`workloadIdentity.issuers`, `keysVolume` and `extensions.billing`, which belong
+to the writer; and an enabled component with `serviceAccount.create: false` and
+no `name`, which would run as the writer's ServiceAccount that is not rendered.
+An external front door's URL is still accepted as a `sink.url`.
+
+```yaml
+writer:
+  enabled: false
+query:
+  enabled: true
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: <role with the IAM below>
+  config:
+    require: queued
+    sink:
+      sqs:
+        queueUrl: <QueueURL>
+        region: eu-west-1
+jobs:
+  notary:
+    enabled: true
+    serviceAccount:
+      annotations:
+        eks.amazonaws.com/role-arn: <the notary's role>
+    config:
+      require: queued
+      sink:
+        sqs: {queueUrl: <QueueURL>, region: eu-west-1}
+      signer:
+        transit: {key: audit-seal, openbao: {address: ..., login: {mount: ..., role: audit-notary, jwtFile: /var/run/openbao/token}}}
+```
+
+**IAM, per ServiceAccount** (EKS Pod Identity is an association made outside the
+chart; IRSA is the annotation above; each component has its own account, so each
+role holds only its own rights):
+
+| component | rights |
+|---|---|
+| query | `sqs:SendMessage` on the ingest queue (`QueueArn`); `s3:GetObject` and `s3:ListBucket` on the archive prefix and `kms:Decrypt` on the archive key; put on its exports bucket |
+| notary | `sqs:SendMessage` on the ingest queue; read the archive, `PutObject` (and retention, with a lock) on `seals/` and `keys/` (the `ArchiveWriter` role); the seal key is OpenBao Transit through its own JWT role, or KMS `Sign` when not |
+| verify, clock-sync | `sqs:SendMessage` on the ingest queue when they have a `sink`; verify also reads the archive |
+| observe | read the archive; no queue |
+
+Only `sqs:SendMessage` is needed on the queue: a sender does not receive or
+delete. The queue is `QueueArn` in the library's outputs. A role in the same
+account needs only its identity policy; a principal in another account must also
+be named in `Ingest.Senders`, which adds the resource-policy statement. Either
+way the queue policy denies everything that is not TLS.
 
 ## Telemetry
 

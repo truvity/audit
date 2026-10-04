@@ -30,5 +30,6 @@ choices are recorded by the deployer.
 | [0022](0022-contracts-proto-and-connect.md) | Contracts are proto and Connect; Lambda RPCs are unary | accepted |
 | [0023](0023-archive-retention-and-lifecycle.md) | Archive retention: Object Lock compliance as the target, governance first | accepted |
 | [0024](0024-indexer-and-query-are-separate-processes.md) | The indexer and the query service are separate processes, under separate database roles | accepted |
+| [0025](0025-configuration-is-immutable-per-instance.md) | Configuration is immutable per instance; credentials and State are read live | accepted; refines [0021](0021-one-validated-configuration-file.md) |
 
 Template: [0000-template.md](0000-template.md).

@@ -1,6 +1,6 @@
 # 0021. One configuration file, validated against a schema
 
-- Status: accepted
+- Status: accepted; refined by [0025](0025-configuration-is-immutable-per-instance.md)
 - Date: 2026-10-02
 
 ## Context

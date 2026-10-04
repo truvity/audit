@@ -39,11 +39,13 @@ manifest. */ -}}
 {{- fail "audit: set `profiles`. A writer with no profile keeps nothing, and every record it took would be dead-lettered." -}}
 {{- end -}}
 
+{{- $on := .Values.writer.enabled -}}
 {{- $writer := .Values.writer.config | default dict -}}
 {{- $mode := dig "mode" "writer" $writer -}}
 {{- $database := dig "database" nil $writer -}}
 {{- $pods := ternary (int .Values.writer.consumers) (int .Values.replicas) (eq .Values.mode "stream") -}}
 
+{{- if $on -}}
 {{- if eq .Values.mode "stream" -}}
   {{- if not .Values.receiver.config -}}
   {{- fail "audit: `mode: stream` needs `receiver.config`, with `mode: receiver`. The receiver serves the sink and publishes to the stream, and its configuration is its own." -}}
@@ -86,6 +88,8 @@ two numbers must say the same thing. */}}
 {{- fail "audit: `query.keysVolume` needs `keysVolume.accessModes` to include ReadWriteMany: the query service runs beside the writer, not in its place. The transit provider needs no shared volume." -}}
 {{- end -}}
 
+{{- end -}}
+
 {{- if .Values.extensions.billing.enabled -}}
   {{- $metering := false -}}
   {{- range $name, $profile := .Values.profiles -}}
@@ -102,6 +106,7 @@ two numbers must say the same thing. */}}
 {{- fail "audit: `extensions.quotas.enabled` needs `mode: stream`. Quotas are counted by a second consumer of the same stream, and in direct mode there is no stream to consume." -}}
 {{- end -}}
 
+{{- if $on -}}
 {{/* Who is calling the writer: the document and the config must agree. */}}
 {{- $verifies := dig "workloads" "" $writer -}}
 {{- if and $verifies (not .Values.workloadIdentity.issuers) -}}
@@ -126,6 +131,58 @@ compromised front door writes the archive directly. On AWS the identity is the
 ServiceAccount (Pod Identity, IRSA), so the two must be different accounts. */}}
 {{- if and (eq .Values.mode "stream") (eq (include "audit.receiverServiceAccountName" .) (include "audit.serviceAccountName" .)) -}}
 {{- fail (printf "audit: the receiver and the writer run as the same ServiceAccount, %q. A receiver must not hold the archive's write identity: whatever cloud role is bound to that account (Pod Identity, IRSA) would let a compromised front door write the archive directly. Give the receiver its own: leave `receiver.serviceAccount.create` true with a `receiver.serviceAccount.name` that is not the writer's `serviceAccount`." (include "audit.serviceAccountName" .)) -}}
+{{- end -}}
+
+{{- end -}}
+
+{{/* The writer runs somewhere else (the writer Lambda behind SQS): nothing in
+this release hosts the write path, so nothing may be configured as if it did,
+and everything that records has to reach the writer's queue (or an external
+front door) rather than the Service this release would have rendered. */}}
+{{- if not $on -}}
+  {{- if ne .Values.mode "direct" -}}
+  {{- fail "audit: `writer.enabled: false` with `mode: stream`. Stream mode renders a receiver and consumers, which are write path; with the writer elsewhere leave `mode` at `direct`." -}}
+  {{- end -}}
+  {{- if .Values.keysVolume.enabled -}}
+  {{- fail "audit: `writer.enabled: false` and `keysVolume.enabled`: the key directory belongs to the writer, and there is none in this release. Use the transit provider for the query service's resolve." -}}
+  {{- end -}}
+  {{- if .Values.workloadIdentity.issuers -}}
+  {{- fail "audit: `writer.enabled: false` and `workloadIdentity.issuers` is set: that document is read by the writer only, and there is none in this release. The external writer verifies callers on its own." -}}
+  {{- end -}}
+  {{- if .Values.extensions.billing.enabled -}}
+  {{- fail "audit: `writer.enabled: false` and `extensions.billing.enabled`: the extension is part of the write path, which is not in this release." -}}
+  {{- end -}}
+  {{- /* Each recording component, with the identity it runs as. */ -}}
+  {{- $recorders := list -}}
+  {{- if .Values.query.enabled -}}{{- $recorders = append $recorders (dict "name" "query" "key" "query" "comp" .Values.query "sink" (dig "sink" nil (.Values.query.config | default dict)) "must" true) -}}{{- end -}}
+  {{- range $job, $suffix := dict "notary" "notary" "verify" "verify" "clockSync" "clock-sync" -}}
+    {{- $comp := index $.Values.jobs $job -}}
+    {{- if $comp.enabled -}}{{- $recorders = append $recorders (dict "name" (printf "jobs.%s" $job) "comp" $comp "sink" (dig "sink" nil ($comp.config | default dict)) "must" false) -}}{{- end -}}
+  {{- end -}}
+  {{- range $recorders -}}
+    {{- $sink := .sink -}}
+    {{- if and .must (not $sink) -}}
+    {{- fail (printf "audit: `%s.config.sink` is not set. The service records every read before answering, and with `writer.enabled: false` there is no in-cluster writer to record through: name the writer's queue, `sink: {sqs: {queueUrl: ..., region: ...}}`." .name) -}}
+    {{- end -}}
+    {{- if and $sink (not (dig "sqs" nil $sink)) -}}
+      {{- $host := regexReplaceAll "^[a-z]+://([^/:?#]+).*$" (dig "url" "" $sink) "${1}" -}}
+      {{- $fn := include "audit.fullname" $ -}}
+      {{- if or (eq $host $fn) (and (hasPrefix (printf "%s." $fn) $host) (or (contains ".svc" $host) (eq $host (printf "%s.%s" $fn $.Release.Namespace)))) -}}
+      {{- fail (printf "audit: `%s.config.sink.url` is %q, this release's own front door, and `writer.enabled: false` renders no writer or Service behind it. Point it at the writer's queue with `sink: {sqs: {queueUrl: ..., region: ...}}` (the pod's identity needs sqs:SendMessage on it), or at an external front door's URL." .name (dig "url" "" $sink)) -}}
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+  {{- /* An account that is not created and not named is the release's own,
+  which is the writer's and is not rendered either. */ -}}
+  {{- $accounts := list (dict "name" "observe" "on" .Values.observe.enabled "comp" .Values.observe) (dict "name" "query" "on" .Values.query.enabled "comp" .Values.query) -}}
+  {{- range $job := (list "notary" "verify" "purge" "clockSync") -}}
+    {{- $accounts = append $accounts (dict "name" (printf "jobs.%s" $job) "on" (index $.Values.jobs $job).enabled "comp" (index $.Values.jobs $job)) -}}
+  {{- end -}}
+  {{- range $accounts -}}
+    {{- if and .on (not .comp.serviceAccount.create) (not .comp.serviceAccount.name) -}}
+    {{- fail (printf "audit: `%s.serviceAccount.create` is false and no `name` is given, so it would run as the release's own ServiceAccount, which is the writer's and is not rendered with `writer.enabled: false`. Leave `create` true (and bind the cloud role in `annotations`) or name an existing account." .name) -}}
+    {{- end -}}
+  {{- end -}}
 {{- end -}}
 
 {{/* Separation of duties. Whoever writes the archive and can also sign for it

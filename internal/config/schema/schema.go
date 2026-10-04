@@ -130,11 +130,19 @@ func sharedDefs() map[string]m {
 			},
 			"description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it.",
 		},
-		"sink": obj("The writer this process records through.", m{
-			"url":       str("The writer's base URL."),
-			"tokenFile": str("A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts."),
-			"expect":    durability("What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards."),
-		}, "url"),
+		"sink": func() m {
+			o := obj("The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).", m{
+				"url":       str("The writer's base URL."),
+				"tokenFile": str("A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`."),
+				"expect":    durability("What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out."),
+				"sqs":       sqs("The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it.", nil),
+			})
+			o["oneOf"] = []any{m{"required": []string{"url"}}, m{"required": []string{"sqs"}}}
+			o["dependentSchemas"] = m{"sqs": m{"properties": m{
+				"tokenFile": false, "expect": m{"const": "queued"},
+			}}}
+			return o
+		}(),
 		"openbao": map[string]any{
 			"type":                 "object",
 			"additionalProperties": false,

@@ -1,0 +1,660 @@
+---
+# Source: audit/templates/serviceaccount.yaml
+# Reading is a different privilege from writing: this identity reads the
+# archive and writes exports, and holds a key only to open sealed identifiers
+# if it may resolve. Pod Identity, IRSA or an OpenBAO role binds here.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-query
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-QUERY-ROLE
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# The indexer reads the archive and writes the index. It holds the index's
+# write credential, which the writer must not, and reads what the writer wrote
+# without being able to write it: a different identity from either. Pod
+# Identity or IRSA binds here, with get and list on the archive and nothing more.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-OBSERVE-ROLE
+
+---
+# Source: audit/templates/serviceaccount.yaml
+# Sealing is a different privilege from writing: whoever can write the archive
+# and can also sign for it can choose what to sign. This identity reads the
+# records, puts seals and keys/roots.jwks, and uses the seal key; the writer's
+# role has no use of that key, and this one has no write to records/.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-notary
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-NOTARY-ROLE
+
+---
+# Source: audit/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-deployment
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+data:
+  # The document a config names as `deployment`: which presets each profile is
+  # composed from, and where its copies land. Every component that reads
+  # profiles reads this one, because retention is a property of the profile and
+  # every one of them needs to agree about it.
+  deployment.yaml: |
+    external_identifiers_are_opaque: true
+    profiles:
+      security:
+        presets:
+        - security
+
+---
+# Source: audit/templates/cronjobs.yaml
+# Hourly. Seals the hours that have closed and settled since the last seal, for
+# every profile and tenant, into the signed chain: one seal per hour, empty
+# hours too, each naming the one before. It resumes past a missed run on its
+# own, so a failed hour needs no operator, and a rerun of a sealed hour writes
+# nothing. It signs, and it runs as an identity of its own that the writer's is
+# not: whoever can write the archive and can also sign for it can choose what
+# to sign.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-notary-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: notary
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+    require: queued
+    signer:
+      transit:
+        key: audit-seal
+        openbao:
+          address: https://openbao.example:8200
+          caFile: /etc/audit/trust/ca.crt
+          login:
+            jwtFile: /var/run/openbao/token
+            mount: jwt-kubernetes
+            role: audit-notary
+    sink:
+      sqs:
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit-ingest.fifo
+        region: eu-west-1
+
+---
+# Source: audit/templates/observe.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-observe-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+    database:
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+    settle: 2m
+
+---
+# Source: audit/templates/query.yaml
+# Who may sign in to the query service, and what each caller may read. A
+# changed file must reach a running service, so the pods carry its checksum.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-grants
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+data:
+  grants.yaml: |
+    issuers:
+    - audience: audit
+      url: https://id.example.com
+
+---
+# Source: audit/templates/query.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-query-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+    database:
+      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+      url: postgres://audit_query@db.example.com:5432/audit?sslmode=verify-full
+    deployment: /etc/audit/deployment.yaml
+    grants: /etc/audit/grants.yaml
+    require: queued
+    sink:
+      sqs:
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit-ingest.fifo
+        region: eu-west-1
+
+---
+# Source: audit/templates/query.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-query
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/component: query
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+
+---
+# Source: audit/templates/observe.yaml
+# The indexer. It follows the archive's listing from a cursor per profile and
+# tenant kept in Postgres, indexes what is older than the settle window, and
+# writes the index the query service reads. It reads the archive and never
+# writes it; it writes the index as a role of its own, which holds neither the
+# deduplication table nor the registry. Nothing calls it, so it has no Service.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-observe
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: observe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: observe
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: observe
+      annotations:
+        checksum/config: 019d4fcd9905ca953913003aa45347e4ae059379469500f3d3ea148594b21102
+    spec:
+      serviceAccountName: audit-observe
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: observe
+          image: ghcr.io/truvity/audit/audit-observe:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-db-observe
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+            - name: trust
+              mountPath: /etc/audit/trust
+              readOnly: true
+            
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-observe-config
+        
+        - name: trust
+          configMap:
+            name: private-ca-bundle
+        
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/query.yaml
+# The read path. It reads the index as a role that does not own the tables, so
+# the tenant policies bind it; it reads the archive for provenance; it records
+# every read through the writer before answering; and it holds the keys only
+# if it may resolve.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: audit-query
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: query
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: audit
+      app.kubernetes.io/instance: audit
+      app.kubernetes.io/component: query
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+        app.kubernetes.io/component: query
+      annotations:
+        checksum/config: cd725ecd03e34e95a5e7e6f2284349b7fcad2dd44f68d0161735787f1b106952
+        checksum/grants: c6e926709c6176bc66b906eaad228b9bb32e6760036c8733b2758355055342a1
+        # A grant preset turns roles into profiles, so the profiles are part
+        # of what a grant means.
+        checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
+    spec:
+      serviceAccountName: audit-query
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: query
+          image: ghcr.io/truvity/audit/audit-query:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_QUERY_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-db-query
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          resources:
+            {}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: deployment
+              mountPath: /etc/audit/deployment.yaml
+              subPath: deployment.yaml
+              readOnly: true
+            - name: grants
+              mountPath: /etc/audit/grants.yaml
+              subPath: grants.yaml
+              readOnly: true
+            
+            - name: trust
+              mountPath: /etc/audit/trust
+              readOnly: true
+            
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: audit-query-config
+        - name: deployment
+          configMap:
+            name: audit-deployment
+        - name: grants
+          configMap:
+            name: audit-grants
+        
+        - name: trust
+          configMap:
+            name: private-ca-bundle
+        
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: audit/templates/cronjobs.yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: audit-notary
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  schedule: "17 * * * *"
+  # A run that overlaps itself only does the same work twice.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: audit
+            app.kubernetes.io/instance: audit
+          annotations:
+            checksum/config: ec47e5bf0070378a4aec6a7ed3c970374458e9bbcd393eb5bf10e64f13b09914
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: audit-notary
+          
+          securityContext:
+            fsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: notary
+              image: ghcr.io/truvity/audit/audit-notary:0.0.0
+              imagePullPolicy: IfNotPresent
+              args:
+                - --config=/etc/audit/config.yaml
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                  - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/audit/config.yaml
+                  subPath: config.yaml
+                  readOnly: true
+                
+                - name: trust
+                  mountPath: /etc/audit/trust
+                  readOnly: true
+                
+                - name: token-0
+                  mountPath: /var/run/openbao
+                  readOnly: true
+          volumes:
+            - name: config
+              configMap:
+                name: audit-notary-config
+            
+            - name: trust
+              configMap:
+                name: private-ca-bundle
+            
+            - name: token-0
+              projected:
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      audience: "openbao"
+                      expirationSeconds: 600
+---
+# Source: audit/templates/migrate.yaml
+# The identity this Job runs as, created as a hook of its own so that it
+# exists before the Job that names it. A pre-install hook runs BEFORE the
+# release's ordinary resources, so a hook Pod cannot name a ServiceAccount
+# the release has not created yet: the Job would be admitted and then never
+# get a Pod, with "serviceaccount not found" on the Job and a release that
+# waits for a hook that can never run. The same is true of its configuration.
+#
+# It is the migration's own, not the writer's, and it carries no cloud
+# annotations. This Job talks to Postgres; it has no business holding the
+# credentials that write the archive. A lower weight than the Job so it is
+# applied first.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audit-migrate
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+
+---
+# Source: audit/templates/migrate.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: audit-migrate-config
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  # What the binary reads with --config: validated against
+  # schemas/config/ at start-up, and by this chart's values.schema.json before
+  # it renders.
+  config.yaml: |
+    database:
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+      url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
+    observe: audit_observe
+    reader: audit_query
+
+---
+# Source: audit/templates/migrate.yaml
+# The index schema, applied before the writer rolls.
+#
+# A hook rather than something the writer does at start-up: several replicas
+# migrating at once is a race, and a schema change to the index should be a step
+# an operator can see happen. The writer refuses to start against a version it
+# does not know, so this Job failing stops the release rather than producing a
+# writer that will not run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: audit-migrate
+  labels:
+    helm.sh/chart: audit-0.0.0
+    app.kubernetes.io/name: audit
+    app.kubernetes.io/instance: audit
+    app.kubernetes.io/version: "0.0.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: audit
+        app.kubernetes.io/instance: audit
+    spec:
+      restartPolicy: Never
+      serviceAccountName: audit-migrate
+      
+      securityContext:
+        fsGroup: 65532
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: ghcr.io/truvity/audit/audit:0.0.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - migrate
+            - --config=/etc/audit/config.yaml
+          env:
+            
+            - name: AUDIT_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: audit-db-owner
+                  key: password
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/audit/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            
+            - name: trust
+              mountPath: /etc/audit/trust
+              readOnly: true
+            
+      volumes:
+        - name: config
+          configMap:
+            name: audit-migrate-config
+        
+        - name: trust
+          configMap:
+            name: private-ca-bundle
+        
+

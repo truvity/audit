@@ -1,0 +1,144 @@
+# The external-writer shape, as a base the refusal fixtures lay a change over (the same
+# as examples/external-writer.yaml).
+# An installation whose WRITER runs somewhere else: the AWS Lambda behind SQS
+# that deploy/pulumi builds (cmd/audit-writer-lambda). The cluster hosts what
+# only needs to read the archive and the index: the indexer (observe), the query
+# service and the notary, with Postgres for the index.
+#
+# `writer.enabled: false` renders no writer, no receiver, no stream consumers and
+# no writer Service. What in this release records (the query service's reads and
+# the notary's seals) cannot use an in-cluster front door then, so each names the
+# writer's ingest queue as its sink: `sink.sqs`. There is no credential in this
+# file: the pod's own identity is the credential (EKS Pod Identity is an
+# association made outside the chart; IRSA is the annotation used below), and
+# its role needs `sqs:SendMessage` on the queue. The queue URL and region are the
+# outputs of deploy/pulumi.
+#
+# Each `config:` block is the binary's own configuration, key for key
+# (docs/reference/configuration.md).
+writer:
+  enabled: false
+
+profiles:
+  security:
+    presets: [security]
+externalIdentifiersAreOpaque: true
+
+# The migration still runs, as a hook, against the index: it needs only the
+# roles of the parts that are in this release. There is no `writer` role: the
+# writer has no database here.
+migrate:
+  enabled: true
+  config:
+    database:
+      url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_DATABASE_PASSWORD
+    observe: audit_observe
+    reader: audit_query
+  secretEnv:
+    - name: AUDIT_DATABASE_PASSWORD
+      secretName: audit-db-owner
+      key: password
+
+# The indexer follows the archive the Lambda writes, by listing, and writes the
+# index. Its identity reads the bucket and nothing else.
+observe:
+  enabled: true
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-OBSERVE-ROLE
+  config:
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+    database:
+      url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+    settle: 2m
+  secretEnv:
+    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+      secretName: audit-db-observe
+      key: password
+
+# The query service records every read of the trail ("who looked") before it
+# answers. Here that is a message on the writer's queue, acknowledged `queued`,
+# which is the most a queue gives, so `require` is `queued`.
+query:
+  enabled: true
+  serviceAccount:
+    annotations:
+      # Reads the archive, writes exports, and may send to the ingest queue.
+      eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-QUERY-ROLE
+  grants:
+    issuers:
+      - url: https://id.example.com
+        audience: audit
+  config:
+    deployment: /etc/audit/deployment.yaml
+    grants: /etc/audit/grants.yaml
+    require: queued
+    sink:
+      sqs:
+        queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit-ingest.fifo
+        region: eu-west-1
+    database:
+      url: postgres://audit_query@db.example.com:5432/audit?sslmode=verify-full
+      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+    archive:
+      bucket:
+        name: audit-eu-example-1
+        region: eu-west-1
+      prefix: audit/app
+  secretEnv:
+    - name: AUDIT_QUERY_DATABASE_PASSWORD
+      secretName: audit-db-query
+      key: password
+
+jobs:
+  # The notary seals each closed hour, signing with an OpenBAO transit key under
+  # a role of its own. It reads the archive and puts seals/, and records
+  # `audit.seal.written` through the same queue. Its identity holds no right on
+  # records/ and none to sign anything but the seal key.
+  notary:
+    enabled: true
+    serviceAccount:
+      annotations:
+        # Read on the archive, put on seals/ and keys/, and sqs:SendMessage.
+        eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-NOTARY-ROLE
+    config:
+      archive:
+        bucket:
+          name: audit-eu-example-1
+          region: eu-west-1
+        prefix: audit/app
+      require: queued
+      sink:
+        sqs:
+          queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit-ingest.fifo
+          region: eu-west-1
+      signer:
+        transit:
+          key: audit-seal
+          openbao:
+            address: https://openbao.example:8200
+            caFile: /etc/audit/trust/ca.crt
+            login:
+              mount: jwt-kubernetes
+              role: audit-notary
+              jwtFile: /var/run/openbao/token
+    tokens:
+      - audience: openbao
+        mountPath: /var/run/openbao
+        expirationSeconds: 600
+  # Shown on the other examples; off here so that this one stays to the point.
+  verify:
+    enabled: false
+  purge:
+    enabled: false
+  clockSync:
+    enabled: false
+
+trust:
+  configMap: private-ca-bundle

@@ -1,0 +1,6 @@
+# refuse: 'oneOf' failed
+# base: external-writer-base
+query:
+  config:
+    sink:
+      url: http://writer.example:8080

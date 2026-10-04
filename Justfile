@@ -357,6 +357,10 @@ chart:
         > tests/golden/audit/example-stream.yaml
     helm template audit charts/audit -f charts/audit/examples/sqs.yaml \
         > tests/golden/audit/example-sqs.yaml
+    # The writer elsewhere (the Lambda behind SQS): observe, query and a notary
+    # in the cluster, every sink on the queue, and no write path rendered.
+    helm template audit charts/audit -f charts/audit/examples/external-writer.yaml \
+        > tests/golden/audit/example-external-writer.yaml
     # The OTLP endpoint value (decision N4a): with it set, every pod carries the
     # OpenTelemetry SDK environment, each with its own service name. The goldens
     # above, which set none, are what holds "empty renders nothing".
@@ -373,7 +377,7 @@ chart:
         > tests/golden/audit/dashboards.yaml
     # A hook Pod whose service account the chart creates normally is admitted
     # and then never scheduled: only an install finds that, so assert it here.
-    for shape in direct stream transit attested telemetry example-direct example-stream example-sqs; do \
+    for shape in direct stream transit attested telemetry example-direct example-stream example-sqs example-external-writer; do \
         python3 charts/audit/testdata/hook-order.py \
             < tests/golden/audit/$shape.yaml; \
     done

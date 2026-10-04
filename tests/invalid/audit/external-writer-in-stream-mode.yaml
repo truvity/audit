@@ -1,0 +1,11 @@
+# refuse: with `mode: stream`
+# base: external-writer-base
+mode: stream
+receiver:
+  config:
+    mode: receiver
+    deployment: /etc/audit/deployment.yaml
+    anonymousWrites: true
+    require: logged
+    forward:
+      log: {}

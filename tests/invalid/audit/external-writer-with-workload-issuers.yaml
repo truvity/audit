@@ -1,0 +1,5 @@
+# refuse: `workloadIdentity.issuers` is set
+# base: external-writer-base
+workloadIdentity:
+  issuers:
+    - url: https://oidc.example.com/id/CLUSTER

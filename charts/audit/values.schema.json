@@ -55,18 +55,64 @@
     },
     "config-audit-clock-sync.sink": {
       "additionalProperties": false,
-      "description": "The writer this process records through.",
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
       "properties": {
         "expect": {
-          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
           "enum": [
             "logged",
             "queued",
             "archived"
           ]
         },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
         "tokenFile": {
-          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
           "minLength": 1,
           "type": "string"
         },
@@ -76,9 +122,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "url"
-      ],
       "type": "object"
     },
     "config-audit-migrate": {
@@ -453,18 +496,64 @@
     },
     "config-audit-notary.sink": {
       "additionalProperties": false,
-      "description": "The writer this process records through.",
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
       "properties": {
         "expect": {
-          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
           "enum": [
             "logged",
             "queued",
             "archived"
           ]
         },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
         "tokenFile": {
-          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
           "minLength": 1,
           "type": "string"
         },
@@ -474,9 +563,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "url"
-      ],
       "type": "object"
     },
     "config-audit-observe": {
@@ -1292,18 +1378,64 @@
     },
     "config-audit-query.sink": {
       "additionalProperties": false,
-      "description": "The writer this process records through.",
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
       "properties": {
         "expect": {
-          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
           "enum": [
             "logged",
             "queued",
             "archived"
           ]
         },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
         "tokenFile": {
-          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
           "minLength": 1,
           "type": "string"
         },
@@ -1313,9 +1445,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "url"
-      ],
       "type": "object"
     },
     "config-audit-verify": {
@@ -1475,18 +1604,64 @@
     },
     "config-audit-verify.sink": {
       "additionalProperties": false,
-      "description": "The writer this process records through.",
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
       "properties": {
         "expect": {
-          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards.",
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
           "enum": [
             "logged",
             "queued",
             "archived"
           ]
         },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
         "tokenFile": {
-          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts.",
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
           "minLength": 1,
           "type": "string"
         },
@@ -1496,9 +1671,6 @@
           "type": "string"
         }
       },
-      "required": [
-        "url"
-      ],
       "type": "object"
     },
     "config-audit-writer": {
@@ -2536,14 +2708,33 @@
       "then": {
         "allOf": [
           {
-            "properties": {
-              "writer": {
-                "properties": {
-                  "config": {
-                    "$ref": "#/$defs/config-audit-writer"
+            "else": {
+              "properties": {
+                "writer": {
+                  "properties": {
+                    "config": {
+                      "$ref": "#/$defs/config-audit-writer"
+                    }
                   }
                 }
               }
+            },
+            "if": {
+              "properties": {
+                "writer": {
+                  "properties": {
+                    "enabled": {
+                      "const": false
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                }
+              },
+              "required": [
+                "writer"
+              ]
             }
           },
           {
@@ -3749,7 +3940,7 @@
     },
     "writer": {
       "additionalProperties": false,
-      "description": "The writer: the one pod in direct mode, the consumers in stream mode.",
+      "description": "The writer: the one pod in direct mode, the consumers in stream mode. `enabled: false` when it runs elsewhere.",
       "properties": {
         "config": {
           "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is audit-writer's: schemas/config/audit-writer.schema.json.",
@@ -3759,6 +3950,10 @@
           "description": "In stream mode, how many writers consume the stream.",
           "minimum": 0,
           "type": "integer"
+        },
+        "enabled": {
+          "description": "Host the write path in this release. False when the writer runs elsewhere (the writer Lambda behind SQS): no writer, receiver, consumers or Service are rendered, and every recording component needs a `sink` that reaches it (`sqs`, or an external front door's `url`).",
+          "type": "boolean"
         },
         "secretEnv": {
           "$ref": "#/$defs/secretEnv"

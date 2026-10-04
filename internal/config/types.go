@@ -100,10 +100,15 @@ type (
 	// writer at that URL is configured to give (logged, queued or archived):
 	// a client cannot know it, so the file says, and the process's `require`
 	// is checked against it at start-up.
+	//
+	// Exactly one of URL and SQS names it. SQS is the ingest queue of a writer
+	// that runs elsewhere (the writer Lambda): a record sent there is
+	// acknowledged `queued`, and the pod's own identity is the credential.
 	Sink struct {
-		URL       string `json:"url"`
+		URL       string `json:"url,omitempty"`
 		TokenFile string `json:"tokenFile,omitempty"`
 		Expect    string `json:"expect,omitempty"`
+		SQS       *SQS   `json:"sqs,omitempty"`
 	}
 
 	// OpenBAOLogin is a JWT login: the pod's projected service-account token,

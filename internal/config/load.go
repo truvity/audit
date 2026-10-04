@@ -290,11 +290,42 @@ func (s *Stream) finish(roll Duration) error {
 	return nil
 }
 
+// finish holds a sink to naming exactly one place, and fills in what a queue
+// can only give. It is safe on nil, a job's absent sink.
+func (s *Sink) finish() error {
+	if s == nil {
+		return nil
+	}
+	if (s.URL != "") == (s.SQS != nil) {
+		return errors.New("sink names exactly one of url and sqs")
+	}
+	if s.SQS == nil {
+		return nil
+	}
+	if s.TokenFile != "" {
+		return errors.New("sink.tokenFile is for a writer at sink.url: a queue takes the pod's own identity")
+	}
+	if s.SQS.QueueURL == "" {
+		return errors.New("sink.sqs.queueUrl is required")
+	}
+	switch s.Expect {
+	case "":
+		s.Expect = "queued"
+	case "queued":
+	default:
+		return fmt.Errorf("sink.expect is %s and sink.sqs is a queue, which gives queued and no more", s.Expect)
+	}
+	return s.SQS.check("sink.sqs")
+}
+
 // checkRequire holds a job's or a service's `require` to what it says the
 // writer gives. A client cannot learn that from the writer before it writes,
 // so the file says (sink.expect) and the guard believes it at start-up and
 // checks it against every acknowledgement afterwards.
 func checkRequire(require string, s *Sink) error {
+	if err := s.finish(); err != nil {
+		return err
+	}
 	if require == "" {
 		return nil
 	}

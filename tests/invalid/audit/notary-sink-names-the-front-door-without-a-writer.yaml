@@ -1,0 +1,6 @@
+# refuse: `jobs.notary.config.sink.url`
+# base: external-writer-front-door-base
+query:
+  config:
+    sink:
+      url: https://writer.example.com

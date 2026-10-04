@@ -1,0 +1,5 @@
+# refuse: which is the writer's and is not rendered
+# base: external-writer-base
+query:
+  serviceAccount:
+    create: false

@@ -414,6 +414,34 @@ func TestAnEmitterRequireNeedsWhatTheWriterIsSaidToGive(t *testing.T) {
 	}
 }
 
+func TestASinkIsAWriterOrAQueue(t *testing.T) {
+	const q = "grants: /g.yaml\ndatabase: {url: 'postgres://u@h/db'}\n"
+	const queue = "{sqs: {queueUrl: 'https://sqs.eu-west-1.amazonaws.com/1/audit.fifo', region: eu-west-1}"
+	for name, c := range map[string]struct {
+		sink string
+		ok   bool
+	}{
+		"queue":                 {"sink: " + queue + "}\n", true},
+		"queue meets queued":    {"sink: " + queue + "}\nrequire: queued\n", true},
+		"queue cannot archive":  {"sink: " + queue + "}\nrequire: archived\n", false},
+		"queue says archived":   {"sink: " + queue + ", expect: archived}\n", false},
+		"queue with a token":    {"sink: " + queue + ", tokenFile: /t}\n", false},
+		"url and queue":         {"sink: " + queue + ", url: 'http://a:8080'}\n", false},
+		"neither":               {"sink: {}\n", false},
+		"queue without a url":   {"sink: {sqs: {region: eu-west-1}}\n", false},
+		"fifo not a fifo queue": {"sink: {sqs: {queueUrl: 'https://sqs.x/1/q', fifo: true}}\n", false},
+	} {
+		_, err := config.LoadQuery(write(t, q+c.sink))
+		if c.ok != (err == nil) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// A job takes the queue too, and the queue's acknowledgement is queued.
+	if _, err := config.LoadClockSync(write(t, "ntp: [t.example.test]\nrequire: queued\nsink: "+queue+"}\n")); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestObserveTakesItsDefaultsAndRefusesWhatItCannotUse(t *testing.T) {
 	const base = "archive: {bucket: {name: b}}\ndatabase: {url: 'postgres://u@h/db'}\n"
 	o, err := config.LoadObserve(write(t, base))

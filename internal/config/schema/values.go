@@ -110,8 +110,11 @@ func Values() []byte {
 		"fullnameOverride": m{"type": "string"},
 		"mode":             m{"enum": []string{"direct", "stream"}, "description": "`direct`: one process is the front door and the write path. `stream`: a receiver in front and `writer.consumers` writers behind a durable consumer."},
 		"replicas":         integer("Pods of the front door: the writer in direct mode, the receiver in stream mode.", 0, nil),
-		"writer": obj("The writer: the one pod in direct mode, the consumers in stream mode.",
-			with(platform("audit-writer", true, true), m{"consumers": integer("In stream mode, how many writers consume the stream.", 0, nil)})),
+		"writer": obj("The writer: the one pod in direct mode, the consumers in stream mode. `enabled: false` when it runs elsewhere.",
+			with(platform("audit-writer", true, true), m{
+				"enabled":   boolean("Host the write path in this release. False when the writer runs elsewhere (the writer Lambda behind SQS): no writer, receiver, consumers or Service are rendered, and every recording component needs a `sink` that reaches it (`sqs`, or an external front door's `url`)."),
+				"consumers": integer("In stream mode, how many writers consume the stream.", 0, nil),
+			})),
 		"receiver": obj("Stream mode: the receiver, which serves the sink and publishes to the stream.",
 			with(platform("audit-writer", true, true), m{"serviceAccount": def("serviceAccount")})),
 		"profiles":                     m{"type": "object", "description": "The profile document a config names as `deployment`: each profile composed from presets.", "additionalProperties": m{"type": "object"}},
@@ -215,8 +218,14 @@ func Values() []byte {
 		return c
 	}
 	all := []any{
-		// The writer is always rendered, and its config is always the writer's.
-		configOf("audit-writer", "writer"),
+		// The writer's config is the writer's, unless it runs elsewhere.
+		m{
+			"if": m{
+				"properties": m{"writer": m{"properties": m{"enabled": m{"const": false}}, "required": []string{"enabled"}}},
+				"required":   []string{"writer"},
+			},
+			"else": configOf("audit-writer", "writer"),
+		},
 		when(m{"properties": m{"mode": m{"const": "stream"}}, "required": []string{"mode"}}, configOf("audit-writer", "receiver")),
 		when(enabled("query"), configOf("audit-query", "query")),
 		when(enabled("observe"), configOf("audit-observe", "observe")),

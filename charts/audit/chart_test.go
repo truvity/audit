@@ -28,6 +28,7 @@ var shapes = []string{
 	"examples/direct.yaml",
 	"examples/stream.yaml",
 	"examples/sqs.yaml",
+	"examples/external-writer.yaml",
 }
 
 // What each ConfigMap is named for: where its config lives in the values, and
@@ -260,6 +261,29 @@ func TestTheIndexerRunsAsAServiceAccountOfItsOwn(t *testing.T) {
 		}
 		if !created[observer] {
 			t.Errorf("%s: ServiceAccount %q is used but not rendered", values, observer)
+		}
+	}
+}
+
+// With the writer elsewhere the release hosts no write path at all: no writer
+// or receiver Deployment, no consumers, no Service for a front door, no
+// ConfigMap for either and no ServiceAccount of the writer's. What is left
+// reads, and what records sends to the queue.
+func TestAnExternalWriterRendersNoWritePath(t *testing.T) {
+	const values = "examples/external-writer.yaml"
+	for _, doc := range render(t, values) {
+		kind, _ := doc["kind"].(string)
+		name, _ := dig(doc, "metadata", "name")
+		n, _ := name.(string)
+		switch {
+		case kind == "Deployment" && !strings.HasSuffix(n, "-query") && !strings.HasSuffix(n, "-observe"):
+			t.Errorf("a write path Deployment, %s", n)
+		case kind == "Service" && n != "audit-query":
+			t.Errorf("a Service that is not the query service's, %s", n)
+		case kind == "ConfigMap" && (strings.HasSuffix(n, "-writer-config") || strings.HasSuffix(n, "-receiver-config")):
+			t.Errorf("a configuration for the write path, %s", n)
+		case kind == "ServiceAccount" && n == "audit":
+			t.Errorf("the writer's ServiceAccount, %s", n)
 		}
 	}
 }

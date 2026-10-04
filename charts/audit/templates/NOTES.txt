@@ -5,8 +5,14 @@
 {{- else -}}
 {{ include "audit.fullname" . }} is installed.
 
+{{ if .Values.writer.enabled -}}
 The writer keeps {{ len .Values.profiles }} profile(s): {{ keys .Values.profiles | sortAlpha | join ", " }}.
 Records reach it at http://{{ include "audit.fullname" . }}:{{ .Values.service.port }}.
+{{- else -}}
+The writer is not in this release (`writer.enabled: false`): it runs elsewhere,
+and what this release records (the query service's reads, the jobs) goes to its
+queue. The profiles this installation keeps are {{ keys .Values.profiles | sortAlpha | join ", " }}.
+{{- end }}
 
 Every component is configured by one file, its `config:` block, rendered as it
 stands and validated against the schema its binary validates it against. A
@@ -14,7 +20,8 @@ secret is never in it: the file names an environment variable, and `secretEnv`
 puts a Secret's key there. Telemetry is the OTEL_* environment, set by the
 platform. docs/reference/configuration.md lists every key.
 
-{{ if eq .Values.mode "stream" -}}
+{{ if not .Values.writer.enabled -}}
+{{- else if eq .Values.mode "stream" -}}
 Stream mode: {{ .Values.replicas }} receiver(s) publish to the stream, and
 {{ .Values.writer.consumers }} writer(s) consume it. The receivers hold neither
 the bucket nor a key.
@@ -26,7 +33,7 @@ writers behind a durable consumer, which is what makes a writer that is down a
 backlog rather than a hole.
 {{- end }}
 
-{{ with .Values.writer.config.archive -}}
+{{ with (and .Values.writer.enabled .Values.writer.config.archive) -}}
 The archive is {{ .bucket.name }}{{ with .prefix }} under {{ . }}/{{ end }}.
 {{- if .prefix }} {{ if $.Values.jobs.notary.enabled }}Five{{ else }}Four{{ end }} identities need rights beneath that prefix, and none of
 them may delete anything:
@@ -53,7 +60,7 @@ keeps two applications' archives apart and what their IAM is scoped to.
 {{- end }}
 {{- end }}
 
-{{ if not .Values.writer.config.database -}}
+{{ if and .Values.writer.enabled (not .Values.writer.config.database) -}}
 No database is configured. The writer deduplicates in process and may run only
 one replica. Searching what it writes needs `database`, and the indexer
 (`observe.enabled`) that follows the archive into it.

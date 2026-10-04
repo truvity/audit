@@ -29,9 +29,11 @@ data:
       {{- toYaml . | nindent 6 }}
     {{- end }}
   {{- end }}
+{{- if .Values.writer.enabled }}
 ---
 {{ include "audit.configMap" (dict "root" . "name" "writer" "config" .Values.writer.config) }}
-{{- if eq .Values.mode "stream" }}
+{{- end }}
+{{- if and .Values.writer.enabled (eq .Values.mode "stream") }}
 ---
 {{ include "audit.configMap" (dict "root" . "name" "receiver" "config" .Values.receiver.config) }}
 {{- end }}

@@ -9,11 +9,13 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/sdk/auth"
 	"github.com/truvity/audit/sdk/sink"
+	"github.com/truvity/audit/sink/sqssink"
 	"github.com/truvity/audit/store/s3store"
 )
 
@@ -174,6 +176,9 @@ func OpenSignerFrom(ctx context.Context, s config.Signer) (keys.Signer, error) {
 // fails any acknowledgement weaker than it afterwards. Without one the client
 // is returned as it is.
 func SinkFrom(s config.Sink, require string) (sink.Sink, error) {
+	if s.SQS != nil {
+		return sqsSinkFrom(s, require)
+	}
 	var c *sink.Client
 	if s.TokenFile != "" {
 		c = sink.NewClient(auth.TokenFile(s.TokenFile), s.URL)
@@ -207,4 +212,45 @@ func orUnspecified(s string) string {
 		return "nothing it says (set sink.expect)"
 	}
 	return s
+}
+
+// newSQS opens the SQS client of a sink that names a queue: the SDK's ambient
+// identity, which on Kubernetes is the pod's (EKS Pod Identity or IRSA). A test
+// replaces it with a fake queue.
+var newSQS = func(ctx context.Context, region string) (sqssink.API, error) {
+	var opts []func(*awsconfig.LoadOptions) error
+	if region != "" {
+		opts = append(opts, awsconfig.WithRegion(region))
+	}
+	cfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("loading the AWS configuration for SQS: %w", err)
+	}
+	return sqs.NewFromConfig(cfg), nil
+}
+
+// sqsSinkFrom is a sink that sends to the ingest queue of a writer running
+// elsewhere. The acknowledgement is `queued`, and the guard holds it to
+// `require` like any other.
+func sqsSinkFrom(s config.Sink, require string) (sink.Sink, error) {
+	api, err := newSQS(context.Background(), s.SQS.Region)
+	if err != nil {
+		return nil, err
+	}
+	p, err := sqssink.NewPublisher(api, sqssink.Options{QueueURL: s.SQS.QueueURL})
+	if err != nil {
+		return nil, err
+	}
+	if require == "" {
+		return p, nil
+	}
+	least, err := sink.ParseDurability(require)
+	if err != nil {
+		return nil, fmt.Errorf("require: %w", err)
+	}
+	guarded, err := sink.Guard(p, least)
+	if err != nil {
+		return nil, fmt.Errorf("require: %s: the queue at sink.sqs gives queued: %w", require, err)
+	}
+	return guarded, nil
 }

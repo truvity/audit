@@ -242,6 +242,19 @@ replicas: 1
 # Each component below has the same three, and `config`.
 
 writer:
+  # Host the write path in this release. Set false when the writer runs
+  # elsewhere, typically the AWS Lambda behind SQS that deploy/pulumi builds
+  # (cmd/audit-writer-lambda): the chart then renders no writer, no receiver, no
+  # stream consumers and no writer Service, and `serviceAccount` (the writer's
+  # identity), `keysVolume`, `workloadIdentity` and `mode: stream` do not apply.
+  # Everything in this release that records (the query service's reads, the
+  # notary, verify and clock-sync jobs) then needs a `sink` that reaches the
+  # external writer: `sink: {sqs: {queueUrl, region}}`, the pod's own identity
+  # being the credential (`sqs:SendMessage` on the queue), or the URL of an
+  # external front door. The chart refuses a sink that names this release's own
+  # front door. Observe, query, the migration and the jobs run as before and
+  # still need Postgres; see docs/deployment/levels.md.
+  enabled: true
   # In stream mode, how many writers consume the stream. They scale with the
   # record rate; the receivers (`replicas`) with the application's request rate.
   consumers: 3
@@ -298,7 +311,11 @@ profiles:
 externalIdentifiersAreOpaque: false
 
 # The query service: search, facets, get, export, tail and resolve, behind the
-# grants below. Every read it serves is recorded through the writer.
+# grants below. Every read it serves is recorded through the writer: its
+# `config.sink` is `{url: <the front door>}` or, for a writer that runs
+# elsewhere (`writer.enabled: false`), `{sqs: {queueUrl, region}}`. The SQS
+# sink takes the pod's identity: annotate `serviceAccount` below (IRSA) or bind
+# it (Pod Identity) to a role with `sqs:SendMessage` on the queue.
 query:
   enabled: false
   replicas: 2

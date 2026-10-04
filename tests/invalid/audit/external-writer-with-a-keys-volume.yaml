@@ -1,0 +1,4 @@
+# refuse: the key directory belongs to the writer
+# base: external-writer-base
+keysVolume:
+  enabled: true

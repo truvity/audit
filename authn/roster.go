@@ -4,8 +4,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/truvity/sluis/policy"
 	"github.com/truvity/audit/sdk/auth"
+	"github.com/truvity/sluis/policy"
 )
 
 // AccessRoster reads grants out of access-roster's group vocabulary.

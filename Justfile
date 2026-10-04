@@ -294,7 +294,7 @@ sdk-closure:
         echo "sdk-closure: only $count packages listed; the check scanned nothing" >&2
         exit 1
     fi
-    forbidden='^(github.com/jackc/|github.com/nats-io/|github.com/aws/|github.com/klauspost/|github.com/lestrrat-go/|github.com/truvity/(gateway-auth|access-roster|gemaal|policy|ocictl)|go.opentelemetry.io/otel/(sdk|exporters)|go.opentelemetry.io/contrib/|google.golang.org/(grpc|genproto)|helm.sh/|github.com/openbao/|github.com/hashicorp/|k8s.io/|github.com/truvity/audit/(authn|sinkserver|writer|index|store|query|wire|cmd|internal))'
+    forbidden='^(github.com/jackc/|github.com/nats-io/|github.com/aws/|github.com/klauspost/|github.com/lestrrat-go/|github.com/truvity/(gateway-auth|access-roster|sluis|gemaal|policy|ocictl)|go.opentelemetry.io/otel/(sdk|exporters)|go.opentelemetry.io/contrib/|google.golang.org/(grpc|genproto)|helm.sh/|github.com/openbao/|github.com/hashicorp/|k8s.io/|github.com/truvity/audit/(authn|sinkserver|writer|index|store|query|wire|cmd|internal))'
     # The module's own path is github.com/truvity/audit/sdk; anything else
     # under github.com/truvity/audit/ is the root module.
     bad=$(grep -E "$forbidden" <<<"$deps" || true)

@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/truvity/access-roster/policy"
+	"github.com/truvity/sluis/policy"
 	"github.com/truvity/audit/sdk/auth"
 )
 

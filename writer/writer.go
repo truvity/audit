@@ -52,6 +52,10 @@ import (
 	"github.com/truvity/audit/store"
 )
 
+// Evidence is what a writer reports of its configuration in its start-up
+// record (audit.writer.started).
+type Evidence = inner.Evidence
+
 // Dedupe is the writer's record of what it has written: Seen asks and marks
 // nothing, Mark is called once the copies are durable, Purge forgets. See
 // dedupe/dynamodbdedupe and index/postgres for the shared ones.
@@ -114,6 +118,9 @@ type Config struct {
 	RollInterval time.Duration
 	// Version names this build in the writer's own records.
 	Version string
+	// Evidence says, in the writer's start-up record, which configuration it
+	// ran under: digests of the files it read. Empty says nothing.
+	Evidence Evidence
 	// FromStream says this writer consumes a stream its own installation's
 	// receivers publish to, so a record arriving already stamped keeps that
 	// stamp. A consumer reading messages has no caller to verify, and
@@ -297,9 +304,10 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		Dedupe:     dedupe,
 		DeadLetter: &inner.StoreDeadLetter{Store: c.Archive, Instance: instance, RetainUntil: keep},
 		// What describes records outlives the longest of them.
-		Archive: described,
-		Meta:    common,
-		Version: c.Version,
+		Archive:  described,
+		Meta:     common,
+		Version:  c.Version,
+		Evidence: c.Evidence,
 		Hooks: inner.Hooks{
 			OnDeadLettered: func(r *record.Record, reason string) {
 				log.Error("dead letter", "id", r.GetId(), "action", r.GetAction(), "reason", reason)

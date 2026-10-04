@@ -9,6 +9,7 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/preset"
 	"github.com/truvity/audit/sdk/auth"
 )
@@ -20,6 +21,8 @@ import (
 // because the engine is a dependency a deployment should choose rather than
 // inherit.
 type GrantsFile struct {
+	// APIVersion is `v1`, or absent, which means the same.
+	APIVersion string `json:"apiVersion,omitempty"`
 	// Issuers are the token issuers trusted to say who a caller is. They live
 	// in this file, beside the rules, because a rule is only as safe as the
 	// issuers able to satisfy it; see auth.Rule.Issuer.
@@ -151,6 +154,9 @@ func readGrants(path string) (GrantsFile, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return file, err
+	}
+	if err := config.ValidateDocument("audit-grants", raw); err != nil {
+		return file, fmt.Errorf("%s: %w", path, err)
 	}
 	if err := yaml.UnmarshalStrict(raw, &file); err != nil {
 		return file, fmt.Errorf("%s: %w", path, err)

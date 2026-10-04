@@ -122,6 +122,9 @@ type Writer struct {
 
 	// Version names this writer in the records it stamps.
 	Version string
+	// Evidence is what the writer's start-up record says it was configured
+	// with. See meta.go.
+	Evidence Evidence
 	// Now is the clock, for tests.
 	Now func() time.Time
 

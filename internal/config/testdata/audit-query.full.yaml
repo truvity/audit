@@ -1,3 +1,4 @@
+apiVersion: v1
 listen:
   address: ":8080"
 searcher: postgres

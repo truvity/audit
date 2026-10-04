@@ -55,9 +55,15 @@ import (
 	"github.com/truvity/audit/writer"
 )
 
-// defaultConfig is where the Pulumi library puts the configuration file in the
-// function's package: /var/task is the package's root.
-const defaultConfig = "/var/task/audit.yaml"
+// The configuration file is where the layer of the Pulumi library mounts it,
+// /opt/audit/audit.yaml, unless --config or AUDIT_CONFIG names another. The old
+// place, the function package's own root, is still tried when the layer's is
+// absent, so that a deployment built by the previous release keeps starting;
+// that fallback goes in the release after this one.
+const (
+	defaultConfig = "/opt/audit/audit.yaml"
+	legacyConfig  = "/var/task/audit.yaml"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -67,14 +73,18 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", defaultConfig, "the configuration file: the one thing that configures this process")
+	configPath := flag.String("config", "", "the configuration file, or AUDIT_CONFIG, or "+defaultConfig+": the one thing that configures this process")
 	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("audit-writer-lambda", buildinfo.Version)
 		return nil
 	}
-	cfg, err := config.LoadWriterLambda(*configPath)
+	configFile, err := config.Path(*configPath, "audit-writer-lambda", defaultConfig, legacyConfig)
+	if err != nil {
+		return err
+	}
+	cfg, err := config.LoadWriterLambda(configFile)
 	if err != nil {
 		return err
 	}
@@ -147,6 +157,10 @@ func run() error {
 		return err
 	}
 
+	evidence, err := cli.WriterEvidence(cfg.Source, cfg.Deployment, "", cfg.Catalogues)
+	if err != nil {
+		return err
+	}
 	w, err := writer.Open(ctx, writer.Config{
 		Archive:          archive,
 		Profiles:         profiles,
@@ -155,6 +169,7 @@ func run() error {
 		Dedupe:           seen,
 		ForgetIdentities: cfg.ForgetIdentities,
 		Version:          buildinfo.Version,
+		Evidence:         evidence,
 		// Concurrent invocations are replicas: each environment is its own
 		// writer sharing one deduplication table. Two is "more than one" to the
 		// guards that care.

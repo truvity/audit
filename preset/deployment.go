@@ -13,7 +13,9 @@ import (
 // retention is a property of the profile and every one of them has to agree
 // about it.
 type Deployment struct {
-	Profiles map[string]ProfileConfig `json:"profiles"`
+	// APIVersion is `v1`, or absent, which means the same.
+	APIVersion string                   `json:"apiVersion,omitempty"`
+	Profiles   map[string]ProfileConfig `json:"profiles"`
 	// ExternalIdentifiersAreOpaque is the deployment saying that the
 	// identifiers it receives for people outside the organisation are already
 	// pseudonyms: identifiers an application minted, which name nobody without
@@ -41,6 +43,9 @@ func ParseDeployment(raw []byte) (*Deployment, error) {
 	var d Deployment
 	if err := yaml.UnmarshalStrict(raw, &d); err != nil {
 		return nil, fmt.Errorf("deployment: %w", err)
+	}
+	if d.APIVersion != "" && d.APIVersion != "v1" {
+		return nil, fmt.Errorf("deployment: apiVersion %q is not one this build reads (v1)", d.APIVersion)
 	}
 	if len(d.Profiles) == 0 {
 		return nil, errors.New("deployment: no profiles")

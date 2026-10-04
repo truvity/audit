@@ -1,0 +1,166 @@
+{
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-grants.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The grants document a configuration names as `grants`: who may read what. A mapping an auditor can read, kept as a file and not computed by a service.",
+  "properties": {
+    "apiVersion": {
+      "default": "v1",
+      "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "enum": [
+        "v1"
+      ]
+    },
+    "issuers": {
+      "description": "The token issuers trusted to say who a caller is. They live in this file, beside the rules, because a rule is only as safe as the issuers able to satisfy it.",
+      "items": {
+        "additionalProperties": false,
+        "description": "A trusted issuer.",
+        "properties": {
+          "audience": {
+            "description": "The audience a token from this issuer must carry.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "url": {
+            "description": "The issuer's URL, as a token's `iss` claim names it.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "audience"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "presets": {
+      "description": "Grant presets, which read grants out of a claim's vocabulary rather than one value each. Only `access-roster` exists.",
+      "items": {
+        "additionalProperties": false,
+        "description": "A grant preset.",
+        "properties": {
+          "claim": {
+            "description": "The claim it reads.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "issuer": {
+            "description": "The issuer whose claims it reads.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "description": "The preset.",
+            "enum": [
+              "access-roster"
+            ]
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "rules": {
+      "description": "Rules mapping a claim value to a grant.",
+      "items": {
+        "additionalProperties": false,
+        "description": "One rule.",
+        "properties": {
+          "claim": {
+            "description": "The claim to read.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "grant": {
+            "additionalProperties": false,
+            "description": "What the holders may do.",
+            "properties": {
+              "all_tenants": {
+                "description": "Every tenant. Without it, `tenants` names them.",
+                "type": "boolean"
+              },
+              "from": {
+                "description": "RFC 3339. The earliest a record may have happened for the holders to read it. Unset is unbounded.",
+                "format": "date-time",
+                "type": "string"
+              },
+              "operations": {
+                "description": "What they may do.",
+                "items": {
+                  "enum": [
+                    "search",
+                    "facets",
+                    "get",
+                    "export",
+                    "tail",
+                    "resolve"
+                  ]
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "profiles": {
+                "description": "The profiles the holders may read.",
+                "items": {
+                  "description": "A profile name.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              "tenants": {
+                "description": "The tenants the holders may read.",
+                "items": {
+                  "description": "A tenant identifier.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "until": {
+                "description": "RFC 3339. The latest. Unset is unbounded.",
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "profiles",
+              "operations"
+            ],
+            "type": "object"
+          },
+          "issuer": {
+            "description": "The issuer whose token must carry the claim. Unset lets any trusted issuer satisfy it, which a deployment with more than one should not.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "description": "What the rule is for, as it is named in a refusal.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {
+            "description": "The value of the claim that this rule applies to.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "grant"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "title": "audit grants",
+  "type": "object"
+}

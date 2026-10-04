@@ -1,14 +1,18 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path"
 	"strings"
 	"time"
 
 	policyconfig "github.com/truvity/policy/config"
+
+	"sigs.k8s.io/yaml"
 
 	"github.com/truvity/audit"
 	"github.com/truvity/audit/sdk/sink"
@@ -27,6 +31,22 @@ func schemaFor(name string) []byte {
 	return b
 }
 
+// ValidateDocument checks the raw YAML of a document a configuration names
+// (`audit-deployment`, `audit-grants`, `audit-workloads`) against its schema.
+// The documents are still decoded strictly by the code that reads them; this is
+// the same contract as a file the deployer can validate in CI, and a refusal
+// that names the path that failed.
+func ValidateDocument(name string, raw []byte) error {
+	var doc any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return fmt.Errorf("not valid YAML: %w", err)
+	}
+	if doc == nil {
+		return errors.New("the document is empty")
+	}
+	return policyconfig.Validate(doc, schemaFor(name))
+}
+
 // Validate checks a decoded document against one binary's schema. The chart's
 // tests call it on what the chart renders, which is what stops the two
 // drifting.
@@ -36,8 +56,21 @@ func Validate(name string, doc any) error {
 
 func load[T any](file, name string, after func(*T) error) (*T, error) {
 	var c T
+	// The digest is of the bytes that were validated: the file is read before
+	// and after the loader reads it, and a file that changed between is refused,
+	// because a record that says which configuration ran must not name another.
+	before, readErr := os.ReadFile(file)
 	if err := policyconfig.Load(file, schemaFor(name), &c); err != nil {
 		return nil, err
+	}
+	if readErr != nil {
+		return nil, &policyconfig.Error{File: file, Err: readErr}
+	}
+	if again, err := os.ReadFile(file); err != nil || !bytes.Equal(before, again) {
+		return nil, &policyconfig.Error{File: file, Err: errors.New("the file changed while it was being read")}
+	}
+	if h, ok := any(&c).(interface{ setSource(Source) }); ok {
+		h.setSource(Source{File: file, Digest: DigestBytes(before)})
 	}
 	if err := after(&c); err != nil {
 		return nil, &policyconfig.Error{File: file, Err: err}

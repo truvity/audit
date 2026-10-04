@@ -11,6 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -25,12 +26,34 @@ import (
 	"github.com/truvity/audit/sdk/record"
 )
 
-const configUsage = "the configuration file; with it, nothing else configures the command"
+const configUsage = "the configuration file (or AUDIT_CONFIG, when no other option is given); with it, nothing else configures the command"
 
 // onlyConfig refuses a command line that names a configuration file and also
 // configures the command another way: two answers to one question, and the
 // file is the one that is reviewed. --json only changes how the report is
 // printed, so it may stay.
+// jobConfig is the file a job reads: --config when it is given, otherwise
+// AUDIT_CONFIG, but only on a command line with no option of its own. A job in a
+// cluster is configured by the environment and nothing else; a person at a
+// terminal who happens to have AUDIT_CONFIG exported and who gives --deployment
+// is configuring the command by hand, and is not told to put that in a file
+// they never named.
+func jobConfig(flags *flag.FlagSet, flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	extra := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name != "json" {
+			extra = true
+		}
+	})
+	if extra {
+		return ""
+	}
+	return strings.TrimSpace(os.Getenv(config.EnvConfig))
+}
+
 func onlyConfig(flags *flag.FlagSet) error {
 	var extra []string
 	flags.Visit(func(f *flag.Flag) {

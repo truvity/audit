@@ -47,6 +47,36 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
+// APIVersion is the version of the configuration's shape that this build reads.
+// A file that does not say is v1, and a file that says another is refused, so a
+// later shape arrives by a version and not by a file that quietly means
+// something else.
+//
+// TODO(policy): the envelope belongs to truvity/policy's config package, which
+// is adding one; take its constant and its check there when it is released.
+const APIVersion = "v1"
+
+// Header is what every configuration file carries beside its own keys: the
+// version of its shape, and what the loader learned about the file it read.
+type Header struct {
+	// APIVersion is `v1`, or absent, which means the same.
+	APIVersion string `json:"apiVersion,omitempty"`
+	// Source is where the file was and what it held, set by the loader and never
+	// part of the file. The writer puts it in its own start-up record.
+	Source Source `json:"-"`
+}
+
+// Source is the file a configuration was read from.
+type Source struct {
+	// File is the path it was read from.
+	File string
+	// Digest is `sha256:` and the SHA-256 of the file's bytes, which is what
+	// `sha256sum` prints for it.
+	Digest string
+}
+
+func (h *Header) setSource(s Source) { h.Source = s }
+
 type (
 	// Listen is a TCP listener.
 	Listen struct {
@@ -206,6 +236,7 @@ type (
 // Writer is the configuration of audit-writer: the front door and the write
 // path, in one process or in two (mode).
 type Writer struct {
+	Header
 	Mode            string    `json:"mode,omitempty"`
 	Listen          Listen    `json:"listen,omitzero"`
 	Deployment      string    `json:"deployment"`
@@ -241,6 +272,7 @@ type Exports struct {
 
 // Query is the configuration of audit-query.
 type Query struct {
+	Header
 	Listen     Listen    `json:"listen,omitzero"`
 	Searcher   string    `json:"searcher,omitempty"`
 	Database   *Postgres `json:"database,omitempty"`
@@ -269,6 +301,7 @@ type Wake struct {
 // Observe is the configuration of audit-observe: the indexer, which follows the
 // archive by cursor and writes the index.
 type Observe struct {
+	Header
 	Listen   Listen   `json:"listen,omitzero"`
 	Archive  Archive  `json:"archive"`
 	Database Postgres `json:"database"`
@@ -300,6 +333,7 @@ type Seals struct {
 
 // Verify is the configuration of `audit verify`.
 type Verify struct {
+	Header
 	Deployment string   `json:"deployment"`
 	Archive    Archive  `json:"archive"`
 	Seals      *Seals   `json:"seals,omitempty"`
@@ -339,6 +373,7 @@ type (
 // Notary is the configuration of `audit-notary`: the archive it reads and puts
 // seals in, and the key it signs them with.
 type Notary struct {
+	Header
 	Archive Archive `json:"archive"`
 	Signer  Signer  `json:"signer"`
 	// Profiles to seal; unset is every profile the archive has records for.
@@ -354,6 +389,7 @@ type Notary struct {
 
 // Purge is the configuration of `audit purge`.
 type Purge struct {
+	Header
 	Deployment       string   `json:"deployment"`
 	Database         Postgres `json:"database"`
 	IdentifyingAfter Duration `json:"identifyingAfter,omitzero"`
@@ -362,6 +398,7 @@ type Purge struct {
 
 // ClockSync is the configuration of `audit clock-sync`.
 type ClockSync struct {
+	Header
 	NTP       []string  `json:"ntp"`
 	Sink      *Sink     `json:"sink,omitempty"`
 	Require   string    `json:"require,omitempty"`
@@ -371,6 +408,7 @@ type ClockSync struct {
 
 // Migrate is the configuration of `audit migrate`.
 type Migrate struct {
+	Header
 	Database Postgres `json:"database"`
 	// Roles name the database roles of the parts, each granted what its part
 	// needs and nothing else. Reader is the query service's; Writer, Observe and
@@ -404,6 +442,7 @@ type (
 // stream, no registry and no database: the batch is the SQS event, and what the
 // Postgres table does for a writer on Kubernetes is a DynamoDB table.
 type WriterLambda struct {
+	Header
 	Deployment       string  `json:"deployment"`
 	Catalogues       string  `json:"catalogues,omitempty"`
 	Archive          Archive `json:"archive"`

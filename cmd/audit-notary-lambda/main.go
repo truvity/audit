@@ -46,9 +46,15 @@ import (
 	"github.com/truvity/audit/sdk/record"
 )
 
-// defaultConfig is where the Pulumi library puts the configuration file in the
-// function's package.
-const defaultConfig = "/var/task/audit.yaml"
+// The configuration file is where the layer of the Pulumi library mounts it,
+// /opt/audit/audit.yaml, unless --config or AUDIT_CONFIG names another. The old
+// place, the function package's own root, is still tried when the layer's is
+// absent, so that a deployment built by the previous release keeps starting;
+// that fallback goes in the release after this one.
+const (
+	defaultConfig = "/opt/audit/audit.yaml"
+	legacyConfig  = "/var/task/audit.yaml"
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -58,14 +64,18 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", defaultConfig, "the configuration file: the one thing that configures this process")
+	configPath := flag.String("config", "", "the configuration file, or AUDIT_CONFIG, or "+defaultConfig+": the one thing that configures this process")
 	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("audit-notary-lambda", buildinfo.Version)
 		return nil
 	}
-	cfg, err := config.LoadNotary(*configPath)
+	configFile, err := config.Path(*configPath, "audit-notary", defaultConfig, legacyConfig)
+	if err != nil {
+		return err
+	}
+	cfg, err := config.LoadNotary(configFile)
 	if err != nil {
 		return err
 	}

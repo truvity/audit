@@ -221,6 +221,7 @@ func listen() m { return ref(policy + "fragments/listen.json") }
 // shares.
 func document(name, title, description string, props m, required []string, uses []string, extra m) m {
 	shared := sharedDefs()
+	props["apiVersion"] = apiVersion()
 	defs := m{}
 	for _, u := range uses {
 		defs[u] = shared[u]
@@ -543,6 +544,12 @@ func Schema(name string) ([]byte, bool) {
 		s = clockSyncSchema()
 	case "audit-migrate":
 		s = migrateSchema()
+	case "audit-deployment":
+		s = deploymentSchema()
+	case "audit-grants":
+		s = grantsSchema()
+	case "audit-workloads":
+		s = workloadsSchema()
 	default:
 		return nil, false
 	}

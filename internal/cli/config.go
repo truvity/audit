@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/truvity/audit/internal/config"
 	"github.com/truvity/audit/preset"
 )
 
@@ -14,6 +15,9 @@ func LoadDeployment(path string) (*preset.Deployment, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
+	}
+	if err := config.ValidateDocument("audit-deployment", raw); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	d, err := preset.ParseDeployment(raw)
 	if err != nil {

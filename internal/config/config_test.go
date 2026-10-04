@@ -30,7 +30,7 @@ func write(t *testing.T, body string) string {
 // the builder that is not followed by `just config-schemas` fails here as well
 // as in the drift check.
 func TestTheCommittedSchemasAreTheGeneratedOnes(t *testing.T) {
-	for _, name := range schema.Names {
+	for _, name := range append(append([]string{}, schema.Names...), schema.Documents...) {
 		want, ok := schema.Schema(name)
 		if !ok {
 			t.Fatalf("%s: no schema is built", name)
@@ -526,5 +526,104 @@ func TestTheLambdaWriterTakesADynamoDBAndRefusesWhatItCannotRun(t *testing.T) {
 				t.Fatal("the file was accepted")
 			}
 		})
+	}
+}
+
+// A file that does not say which version of the shape it is, is v1; one that
+// says v1 is the same; one that says another is refused at the schema, before
+// the typed decode could read it as something it is not.
+func TestTheAPIVersionIsV1OrAbsent(t *testing.T) {
+	for name, body := range map[string]string{
+		"absent": minimalWriter, "v1": "apiVersion: v1\n" + minimalWriter,
+	} {
+		w, err := config.LoadWriter(write(t, body))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if w.APIVersion != "" && w.APIVersion != config.APIVersion {
+			t.Errorf("%s: apiVersion = %q", name, w.APIVersion)
+		}
+	}
+	_, err := config.LoadWriter(write(t, "apiVersion: v2\n"+minimalWriter))
+	if err == nil || !strings.Contains(err.Error(), "apiVersion") {
+		t.Fatalf("a file of a version this build does not read was accepted or the refusal does not name the key: %v", err)
+	}
+}
+
+// The loader says which file it read and what was in it, in the form
+// sha256sum prints, so that the writer's record of it can be checked by anyone
+// holding the file.
+func TestTheLoaderRecordsTheDigestOfWhatItRead(t *testing.T) {
+	path := write(t, minimalWriter)
+	w, err := config.LoadWriter(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Source.File != path || w.Source.Digest != config.DigestBytes([]byte(minimalWriter)) {
+		t.Errorf("source = %+v", w.Source)
+	}
+	if got, _ := config.DigestFile(path); got != w.Source.Digest {
+		t.Errorf("DigestFile = %s, loader said %s", got, w.Source.Digest)
+	}
+	// sha256 of the bytes, as sha256sum prints it.
+	if !strings.HasPrefix(w.Source.Digest, "sha256:") || len(w.Source.Digest) != len("sha256:")+64 {
+		t.Errorf("digest = %q", w.Source.Digest)
+	}
+}
+
+func TestADirectoryDigestMovesWithAFileAndWithItsName(t *testing.T) {
+	dir := t.TempDir()
+	touch(t, dir, "a.yaml")
+	first, err := config.DigestTree(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := config.DigestTree(dir); again != first {
+		t.Fatalf("the same directory digests differently: %s, %s", first, again)
+	}
+	if err := os.Rename(filepath.Join(dir, "a.yaml"), filepath.Join(dir, "b.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if renamed, _ := config.DigestTree(dir); renamed == first {
+		t.Error("renaming a catalogue did not move the digest")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.yaml"), []byte("x: 2\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if edited, _ := config.DigestTree(dir); edited == first {
+		t.Error("editing a catalogue did not move the digest")
+	}
+	if none, err := config.DigestTree(""); none != "" || err != nil {
+		t.Errorf("no directory is no digest, got %q, %v", none, err)
+	}
+}
+
+// The documents a configuration names have schemas of their own, and each is
+// the contract for what the code that reads it accepts.
+func TestTheDocumentSchemasAcceptWhatTheCodeAcceptsAndRefuseWhatItWouldNot(t *testing.T) {
+	for _, c := range []struct {
+		name, doc string
+		ok        bool
+	}{
+		{"audit-deployment", "profiles:\n  security: {presets: [iso27001]}\n", true},
+		{"audit-deployment", "apiVersion: v1\nexternal_identifiers_are_opaque: true\nprofiles:\n  security: {presets: [iso27001]}\n", true},
+		{"audit-deployment", "apiVersion: v2\nprofiles:\n  security: {presets: [iso27001]}\n", false},
+		{"audit-deployment", "profiles: {}\n", false},
+		{"audit-deployment", "profiles:\n  a/b: {presets: [iso27001]}\n", false},
+		{"audit-deployment", "profiles:\n  security: {presets: [iso27001], retention: 1}\n", false},
+		{"audit-grants", "rules:\n  - name: r\n    grant: {all_tenants: true, profiles: [security], operations: [search]}\n", true},
+		{"audit-grants", "rules:\n  - name: r\n    grant: {all_tenants: true, profiles: [security], operations: [serach]}\n", false},
+		{"audit-grants", "presets: [{name: other}]\n", false},
+		{"audit-workloads", "issuers: [{url: 'https://i.example', audience: audit}]\n", true},
+		{"audit-workloads", "issuers: []\n", false},
+		{"audit-workloads", "issuers: [{url: 'https://i.example'}]\n", false},
+	} {
+		err := config.ValidateDocument(c.name, []byte(c.doc))
+		if c.ok && err != nil {
+			t.Errorf("%s refused %q: %v", c.name, c.doc, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%s accepted %q", c.name, c.doc)
+		}
 	}
 }

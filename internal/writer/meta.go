@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"github.com/truvity/audit/sdk/catalogue"
 	"github.com/truvity/audit/sdk/emit"
 	auditv1 "github.com/truvity/audit/sdk/gen/audit/v1"
@@ -137,11 +139,53 @@ func (w *Writer) emitMeta(ctx context.Context, r *record.Record) {
 	_ = w.self.Record(ctx, r)
 }
 
-// Started records that this writer instance began taking records. It is called
-// once the writer is serving, not when it is constructed, so that the record
-// means what a reader will take it to mean.
+// Evidence is what a writer says, in its start-up record, about what it was
+// configured with: the digests of the files it read, so that "which
+// configuration was this archive written under" has an answer a reader can
+// check against the file they were given. Every field is optional, and a field
+// that is not known is left out, not written as empty.
+type Evidence struct {
+	ConfigFile       string
+	ConfigDigest     string
+	DeploymentDigest string
+	WorkloadsDigest  string
+	CataloguesDigest string
+	// Layer is the ARN of the Lambda layer version that carried the
+	// configuration, as the deployment declares it to the function.
+	Layer string
+	// FunctionVersion is the Lambda function version the platform reports.
+	FunctionVersion string
+}
+
+// data is the evidence as the record's extension, or nil when there is none.
+func (e Evidence) data() (*structpb.Struct, error) {
+	fields := map[string]any{}
+	for k, v := range map[string]string{
+		"config_file": e.ConfigFile, "config_digest": e.ConfigDigest, "deployment_digest": e.DeploymentDigest,
+		"workloads_digest": e.WorkloadsDigest, "catalogues_digest": e.CataloguesDigest,
+		"layer": e.Layer, "function_version": e.FunctionVersion,
+	} {
+		if v != "" {
+			fields[k] = v
+		}
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	return structpb.NewStruct(fields)
+}
+
+// Started records that this writer instance began taking records, and under
+// which configuration. It is called once the writer is serving, not when it is
+// constructed, so that the record means what a reader will take it to mean.
 func (w *Writer) Started(ctx context.Context) {
-	w.emitMeta(ctx, w.meta("audit.writer.started", auditv1.Operation_OPERATION_CREATE))
+	r := w.meta("audit.writer.started", auditv1.Operation_OPERATION_CREATE)
+	// A record that cannot carry its evidence is still the record that the
+	// writer started, which matters more.
+	if data, err := w.Evidence.data(); err == nil {
+		r.Data = data
+	}
+	w.emitMeta(ctx, r)
 }
 
 // Registered records that a catalogue version was registered with this writer.

@@ -27,7 +27,7 @@ func main() {
 	if err := os.WriteFile(chart, schema.Values(), 0o644); err != nil {
 		fail(err)
 	}
-	for _, name := range schema.Names {
+	for _, name := range append(append([]string{}, schema.Names...), schema.Documents...) {
 		body, _ := schema.Schema(name)
 		if err := os.WriteFile(filepath.Join(dir, name+".schema.json"), body, 0o644); err != nil {
 			fail(err)

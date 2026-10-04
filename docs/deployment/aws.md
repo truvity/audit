@@ -207,14 +207,73 @@ update stop until the protection is lifted by hand.
 
 ### Encryption
 
-`Archive.Encryption` is `kms` (the default, and what every earlier version did) or
-`s3`. With `s3` the bucket's default encryption is SSE-S3 (`AES256`); no archive
-key or alias is created; no role has a `kms:GenerateDataKey` or `kms:Decrypt`
-grant for one; the functions' configuration names no `kmsKey`; and `ArchiveKeyArn`
-is empty. The seal key is a different key and does not change: the notary still
-signs with it. What SSE-S3 gives up is the archive key's own policy and its
-CloudTrail record of every use. Objects already written keep the encryption they
-were written with.
+`Archive.Encryption` has three modes, and `Archive.KeyArn` refines the first:
+
+| Mode | Bucket default encryption | Key | Role grants | `kmsKey` in the functions' configuration | `ArchiveKeyArn` |
+|---|---|---|---|---|---|
+| `kms` (default, what every earlier version did) | SSE-KMS, bucket keys on | the library creates `alias/<name>-archive` (rotation on, protected) | `kms:GenerateDataKey`, `kms:Decrypt` on it (the read role: `Decrypt`) | the alias | the created key |
+| `kms` with `KeyArn` | SSE-KMS under `KeyArn`, bucket keys on | yours: none is created | the same grants, on `KeyArn` | `KeyArn` | `KeyArn` |
+| `aws-managed` | SSE-KMS under the AWS-managed key `aws/s3`, bucket keys on | none is created | none | none: the bucket default applies | empty |
+| `s3` | SSE-S3 (`AES256`) | none | none | none | empty |
+
+`KeyArn` is refused with `aws-managed` and `s3`, and must be a key ARN
+(`arn:<partition>:kms:<region>:<account>:key/<id>`), not an alias ARN, which IAM
+cannot grant on. The seal key is a different key and never changes: the notary
+still signs with it. Objects already written keep the encryption they were
+written with.
+
+**A key you bring.** The roles are granted the key through their IAM policies,
+so the key's own policy must let IAM grant access: the default key policy's
+`arn:aws:iam::<account>:root` statement does that, and a policy without it makes
+every put and get fail with `AccessDenied` however the roles are written. The
+library neither edits nor protects a key it did not create; its rotation, its
+deletion window and its policy stay yours. For a key in another account, the
+key policy there must also name the roles.
+
+**The AWS-managed key.** No grant on a key is needed or made. S3 uses `aws/s3`
+on behalf of the caller and decrypts for any principal in the account that holds
+`s3:GetObject` on the object, so the bucket's IAM and bucket policy are the only
+access control over plaintext; the key policy cannot be changed and cannot add a
+second control. Its use is logged in CloudTrail under the account, not under a
+key of its own.
+
+**What SSE-S3 gives up** is the key policy and the CloudTrail record of every
+use that either KMS mode has.
+
+**ISO 27001 (A.8.24, use of cryptography).** The control asks for a documented
+policy on cryptography and key management, not for a customer-managed key.
+AWS-managed keys are acceptable when the policy says so and records who rotates
+(AWS, yearly), who can use the key and how its use is evidenced. Choose a
+customer key (`kms`, with or without `KeyArn`) when the ISMS policy or a
+customer contract requires control of the key: its policy, rotation, a
+separate-duties split between key administrators and users, or the ability to
+disable it. Use `KeyArn` when the organisation already manages keys centrally.
+
+**Switching an existing deployment from `kms` to `aws-managed` (or `s3`).**
+Changing the field changes only the bucket's default for objects written from
+then on: S3 does not re-encrypt existing objects, and they still need the old
+key to be read. The roles also lose their grant on the old key, so they cannot
+read the old objects either, and the old archive key (protected, and no longer
+managed by the stack) must not be removed yet. Sequence it:
+
+1. Before applying, plan the change: it replaces the bucket's encryption
+   configuration and drops the key grants. Keep a role of yours that can use the
+   old key for the copy.
+2. Apply, then copy each object over itself so it is rewritten under the new
+   default (`aws s3 cp s3://<bucket>/ s3://<bucket>/ --recursive
+   --sse aws:kms` for `aws-managed`; add `--metadata-directive COPY` and
+   copy per prefix, or use S3 Batch Operations "Copy" for a large bucket). A
+   copy makes a new version: with Object Lock the old versions, and their
+   retention, stay under the old key until they expire, so the old key must
+   outlive the longest retention of the old versions. The copy should carry
+   the object's retention (`--copy-props` / Batch Operations retention) so
+   nothing is shortened.
+3. Verify with `aws s3api head-object` that the current versions report
+   `ServerSideEncryption: aws:kms` and no `SSEKMSKeyId` of the old key, then run
+   `audit verify`.
+4. Only then schedule the old key's deletion (a 30-day window), and only after
+   every version that it encrypted has expired or been rewritten. Deleting it
+   earlier makes those objects permanently unreadable.
 
 ### The application's catalogue
 
@@ -313,7 +372,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Archive.ObjectLockMode` | **required** | `NONE`, `GOVERNANCE` or `COMPLIANCE`; there is no default, so every caller chooses. See [the lock modes](#the-lock-modes) |
 | `Archive.AcknowledgeCompliance` | false | the deliberate step before `COMPLIANCE`; without it the library builds nothing |
 | `Archive.DefaultRetentionDays` | 0 | the bucket's default retention, a floor: the writer sets each object's own. 0 sets no default rule; refused with `NONE` |
-| `Archive.Encryption` | `kms` | `kms` (SSE-KMS under an archive key) or `s3` (SSE-S3: no archive key, no `kms` grants on it); see [encryption](#encryption) |
+| `Archive.Encryption` | `kms` | `kms` (SSE-KMS under an archive key), `aws-managed` (SSE-KMS under `aws/s3`) or `s3` (SSE-S3); the last two create no key and grant no `kms` on one; see [encryption](#encryption) |
+| `Archive.KeyArn` | empty | an existing KMS key ARN for `Encryption: kms`: no key is created and the roles are granted it; refused with the other modes |
 | `Archive.Profiles` | **required** | one lifecycle rule per `records/<profile>/` prefix |
 | `Archive.GlacierIRDays`, `.DeepArchiveDays` | 30, 365 | [0023](../decisions/0023-archive-retention-and-lifecycle.md) |
 | `Ingest.Disabled` | false | leaves out the queue, the table, the writer and their alarms; see [optional parts](#optional-parts) |
@@ -353,7 +413,7 @@ Required inputs are marked. Anything not listed has the default stated.
 | output | what |
 |---|---|
 | `BucketName`, `BucketArn` | the archive |
-| `ArchiveKeyArn` | the symmetric key objects are encrypted with (rotation on); empty with `Encryption: s3` |
+| `ArchiveKeyArn` | the symmetric key objects are encrypted with (rotation on); the given `Archive.KeyArn` if set; empty with `Encryption: s3` or `aws-managed` |
 | `SealKeyArn`, `SealKeyAlias` | the `ECC_NIST_P384` `SIGN_VERIFY` key and its alias, `alias/<name>-seal`. `audit key public` reads its public half for `keys/roots.jwks` and the verifier's pin |
 | `QueueURL`, `QueueArn` | the ingest queue a receiver or an application sends to (`forward.sqs.queueUrl`), and what the chart's `sink.sqs` of the query service and the jobs names when the writer runs here ([observe and query in Kubernetes](#observe-and-query-in-kubernetes-writer-on-lambda)): `QueueURL` is the `queueUrl`, `QueueArn` the resource of `sqs:SendMessage` |
 | `DlqURL`, `DlqArn` | the dead-letter queue |
@@ -368,8 +428,8 @@ Required inputs are marked. Anything not listed has the default stated.
 
 | resource | notes |
 |---|---|
-| S3 bucket | versioning enabled in every mode, protected from a stack destroy in every mode, the bucket's own `objectLockEnabled` never set (it forces replacement), and Object Lock as a separate configuration resource that exists unless the mode is `NONE`; SSE-KMS under the archive key with bucket keys (SSE-S3 with `Encryption: s3`), all four public-access blocks, bucket-owner-enforced ownership, a policy that denies plain HTTP, a lifecycle rule per profile prefix and one that aborts incomplete multipart uploads after 7 days. `ForceDestroy` is never set |
-| KMS archive key | symmetric, rotation on, protected, alias `alias/<name>-archive` |
+| S3 bucket | versioning enabled in every mode, protected from a stack destroy in every mode, the bucket's own `objectLockEnabled` never set (it forces replacement), and Object Lock as a separate configuration resource that exists unless the mode is `NONE`; SSE-KMS under the archive key with bucket keys (the AWS-managed key with `aws-managed`, SSE-S3 with `s3`), all four public-access blocks, bucket-owner-enforced ownership, a policy that denies plain HTTP, a lifecycle rule per profile prefix and one that aborts incomplete multipart uploads after 7 days. `ForceDestroy` is never set |
+| KMS archive key | symmetric, rotation on, protected, alias `alias/<name>-archive`; only with `Encryption: kms` and no `KeyArn` |
 | KMS seal key | `ECC_NIST_P384`, `SIGN_VERIFY`, protected, alias `alias/<name>-seal`, and a key policy of its own (below) |
 | SQS ingest queue and DLQ | SSE-SQS, visibility timeout six times the writer's timeout, a redrive policy to the DLQ and a redrive-allow policy on the DLQ, a queue policy that denies plain HTTP and allows the named senders |
 | DynamoDB table `<name>-dedupe` | on-demand, hash key `pk` (string), TTL on `expires_at` |
@@ -398,7 +458,7 @@ matcher name, are
 | scheduler | `arn:aws:iam::<account>:role/audit/audit-scheduler` | EventBridge Scheduler, to invoke the notary and nothing else |
 
 The writer, notary and scheduler roles exist only with their part; the KMS
-row is empty with `Encryption: s3`, and the IRSA write role is described under
+row is empty with `Encryption: s3` or `aws-managed`, and the IRSA write role is described under
 [Kubernetes workloads](#kubernetes-workloads-irsa).
 
 The kernel OTLP door's provisional single role, `role/audit/audit`, is not used:

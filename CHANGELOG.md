@@ -4,6 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
+- The Pulumi library's `Archive.Encryption` gains **`aws-managed`**, SSE-KMS under the AWS-managed `aws/s3` key with bucket keys: no key is created, no role is granted a `kms` action (S3 decrypts on behalf of any principal in the account that may `s3:GetObject`) and the functions' configuration names no `kmsKey`. New **`Archive.KeyArn`** with `kms` uses an existing customer key instead of creating `alias/<name>-archive`: the writer, notary, observe reader and archive-writer roles are granted `kms:GenerateDataKey` / `kms:Decrypt` on that key through IAM (its key policy must allow IAM), and the functions are configured with its ARN. `KeyArn` is refused with `s3` and `aws-managed`, and must be a key ARN, not an alias. `kms` with no `KeyArn` and `s3` are unchanged. See [deployment/aws.md](docs/deployment/aws.md#encryption), including the ISO 27001 A.8.24 note and the migration from `kms` to `aws-managed` (S3 does not re-encrypt existing objects: copy them in place, then schedule the old key's deletion).
+
 ## v0.10.0
 
 

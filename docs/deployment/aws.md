@@ -256,18 +256,18 @@ key to be read. The roles also lose their grant on the old key, so they cannot
 read the old objects either, and the old archive key (protected, and no longer
 managed by the stack) must not be removed yet. Sequence it:
 
-1. Before applying, plan the change: it replaces the bucket's encryption
-   configuration and drops the key grants. Keep a role of yours that can use the
-   old key for the copy.
+1. Before applying, preview the change: it updates the bucket's default
+   encryption and drops the roles' grants on the old key. Keep a principal of
+   your own that can use the old key, for the copy.
 2. Apply, then copy each object over itself so it is rewritten under the new
-   default (`aws s3 cp s3://<bucket>/ s3://<bucket>/ --recursive
-   --sse aws:kms` for `aws-managed`; add `--metadata-directive COPY` and
-   copy per prefix, or use S3 Batch Operations "Copy" for a large bucket). A
-   copy makes a new version: with Object Lock the old versions, and their
+   default: S3 Batch Operations "Copy" for a large bucket, or `aws s3 cp
+   s3://<bucket>/<prefix>/ s3://<bucket>/<prefix>/ --recursive --sse aws:kms
+   --metadata-directive REPLACE` per prefix (S3 refuses a copy onto itself that
+   changes nothing, and `REPLACE` drops user metadata unless it is restated).
+   A copy makes a new version, and the old versions, with their Object Lock
    retention, stay under the old key until they expire, so the old key must
-   outlive the longest retention of the old versions. The copy should carry
-   the object's retention (`--copy-props` / Batch Operations retention) so
-   nothing is shortened.
+   outlive the longest retention of the old versions. Set the new versions'
+   retention to match, so nothing is shortened.
 3. Verify with `aws s3api head-object` that the current versions report
    `ServerSideEncryption: aws:kms` and no `SSEKMSKeyId` of the old key, then run
    `audit verify`.

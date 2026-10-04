@@ -274,7 +274,7 @@ func TestRegisteringACatalogueIsRecorded(t *testing.T) {
 func TestTheStartRecordCarriesTheConfigurationEvidence(t *testing.T) {
 	b := buildReportingWith(t, writer.Evidence{
 		ConfigFile: "/opt/audit/audit.yaml", ConfigDigest: "sha256:aa", DeploymentDigest: "sha256:bb",
-		CataloguesDigest: "sha256:cc", Layer: "arn:aws:lambda:eu-west-1:111111111111:layer:cfg:7",
+		CataloguesDigest: "sha256:cc", Layer: "a-layer-version",
 	})
 	b.writer.Started(context.Background())
 	b.settle(t)
@@ -288,7 +288,7 @@ func TestTheStartRecordCarriesTheConfigurationEvidence(t *testing.T) {
 		got := r.GetData().AsMap()
 		want := map[string]any{
 			"config_file": "/opt/audit/audit.yaml", "config_digest": "sha256:aa", "deployment_digest": "sha256:bb",
-			"catalogues_digest": "sha256:cc", "layer": "arn:aws:lambda:eu-west-1:111111111111:layer:cfg:7",
+			"catalogues_digest": "sha256:cc", "layer": "a-layer-version",
 		}
 		if len(got) != len(want) {
 			t.Fatalf("data = %v, want %v", got, want)

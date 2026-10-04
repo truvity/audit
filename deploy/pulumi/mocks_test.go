@@ -2,8 +2,7 @@ package auditpulumi_test
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -33,6 +32,9 @@ type recorder struct {
 	mu        sync.Mutex
 	resources []declared
 	calls     []mockCall
+	// archived is what the archive bucket already holds of the catalogues, by key,
+	// as the sha256 metadata the writer put on each. A key not here is not there.
+	archived map[string]string
 }
 
 // mockCall is an invoke the library made: its token, and the provider it was made
@@ -102,6 +104,17 @@ func (r *recorder) Call(a pulumi.MockCallArgs) (resource.PropertyMap, error) {
 			"userId":    resource.NewStringProperty("AIDAMOCK"),
 		}, nil
 	}
+	if a.Token == "aws:s3/getObject:getObject" {
+		key := a.Args["key"].StringValue()
+		sha, ok := r.archived[key]
+		if !ok {
+			return nil, errors.New("reading S3 Object (" + key + "): operation error S3: HeadObject, https response error StatusCode: 404, NotFound")
+		}
+		return resource.PropertyMap{
+			"bucket": a.Args["bucket"], "key": a.Args["key"], "id": resource.NewStringProperty(key),
+			"metadata": resource.NewObjectProperty(resource.PropertyMap{"sha256": resource.NewStringProperty(sha)}),
+		}, nil
+	}
 	return a.Args, nil
 }
 
@@ -153,19 +166,26 @@ func build(t *testing.T, edit func(*auditpulumi.Args)) (*recorder, outputs, erro
 // can only be made there).
 func buildWith(t *testing.T, edit func(*auditpulumi.Args), opts func(*pulumi.Context) ([]pulumi.ResourceOption, error)) (*recorder, outputs, error) {
 	t.Helper()
+	return buildArchived(t, nil, edit, opts)
+}
+
+// buildArchived is buildWith with the catalogues the archive bucket already
+// holds: key to the sha256 metadata of the copy.
+func buildArchived(t *testing.T, archived map[string]string, edit func(*auditpulumi.Args),
+	opts func(*pulumi.Context) ([]pulumi.ResourceOption, error)) (*recorder, outputs, error) {
+	t.Helper()
 	dir := t.TempDir()
-	for _, f := range []string{"writer-bootstrap", "notary-bootstrap"} {
-		if err := os.WriteFile(filepath.Join(dir, f), []byte("#!/bin/true\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
+	t.Cleanup(auditpulumi.SetLibraryVersion(releaseVersion))
+	writerZip, writerSHA := releaseZip(t, dir, "audit-writer-lambda", releaseVersion)
+	notaryZip, notarySHA := releaseZip(t, dir, "audit-notary-lambda", releaseVersion)
 	args := &auditpulumi.Args{
 		Archive: auditpulumi.ArchiveArgs{BucketName: "acme-audit", ObjectLockMode: auditpulumi.Governance, Profiles: []string{"security", "billing-nl"}},
 		Writer: auditpulumi.WriterArgs{
-			BinaryPath:     filepath.Join(dir, "writer-bootstrap"),
+			Package:        writerZip,
+			PackageSHA256:  writerSHA,
 			DeploymentYAML: "profiles:\n  security:\n    presets: [security]\n",
 		},
-		Notary: auditpulumi.NotaryArgs{BinaryPath: filepath.Join(dir, "notary-bootstrap")},
+		Notary: auditpulumi.NotaryArgs{Package: notaryZip, PackageSHA256: notarySHA},
 		Telemetry: &auditpulumi.TelemetryArgs{
 			ExtensionLayerArn: pulumi.String(arnp + "lambda:eu-west-1:" + account + ":layer:access-roster-otlp:3"),
 			IssuerURL:         "https://access.example.test",
@@ -177,7 +197,7 @@ func buildWith(t *testing.T, edit func(*auditpulumi.Args), opts func(*pulumi.Con
 	if edit != nil {
 		edit(args)
 	}
-	rec := &recorder{}
+	rec := &recorder{archived: archived}
 	got := outputs{}
 	var wg sync.WaitGroup
 	err := pulumi.RunErr(func(ctx *pulumi.Context) error {
@@ -272,29 +292,26 @@ func policyOf(t *testing.T, doc string) []map[string]any {
 	return d.Statement
 }
 
-// packageFiles are the files of a function's zip: the text of each string asset,
-// and "(file)" for the binary, which is a path and not text.
-func packageFiles(t *testing.T, f declared) map[string]string {
+// layerFiles are the files of a function's configuration layer, by path under
+// /opt/audit: the text of each string asset.
+func layerFiles(t *testing.T, r *recorder, function string) map[string]string {
 	t.Helper()
-	code := f.Inputs["code"]
+	d := r.one(t, "aws:lambda/layerVersion:LayerVersion", function+"-config")
+	code := d.Inputs["code"]
 	if !code.IsArchive() {
-		t.Fatalf("%s: code is not an archive: %v", f.Name, code)
+		t.Fatalf("%s: the layer's code is not an archive: %v", function, code)
 	}
 	assets, ok := code.ArchiveValue().GetAssets()
 	if !ok {
-		t.Fatalf("%s: the archive is not a map of assets", f.Name)
+		t.Fatalf("%s: the archive is not a map of assets", function)
 	}
 	out := map[string]string{}
 	for name, v := range assets {
 		a, ok := v.(*asset.Asset)
-		if !ok {
-			t.Fatalf("%s: %s is %T", f.Name, name, v)
+		if !ok || !a.IsText() {
+			t.Fatalf("%s: %s is %T, and a layer holds text", function, name, v)
 		}
-		if a.IsText() {
-			out[name] = a.Text
-		} else {
-			out[name] = "(file)"
-		}
+		out[strings.TrimPrefix(name, "audit/")] = a.Text
 	}
 	return out
 }

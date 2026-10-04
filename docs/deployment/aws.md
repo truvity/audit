@@ -72,17 +72,15 @@ What changes is the shell:
   - The window is the widest any profile's presets ask for unless the
     configuration says (`dedupe.dynamodb.window`). It wants to be at least the
     queue's retention, which is 14 days at most.
-- **Configuration.** One file in the function's package, `/var/task/audit.yaml`,
-  validated against `schemas/config/audit-writer-lambda.schema.json`
-  ([0021](../decisions/0021-one-validated-configuration-file.md)). The decision was
-  between a file in the package and an environment that points at SSM. The file
-  wins: ADR 0021 already says "the same file works on a function platform, where a
-  file is in the image", it holds no secret, and everything it names (the bucket,
-  the table, the key aliases) is known before the first resource exists, so the
-  library renders it from the stack's own arguments and ships it in the zip. There
-  is nothing to fetch at cold start, no IAM for SSM, and no second place to look.
-  A change to the configuration is a new function version, which is the review
-  unit it should be.
+- **Configuration.** One file, `/opt/audit/audit.yaml`, in an immutable layer
+  version of its own, validated against
+  `schemas/config/audit-writer-lambda.schema.json`
+  ([0021](../decisions/0021-one-validated-configuration-file.md)). The function
+  finds it through `AUDIT_CONFIG=/opt/audit/audit.yaml`, which the library sets
+  and which is also the binary's default. Beside it the layer holds the profile
+  document (`deployment.yaml`) and the catalogues (`catalogues/`), so the three
+  things that decide what the writer keeps and how it reads a record travel
+  together. See [configuration as a layer](#configuration-as-a-layer).
 - **Legal holds.** The writer reads the holds every minute in a goroutine. A
   frozen environment does not run it, so the first write after a thaw could act
   on a list older than it looks. The handler re-reads the holds at the start of
@@ -118,11 +116,14 @@ are the record, and `audit.seal.age` over OTLP says how far behind they are.
 ### Why a zip, and why no VPC
 
 A **zip** on `provided.al2023`, `arm64`, and not a container image: the binaries
-are static and a few MB, the configuration is one more file in the package, and
-nothing here needs a registry. The release carries each function as a zip with
-`bootstrap` at its root (`audit-writer-lambda_<version>_linux_arm64.zip`,
-`audit-notary-lambda_<version>_linux_arm64.zip`), and the library builds the
-package it ships from that binary plus the files it renders.
+are static and a few MB and nothing here needs a registry. The release carries
+each function as a zip with `bootstrap` at its root
+(`audit-writer-lambda_<version>_linux_arm64.zip`,
+`audit-notary-lambda_<version>_linux_arm64.zip`), and the library deploys **that
+file, byte for byte**: it adds nothing to it and builds no package of its own. You
+give it the zip and the SHA-256 the release's `checksums.txt` lists for it
+(`Writer.Package`, `Writer.PackageSHA256`), and it is read, hashed and refused when
+it is not that file. The configuration is a layer beside it.
 
 The functions run **outside a VPC** (a decision of the AWS design). They reach S3, DynamoDB,
 SQS, KMS and STS over the regional public endpoints with the role's credentials,
@@ -146,10 +147,15 @@ a, err := auditpulumi.New(ctx, "audit", &auditpulumi.Args{
 		Senders: []pulumi.StringInput{receiverRoleArn},
 	},
 	Writer: auditpulumi.WriterArgs{
-		BinaryPath:     "dist/audit-writer-lambda/bootstrap",
+		// The release's zip and the digest its checksums.txt lists for it.
+		Package:        "dist/audit-writer-lambda_0.11.0_linux_arm64.zip",
+		PackageSHA256:  writerSHA,
 		DeploymentYAML: deploymentYAML, // the profile configuration
 	},
-	Notary: auditpulumi.NotaryArgs{BinaryPath: "dist/audit-notary-lambda/bootstrap"},
+	Notary: auditpulumi.NotaryArgs{
+		Package:       "dist/audit-notary-lambda_0.11.0_linux_arm64.zip",
+		PackageSHA256: notarySHA,
+	},
 	Telemetry: &auditpulumi.TelemetryArgs{
 		ExtensionLayerArn: layerArn,
 		IssuerURL:         "https://access.example.com",
@@ -163,6 +169,64 @@ a, err := auditpulumi.New(ctx, "audit", &auditpulumi.Args{
 `New` returns a component (`truvity:audit:Audit`) named for the installation. The
 name is in every physical name, so one account may hold several installations.
 It is 1 to 32 characters of `a-z`, `0-9` and `-`.
+
+### Configuration as a layer
+
+The rendered `audit.yaml`, the profile document and the catalogues are published as
+an `aws.lambda.LayerVersion` named `<name>-writer-config` (and `<name>-notary-config`,
+which holds `audit.yaml` alone), whose zip holds them under `audit/` so that Lambda
+extracts them to `/opt/audit/`. The function's `Layers` are that layer and, with
+`Telemetry`, the extension: two of the five a function may have. Its environment is
+`AUDIT_CONFIG=/opt/audit/audit.yaml`, `AUDIT_CONFIG_LAYER=<the layer version's ARN>`
+and the telemetry's `OTEL_*`.
+
+The alternative was a pointer: the function's environment names an SSM parameter or
+an S3 object that holds the configuration, read at cold start. A layer wins on the
+properties that matter to an audit trail. **It is immutable**: a layer version
+cannot be edited, so what ran is what was published, and a change is a new version
+that the function is pointed at in the same `pulumi up` that is reviewed. **It is
+versioned and kept**: the library does not delete an old version when a new one
+replaces it (`SkipDestroy`), so a rollback, and an older function version, find the
+configuration they ran with. **It has no moving part at start**: nothing is fetched,
+there is no IAM for SSM or for a second bucket, and a cold start cannot fail because
+a parameter store is unreachable. And **the function and its configuration are two
+things with two versions**: a new release of the binary with the same configuration
+is a code update, and an edited catalogue with the same binary is a layer update.
+The pointer's one advantage, changing the configuration without a deploy, is the
+one an audit trail should not have.
+
+The writer says which configuration it ran under in its start-up record
+(`audit.writer.started`): the digest of the file, of the profile document and of the
+catalogues, and the layer version's ARN
+([configuration](../reference/configuration.md#evidence-the-writers-start-up-record)).
+The platform does not tell a function which layers it has, so the ARN is what the
+library puts in `AUDIT_CONFIG_LAYER`.
+
+### Guards before the function is updated
+
+A function that fails its init is not a failed deploy. The event source mapping
+keeps invoking it, every invocation fails, and the ingest queue drains into the
+dead-letter queue a message at a time. So what can be known before the function is
+touched is checked in the program, ahead of every resource, and a failure is a
+failed `pulumi preview`:
+
+- **The package** is the file the digest names, a zip with `bootstrap` at its root
+  and nothing outside it, an arm64 Linux executable, built from the command the
+  field wants (the notary's zip is not accepted as the writer's).
+- **The library's release and the binary's** are the same. The library renders the
+  configuration for its own release's schema, and a binary of another may refuse it
+  at start-up. The binary's release is the one in the zip's file name, which is the
+  name the digest was listed under in `checksums.txt` (the release builds with
+  `-s -w`, which leaves the stamp out of the binary's build information).
+  `Guards.AllowVersionSkew` accepts a difference that is meant: a build from a
+  checkout, or a zip with another name. A library whose own release is not known (a
+  `replace` directive) compares nothing.
+- **Each catalogue** is compared with the archive's own copy at
+  `catalogue/<source>/<version>`: a changed document under an unchanged version is
+  what the writer refuses to start on, and is refused here instead. An object that
+  is not there, or a bucket that is not there yet, is nothing to compare; anything
+  else that stops the comparison is a refusal. The deploying identity needs
+  `s3:GetObject` on `catalogue/*`; `Guards.SkipCatalogueCheck` says it cannot.
 
 ### The AWS provider
 
@@ -191,11 +255,11 @@ are each optional, and independent of the other:
 |---|---|---|---|
 | left out | queue and DLQ, DynamoDB table, writer function, role, log group and event source mapping, the writer's and the queue's alarms (4) | seal key and alias, notary function, role and log group, the schedule and the scheduler's role, the notary's alarms (3) | all of it |
 | outputs that are then empty | `QueueURL`, `QueueArn`, `DlqURL`, `DlqArn`, `DedupeTableName`, `WriterFunctionArn`, `WriterRoleArn` | `SealKeyArn`, `SealKeyAlias`, `NotaryFunctionArn`, `NotaryRoleArn`, `ScheduleArn` | and `AlarmTopicArn` |
-| inputs no longer required | `Writer.BinaryPath`, `Writer.DeploymentYAML` | `Notary.BinaryPath` | |
+| inputs no longer required | `Writer.Package`, `Writer.PackageSHA256`, `Writer.DeploymentYAML` | `Notary.Package`, `Notary.PackageSHA256` | |
 
 The alarm topic exists when at least one alarm does. The resource counts the
 tests hold, with the component itself, for the test installation (Governance,
-telemetry, alerts, observe): both parts 42, ingest only 29, notary only 28,
+telemetry, alerts, observe): both parts 44, ingest only 30, notary only 29,
 neither 13.
 
 Use ingest without the notary where the seals are made elsewhere (a notary on
@@ -293,13 +357,15 @@ Writer: auditpulumi.WriterArgs{
 
 File names are `catalogue.yaml` or `catalogue-<name>.yaml`; a name given both ways
 with different content, an unreadable path and an empty file are refused before
-anything is created. The files go into the function's zip beside `audit.yaml`, so
-**a change to a catalogue is a change to the package, and `pulumi up` redeploys the
-writer** with it. Nothing reaches the writer between deploys, which is the point:
+anything is created. The files go into the configuration layer beside `audit.yaml`,
+so **a change to a catalogue is a new layer version, and `pulumi up` points the
+writer at it**. Nothing reaches the writer between deploys, which is the point:
 a release of an application that changed its catalogue under an unchanged version
 once crash-looped the application, and a catalogue change should be a deliberate,
 reviewed deploy of this stack, with the new catalogue visible in the preview. Bump
-the catalogue's version when its content changes. Keep the copy the stack reads in
+the catalogue's version when its content changes: a changed document under an
+unchanged version is refused in the preview, against the archive's own copy (see
+[guards](#guards-before-the-function-is-updated)). Keep the copy the stack reads in
 step with the application's release (pin it to the same tag, or vendor it).
 
 ### Kubernetes workloads (IRSA)
@@ -380,7 +446,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Ingest.Senders` | none | principals allowed to send to the queue; none adds no sender statement, so only identity policies in the account grant sending |
 | `Ingest.MaxReceiveCount` | 5 | deliveries before a message moves to the DLQ |
 | `Ingest.RetentionDays` | 14 | the queue's retention; 14 is SQS's limit and the deduplication window's floor |
-| `Writer.BinaryPath` | **required** unless `Ingest.Disabled` | the linux/arm64 `bootstrap` |
+| `Writer.Package` | **required** unless `Ingest.Disabled` | the release's `audit-writer-lambda_<version>_linux_arm64.zip`, a path or an https URL; the function's code as released |
+| `Writer.PackageSHA256` | **required** with the package | that zip's SHA-256 in hex, from the release's `checksums.txt` |
 | `Writer.DeploymentYAML` | **required** unless `Ingest.Disabled` | the profile configuration, the document the chart renders |
 | `Writer.Catalogues` | none | application catalogues by file name (`catalogue.yaml`, `catalogue-<name>.yaml`) and content; see [the application's catalogue](#the-applications-catalogue) |
 | `Writer.CataloguePaths` | none | the same, read from files on disk under their base names; merged with `Catalogues` |
@@ -391,7 +458,9 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Writer.MaxBatchingWindowSeconds` | 5 | how long the mapping gathers a batch: fewer, larger objects for a few seconds of latency |
 | `Writer.MaxConcurrency` | 10 | the mapping's concurrency cap, 2 or more |
 | `Notary.Disabled` | false | leaves out the seal key, the notary, its schedule and alarms |
-| `Notary.BinaryPath` | **required** unless `Notary.Disabled` | the linux/arm64 `bootstrap` |
+| `Notary.Package` | **required** unless `Notary.Disabled` | the release's `audit-notary-lambda_<version>_linux_arm64.zip` |
+| `Notary.PackageSHA256` | **required** with the package | its SHA-256 in hex |
+| `Guards.AllowVersionSkew`, `.SkipCatalogueCheck` | false | acknowledge a binary of another release than the library, and skip the comparison of catalogues with the archive; see [guards](#guards-before-the-function-is-updated) |
 | `Notary.Schedule` | `cron(15 * * * ? *)` | EventBridge Scheduler, UTC |
 | `Notary.Profiles`, `.Settle` | every profile, `10m` | as `audit-notary` |
 | `Notary.MemoryMB`, `.TimeoutSeconds` | 256, 900 | |
@@ -757,17 +826,20 @@ own side needs `sts:AssumeRole` on the role's ARN.
 
 ## Building and testing
 
-The two binaries are built by the release as zips; locally,
+The two functions are the release's zips, and the library takes them as they are.
+For a build from a checkout, build the binary as the release does, zip it with
+`bootstrap` at the root, and give `Guards.AllowVersionSkew` and the digest of what
+you built:
 
 ```
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 GOEXPERIMENT=jsonv2 go build -trimpath -o dist/audit-writer-lambda/bootstrap ./cmd/audit-writer-lambda
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 GOEXPERIMENT=jsonv2 go build -trimpath -o dist/audit-notary-lambda/bootstrap ./cmd/audit-notary-lambda
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 GOEXPERIMENT=jsonv2 go build -trimpath -o bootstrap ./cmd/audit-writer-lambda
+zip audit-writer-lambda.zip bootstrap && sha256sum audit-writer-lambda.zip
 ```
 
 `just pulumi-test` runs the library's tests, with Pulumi's mocks: no cloud, no
 credentials, no plugin. They hold the resources and arguments above, the role
-names, every role's rights, the alarm set, and the configuration the library ships
-in each package against the JSON Schema of the binary that reads it, so the library
+names, every role's rights, the alarm set, the release package and its checks, the
+guards, and the configuration the library ships in each layer against the JSON Schema of the binary that reads it, so the library
 cannot drift from the code it deploys. `just test-s3` runs the DynamoDB store
 against LocalStack. The library does not import the root module, and the root does
 not import the library.

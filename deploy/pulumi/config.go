@@ -3,13 +3,18 @@ package auditpulumi
 import (
 	"fmt"
 
+	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+
 	yaml "go.yaml.in/yaml/v3"
 )
 
-// Where the package puts what the functions read. /var/task is the root of a
-// function's package, and the binaries' own default for the configuration file.
+// Where the configuration layer puts what the functions read. A layer is
+// extracted under /opt, and its zip holds the files under audit/, so they are at
+// /opt/audit/: the binaries' own default for the configuration file.
 const (
-	packageRoot = "/var/task"
+	configRoot = "/opt/audit"
+	// layerRoot is the directory of the layer's zip that becomes configRoot.
+	layerRoot = "audit"
 	// The name is joined so that a scan for emitted action names, which reads a
 	// string of this shape as one, does not take it for an action.
 	configFile        = "audit" + ".yaml"
@@ -56,20 +61,20 @@ func dedupeTable(name string) string     { return name + "-dedupe" }
 // writerConfig is audit-writer-lambda's configuration file
 // (schemas/config/audit-writer-lambda.schema.json). It holds no secret and
 // nothing that is known only after something is created, so it is rendered
-// before the first resource exists and ships in the function's package.
+// before the first resource exists and ships in the configuration layer.
 func writerConfig(name string, a *Args) ([]byte, error) {
 	dyn := map[string]any{"table": dedupeTable(name)}
 	if a.Writer.DedupeWindow != "" {
 		dyn["window"] = a.Writer.DedupeWindow
 	}
 	doc := map[string]any{
-		"deployment": packageRoot + "/" + deploymentFile,
+		"deployment": configRoot + "/" + deploymentFile,
 		"archive":    archiveConfig(name, a),
 		"dedupe":     map[string]any{"dynamodb": dyn},
 		"require":    "archived",
 	}
 	if len(a.Writer.Catalogues) > 0 {
-		doc["catalogues"] = packageRoot + "/" + cataloguesDir
+		doc["catalogues"] = configRoot + "/" + cataloguesDir
 	}
 	if a.Writer.Keys != nil {
 		doc["keys"] = a.Writer.Keys
@@ -107,6 +112,21 @@ func render(doc map[string]any) ([]byte, error) {
 // docs/integrations/aws-lambda.md) and the SDK's, which points at the
 // extension's loopback proxy. No secret: the extension trades the function
 // role's identity for a token.
+// functionEnv is the environment of a function: the file its process reads, the
+// layer version that carried it (which the writer repeats in its start-up record,
+// because the platform does not tell a function which layers it has), and the
+// telemetry's.
+func functionEnv(t *TelemetryArgs, service string, layerArn pulumi.StringInput) pulumi.StringMap {
+	env := pulumi.StringMap{
+		"AUDIT_CONFIG":       pulumi.String(configRoot + "/" + configFile),
+		"AUDIT_CONFIG_LAYER": layerArn,
+	}
+	for k, v := range telemetryEnv(t, service) {
+		env[k] = pulumi.String(v)
+	}
+	return env
+}
+
 func telemetryEnv(t *TelemetryArgs, service string) map[string]string {
 	if t == nil {
 		return nil

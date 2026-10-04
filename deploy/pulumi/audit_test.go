@@ -272,7 +272,10 @@ func TestTheFunctionsRunOutsideAVPCOnArm64WithTheExtensionLayer(t *testing.T) {
 		if prop(f, "vpcConfig").IsObject() {
 			t.Errorf("%s is in a VPC", name)
 		}
-		if l := prop(f, "layers").ArrayValue(); len(l) != 1 || !strings.Contains(l[0].StringValue(), "access-roster-otlp") {
+		// The configuration layer is the library's own and the extension the second:
+		// two of the five a function may have.
+		if l := prop(f, "layers").ArrayValue(); len(l) != 2 || !strings.Contains(l[0].StringValue(), name+"-config") ||
+			!strings.Contains(l[1].StringValue(), "access-roster-otlp") {
 			t.Errorf("%s layers: %v", name, l)
 		}
 		env := prop(f, "environment").ObjectValue()["variables"].ObjectValue()
@@ -303,8 +306,14 @@ func TestWithoutTelemetryThereIsNoExtensionNoEnvironmentAndNoWebIdentity(t *test
 		t.Fatal(err)
 	}
 	f := rec.one(t, "aws:lambda/function:Function", "audit-writer")
-	if prop(f, "environment").IsObject() || len(prop(f, "layers").ArrayValue()) != 0 {
-		t.Errorf("telemetry left behind: %v", f.Inputs)
+	env := prop(f, "environment").ObjectValue()["variables"].ObjectValue()
+	for k := range env {
+		if strings.HasPrefix(string(k), "OTEL_") || strings.HasPrefix(string(k), "ACCESS_ROSTER_") {
+			t.Errorf("telemetry left behind: %s in %v", k, env)
+		}
+	}
+	if l := prop(f, "layers").ArrayValue(); len(l) != 1 || !strings.Contains(l[0].StringValue(), "audit-writer-config") {
+		t.Errorf("with telemetry off the function has the configuration layer alone: %v", l)
 	}
 	for _, role := range []string{"audit-writer", "audit-notary"} {
 		if _, ok := grants(policy(t, rec, role))["sts:GetWebIdentityToken"]; ok {
@@ -600,7 +609,7 @@ func TestNothingIsCreatedForArgumentsThatCannotWork(t *testing.T) {
 		}, "needs a lock"},
 		"days":            {func(a *auditpulumi.Args) { a.Archive.GlacierIRDays, a.Archive.DeepArchiveDays = 400, 30 }, "after"},
 		"no deployment":   {func(a *auditpulumi.Args) { a.Writer.DeploymentYAML = " " }, "DeploymentYAML"},
-		"no binary":       {func(a *auditpulumi.Args) { a.Notary.BinaryPath = "" }, "BinaryPath"},
+		"no package":      {func(a *auditpulumi.Args) { a.Notary.Package = "" }, "Notary.Package"},
 		"retention":       {func(a *auditpulumi.Args) { a.Ingest.RetentionDays = 30 }, "14"},
 		"batch":           {func(a *auditpulumi.Args) { a.Writer.BatchSize = 50 }, "BatchSize"},
 		"an http OTLP":    {func(a *auditpulumi.Args) { a.Telemetry.OTLPEndpoint = "http://otlp" }, "https"},
@@ -625,7 +634,7 @@ func TestNothingIsCreatedForArgumentsThatCannotWork(t *testing.T) {
 // it deploys: a key renamed in schemas/config fails here.
 func TestTheShippedConfigurationsValidateAgainstTheBinariesSchemas(t *testing.T) {
 	rec, _, err := build(t, func(a *auditpulumi.Args) {
-		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\n"}
+		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\nversion: \"1.0.0\"\n"}
 		a.Writer.ForgetIdentities = true
 		a.Writer.DedupeWindow = "336h"
 		a.Notary.Profiles = []string{"security"}
@@ -634,11 +643,10 @@ func TestTheShippedConfigurationsValidateAgainstTheBinariesSchemas(t *testing.T)
 		t.Fatal(err)
 	}
 	for fn, schema := range map[string]string{"audit-writer": "audit-writer-lambda", "audit-notary": "audit-notary"} {
-		f := rec.one(t, "aws:lambda/function:Function", fn)
-		files := packageFiles(t, f)
+		files := layerFiles(t, rec, fn)
 		body, ok := files["audit.yaml"]
 		if !ok {
-			t.Fatalf("%s: no audit.yaml in the package; have %v", fn, keys(files))
+			t.Fatalf("%s: no audit.yaml in the layer; have %v", fn, keys(files))
 		}
 		var doc any
 		if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
@@ -654,26 +662,26 @@ func TestTheShippedConfigurationsValidateAgainstTheBinariesSchemas(t *testing.T)
 	}
 }
 
-func TestThePackageHoldsTheBinaryTheConfigurationAndTheProfilesAndCatalogues(t *testing.T) {
+func TestTheLayerHoldsTheConfigurationAndTheProfilesAndCatalogues(t *testing.T) {
 	rec, _, err := build(t, func(a *auditpulumi.Args) {
-		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\n"}
+		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\nversion: \"1.0.0\"\n"}
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := packageFiles(t, rec.one(t, "aws:lambda/function:Function", "audit-writer"))
-	for _, f := range []string{"bootstrap", "audit.yaml", "deployment.yaml", "catalogues/catalogue.yaml"} {
+	w := layerFiles(t, rec, "audit-writer")
+	for _, f := range []string{"audit.yaml", "deployment.yaml", "catalogues/catalogue.yaml"} {
 		if _, ok := w[f]; !ok {
-			t.Errorf("the writer's package lacks %s; has %v", f, keys(w))
+			t.Errorf("the writer's layer lacks %s; has %v", f, keys(w))
 		}
 	}
-	for _, want := range []string{"deployment: /var/task/deployment.yaml", "catalogues: /var/task/catalogues", "lockMode: governance",
+	for _, want := range []string{"deployment: /opt/audit/deployment.yaml", "catalogues: /opt/audit/catalogues", "lockMode: governance",
 		"kmsKey: alias/audit-archive", "table: audit-dedupe", "name: acme-audit", "require: archived"} {
 		if !strings.Contains(w["audit.yaml"], want) {
 			t.Errorf("the writer's configuration lacks %q:\n%s", want, w["audit.yaml"])
 		}
 	}
-	n := packageFiles(t, rec.one(t, "aws:lambda/function:Function", "audit-notary"))
+	n := layerFiles(t, rec, "audit-notary")
 	for _, want := range []string{"key: alias/audit-seal", "lockMode: governance", "settle: 10m"} {
 		if !strings.Contains(n["audit.yaml"], want) {
 			t.Errorf("the notary's configuration lacks %q:\n%s", want, n["audit.yaml"])
@@ -695,7 +703,7 @@ func TestTheComplianceModeReachesTheFunctionsConfiguration(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, fn := range []string{"audit-writer", "audit-notary"} {
-		if body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]; !strings.Contains(body, "lockMode: compliance") {
+		if body := layerFiles(t, rec, fn)["audit.yaml"]; !strings.Contains(body, "lockMode: compliance") {
 			t.Errorf("%s writes with %s", fn, body)
 		}
 	}
@@ -751,7 +759,7 @@ func TestNoneGrantsNoLockPermissionsAndRendersLockModeNone(t *testing.T) {
 		}
 	}
 	for _, fn := range []string{"audit-writer", "audit-notary"} {
-		if body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]; !strings.Contains(body, "lockMode: none") {
+		if body := layerFiles(t, rec, fn)["audit.yaml"]; !strings.Contains(body, "lockMode: none") {
 			t.Errorf("%s: %s", fn, body)
 		}
 	}
@@ -764,7 +772,7 @@ func TestTheNoneConfigurationsValidateAgainstTheBinariesSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	for fn, schema := range map[string]string{"audit-writer": "audit-writer-lambda", "audit-notary": "audit-notary"} {
-		body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]
+		body := layerFiles(t, rec, fn)["audit.yaml"]
 		var doc any
 		if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 			t.Fatal(err)

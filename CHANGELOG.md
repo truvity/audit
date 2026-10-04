@@ -4,7 +4,8 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.9.0
+The Pulumi library delivers the application's catalogue to the writer Lambda from files, and the deployment docs gain the full, lite and log levels.
 
 - The Pulumi library takes the application's catalogue from files: `Writer.CataloguePaths` (merged with `Writer.Catalogues` under the files' base names; an unreadable or empty file, or a name given twice with different content, is refused before anything is created). The catalogue is part of the writer function's package, so a changed catalogue redeploys the writer on the next `pulumi up` and reaches it no other way. Tests pin the Truvity shape (both Lambdas, KMS seals, GOVERNANCE) and the hive shape (writer Lambda, SSE-S3, `NONE`, `Notary.Disabled`, an `ArchiveWriter` role), both outside a VPC. See [deployment/aws.md](docs/deployment/aws.md#the-applications-catalogue).
 

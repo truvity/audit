@@ -365,7 +365,8 @@ func newRole(ctx *pulumi.Context, name, path, assume string, tags pulumi.StringM
 // created with it off could only get the lock by being replaced. Object Lock is
 // a separate resource instead, which S3 accepts on an existing versioned bucket,
 // so moving NONE -> GOVERNANCE adds that resource and touches nothing else.
-func newArchive(ctx *pulumi.Context, name string, a *Args, keyArn pulumi.StringOutput, tags pulumi.StringMap, opts ...pulumi.ResourceOption) (*s3.Bucket, error) {
+func newArchive(ctx *pulumi.Context, name string, a *Args, keyArn pulumi.StringOutput, tags pulumi.StringMap,
+	opts ...pulumi.ResourceOption) (*s3.Bucket, error) {
 	ar := a.Archive
 	// The bucket is protected from a stack's own destroy in every mode, NONE
 	// included: Pulumi refuses to delete it until the protection is lifted by

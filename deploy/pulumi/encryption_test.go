@@ -7,7 +7,7 @@ import (
 	auditpulumi "github.com/truvity/audit/deploy/pulumi"
 )
 
-const givenKey = "arn:aws:kms:eu-west-1:123456789012:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+var givenKey = arnp + "kms:eu-west-1:" + account + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
 
 func archiveKeysCreated(rec *recorder) []string {
 	var out []string
@@ -142,10 +142,14 @@ func TestKeyArnMisuseIsRefused(t *testing.T) {
 		edit func(*auditpulumi.Args)
 		says string
 	}{
-		"with s3":          {func(a *auditpulumi.Args) { a.Archive.Encryption, a.Archive.KeyArn = auditpulumi.EncryptionS3, givenKey }, "Archive.KeyArn is only for"},
-		"with aws-managed": {func(a *auditpulumi.Args) { a.Archive.Encryption, a.Archive.KeyArn = auditpulumi.EncryptionAWSManaged, givenKey }, "Archive.KeyArn is only for"},
+		"with s3": {func(a *auditpulumi.Args) {
+			a.Archive.Encryption, a.Archive.KeyArn = auditpulumi.EncryptionS3, givenKey
+		}, "Archive.KeyArn is only for"},
+		"with aws-managed": {func(a *auditpulumi.Args) {
+			a.Archive.Encryption, a.Archive.KeyArn = auditpulumi.EncryptionAWSManaged, givenKey
+		}, "Archive.KeyArn is only for"},
 		"an alias ARN": {func(a *auditpulumi.Args) {
-			a.Archive.KeyArn = "arn:aws:kms:eu-west-1:123456789012:alias/archive"
+			a.Archive.KeyArn = arnp + "kms:eu-west-1:" + account + ":alias/archive"
 		}, "not a KMS key ARN"},
 		"a bare key id": {func(a *auditpulumi.Args) { a.Archive.KeyArn = "1234abcd-12ab-34cd-56ef-1234567890ab" }, "not a KMS key ARN"},
 	} {

@@ -1,7 +1,9 @@
 // Package auditpulumi is the AWS shape of the audit trail as a Pulumi Go
 // library: the archive bucket and its keys, the ingest queue, the writer and
 // notary Lambda functions with the role of each, the schedule that invokes the
-// notary, and the alarms that say when any of it is not working.
+// notary, and the alarms that say when any of it is not working. The functions'
+// code is the release's zip, checked against its digest; their configuration is a
+// layer of its own.
 //
 // It is a library, not a program: a stack calls New with the arguments below
 // and gets a component with the outputs a deployment needs. It creates nothing
@@ -11,8 +13,8 @@
 //
 //	a, err := auditpulumi.New(ctx, "audit", &auditpulumi.Args{
 //		Archive: auditpulumi.ArchiveArgs{BucketName: "acme-audit", Profiles: []string{"security"}},
-//		Writer:  auditpulumi.WriterArgs{BinaryPath: "writer/bootstrap", DeploymentYAML: deployment},
-//		Notary:  auditpulumi.NotaryArgs{BinaryPath: "notary/bootstrap"},
+//		Writer:  auditpulumi.WriterArgs{Package: writerZip, PackageSHA256: writerSHA, DeploymentYAML: deployment},
+//		Notary:  auditpulumi.NotaryArgs{Package: notaryZip, PackageSHA256: notarySHA},
 //	})
 //
 // docs/deployment/aws.md is the guide: the shape, every input and output, the
@@ -113,18 +115,39 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	}
 	accountRoot := fmt.Sprintf("arn:%s:iam::%s:root", "aws", accountID)
 
-	// What each function's package holds beside its binary is rendered first, so
-	// an argument that cannot be rendered fails before anything is created.
-	var writerPackage, notaryPackage map[string]string
+	// The released packages are read and checked, and what each function's
+	// configuration layer holds is rendered, before anything is created: an
+	// argument that cannot be rendered, a zip that is not the one named, or a
+	// binary that is not this library's release fails the preview, and so does a
+	// catalogue the archive already holds with other content. All of that is
+	// refused here, ahead of the function, because a function that fails its
+	// init drains the ingest queue into the dead-letter queue.
+	var writerPkg, notaryPkg *releasePackage
+	var writerLayer, notaryLayer map[string]string
+	pkgs := map[string]*releasePackage{}
 	if ingest {
-		if writerPackage, err = writerFiles(name, a); err != nil {
+		if writerPkg, err = loadPackage("Writer", a.Writer.Package, a.Writer.PackageSHA256, "audit-writer-lambda"); err != nil {
+			return nil, err
+		}
+		pkgs["Writer"] = writerPkg
+		if writerLayer, err = writerFiles(name, a); err != nil {
 			return nil, err
 		}
 	}
 	if notary {
-		if notaryPackage, err = notaryFiles(name, a); err != nil {
+		if notaryPkg, err = loadPackage("Notary", a.Notary.Package, a.Notary.PackageSHA256, "audit-notary-lambda"); err != nil {
 			return nil, err
 		}
+		pkgs["Notary"] = notaryPkg
+		if notaryLayer, err = notaryFiles(name, a); err != nil {
+			return nil, err
+		}
+	}
+	if err := checkVersions(a.Guards, pkgs); err != nil {
+		return nil, err
+	}
+	if err := checkCatalogues(ctx, a, child); err != nil {
+		return nil, err
 	}
 
 	// ---- the roles come first: the seal key's policy names the notary's.
@@ -231,9 +254,9 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	if ingest {
 		var writerLogs *cloudwatch.LogGroup
 		writerFn, writerLogs, err = newFunction(ctx, functionSpec{
-			Name: name + "-writer", Service: writerService, Role: writerRole, Binary: a.Writer.BinaryPath,
+			Name: name + "-writer", Service: writerService, Role: writerRole, Package: writerPkg,
 			MemoryMB: a.Writer.MemoryMB, TimeoutSeconds: a.Writer.TimeoutSeconds,
-			Files: writerPackage,
+			Config: writerLayer,
 		}, a, tags, child)
 		if err != nil {
 			return nil, err
@@ -266,9 +289,9 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	if notary {
 		var notaryLogs *cloudwatch.LogGroup
 		notaryFn, notaryLogs, err = newFunction(ctx, functionSpec{
-			Name: name + "-notary", Service: notaryService, Role: notaryRole, Binary: a.Notary.BinaryPath,
+			Name: name + "-notary", Service: notaryService, Role: notaryRole, Package: notaryPkg,
 			MemoryMB: a.Notary.MemoryMB, TimeoutSeconds: a.Notary.TimeoutSeconds,
-			Files: notaryPackage,
+			Config: notaryLayer,
 		}, a, tags, child)
 		if err != nil {
 			return nil, err
@@ -567,22 +590,27 @@ func newQueues(ctx *pulumi.Context, name string, a *Args, tags pulumi.StringMap,
 type functionSpec struct {
 	Name, Service  string
 	Role           *iam.Role
-	Binary         string
+	Package        *releasePackage
 	MemoryMB       int
 	TimeoutSeconds int
-	// Files are what the package holds beside the binary, by path.
-	Files map[string]string
+	// Config is what the configuration layer holds, by path under /opt/audit.
+	Config map[string]string
 }
 
-// newFunction is one Lambda function: a zip of `bootstrap` and its configuration
-// on provided.al2023, on arm64, outside any VPC, with the OTLP extension as a
-// layer when there is one.
+// newFunction is one Lambda function: the release's zip, unchanged, on
+// provided.al2023, on arm64, outside any VPC, with the configuration as an
+// immutable layer version and the OTLP extension as a second layer when there is
+// one.
 //
-// A zip and not an image: the binaries are static and a few MB, a function's
-// configuration is one more file in the package, and nothing here needs a
-// registry. The package is the release's `bootstrap` plus the files rendered
-// from the stack's own arguments, which is why the configuration needs no fetch
-// at cold start (docs/deployment/aws.md).
+// A zip and not an image: the binaries are static and a few MB and nothing here
+// needs a registry. The code is the release's zip as it was published, checked
+// against the digest the caller gave, so what runs is what the release's
+// checksums name. The configuration is rendered from the stack's own arguments
+// and published as a layer version of its own, so it needs no fetch at cold
+// start, and the function and its configuration are two things with two
+// versions, and a record of which ran together (the writer says so in its
+// start-up record, from AUDIT_CONFIG_LAYER). Layers are at most five per
+// function; this is one, and the extension is the other.
 func newFunction(ctx *pulumi.Context, s functionSpec, a *Args, tags pulumi.StringMap,
 	opts ...pulumi.ResourceOption) (*lambda.Function, *cloudwatch.LogGroup, error) {
 	logs, err := cloudwatch.NewLogGroup(ctx, s.Name, &cloudwatch.LogGroupArgs{
@@ -593,15 +621,25 @@ func newFunction(ctx *pulumi.Context, s functionSpec, a *Args, tags pulumi.Strin
 	if err != nil {
 		return nil, nil, err
 	}
-	archive := map[string]any{"bootstrap": pulumi.NewFileAsset(s.Binary)}
-	for path, body := range s.Files {
-		archive[path] = pulumi.NewStringAsset(body)
+	layerFiles := map[string]any{}
+	for path, body := range s.Config {
+		layerFiles[layerRoot+"/"+path] = pulumi.NewStringAsset(body)
 	}
-	env := pulumi.StringMap{}
-	for k, v := range telemetryEnv(a.Telemetry, s.Service) {
-		env[k] = pulumi.String(v)
+	config, err := lambda.NewLayerVersion(ctx, s.Name+"-config", &lambda.LayerVersionArgs{
+		LayerName:               pulumi.String(s.Name + "-config"),
+		Description:             pulumi.String("The configuration of " + s.Name + ", at /opt/" + layerRoot + "/. Immutable: a change is a new version."),
+		Code:                    pulumi.NewAssetArchive(layerFiles),
+		CompatibleArchitectures: pulumi.StringArray{pulumi.String("arm64")},
+		CompatibleRuntimes:      pulumi.StringArray{pulumi.String("provided.al2023")},
+		// Not destroyed on replacement: an older function version, or a rollback,
+		// points at the version it ran with, and the version is the evidence of
+		// what that configuration was.
+		SkipDestroy: pulumi.Bool(true),
+	}, opts...)
+	if err != nil {
+		return nil, nil, err
 	}
-	layers := pulumi.StringArray{}
+	layers := pulumi.StringArray{config.Arn}
 	if a.Telemetry != nil {
 		layers = append(layers, a.Telemetry.ExtensionLayerArn)
 	}
@@ -611,10 +649,14 @@ func newFunction(ctx *pulumi.Context, s functionSpec, a *Args, tags pulumi.Strin
 		Runtime:       pulumi.String("provided.al2023"),
 		Handler:       pulumi.String("bootstrap"),
 		Architectures: pulumi.StringArray{pulumi.String("arm64")},
-		Code:          pulumi.NewAssetArchive(archive),
-		MemorySize:    pulumi.Int(s.MemoryMB),
-		Timeout:       pulumi.Int(s.TimeoutSeconds),
-		Layers:        layers,
+		Code:          pulumi.NewFileArchive(s.Package.Path),
+		// What Lambda reports for the code, so that the plan names the release's
+		// bytes and a refresh finds nothing to change.
+		SourceCodeHash: pulumi.String(s.Package.CodeSHA256),
+		MemorySize:     pulumi.Int(s.MemoryMB),
+		Timeout:        pulumi.Int(s.TimeoutSeconds),
+		Layers:         layers,
+		Environment:    &lambda.FunctionEnvironmentArgs{Variables: functionEnv(a.Telemetry, s.Service, config.Arn)},
 		LoggingConfig: &lambda.FunctionLoggingConfigArgs{
 			LogFormat: pulumi.String("Text"), LogGroup: logs.Name,
 		},
@@ -623,18 +665,15 @@ func newFunction(ctx *pulumi.Context, s functionSpec, a *Args, tags pulumi.Strin
 		// reach S3, DynamoDB, SQS and KMS over the public regional endpoints with
 		// the role's credentials, and the OTLP door over the internet.
 	}
-	if len(env) > 0 {
-		args.Environment = &lambda.FunctionEnvironmentArgs{Variables: env}
-	}
-	fn, err := lambda.NewFunction(ctx, s.Name, args, append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{logs})}, opts...)...)
+	fn, err := lambda.NewFunction(ctx, s.Name, args, append([]pulumi.ResourceOption{pulumi.DependsOn([]pulumi.Resource{logs, config})}, opts...)...)
 	if err != nil {
 		return nil, nil, err
 	}
 	return fn, logs, nil
 }
 
-// writerFiles is the writer's package beside the binary: its configuration,
-// the profile document, and the catalogues.
+// writerFiles is what the writer's configuration layer holds, by path under
+// /opt/audit: its configuration, the profile document, and the catalogues.
 func writerFiles(name string, a *Args) (map[string]string, error) {
 	cfg, err := writerConfig(name, a)
 	if err != nil {

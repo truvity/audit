@@ -63,7 +63,7 @@ func TestAnExistingKMSKeyIsUsedAndNoneIsCreated(t *testing.T) {
 		}
 	}
 	for _, fn := range []string{"audit-writer", "audit-notary"} {
-		if body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]; !strings.Contains(body, "kmsKey: "+givenKey) {
+		if body := layerFiles(t, rec, fn)["audit.yaml"]; !strings.Contains(body, "kmsKey: "+givenKey) {
 			t.Errorf("%s does not name the given key:\n%s", fn, body)
 		}
 	}
@@ -105,7 +105,7 @@ func TestAWSManagedKeyCreatesNoKeyAndGrantsNoKMS(t *testing.T) {
 		t.Errorf("the notary's Sign: %v", g["kms:Sign"])
 	}
 	for _, fn := range []string{"audit-writer", "audit-notary"} {
-		if body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]; strings.Contains(body, "kmsKey") {
+		if body := layerFiles(t, rec, fn)["audit.yaml"]; strings.Contains(body, "kmsKey") {
 			t.Errorf("%s names a key with the AWS-managed key:\n%s", fn, body)
 		}
 	}
@@ -119,7 +119,7 @@ func TestTheDefaultKMSModeStillCreatesTheKeyAndAlias(t *testing.T) {
 	if k := archiveKeysCreated(rec); len(k) != 2 {
 		t.Errorf("created %v, want the key and the alias", k)
 	}
-	if body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", "audit-writer"))["audit.yaml"]; !strings.Contains(body, "kmsKey: alias/audit-archive") {
+	if body := layerFiles(t, rec, "audit-writer")["audit.yaml"]; !strings.Contains(body, "kmsKey: alias/audit-archive") {
 		t.Errorf("writer configuration:\n%s", body)
 	}
 }

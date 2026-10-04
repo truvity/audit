@@ -188,7 +188,7 @@ func TestSSES3CreatesNoArchiveKeyAndNoRoleMayUseOne(t *testing.T) {
 		t.Errorf("the notary's Sign: %v", g["kms:Sign"])
 	}
 	for _, fn := range []string{"audit-writer", "audit-notary"} {
-		body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]
+		body := layerFiles(t, rec, fn)["audit.yaml"]
 		if strings.Contains(body, "kmsKey") {
 			t.Errorf("%s names an archive key with SSE-S3:\n%s", fn, body)
 		}
@@ -206,7 +206,7 @@ func TestTheSSES3ConfigurationsValidateAgainstTheBinariesSchemas(t *testing.T) {
 func validateConfigs(t *testing.T, rec *recorder, fns map[string]string) {
 	t.Helper()
 	for fn, schema := range fns {
-		body := packageFiles(t, rec.one(t, "aws:lambda/function:Function", fn))["audit.yaml"]
+		body := layerFiles(t, rec, fn)["audit.yaml"]
 		var doc any
 		if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 			t.Fatal(err)
@@ -423,7 +423,7 @@ func TestEveryCombinationOfIngestAndNotary(t *testing.T) {
 		want                 want
 	}{
 		"both": {false, false, want{
-			resources: 42,
+			resources: 44,
 			roles:     []string{"audit-notary", "audit-observe-reader", "audit-scheduler", "audit-writer"},
 			keys:      []string{"audit-archive", "audit-seal"}, functions: []string{"audit-notary", "audit-writer"},
 			queues: []string{"audit-ingest", "audit-ingest-dlq"},
@@ -432,7 +432,7 @@ func TestEveryCombinationOfIngestAndNotary(t *testing.T) {
 			table: true, schedule: true, mapping: true, topic: true,
 		}},
 		"ingest only (hive: the notary runs on Talos)": {false, true, want{
-			resources: 29,
+			resources: 30,
 			roles:     []string{"audit-observe-reader", "audit-writer"},
 			keys:      []string{"audit-archive"}, functions: []string{"audit-writer"},
 			queues: []string{"audit-ingest", "audit-ingest-dlq"},
@@ -440,7 +440,7 @@ func TestEveryCombinationOfIngestAndNotary(t *testing.T) {
 			table:  true, mapping: true, topic: true,
 		}},
 		"notary only": {true, false, want{
-			resources: 28,
+			resources: 29,
 			roles:     []string{"audit-notary", "audit-observe-reader", "audit-scheduler"},
 			keys:      []string{"audit-archive", "audit-seal"}, functions: []string{"audit-notary"},
 			alarms:   []string{"notary-errors", "notary-silent", "notary-throttles"},
@@ -563,9 +563,11 @@ func TestADisabledPartNeedsNoBinaryAndAnEnabledOneStillDoes(t *testing.T) {
 	}
 	// Both are still required when the part is on.
 	for says, edit := range map[string]func(*auditpulumi.Args){
-		"Writer.BinaryPath":     func(a *auditpulumi.Args) { a.Writer.BinaryPath = "" },
+		"Writer.Package":        func(a *auditpulumi.Args) { a.Writer.Package = "" },
+		"Writer.PackageSHA256":  func(a *auditpulumi.Args) { a.Writer.PackageSHA256 = "" },
 		"Writer.DeploymentYAML": func(a *auditpulumi.Args) { a.Writer.DeploymentYAML = "" },
-		"Notary.BinaryPath":     func(a *auditpulumi.Args) { a.Notary.BinaryPath = "" },
+		"Notary.Package":        func(a *auditpulumi.Args) { a.Notary.Package = "" },
+		"Notary.PackageSHA256":  func(a *auditpulumi.Args) { a.Notary.PackageSHA256 = "" },
 	} {
 		if _, _, err := build(t, edit); err == nil || !strings.Contains(err.Error(), says) {
 			t.Errorf("got %v, want a refusal naming %s", err, says)
@@ -642,11 +644,11 @@ func TestTheTruvityShapeIsExpressible(t *testing.T) {
 		if prop(f, "vpcConfig").IsObject() {
 			t.Errorf("%s is in a VPC", fn)
 		}
-		if !strings.Contains(packageFiles(t, f)["audit.yaml"], "lockMode: governance") {
+		if !strings.Contains(layerFiles(t, rec, fn)["audit.yaml"], "lockMode: governance") {
 			t.Errorf("%s is not in governance mode", fn)
 		}
 	}
-	if n := packageFiles(t, rec.one(t, functionType, "audit-notary"))["audit.yaml"]; !strings.Contains(n, "key: alias/audit-seal") {
+	if n := layerFiles(t, rec, "audit-notary")["audit.yaml"]; !strings.Contains(n, "key: alias/audit-seal") {
 		t.Errorf("the notary does not sign with the KMS seal key:\n%s", n)
 	}
 	if len(rec.ofType(scheduleType)) != 1 || len(rec.ofType(lockType)) != 1 || len(rec.ofType("aws:kms/key:Key")) != 2 {
@@ -675,7 +677,7 @@ func TestTheHiveShapeIsExpressible(t *testing.T) {
 	if prop(f, "vpcConfig").IsObject() {
 		t.Error("the writer is in a VPC")
 	}
-	if w := packageFiles(t, f)["audit.yaml"]; !strings.Contains(w, "lockMode: none") || strings.Contains(w, "kmsKey") {
+	if w := layerFiles(t, rec, "audit-writer")["audit.yaml"]; !strings.Contains(w, "lockMode: none") || strings.Contains(w, "kmsKey") {
 		t.Errorf("the writer's configuration:\n%s", w)
 	}
 	if len(rec.ofType(scheduleType)) != 0 || len(rec.ofType(lockType)) != 0 || len(rec.ofType("aws:kms/key:Key")) != 0 {
@@ -699,24 +701,25 @@ func writeCatalogue(t *testing.T, name, body string) string {
 
 func TestCataloguePathsAreDeliveredUnderTheirBaseNames(t *testing.T) {
 	rec, _, err := build(t, func(a *auditpulumi.Args) {
-		a.Writer.CataloguePaths = []string{writeCatalogue(t, "catalogue-roster.yaml", "source: roster\n")}
-		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\n"}
+		a.Writer.CataloguePaths = []string{writeCatalogue(t, "catalogue-roster.yaml", "source: roster\nversion: \"1.0.0\"\n")}
+		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\nversion: \"1.0.0\"\n"}
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	w := packageFiles(t, rec.one(t, functionType, "audit-writer"))
-	if w["catalogues/catalogue-roster.yaml"] != "source: roster\n" || w["catalogues/catalogue.yaml"] != "source: app\n" {
+	w := layerFiles(t, rec, "audit-writer")
+	if w["catalogues/catalogue-roster.yaml"] != "source: roster\nversion: \"1.0.0\"\n" || w["catalogues/catalogue.yaml"] != "source: app\nversion: \"1.0.0\"\n" {
 		t.Errorf("package has %v", keys(w))
 	}
-	if !strings.Contains(w["audit.yaml"], "catalogues: /var/task/catalogues") {
+	if !strings.Contains(w["audit.yaml"], "catalogues: /opt/audit/catalogues") {
 		t.Errorf("the configuration does not name the directory:\n%s", w["audit.yaml"])
 	}
 }
 
-// A catalogue change is a change of the package, which is what redeploys the
-// function: it never reaches the writer without a deploy.
-func TestAChangedCatalogueChangesTheWritersPackage(t *testing.T) {
+// A catalogue change is a change of the configuration layer, which makes a new
+// layer version and is what points the function at it: it never reaches the
+// writer without a deploy.
+func TestAChangedCatalogueChangesTheWritersConfigurationLayer(t *testing.T) {
 	pkg := func(body string) map[string]string {
 		rec, _, err := build(t, func(a *auditpulumi.Args) {
 			a.Writer.CataloguePaths = []string{writeCatalogue(t, "catalogue.yaml", body)}
@@ -724,7 +727,7 @@ func TestAChangedCatalogueChangesTheWritersPackage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return packageFiles(t, rec.one(t, functionType, "audit-writer"))
+		return layerFiles(t, rec, "audit-writer")
 	}
 	a, b := pkg("source: roster\nversion: 1\n"), pkg("source: roster\nversion: 1\nchanged: true\n")
 	if a["catalogues/catalogue.yaml"] == b["catalogues/catalogue.yaml"] {

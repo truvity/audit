@@ -324,14 +324,17 @@ listener, no registry, no stream, no database, no HTTP front door. A function ha
 no process that stays up, so there is nothing to serve and no replica count to
 state; what the Postgres table does for `audit-writer` is a DynamoDB table here.
 The file is read from `--config`, or `AUDIT_CONFIG`, or `/opt/audit/audit.yaml`,
-or `/var/task/audit.yaml`, whichever of them is first to exist; the Pulumi library
-renders it from the stack's own arguments. The writer says which file it read, and
-its digest, in its start-up record ([evidence](#evidence-the-writers-start-up-record)).
+or `/var/task/audit.yaml`, whichever of them is first to exist. In the Pulumi
+library's deployment it is in the function's configuration layer at
+`/opt/audit/audit.yaml`, named by `AUDIT_CONFIG`, rendered from the stack's own
+arguments ([AWS](../deployment/aws.md#configuration-as-a-layer)). The writer says
+which file it read, and its digest, in its start-up record
+([evidence](#evidence-the-writers-start-up-record)).
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `deployment` | path, required | | the profile configuration, in the package at `/var/task/deployment.yaml` |
-| `catalogues` | path | none | a directory of catalogues registered at start-up, `/var/task/catalogues` in the package. There is no registry service to register one with |
+| `deployment` | path, required | | the profile configuration, in the layer at `/opt/audit/deployment.yaml` |
+| `catalogues` | path | none | a directory of catalogues registered at start-up, `/opt/audit/catalogues` in the layer. There is no registry service to register one with |
 | `archive` | `archive`, required | | the bucket, `lockMode` (default `compliance`; the library sets the bucket's own) and `kmsKey` |
 | `keys` | `keys` | none | pseudonymisation keys. Only a provider a function outside a VPC can reach is usable: `transit` over a public address |
 | `forgetIdentities` | boolean | false | as in `audit-writer` |

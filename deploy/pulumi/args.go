@@ -87,6 +87,10 @@ type Args struct {
 	// Talos pod) that writes part of the archive itself, by IRSA. Nil creates
 	// none.
 	ArchiveWriter *ArchiveWriterArgs
+
+	// Guards are the switches of the checks that run before a function is
+	// created or updated. See GuardArgs.
+	Guards GuardArgs
 }
 
 // ArchiveArgs is the archive bucket and its keys.
@@ -170,7 +174,7 @@ type IngestArgs struct {
 	// Disabled leaves out the whole ingest side: the queue and its dead-letter
 	// queue, the deduplication table, the writer function with its role, log
 	// group and event source mapping, and the writer's and queue's alarms. For a
-	// deployment whose writer runs elsewhere. Writer.BinaryPath and
+	// deployment whose writer runs elsewhere. Writer.Package and
 	// Writer.DeploymentYAML are then not required and are ignored.
 	Disabled bool
 	// Senders are the principals (role or user ARNs) allowed to send to the
@@ -189,9 +193,15 @@ type IngestArgs struct {
 
 // WriterArgs is the writer function.
 type WriterArgs struct {
-	// BinaryPath is the linux/arm64 `bootstrap` built from cmd/audit-writer-lambda
-	// (the release's audit-writer-lambda zip holds it). Required.
-	BinaryPath string
+	// Package is the release's zip, `audit-writer-lambda_<version>_linux_arm64.zip`,
+	// as a path or an https URL. It is the function's code exactly as released:
+	// the library adds nothing to it, and the configuration is a layer
+	// (docs/deployment/aws.md#configuration-as-a-layer). Required.
+	Package string
+	// PackageSHA256 is that zip's SHA-256 in hex, from the release's
+	// checksums.txt. Required: the zip is read, hashed and refused when it is not
+	// the one named, so nothing is deployed that was not checked.
+	PackageSHA256 string
 	// DeploymentYAML is the profile configuration (`deployment:` in the
 	// function's configuration), which presets each profile is composed from.
 	// Required, and the same document the chart renders.
@@ -206,10 +216,13 @@ type WriterArgs struct {
 	// is refused unless the contents are identical; an unreadable or empty file
 	// is refused before anything is created.
 	//
-	// Either way the catalogue is part of the function's package, so any change
-	// to a catalogue's content changes the package and redeploys the writer on
-	// the next `pulumi up`: a catalogue change reaches the writer deliberately,
-	// as a deploy, never silently (docs/deployment/aws.md#the-applications-catalogue).
+	// Either way the catalogue is part of the configuration layer, an immutable
+	// layer version, so any change to a catalogue's content makes a new one and
+	// points the writer at it on the next `pulumi up`: a catalogue change reaches
+	// the writer deliberately, as a deploy, never silently
+	// (docs/deployment/aws.md#the-applications-catalogue). A changed catalogue
+	// under an unchanged version is refused before the function is updated, see
+	// GuardArgs.
 	CataloguePaths []string
 	// Keys is the `keys:` block of the function's configuration, for a
 	// deployment whose profiles pseudonymise. Only a provider reachable from a
@@ -244,12 +257,15 @@ type NotaryArgs struct {
 	// Disabled leaves out the whole notary: the P-384 seal key and its alias, the
 	// notary function with its role and log group, the schedule and the
 	// scheduler's role, and the notary's alarms. For a deployment that seals
-	// elsewhere (OpenBao transit) or not yet. Notary.BinaryPath is then not
+	// elsewhere (OpenBao transit) or not yet. Notary.Package is then not
 	// required and is ignored.
 	Disabled bool
-	// BinaryPath is the linux/arm64 `bootstrap` built from cmd/audit-notary-lambda.
-	// Required.
-	BinaryPath string
+	// Package is the release's zip, `audit-notary-lambda_<version>_linux_arm64.zip`,
+	// as a path or an https URL; see WriterArgs.Package. Required.
+	Package string
+	// PackageSHA256 is that zip's SHA-256 in hex, from the release's
+	// checksums.txt. Required.
+	PackageSHA256 string
 	// Schedule is the EventBridge Scheduler expression, in UTC. Default
 	// "cron(15 * * * ? *)": hourly, a quarter past, after the settle window of the
 	// hour that has just ended.
@@ -440,9 +456,12 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 
 	w := &c.Writer
 	if !in.Disabled {
-		if w.BinaryPath == "" {
-			return nil, errors.New("auditpulumi: Writer.BinaryPath is required: the linux/arm64 bootstrap of cmd/audit-writer-lambda " +
+		if w.Package == "" {
+			return nil, errors.New("auditpulumi: Writer.Package is required: the release's audit-writer-lambda_<version>_linux_arm64.zip " +
 				"(or set Ingest.Disabled)")
+		}
+		if !shaRE.MatchString(w.PackageSHA256) {
+			return nil, errors.New("auditpulumi: Writer.PackageSHA256 is required: the zip's SHA-256 in hex, from the release's checksums.txt")
 		}
 		if strings.TrimSpace(w.DeploymentYAML) == "" {
 			return nil, errors.New("auditpulumi: Writer.DeploymentYAML is required: the profile configuration (or set Ingest.Disabled)")
@@ -485,9 +504,14 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	}
 
 	n := &c.Notary
-	if n.BinaryPath == "" && !n.Disabled {
-		return nil, errors.New("auditpulumi: Notary.BinaryPath is required: the linux/arm64 bootstrap of cmd/audit-notary-lambda " +
-			"(or set Notary.Disabled)")
+	if !n.Disabled {
+		if n.Package == "" {
+			return nil, errors.New("auditpulumi: Notary.Package is required: the release's audit-notary-lambda_<version>_linux_arm64.zip " +
+				"(or set Notary.Disabled)")
+		}
+		if !shaRE.MatchString(n.PackageSHA256) {
+			return nil, errors.New("auditpulumi: Notary.PackageSHA256 is required: the zip's SHA-256 in hex, from the release's checksums.txt")
+		}
 	}
 	if n.Schedule == "" {
 		n.Schedule = "cron(15 * * * ? *)"

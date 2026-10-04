@@ -95,7 +95,9 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	child := pulumi.Parent(out)
 	tags := pulumi.ToStringMap(a.Tags)
 	ingest, notary := !a.Ingest.Disabled, !a.Notary.Disabled
-	kmsArchive := a.Archive.Encryption == EncryptionKMS
+	// createArchiveKey: the library makes the archive key only for "kms" with no
+	// KeyArn given; a given key, the AWS-managed key and SSE-S3 make none.
+	createArchiveKey := a.Archive.Encryption == EncryptionKMS && a.Archive.KeyArn == ""
 
 	// The account is looked up through the component's own provider: the invoke
 	// has the component as its parent, so it resolves the provider the caller
@@ -144,7 +146,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	// unverifiable.
 	protect := pulumi.Protect(true)
 	var archiveKey *kms.Key
-	if kmsArchive {
+	if createArchiveKey {
 		archiveKey, err = kms.NewKey(ctx, name+"-archive", &kms.KeyArgs{
 			Description:          pulumi.Sprintf("%s: the key the archive's objects are encrypted with", name),
 			EnableKeyRotation:    pulumi.Bool(true),
@@ -179,15 +181,19 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 			return nil, err
 		}
 	}
-	// archiveKeyArn is the key's ARN, or the empty string with SSE-S3, which is
-	// what every policy builder reads as "no key".
+	// archiveKeyArn is the key's ARN (the created key's, or Archive.KeyArn), or
+	// the empty string with SSE-S3 and with the AWS-managed key, which is what
+	// every policy builder reads as "no key": neither needs an IAM grant.
 	archiveKeyArn := pulumi.String("").ToStringOutput()
-	if kmsArchive {
+	switch {
+	case createArchiveKey:
 		archiveKeyArn = archiveKey.Arn
+	case a.Archive.KeyArn != "":
+		archiveKeyArn = pulumi.String(a.Archive.KeyArn).ToStringOutput()
 	}
 
 	// ---- the archive
-	bucket, err := newArchive(ctx, name, a, archiveKey, tags, child)
+	bucket, err := newArchive(ctx, name, a, archiveKeyArn, tags, child)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +365,7 @@ func newRole(ctx *pulumi.Context, name, path, assume string, tags pulumi.StringM
 // created with it off could only get the lock by being replaced. Object Lock is
 // a separate resource instead, which S3 accepts on an existing versioned bucket,
 // so moving NONE -> GOVERNANCE adds that resource and touches nothing else.
-func newArchive(ctx *pulumi.Context, name string, a *Args, key *kms.Key, tags pulumi.StringMap, opts ...pulumi.ResourceOption) (*s3.Bucket, error) {
+func newArchive(ctx *pulumi.Context, name string, a *Args, keyArn pulumi.StringOutput, tags pulumi.StringMap, opts ...pulumi.ResourceOption) (*s3.Bucket, error) {
 	ar := a.Archive
 	// The bucket is protected from a stack's own destroy in every mode, NONE
 	// included: Pulumi refuses to delete it until the protection is lifted by
@@ -399,18 +405,24 @@ func newArchive(ctx *pulumi.Context, name string, a *Args, key *kms.Key, tags pu
 			return nil, err
 		}
 	}
-	// SSE-KMS under the archive key, or SSE-S3 (Archive.Encryption "s3"): then
-	// there is no key, and a bucket key has nothing to amortise.
+	// SSE-KMS under the archive key (created, or Archive.KeyArn), SSE-KMS under
+	// the AWS-managed key aws/s3 (no KmsMasterKeyId: S3 uses it), or SSE-S3
+	// (Archive.Encryption "s3"): then there is no key, and a bucket key has
+	// nothing to amortise.
 	sse := &s3.BucketServerSideEncryptionConfigurationRuleArgs{
 		ApplyServerSideEncryptionByDefault: &s3.BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
 			SseAlgorithm: pulumi.String("AES256"),
 		},
 	}
-	if key != nil {
+	if ar.Encryption != EncryptionS3 {
+		def := &s3.BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
+			SseAlgorithm: pulumi.String("aws:kms"),
+		}
+		if ar.Encryption == EncryptionKMS {
+			def.KmsMasterKeyId = keyArn
+		}
 		sse = &s3.BucketServerSideEncryptionConfigurationRuleArgs{
-			ApplyServerSideEncryptionByDefault: &s3.BucketServerSideEncryptionConfigurationRuleApplyServerSideEncryptionByDefaultArgs{
-				SseAlgorithm: pulumi.String("aws:kms"), KmsMasterKeyId: key.Arn,
-			},
+			ApplyServerSideEncryptionByDefault: def,
 			// One data key per bucket and period instead of one KMS call per
 			// object: the writer puts an object per batch.
 			BucketKeyEnabled: pulumi.Bool(true),

@@ -28,9 +28,13 @@ func archiveConfig(name string, a *Args) map[string]any {
 		"bucket":   map[string]any{"name": a.Archive.BucketName},
 		"lockMode": lowerMode(a.Archive.ObjectLockMode),
 	}
-	// With SSE-S3 there is no key to name: the bucket's default encryption applies.
+	// With SSE-S3 and the AWS-managed key there is no key to name: the bucket's
+	// default encryption applies. A given key is named by its ARN.
 	if a.Archive.Encryption == EncryptionKMS {
 		out["kmsKey"] = archiveKeyAlias(name)
+		if a.Archive.KeyArn != "" {
+			out["kmsKey"] = a.Archive.KeyArn
+		}
 	}
 	return out
 }

@@ -34,6 +34,12 @@ const (
 	// granted a kms action on one. The notary's seal key is a different key and
 	// is unaffected.
 	EncryptionS3 = "s3"
+	// EncryptionAWSManaged is SSE-KMS under the AWS-managed key `aws/s3`, with
+	// bucket keys: no key is created and no role is granted a kms action. S3
+	// itself decrypts for any principal of the account that may s3:GetObject.
+	// The key's policy cannot be changed and its use is logged in CloudTrail
+	// under the account, not under a key of its own.
+	EncryptionAWSManaged = "aws-managed"
 )
 
 // Args is everything the library is given. Required fields are named in their
@@ -128,7 +134,23 @@ type ArchiveArgs struct {
 	// trade is the key policy and its CloudTrail record of every decrypt. The
 	// encryption of existing objects does not change by editing this: S3 keeps
 	// what each object was written with.
+	//
+	// "aws-managed" is SSE-KMS under the AWS-managed key `aws/s3` (bucket keys
+	// on): no key is created, no role is granted a kms action, and the
+	// functions' configuration names no `kmsKey` (the bucket's default
+	// applies). With "kms" and KeyArn set, the key is the caller's, see KeyArn.
 	Encryption string
+	// KeyArn is an existing symmetric KMS key to encrypt the archive with, in
+	// place of the one the library creates. Only with Encryption "kms" (or empty);
+	// refused with "s3" and "aws-managed". No key or alias is created, and the
+	// writer, notary, observe reader and archive-writer roles are granted
+	// `kms:GenerateDataKey` / `kms:Decrypt` (the reader: `kms:Decrypt`) on THIS
+	// key through their IAM policies. The key's own policy must therefore allow
+	// IAM to grant access (the default policy's `arn:aws:iam::<account>:root`
+	// statement does); the library does not edit it and does not protect it.
+	// The functions are configured with this ARN as `kmsKey`. Default "": the
+	// library creates `alias/<name>-archive`.
+	KeyArn string
 
 	// Profiles are the deployment's profile names. Required: a lifecycle rule is
 	// written for each `records/<profile>/` prefix, and the profile is the first
@@ -326,6 +348,9 @@ type ArchiveWriterArgs struct {
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 
 // keyComponent is what the store's keys allow of a profile name.
+// keyArn is a KMS key ARN, which is what an IAM policy can name; an alias ARN is not.
+var keyArn = regexp.MustCompile(`^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[A-Za-z0-9-]+$`)
+
 var keyComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 // withDefaults fills what the arguments leave unset, and refuses what cannot
@@ -373,9 +398,19 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	switch ar.Encryption {
 	case "":
 		ar.Encryption = EncryptionKMS
-	case EncryptionKMS, EncryptionS3:
+	case EncryptionKMS, EncryptionS3, EncryptionAWSManaged:
 	default:
-		return nil, fmt.Errorf("auditpulumi: Archive.Encryption %q must be %q (the default) or %q", ar.Encryption, EncryptionKMS, EncryptionS3)
+		return nil, fmt.Errorf("auditpulumi: Archive.Encryption %q must be %q (the default), %q or %q",
+			ar.Encryption, EncryptionKMS, EncryptionAWSManaged, EncryptionS3)
+	}
+	if ar.KeyArn != "" {
+		if ar.Encryption != EncryptionKMS {
+			return nil, fmt.Errorf("auditpulumi: Archive.KeyArn is only for Archive.Encryption %q, not %q", EncryptionKMS, ar.Encryption)
+		}
+		if !keyArn.MatchString(ar.KeyArn) {
+			return nil, fmt.Errorf("auditpulumi: Archive.KeyArn %q is not a KMS key ARN (arn:<partition>:kms:<region>:<account>:key/<id>); "+
+				"an alias ARN cannot be granted in IAM", ar.KeyArn)
+		}
 	}
 	if len(ar.Profiles) == 0 {
 		return nil, errors.New("auditpulumi: Archive.Profiles is required: a lifecycle rule is written for each profile's prefix")

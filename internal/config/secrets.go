@@ -14,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	policyconfig "github.com/truvity/policy/config"
 )
 
 // The sources a `secrets` block names.
@@ -106,8 +105,11 @@ func (s *Secrets) Source() string {
 }
 
 // Get reads the secret `name` that `field` holds. field is the key as the file
-// spells it, for the error: an error names the field and the secret's name and
-// where it looked, and never a value.
+// spells it. An error names the field, the source and the root, and neither the
+// name nor a value: the file says which name the field holds, an error is logged
+// and rendered where a name that is a path or a variable has no business, and a
+// refusal that quoted what it was given would be one more place a mistake (a
+// secret pasted in place of its name) reaches a log.
 func (s *Secrets) Get(ctx context.Context, field, name string) (string, error) {
 	v, err := s.get(ctx, name)
 	if err != nil {
@@ -120,38 +122,43 @@ func (s *Secrets) get(ctx context.Context, name string) (string, error) {
 	switch s.Source() {
 	case SourceEnv:
 		if !envName.MatchString(name) {
-			return "", fmt.Errorf("%q is not the name of an environment variable", name)
+			return "", errors.New("the name is not that of an environment variable (secrets.source is env)")
 		}
-		return policyconfig.Secret(name)
+		v, ok := os.LookupEnv(name)
+		switch {
+		case !ok:
+			return "", errors.New("the environment variable it names is not set (secrets.source is env)")
+		case v == "":
+			return "", errors.New("the environment variable it names is empty (secrets.source is env)")
+		}
+		return v, nil
 	case SourceFile:
 		if !secretName.MatchString(name) {
-			return "", fmt.Errorf("%q is not a secret name: relative, with no .. in it", name)
+			return "", errors.New("the name is not a secret name: a relative path of letters, digits, . _ and -, not climbing with ..")
 		}
-		file := filepath.Join(s.src.Root, filepath.FromSlash(name))
-		b, err := os.ReadFile(file)
+		b, err := os.ReadFile(filepath.Join(s.src.Root, filepath.FromSlash(name)))
 		if err != nil {
-			return "", fmt.Errorf("secret %s is not readable under %s: %w", name, s.src.Root, pathError(err))
+			return "", fmt.Errorf("the secret it names is not readable under secrets.root %s: %w", s.src.Root, pathError(err))
 		}
 		v := strings.TrimSuffix(string(b), "\n")
 		if v == "" {
-			return "", fmt.Errorf("secret %s is empty", name)
+			return "", fmt.Errorf("the secret it names is empty (a file under secrets.root %s)", s.src.Root)
 		}
 		return v, nil
 	case SourceSSM:
 		if !secretName.MatchString(name) {
-			return "", fmt.Errorf("%q is not a secret name: relative, with no .. in it", name)
+			return "", errors.New("the name is not a secret name: a relative path of letters, digits, . _ and -, not climbing with ..")
 		}
 		s.once.Do(func() { s.api, s.err = OpenSSM(ctx) })
 		if s.err != nil {
 			return "", s.err
 		}
-		param := path.Join(s.src.Root, name)
-		out, err := s.api.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(param), WithDecryption: aws.Bool(true)})
+		out, err := s.api.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(path.Join(s.src.Root, name)), WithDecryption: aws.Bool(true)})
 		if err != nil {
-			return "", fmt.Errorf("secret %s: ssm %s: %w", name, param, err)
+			return "", fmt.Errorf("the SSM parameter it names under secrets.root %s could not be read: %w", s.src.Root, err)
 		}
 		if out.Parameter == nil || aws.ToString(out.Parameter.Value) == "" {
-			return "", fmt.Errorf("secret %s: ssm %s is empty", name, param)
+			return "", fmt.Errorf("the SSM parameter it names under secrets.root %s is empty", s.src.Root)
 		}
 		return aws.ToString(out.Parameter.Value), nil
 	}

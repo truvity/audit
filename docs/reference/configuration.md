@@ -113,8 +113,8 @@ Durations are strings in Go's notation: `30s`, `2m`, `168h`.
 A secret is never in the file. A field that holds one is named `...Secret` and
 holds the **name** of the secret, which the file's one `secrets` block says how
 to find. The process reads exactly the secrets the file names, and one that is
-absent or empty is an error naming the field, the name and where it looked, never
-a value. These are all of them:
+absent or empty is an error naming the field and where it looked (the source and
+the root), never the name it holds or a value. These are all of them:
 
 | key | holds |
 |---|---|

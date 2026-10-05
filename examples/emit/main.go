@@ -1,5 +1,5 @@
 // Command emit is an example application that records what it does into the
-// audit trail. It is the code docs/guides/emit.md walks through, compiled on
+// audit trail. It is the code docs/how-to/emit-records.md walks through, compiled on
 // every run of the gate so that the guide cannot drift from the library.
 //
 // It needs a writer and a registry, and a token that proves which workload it

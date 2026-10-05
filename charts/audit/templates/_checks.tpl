@@ -243,7 +243,7 @@ tenant. */}}
 
 {{- if .Values.query.enabled -}}
   {{- if not .Values.query.grants.issuers -}}
-  {{- fail "audit: `query.grants.issuers` is empty, so nobody could ever sign in and the query service refuses to start. Name the issuers whose tokens it trusts; see docs/guides/read.md#access." -}}
+  {{- fail "audit: `query.grants.issuers` is empty, so nobody could ever sign in and the query service refuses to start. Name the issuers whose tokens it trusts; see docs/how-to/read-the-trail.md#access." -}}
   {{- end -}}
   {{- $query := .Values.query.config | default dict -}}
   {{- $queryDatabase := dig "database" nil $query -}}

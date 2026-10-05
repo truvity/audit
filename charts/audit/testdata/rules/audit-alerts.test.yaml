@@ -37,7 +37,7 @@ tests:
                 archive's dead-letter prefix and counted. Each is a record a
                 producer sent that is not in the trail in its proper form. Read the
                 writer's log for the reason, then the dead-letter objects.
-              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditrecordsdeadlettered
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditrecordsdeadlettered
 
   - name: a flat dead-letter counter, and another namespace's, do not fire
     interval: 1m
@@ -74,7 +74,7 @@ tests:
                 are not in the trail and cannot be recovered from here. The sink was
                 away longer than the queue is deep: see audit_emit_queue_pending for
                 the climb, and the sink's own health.
-              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditemitterdroppingrecords
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditemitterdroppingrecords
 
   - name: an emitter with a deep queue and nothing dropped does not fire
     interval: 1m
@@ -116,7 +116,7 @@ tests:
                 notary CronJob (`kubectl get cronjob`), its last Job's log, the
                 seal key it signs with and whether an object of the profile does not
                 match its own metadata, which the notary refuses to seal past.
-              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditsealstale
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditsealstale
 
   - name: a healthy hourly notary, one missed run, and another namespace's stale series do not fire
     interval: 1m
@@ -177,7 +177,7 @@ tests:
                 is unaffected; search answers from an index that is behind. Look at
                 whether audit-observe is running, at its log,
                 and at the database's load.
-              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexlaghigh
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditindexlaghigh
 
   - name: an index a settle window behind does not fire
     interval: 1m
@@ -221,7 +221,7 @@ tests:
                 catalogue, the database) is fixed; an unreadable object is skipped and
                 `audit reindex --profile <name> --from <day> --to <day>` is
                 how a range is read again.
-              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexrowsdeferred
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditindexrowsdeferred
 
   - name: a deferred counter that stopped rising an hour ago does not fire
     interval: 1m
@@ -256,7 +256,7 @@ tests:
                 last 15 minutes were refused as invalid. The refusals name the
                 record and the reason in the writer's log. A producer is sending
                 what its catalogue does not allow, or a catalogue changed under it.
-              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditwriterrejectingrecords
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditwriterrejectingrecords
 
   - name: a small share refused, and a high share of a handful of records, do not fire
     interval: 1m
@@ -299,7 +299,7 @@ tests:
                 15m. Records are accumulating on the queue
                 and are delivered again. Read the writer's log for the refusal, and
                 the queue's own backlog and age of the oldest message.
-              runbook_url: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditqueueconsumerfailing
+              runbook_url: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditqueueconsumerfailing
 
   - name: two failures around a restart, and a failing front door, do not fire
     interval: 1m

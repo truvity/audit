@@ -1,6 +1,6 @@
 // Command read is an example of reading the audit trail from Go: a search,
 // paged to the end with its cursor, and one record read with where it came
-// from. It is the code docs/guides/read.md walks through, compiled on every
+// from. It is the code docs/how-to/read-the-trail.md walks through, compiled on every
 // run of the gate so that the guide cannot drift from the API.
 //
 // The query service authenticates a bearer token from an issuer it trusts;

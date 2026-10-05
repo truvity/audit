@@ -38,7 +38,7 @@ spec:
               archive's dead-letter prefix and counted. Each is a record a
               producer sent that is not in the trail in its proper form. Read the
               writer's log for the reason, then the dead-letter objects.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditrecordsdeadlettered"
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditrecordsdeadlettered"
         # An async emitter gives a record up only when its queue overflows, and
         # nothing else counts it. A record dropped never exists, so there is no
         # healthy non-zero range either. Selected in every application
@@ -58,7 +58,7 @@ spec:
               are not in the trail and cannot be recovered from here. The sink was
               away longer than the queue is deep: see audit_emit_queue_pending for
               the climb, and the sink's own health.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditemitterdroppingrecords"
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditemitterdroppingrecords"
         # The notary seals the hour that has just closed once it has settled, so
         # the newest sealed hour's age runs from about 17 minutes to about 1h20m
         # between runs of an hourly job. One missed run (a node drain, a slow KMS)
@@ -88,7 +88,7 @@ spec:
               notary CronJob (`kubectl get cronjob`), its last Job's log, the
               seal key it signs with and whether an object of the profile does not
               match its own metadata, which the notary refuses to seal past.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditsealstale"
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditsealstale"
         # The lag is from an object being put into the archive to its rows being
         # in the index, as audit-observe measures it. The indexer does not look at
         # an object younger than its settle window (default 2m), so that window is
@@ -111,7 +111,7 @@ spec:
               percentile. The archive is unaffected; search answers from an index
               that is behind. Look at whether audit-observe is running, at its log,
               and at the database's load.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexlaghigh"
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditindexlaghigh"
         # Objects the archive holds and the indexer could not index: a fetch or a
         # catalogue it will try again (reason=retry), or an object that does not
         # decode and has been skipped (reason=unreadable). Any is search that
@@ -133,7 +133,7 @@ spec:
               catalogue, the database) is fixed; an unreadable object is skipped and
               `audit reindex --profile <name> --from <day> --to <day>` is
               how a range is read again.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditindexrowsdeferred"
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditindexrowsdeferred"
         # The share of records refused for their own sake. A producer with a bug
         # is refused at a steady few percent of ITS traffic and the rest of the
         # installation is unaffected, so the threshold is on the share of the
@@ -164,7 +164,7 @@ spec:
               last 15 minutes were refused as invalid. The refusals name the
               record and the reason in the writer's log. A producer is sending
               what its catalogue does not allow, or a catalogue changed under it.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditwriterrejectingrecords"
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditwriterrejectingrecords"
         # A consumer that fails once is a writer restarting or a broker
         # electing a leader, and the queue delivers the batch again. A failure
         # rate that is still above zero fifteen minutes later is not that: the
@@ -184,4 +184,4 @@ spec:
               15m. Records are accumulating on the queue
               and are delivered again. Read the writer's log for the refusal, and
               the queue's own backlog and age of the oldest message.
-            runbook_url: "https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md#auditqueueconsumerfailing"
+            runbook_url: "https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md#auditqueueconsumerfailing"

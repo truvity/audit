@@ -1,7 +1,7 @@
 // Package suite is the ONE end-to-end suite for this repository's kind
 // tier: it proves the chart works against real servers, through Service
 // endpoints, the way truvity/policy's own example suite does — see that
-// repository's docs/guides/testing.md for the pattern this one borrows.
+// repository's docs/how-to/test-the-kind-tier.md for the pattern this one borrows.
 //
 // It is inert unless E2E_NAMESPACE is set, so `go test ./...` (and
 // therefore `just check`) never touches a network or a cluster. Names come

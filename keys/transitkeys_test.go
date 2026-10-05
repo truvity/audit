@@ -141,7 +141,7 @@ func TestTransitDestroyLeavesATombstone(t *testing.T) {
 
 // Scoping is the engine's: a metering role granted its own purpose cannot
 // pseudonymise for security, and a writer's role cannot destroy. The policies
-// are the ones docs/operations/openbao-keys.md tells a deployment to write.
+// are the ones docs/how-to/configure-openbao-keys.md tells a deployment to write.
 func TestTransitScopeIsTheEnginesPolicy(t *testing.T) {
 	url, root := openbao(t)
 	prefix := runPrefix()

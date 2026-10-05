@@ -139,7 +139,7 @@ func Values() []byte {
 			"enabled":        boolean("Run it."),
 			"replicas":       integer("Pods.", 0, nil),
 			"service":        obj("Its Service.", m{"port": integer("The Service's port.", 1, nil)}),
-			"grants":         m{"type": "object", "description": "The grants file a config names as `grants`: issuers, presets and rules. See docs/guides/read.md#access."},
+			"grants":         m{"type": "object", "description": "The grants file a config names as `grants`: issuers, presets and rules. See docs/how-to/read-the-trail.md#access."},
 			"keysVolume":     boolean("Mount the writer's key directory read-only, for resolve with the local key provider."),
 			"serviceAccount": def("serviceAccount"),
 		})),

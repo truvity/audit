@@ -31,6 +31,13 @@ manifest. */ -}}
 {{- end -}}
 {{- end -}}
 
+{{- /* The writer takes up to 30s to stop and flush (audit-writer's shutdown
+budget), after the front door's preStop sleep. A grace period that does not
+outlast both has the kubelet kill the process mid-write. */ -}}
+{{- if le (int .Values.terminationGracePeriodSeconds) (add 30 (int .Values.preStopSleepSeconds)) -}}
+{{- fail (printf "audit: terminationGracePeriodSeconds (%d) must be longer than the writer's 30s shutdown budget plus preStopSleepSeconds (%d): the kubelet would kill it while it writes what it holds." (int .Values.terminationGracePeriodSeconds) (int .Values.preStopSleepSeconds)) -}}
+{{- end -}}
+
 {{- if not (has .Values.mode (list "direct" "stream")) -}}
 {{- fail (printf "audit: `mode` is `direct` or `stream`, not %q." .Values.mode) -}}
 {{- end -}}

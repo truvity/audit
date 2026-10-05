@@ -287,3 +287,102 @@ func TestAnExternalWriterRendersNoWritePath(t *testing.T) {
 		}
 	}
 }
+
+// overlay renders values with a second file laid over them.
+func overlay(t *testing.T, values, extra string) []map[string]any {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "overlay.yaml")
+	if err := os.WriteFile(p, []byte(extra), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(helm(t), "template", "audit", ".", "-f", values, "-f", p)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("helm template: %v\n%s", err, stderr.String())
+	}
+	var docs []map[string]any
+	for _, part := range strings.Split(string(out), "\n---\n") {
+		var doc map[string]any
+		if err := yaml.Unmarshal([]byte(part), &doc); err != nil {
+			t.Fatal(err)
+		}
+		if doc != nil {
+			docs = append(docs, doc)
+		}
+	}
+	return docs
+}
+
+// podOf is the pod template of the Deployment with this name.
+func podOf(t *testing.T, docs []map[string]any, name string) map[string]any {
+	t.Helper()
+	for _, doc := range docs {
+		if doc["kind"] != "Deployment" {
+			continue
+		}
+		if n, _ := dig(doc, "metadata", "name"); n == name {
+			pod, ok := dig(doc, "spec", "template")
+			if !ok {
+				t.Fatalf("%s has no pod template", name)
+			}
+			return pod.(map[string]any)
+		}
+	}
+	t.Fatalf("no Deployment %s", name)
+	return nil
+}
+
+func annotation(t *testing.T, pod map[string]any, key string) (string, bool) {
+	t.Helper()
+	v, ok := dig(pod, "metadata", "annotations", key)
+	s, _ := v.(string)
+	return s, ok
+}
+
+// A writer pod has longer to stop than the writer takes to flush, and the front
+// door, but not the consumer that nothing calls, sleeps first so that it keeps
+// answering while its endpoints drain.
+func TestAWriterPodOutlastsItsShutdownAndTheFrontDoorSleepsFirst(t *testing.T) {
+	docs := render(t, "testdata/values/stream.yaml")
+	for _, name := range []string{"audit", "audit-consumer"} {
+		pod := podOf(t, docs, name)
+		grace, _ := dig(pod, "spec", "terminationGracePeriodSeconds")
+		if g, _ := grace.(float64); g <= 30+5 {
+			t.Errorf("%s: terminationGracePeriodSeconds = %v, must outlast the 30s shutdown and the preStop sleep", name, grace)
+		}
+		containers, _ := dig(pod, "spec", "containers")
+		pre, has := dig(containers.([]any)[0], "lifecycle", "preStop", "sleep", "seconds")
+		if front := name == "audit"; front != has {
+			t.Errorf("%s: preStop sleep present = %v, want %v (%v)", name, has, front, pre)
+		}
+	}
+}
+
+func TestTheDeploymentChecksumCoversTheWholeProfileDocument(t *testing.T) {
+	was := podOf(t, render(t, "testdata/values/direct.yaml"), "audit")
+	flipped := podOf(t, overlay(t, "testdata/values/direct.yaml", "externalIdentifiersAreOpaque: false\n"), "audit")
+	a, _ := annotation(t, was, "checksum/deployment")
+	b, _ := annotation(t, flipped, "checksum/deployment")
+	if a == "" || a == b {
+		t.Errorf("flipping externalIdentifiersAreOpaque left checksum/deployment as it was (%q, %q): a pod would keep the old profile document", a, b)
+	}
+}
+
+func TestTheCataloguesChecksumIsOnTheWritersThatReadThem(t *testing.T) {
+	const catalogues = "catalogues:\n  shop.yaml: |\n    source: shop\n    version: \"1.0.0\"\n"
+	docs := overlay(t, "testdata/values/stream.yaml", catalogues)
+	if _, ok := annotation(t, podOf(t, docs, "audit-consumer"), "checksum/catalogues"); !ok {
+		t.Error("the writer that registers catalogues does not restart when one changes")
+	}
+	if _, ok := annotation(t, podOf(t, docs, "audit"), "checksum/catalogues"); ok {
+		t.Error("the receiver holds no catalogues and should not restart for them")
+	}
+	changed := overlay(t, "testdata/values/stream.yaml", strings.Replace(catalogues, "1.0.0", "1.0.1", 1))
+	a, _ := annotation(t, podOf(t, docs, "audit-consumer"), "checksum/catalogues")
+	b, _ := annotation(t, podOf(t, changed, "audit-consumer"), "checksum/catalogues")
+	if a == b {
+		t.Error("a changed catalogue left the checksum as it was")
+	}
+}

@@ -3838,6 +3838,12 @@
     "podSecurityContext": {
       "type": "object"
     },
+    "preStopSleepSeconds": {
+      "default": 5,
+      "description": "How long the front door sleeps before it is stopped, so that it keeps answering while the endpoints drain. 0 turns it off.",
+      "minimum": 0,
+      "type": "integer"
+    },
     "profiles": {
       "additionalProperties": {
         "type": "object"
@@ -4010,6 +4016,12 @@
         }
       },
       "type": "object"
+    },
+    "terminationGracePeriodSeconds": {
+      "default": 45,
+      "description": "How long a write-path pod has to stop: longer than the writer's 30s shutdown budget plus `preStopSleepSeconds`, which the chart enforces.",
+      "minimum": 31,
+      "type": "integer"
     },
     "tolerations": {
       "type": "array"

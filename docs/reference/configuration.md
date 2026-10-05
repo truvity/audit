@@ -721,6 +721,7 @@ Everything else under a component is the platform's, not the binary's:
 | `replicas`, `writer.consumers`, `query.replicas` | pod counts. `replicas` is the front door's: the writer in direct mode, the receiver in stream mode |
 | `schedule`, `enabled` | for each job |
 | `image`, `resources`, `nodeSelector`, `tolerations`, `affinity`, `podAnnotations`, security contexts | the pods |
+| `terminationGracePeriodSeconds`, `preStopSleepSeconds` | how a write-path pod stops. The writer takes up to 30s to stop taking records and write what it holds, so the grace period (default 45) must outlast that plus the front door's preStop sleep (default 5, a sleep action, 0 turns it off); the chart refuses a grace period that does not |
 
 The values that are not configuration of a binary:
 

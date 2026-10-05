@@ -179,13 +179,15 @@ func Values() []byte {
 				"extraEnv": m{"type": "object", "propertyNames": m{"pattern": "^OTEL_"}, "additionalProperties": m{"type": "string"}, "description": "Other OpenTelemetry SDK variables, `OTEL_*` only. A secret reaches a pod through `secretEnv`, never here. It cannot carry OTEL_EXPORTER_OTLP_ENDPOINT: `endpoint` is where that is set."},
 			}),
 		}),
-		"podAnnotations":     m{"type": "object"},
-		"podSecurityContext": m{"type": "object"},
-		"securityContext":    m{"type": "object"},
-		"resources":          m{"type": "object"},
-		"nodeSelector":       m{"type": "object"},
-		"tolerations":        m{"type": "array"},
-		"affinity":           m{"type": "object"},
+		"terminationGracePeriodSeconds": integer("How long a write-path pod has to stop: longer than the writer's 30s shutdown budget plus `preStopSleepSeconds`, which the chart enforces.", 31, 45),
+		"preStopSleepSeconds":           integer("How long the front door sleeps before it is stopped, so that it keeps answering while the endpoints drain. 0 turns it off.", 0, 5),
+		"podAnnotations":                m{"type": "object"},
+		"podSecurityContext":            m{"type": "object"},
+		"securityContext":               m{"type": "object"},
+		"resources":                     m{"type": "object"},
+		"nodeSelector":                  m{"type": "object"},
+		"tolerations":                   m{"type": "array"},
+		"affinity":                      m{"type": "object"},
 	}
 	for k, v := range telemetryValues() {
 		props[k] = v

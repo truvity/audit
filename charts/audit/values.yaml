@@ -478,6 +478,15 @@ service:
   type: ClusterIP
   port: 8080
 
+# How a writer pod stops. audit-writer takes up to 30s to stop accepting records
+# and write what it holds, so the grace period must be longer than that plus the
+# front door's preStop sleep, and the chart refuses one that is not. The sleep
+# (the front door only; 0 turns it off) keeps the pod answering while the
+# endpoints and the clients' connections drain, which happen after it is told to
+# stop and not before.
+terminationGracePeriodSeconds: 45
+preStopSleepSeconds: 5
+
 # The scheduled jobs. Each is `audit <job> --config`, and each records what it
 # did through the writer's own sink, so each needs to reach it (`sink` in its
 # config, and a token if the writer verifies callers).

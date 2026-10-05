@@ -364,7 +364,7 @@ spec:
         checksum/grants: c6e926709c6176bc66b906eaad228b9bb32e6760036c8733b2758355055342a1
         # A grant preset turns roles into profiles, so the profiles are part
         # of what a grant means.
-        checksum/deployment: 5eacd6a942679dbcd129e785ee9432ef5945af9138235dadaf95cbcd5e92b58b
+        checksum/deployment: 3cf5d4189a49067986764efdfb49280818d399f4d2e1cef580a4e37d1b9d7a52
     spec:
       serviceAccountName: audit-query
       

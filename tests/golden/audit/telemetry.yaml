@@ -714,7 +714,7 @@ spec:
         checksum/grants: 64a2af7a257e3558f4c717cd5961046d26a7a78787c31965c503d3e1aa5589a9
         # A grant preset turns roles into profiles, so the profiles are part
         # of what a grant means.
-        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        checksum/deployment: 025f20f9194c2c78357f415d7f7d888c05faebd2a6ab3837891f1d67e72682f1
     spec:
       serviceAccountName: audit-query
       
@@ -852,11 +852,17 @@ spec:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
         checksum/config: 7eddce2977643fee9a4f1fd136ddcf3fe01f1333d9d824b1a03d76a65a080360
-        # Likewise a profile change.
-        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        # Likewise a change to the profile document, hashed whole: it also holds
+        # externalIdentifiersAreOpaque, which changes what a profile keeps.
+        checksum/deployment: 025f20f9194c2c78357f415d7f7d888c05faebd2a6ab3837891f1d67e72682f1
         # And who may write: a changed issuer or mapping must reach it.
         checksum/workloads: 0096193e035e4003ff3940211abf0b4dfdb7c9fcdbad2524453bd17047f897c3
     spec:
+      # The process takes up to 30s to stop taking records and write what it
+      # holds (the shutdown budget of audit-writer), after the preStop sleep
+      # below. The grace period has to outlast both, or the kubelet kills it
+      # mid-write and the batch is redelivered.
+      terminationGracePeriodSeconds: 45
       serviceAccountName: audit-receiver
       
       securityContext:
@@ -893,6 +899,13 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+          lifecycle:
+            # Endpoints and the clients' connections drain after the pod is told
+            # to stop, not before: sleeping first keeps it answering until
+            # nothing is sent to it. A sleep action, because the image has no shell.
+            preStop:
+              sleep:
+                seconds: 5
           livenessProbe:
             httpGet:
               path: /healthz
@@ -977,11 +990,17 @@ spec:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
         checksum/config: b8cedb82bb0df065af2739591dae67727e9b951335a73be55d8976f59f20abf0
-        # Likewise a profile change.
-        checksum/deployment: 4432a6b2c0ad0165d18cb5a15b6bf7efe83c34765786daad3f77e2c2c970f610
+        # Likewise a change to the profile document, hashed whole: it also holds
+        # externalIdentifiersAreOpaque, which changes what a profile keeps.
+        checksum/deployment: 025f20f9194c2c78357f415d7f7d888c05faebd2a6ab3837891f1d67e72682f1
         # And who may write: a changed issuer or mapping must reach it.
         checksum/workloads: 0096193e035e4003ff3940211abf0b4dfdb7c9fcdbad2524453bd17047f897c3
     spec:
+      # The process takes up to 30s to stop taking records and write what it
+      # holds (the shutdown budget of audit-writer), after the preStop sleep
+      # below. The grace period has to outlast both, or the kubelet kills it
+      # mid-write and the batch is redelivered.
+      terminationGracePeriodSeconds: 45
       serviceAccountName: audit
       
       securityContext:

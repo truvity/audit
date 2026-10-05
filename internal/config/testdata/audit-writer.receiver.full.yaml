@@ -1,4 +1,4 @@
-apiVersion: audit.truvity.com/writer/v1
+apiVersion: truvity.github.io/audit-writer/v1
 # A receiver forwarding to SQS, every key it has set.
 mode: receiver
 require: queued

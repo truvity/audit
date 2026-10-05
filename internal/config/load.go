@@ -20,14 +20,12 @@ import (
 )
 
 // Group is the group of every apiVersion in this repository's documents:
-// `audit.truvity.com/<kind>/v1`.
+// `truvity.github.io/<kind>/v1`.
 const Group = schema.Group
 
-// KindName is a document's kind in truvity/policy's sense, `<group>/<kind>`, from
-// the name of its schema: `audit-writer` is `audit.truvity.com/writer`.
-func KindName(schemaName string) string {
-	return Group + "/" + strings.TrimPrefix(schemaName, "audit-")
-}
+// KindName is a document's kind in truvity/policy's sense, `<group>/<kind>`: the
+// name of its schema under the group, `truvity.github.io/audit-writer`.
+func KindName(schemaName string) string { return Group + "/" + schemaName }
 
 // schemaFor reads the committed schema of one binary: the one embedded in the
 // release, which is the one the chart's tests and a deployer's CI validate

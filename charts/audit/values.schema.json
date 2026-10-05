@@ -10,10 +10,10 @@
       "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "audit.truvity.com/clock-sync/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/clock-sync/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-clock-sync/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-clock-sync/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/clock-sync/v1"
+            "truvity.github.io/audit-clock-sync/v1"
           ]
         },
         "maxOffset": {
@@ -136,10 +136,10 @@
       "description": "The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "audit.truvity.com/migrate/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/migrate/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-migrate/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-migrate/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/migrate/v1"
+            "truvity.github.io/audit-migrate/v1"
           ]
         },
         "database": {
@@ -242,10 +242,10 @@
       "description": "The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "audit.truvity.com/notary/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/notary/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-notary/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-notary/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/notary/v1"
+            "truvity.github.io/audit-notary/v1"
           ]
         },
         "archive": {
@@ -611,10 +611,10 @@
       "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "audit.truvity.com/observe/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/observe/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-observe/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-observe/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/observe/v1"
+            "truvity.github.io/audit-observe/v1"
           ]
         },
         "archive": {
@@ -898,10 +898,10 @@
       "description": "The configuration of `audit purge --config`, which brings the index and the deduplication table within the profiles. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "audit.truvity.com/purge/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/purge/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-purge/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-purge/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/purge/v1"
+            "truvity.github.io/audit-purge/v1"
           ]
         },
         "database": {
@@ -1022,10 +1022,10 @@
       "description": "The configuration of audit-query, the read path. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "audit.truvity.com/query/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/query/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-query/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-query/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/query/v1"
+            "truvity.github.io/audit-query/v1"
           ]
         },
         "archive": {
@@ -1579,10 +1579,10 @@
       "description": "The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "audit.truvity.com/verify/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/verify/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-verify/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-verify/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/verify/v1"
+            "truvity.github.io/audit-verify/v1"
           ]
         },
         "archive": {
@@ -1913,10 +1913,10 @@
           "description": "Accept writes over HTTP from callers nobody verified, stamped with no observer. For a trial install only."
         },
         "apiVersion": {
-          "default": "audit.truvity.com/writer/v1",
-          "description": "The version of this document's shape, `audit.truvity.com/writer/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "truvity.github.io/audit-writer/v1",
+          "description": "The version of this document's shape, `truvity.github.io/audit-writer/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "audit.truvity.com/writer/v1"
+            "truvity.github.io/audit-writer/v1"
           ]
         },
         "archive": {

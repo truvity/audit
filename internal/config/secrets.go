@@ -134,7 +134,7 @@ func (s *Secrets) get(ctx context.Context, name string) (string, error) {
 		return v, nil
 	case SourceFile:
 		if !secretName.MatchString(name) {
-			return "", errors.New("the name is not a secret name: a relative path of letters, digits, . _ and -, not climbing with ..")
+			return "", errors.New("the name is not a secret name: a relative path of letters, digits, dots, underscores and dashes, which does not climb")
 		}
 		b, err := os.ReadFile(filepath.Join(s.src.Root, filepath.FromSlash(name)))
 		if err != nil {
@@ -147,7 +147,7 @@ func (s *Secrets) get(ctx context.Context, name string) (string, error) {
 		return v, nil
 	case SourceSSM:
 		if !secretName.MatchString(name) {
-			return "", errors.New("the name is not a secret name: a relative path of letters, digits, . _ and -, not climbing with ..")
+			return "", errors.New("the name is not a secret name: a relative path of letters, digits, dots, underscores and dashes, which does not climb")
 		}
 		s.once.Do(func() { s.api, s.err = OpenSSM(ctx) })
 		if s.err != nil {

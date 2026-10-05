@@ -86,8 +86,9 @@ under its role, and signs in again once three quarters of the session's lease
 has passed, or at once if the engine refuses a session that was revoked early.
 No token is stored anywhere, so there is nothing to leak and nothing to rotate.
 
-A token file (`tokenFile`) or a token in an environment variable (`tokenEnv`,
-which holds the variable's name) is accepted instead, for an engine that is not
+A token file (`tokenFile`) or a token named by `tokenSecret` (the name of a
+secret that the file's `secrets` block says how to find: an environment variable,
+a file or an SSM parameter; `tokenEnv` in a version-1 file) is accepted instead, for an engine that is not
 set up for JWT logins; exactly one of the three. `audit key destroy`, run from
 an operator's shell, takes `BAO_ADDR`, `BAO_NAMESPACE`, `BAO_CACERT` and
 `BAO_TOKEN`, or the `VAULT_` names.

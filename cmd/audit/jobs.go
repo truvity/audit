@@ -90,7 +90,7 @@ func verifyFromConfig(path string, asJSON bool) error {
 		}
 	}
 	ctx := context.Background()
-	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive)
+	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive, cfg.SecretReader())
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func purgeFromConfig(path string, asJSON bool) error {
 	window := dedupeFor(profiles, cfg.DedupeWindow.D())
 
 	ctx := context.Background()
-	poolConfig, err := cfg.Database.PoolConfig()
+	poolConfig, err := cfg.Database.PoolConfig(ctx, cfg.SecretReader())
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func migrateFromConfig(path string) error {
 		return err
 	}
 	ctx := context.Background()
-	poolConfig, err := cfg.Database.PoolConfig()
+	poolConfig, err := cfg.Database.PoolConfig(ctx, cfg.SecretReader())
 	if err != nil {
 		return err
 	}

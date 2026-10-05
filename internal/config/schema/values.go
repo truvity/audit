@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	policy_ "github.com/truvity/policy"
+
+	"github.com/truvity/audit"
 )
 
 // Values returns the schema of the chart's values.
@@ -21,10 +23,23 @@ func Values() []byte {
 	defs := m{
 		"secretEnv": map[string]any{
 			"type": "array",
-			"description": "Environment variables from a Secret's keys: the holders of the secrets a config names " +
-				"(`passwordEnv`, `credentialsEnv`, `tokenEnv`). A secret is never in `config`.",
+			"description": "Deprecated (version 1 configs only): environment variables from a Secret's keys, the holders of " +
+				"the secrets a version-1 config names (`passwordEnv`, `credentialsEnv`, `tokenEnv`). A version-2 config " +
+				"names its secrets and reads them from files: see `secretFiles`. A secret is never in `config`.",
 			"items": obj("One variable.", m{
 				"name":       str("The variable, as the config names it."),
+				"secretName": str("The Secret."),
+				"key":        str("The key in the Secret."),
+				"optional":   boolean("Start without it when the Secret or the key is absent."),
+			}, "name", "secretName", "key"),
+		},
+		"secretFiles": map[string]any{
+			"type": "array",
+			"description": "Secrets projected as files under /etc/audit/secrets, one per name a version-2 config holds in a " +
+				"`...Secret` field (`passwordSecret`, `credentialsSecret`, `tokenSecret`). The config's `secrets` must be " +
+				"`{source: file, root: /etc/audit/secrets}`. A secret is never in `config`.",
+			"items": obj("One secret.", m{
+				"name":       str("The name as the config holds it: the file's path under /etc/audit/secrets, such as `database-password` or `openbao/token`."),
 				"secretName": str("The Secret."),
 				"key":        str("The key in the Secret."),
 				"optional":   boolean("Start without it when the Secret or the key is absent."),
@@ -71,8 +86,9 @@ func Values() []byte {
 	// What every component takes beyond its configuration.
 	platform := func(config string, mounts, tokens bool) m {
 		p := m{
-			"config":    m{"type": "object", "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is " + config + "'s: schemas/config/" + config + ".schema.json."},
-			"secretEnv": def("secretEnv"),
+			"config":      m{"type": "object", "description": "Rendered as it stands into a ConfigMap and mounted as /etc/audit/config.yaml. Its schema is " + config + "'s: schemas/config/" + config + ".schema.json."},
+			"secretFiles": def("secretFiles"),
+			"secretEnv":   def("secretEnv"),
 		}
 		if mounts {
 			p["secretMounts"] = def("secretMounts")
@@ -201,8 +217,20 @@ func Values() []byte {
 	// is rendered, and is free to be empty where it is not.
 	embedded := map[string]string{}
 	for _, name := range []string{"audit-writer", "audit-query", "audit-observe", "audit-verify", "audit-purge", "audit-clock-sync", "audit-migrate", "audit-notary"} {
+		// A config is held to version 2 when it says so, and otherwise to version 1
+		// (an absent apiVersion is version 1), which the binary still reads for
+		// one minor: the chart renders the file as it stands.
 		embedded[name] = "config-" + name
-		flatten(defs, name)
+		flatten(defs, name, "config-"+name+".v2", Schema)
+		flatten(defs, name, "config-"+name+".v1", legacy)
+		defs[embedded[name]] = m{
+			"if": m{
+				"properties": m{"apiVersion": m{"const": Group + "/" + name + "/v2"}},
+				"required":   []string{"apiVersion"},
+			},
+			"then": def("config-" + name + ".v2"),
+			"else": def("config-" + name + ".v1"),
+		}
 	}
 	when := func(condition, then m) m { return m{"if": condition, "then": then} }
 	configOf := func(name string, path ...string) m {
@@ -264,15 +292,21 @@ func Values() []byte {
 // document that is not its own: its shared shapes become defs beside it under
 // its name, every local reference is rewritten to match, and the references to
 // truvity/policy's shared shapes are replaced by the shapes themselves.
-func flatten(defs m, name string) {
-	body, _ := Schema(name)
+// legacy is version 1 of a configuration's schema, frozen in schemas/config/v1:
+// it is read while the chart still takes a config written in it.
+func legacy(name string) ([]byte, bool) {
+	b, err := audit.ConfigSchemas.ReadFile("schemas/config/v1/" + name + ".schema.json")
+	return b, err == nil
+}
+
+func flatten(defs m, name, prefix string, schema func(string) ([]byte, bool)) {
+	body, _ := schema(name)
 	var s m
 	if err := json.Unmarshal(body, &s); err != nil {
 		panic(err)
 	}
 	delete(s, "$schema")
 	delete(s, "$id")
-	prefix := "config-" + name
 	own, _ := s["$defs"].(map[string]any)
 	delete(s, "$defs")
 	for k, v := range own {

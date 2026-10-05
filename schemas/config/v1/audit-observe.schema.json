@@ -1,0 +1,149 @@
+{
+  "$defs": {
+    "duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "postgres": {
+      "allOf": [
+        {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/postgres.json"
+        },
+        {
+          "properties": {
+            "url": {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          }
+        }
+      ],
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
+    }
+  },
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-observe.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "properties": {
+    "apiVersion": {
+      "default": "truvity.github.io/audit-observe/v1",
+      "description": "The version of this document's shape, `truvity.github.io/audit-observe/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "enum": [
+        "truvity.github.io/audit-observe/v1"
+      ]
+    },
+    "archive": {
+      "additionalProperties": false,
+      "description": "The archive to follow. Observe only reads it: it lists, and gets the objects and the catalogues beside them.",
+      "properties": {
+        "bucket": {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
+        },
+        "prefix": {
+          "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "bucket"
+      ],
+      "type": "object"
+    },
+    "batch": {
+      "default": 500,
+      "description": "How many rows are written in one transaction. A transaction ends at an object's end, so an object is never split.",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "database": {
+      "$ref": "#/$defs/postgres",
+      "description": "The index, as the role `audit migrate --observe` granted: read and write on the index and its cursors, and nothing of the deduplication table. Not the owner, and not the writer's or the query service's."
+    },
+    "interval": {
+      "$ref": "#/$defs/duration",
+      "default": "30s",
+      "description": "How often a pass runs when nothing woke it. A lost wake-up costs at most this."
+    },
+    "listen": {
+      "$ref": "https://github.com/truvity/policy/schemas/fragments/listen.json"
+    },
+    "profiles": {
+      "description": "The profiles to follow. Unset follows every profile the archive has, found by listing.",
+      "items": {
+        "description": "A profile name.",
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "settle": {
+      "$ref": "#/$defs/duration",
+      "default": "2m",
+      "description": "How far behind now the cursor stays. An object's key is fixed when its put starts and it is visible when the put ends, so a later key can be visible before an earlier one; this must be longer than a writer's put can take and than the clocks of the writers and of this process can disagree. It is the least time between a record's acknowledgement and its appearance in search."
+    },
+    "wake": {
+      "additionalProperties": false,
+      "description": "Where bucket notifications arrive, to make a pass run now instead of at the next interval. Optional, and only ever a shortcut: nothing a pass does depends on a notification, so a lost or repeated one costs latency and nothing else.",
+      "maxProperties": 1,
+      "minProperties": 1,
+      "properties": {
+        "nats": {
+          "additionalProperties": false,
+          "description": "A NATS subject carrying bucket notifications. Core NATS: the messages are not read, and one missed is the poll's to make up.",
+          "properties": {
+            "nats": {
+              "$ref": "https://github.com/truvity/policy/schemas/fragments/nats.json"
+            },
+            "subject": {
+              "description": "The subject.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "nats",
+            "subject"
+          ],
+          "type": "object"
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "An SQS queue of bucket notifications that is observe's own: each message is taken to wake a pass and deleted. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "archive",
+    "database"
+  ],
+  "title": "audit-observe",
+  "type": "object"
+}

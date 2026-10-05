@@ -97,6 +97,7 @@ data:
   # schemas/config/ at start-up, and by this chart's values.schema.json before
   # it renders.
   config.yaml: |
+    apiVersion: audit.truvity.github.io/audit-writer/v2
     archive:
       bucket:
         name: audit-eu-example-1
@@ -111,7 +112,7 @@ data:
         region: eu-west-1
         visibility: 2m
     database:
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
       url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
     deployment: /etc/audit/deployment.yaml
     replicas: 3
@@ -119,6 +120,9 @@ data:
     roll:
       interval: 30s
       maxRecords: 5000
+    secrets:
+      root: /etc/audit/secrets
+      source: file
     workloads: /etc/audit/workloads.yaml
 
 ---
@@ -139,8 +143,9 @@ data:
   # schemas/config/ at start-up, and by this chart's values.schema.json before
   # it renders.
   config.yaml: |
+    apiVersion: audit.truvity.github.io/audit-writer/v2
     database:
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
       url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
     deployment: /etc/audit/deployment.yaml
     forward:
@@ -150,6 +155,9 @@ data:
         region: eu-west-1
     mode: receiver
     require: queued
+    secrets:
+      root: /etc/audit/secrets
+      source: file
     workloads: /etc/audit/workloads.yaml
 
 ---
@@ -170,14 +178,18 @@ data:
   # schemas/config/ at start-up, and by this chart's values.schema.json before
   # it renders.
   config.yaml: |
+    apiVersion: audit.truvity.github.io/audit-observe/v2
     archive:
       bucket:
         name: audit-eu-example-1
         region: eu-west-1
       prefix: audit/app
     database:
-      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      passwordSecret: observe-database-password
       url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
+    secrets:
+      root: /etc/audit/secrets
+      source: file
     settle: 2m
 
 ---
@@ -235,7 +247,7 @@ spec:
         app.kubernetes.io/instance: audit
         app.kubernetes.io/component: observe
       annotations:
-        checksum/config: 019d4fcd9905ca953913003aa45347e4ae059379469500f3d3ea148594b21102
+        checksum/config: df6edfe4e8345145356097e9b687608f1833275c58a0a0630b5f737a0100614b
     spec:
       serviceAccountName: audit-observe
       
@@ -251,13 +263,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --config=/etc/audit/config.yaml
-          env:
-            
-            - name: AUDIT_OBSERVE_DATABASE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: audit-db-observe
-                  key: password
           ports:
             - name: http
               containerPort: 8080
@@ -284,6 +289,9 @@ spec:
               readOnly: true
             
             
+            - name: secret-files
+              mountPath: /etc/audit/secrets
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -292,6 +300,14 @@ spec:
             name: audit-observe-config
         
         
+        - name: secret-files
+          projected:
+            sources:
+              - secret:
+                  name: audit-db-observe
+                  items:
+                    - key: password
+                      path: observe-database-password
         - name: tmp
           emptyDir: {}
 
@@ -323,7 +339,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: 63e21243ac7af24828da670137d88b1de7234e5af158a50591ba21448a3c26b7
+        checksum/config: e54f8fbdfcaf7afcfc6a9188b122c6a199d0070710b902f8b643b7a600bb73d5
         # Likewise a change to the profile document, hashed whole: it also holds
         # externalIdentifiersAreOpaque, which changes what a profile keeps.
         checksum/deployment: 3cf5d4189a49067986764efdfb49280818d399f4d2e1cef580a4e37d1b9d7a52
@@ -349,13 +365,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --config=/etc/audit/config.yaml
-          env:
-            
-            - name: AUDIT_DATABASE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: audit-db
-                  key: password
           ports:
             - name: http
               containerPort: 8080
@@ -397,6 +406,9 @@ spec:
               readOnly: true
             
             
+            - name: secret-files
+              mountPath: /etc/audit/secrets
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -408,6 +420,14 @@ spec:
             name: audit-deployment
         
         
+        - name: secret-files
+          projected:
+            sources:
+              - secret:
+                  name: audit-db
+                  items:
+                    - key: password
+                      path: database-password
         - name: tmp
           emptyDir: {}
 
@@ -439,7 +459,7 @@ spec:
       annotations:
         # A changed configuration must reach a running pod, and a file mounted
         # with subPath is never updated in place, so the pod is replaced.
-        checksum/config: e611715e0797be869d603e61e09c3866c417b63b681530241e3060605350df6a
+        checksum/config: c58797a864822312694cf54703f9e4c3425750cfd64c7583a8c8ce25b2a1431f
         # Likewise a change to the profile document, hashed whole: it also holds
         # externalIdentifiersAreOpaque, which changes what a profile keeps.
         checksum/deployment: 3cf5d4189a49067986764efdfb49280818d399f4d2e1cef580a4e37d1b9d7a52
@@ -465,13 +485,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - --config=/etc/audit/config.yaml
-          env:
-            
-            - name: AUDIT_DATABASE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: audit-db
-                  key: password
           ports:
             - name: http
               containerPort: 8080
@@ -506,6 +519,9 @@ spec:
               readOnly: true
             
             
+            - name: secret-files
+              mountPath: /etc/audit/secrets
+              readOnly: true
             - name: tmp
               mountPath: /tmp
       volumes:
@@ -517,6 +533,14 @@ spec:
             name: audit-deployment
         
         
+        - name: secret-files
+          projected:
+            sources:
+              - secret:
+                  name: audit-db
+                  items:
+                    - key: password
+                      path: database-password
         - name: tmp
           emptyDir: {}
 ---
@@ -569,10 +593,14 @@ data:
   # schemas/config/ at start-up, and by this chart's values.schema.json before
   # it renders.
   config.yaml: |
+    apiVersion: audit.truvity.github.io/audit-migrate/v2
     database:
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
       url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
     observe: audit_observe
+    secrets:
+      root: /etc/audit/secrets
+      source: file
     writer: audit_writer
 
 ---
@@ -622,13 +650,6 @@ spec:
           args:
             - migrate
             - --config=/etc/audit/config.yaml
-          env:
-            
-            - name: AUDIT_DATABASE_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: audit-db-owner
-                  key: password
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -642,10 +663,21 @@ spec:
               readOnly: true
             
             
+            - name: secret-files
+              mountPath: /etc/audit/secrets
+              readOnly: true
       volumes:
         - name: config
           configMap:
             name: audit-migrate-config
         
         
+        - name: secret-files
+          projected:
+            sources:
+              - secret:
+                  name: audit-db-owner
+                  items:
+                    - key: password
+                      path: database-password
 

@@ -11,11 +11,25 @@ import (
 	"encoding/json"
 )
 
-// Group is the group of every apiVersion in this repository's documents.
-const Group = "truvity.github.io"
+// Group is the group of every apiVersion in this repository's documents:
+// `<product>.truvity.github.io`, so `audit.truvity.github.io/<kind>/v2`.
+const Group = "audit.truvity.github.io"
 
-// BaseID is where the schemas are served: the same site as the record's.
-const BaseID = "https://truvity.github.io/audit/schemas/v1/config/"
+// LegacyGroup is the group version 1 of every document was written under:
+// `truvity.github.io/<kind>/v1`. It is read, with a deprecation warning, for
+// one minor after version 2 (ADR 0025).
+const LegacyGroup = "truvity.github.io"
+
+// Version is the version of every document's shape this build writes and reads
+// first; the one before it is read and converted.
+const Version = 2
+
+// BaseID is where the schemas are served: the same site as the record's, under
+// the version of the shape (v2), and LegacyBaseID the version-1 copies.
+const (
+	BaseID       = "https://truvity.github.io/audit/schemas/v2/config/"
+	LegacyBaseID = "https://truvity.github.io/audit/schemas/v1/config/"
+)
 
 // The shared shapes this repository takes from truvity/policy, by the `$id`
 // they carry. The loader resolves them from its embedded copies.
@@ -122,17 +136,12 @@ func sharedDefs() map[string]m {
 			"pattern":     `^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`,
 			"description": "A Go duration: 30s, 2m, 168h.",
 		},
-		// A connection URL with a password in it is a secret in the file.
-		// The fragment's own pattern lets one through; this does not.
-		"postgres": {
-			"allOf": []any{
-				ref(policy + "fragments/postgres.json"),
-				m{"properties": m{"url": m{"not": m{
-					"pattern": `^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@`,
-				}}}},
-			},
-			"description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it.",
-		},
+		"secrets": obj("Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.", m{
+			"source": m{"enum": []string{"env", "file", "ssm"}, "default": "env", "description": "Where secrets are read from."},
+			"root":   str("The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it."),
+		}),
+		"bucket":   bucketDef(),
+		"postgres": postgresDef(),
 		"sink": func() m {
 			o := obj("The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).", m{
 				"url":       str("The writer's base URL."),
@@ -160,14 +169,14 @@ func sharedDefs() map[string]m {
 					"role":    str("The role on that mount."),
 					"jwtFile": str("The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires."),
 				}, "mount", "role", "jwtFile"),
-				"tokenFile": str("A file holding a token, read on every call, for a token something else keeps renewed."),
-				"tokenEnv":  str("The NAME of the environment variable holding a token."),
+				"tokenFile":   str("A file holding a token, read on every call, for a token something else keeps renewed."),
+				"tokenSecret": str("The NAME of the secret holding a token, resolved through `secrets`."),
 			},
 			"required": []string{"address"},
 			"oneOf": []any{
 				m{"required": []string{"login"}},
 				m{"required": []string{"tokenFile"}},
-				m{"required": []string{"tokenEnv"}},
+				m{"required": []string{"tokenSecret"}},
 			},
 		},
 		"keys": map[string]any{
@@ -202,7 +211,7 @@ func sharedDefs() map[string]m {
 // takes a lock mode, and for the writer, which also encrypts.
 func archive(writes, encrypts bool) m {
 	props := m{
-		"bucket": ref(policy + "fragments/bucket.json"),
+		"bucket": def("bucket"),
 		"prefix": str("The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart."),
 	}
 	if writes {
@@ -226,7 +235,27 @@ func document(name, title, description string, props m, required []string, uses 
 	shared := sharedDefs()
 	props["apiVersion"] = apiVersion(name)
 	defs := m{}
+	// A shared shape is carried in when a property names it, directly or
+	// through another, whether or not `uses` says so.
+	need := map[string]bool{}
 	for _, u := range uses {
+		need[u] = true
+	}
+	for changed := true; changed; {
+		changed = false
+		scan := m{"properties": props, "extra": extra}
+		for u := range need {
+			scan[u] = shared[u]
+		}
+		b, _ := json.Marshal(scan)
+		for d := range shared {
+			if !need[d] && bytes.Contains(b, []byte("#/$defs/"+d+`"`)) {
+				need[d] = true
+				changed = true
+			}
+		}
+	}
+	for u := range need {
 		defs[u] = shared[u]
 	}
 	s := m{
@@ -247,10 +276,11 @@ func document(name, title, description string, props m, required []string, uses 
 	for k, v := range extra {
 		s[k] = v
 	}
+	withSecrets(s)
 	return s
 }
 
-const secretsNote = " Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration."
+const secretsNote = " Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration."
 
 func writerSchema() m {
 	props := m{
@@ -374,7 +404,7 @@ func querySchema() m {
 			return a
 		}(),
 		"exports": obj("Where exports go: a bucket of its own with no Object Lock, which clears them. Without it the export operation is refused.", m{
-			"bucket":    ref(policy + "fragments/bucket.json"),
+			"bucket":    def("bucket"),
 			"expiry":    duration("How long an export is kept before the bucket clears it.", "168h"),
 			"linkValid": duration("How long a download link works.", "1h"),
 		}, "bucket"),

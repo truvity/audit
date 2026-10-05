@@ -78,9 +78,11 @@ func webIdentityStatement(audience string) statement {
 // start-up, the legal holds, and the archive an addendum scans; it lists the
 // bucket for the last two. It has no delete, no access to seals/ or keys/, and
 // no KMS Sign: whoever can write the archive and can also sign for it can choose
-// what to sign (ADR 0019). With no Object Lock (locked false) the writer sends
+// what to sign (ADR 0019). When its configuration names secrets it may read the
+// SSM parameters under its root and decrypt them, and read nothing else of SSM. With no Object Lock (locked false) the writer sends
 // no lock header, so it is granted neither permission.
-func writerPolicy(bucketArn, archiveKeyArn, tableArn, queueArn, logGroupArn string, audience string, locked bool) string {
+func writerPolicy(bucketArn, archiveKeyArn, tableArn, queueArn, logGroupArn string, audience string, locked bool,
+	secrets *secretGrant) string {
 	put := []string{"s3:PutObject"}
 	if locked {
 		put = append(put, "s3:PutObjectRetention", "s3:PutObjectLegalHold")
@@ -95,6 +97,7 @@ func writerPolicy(bucketArn, archiveKeyArn, tableArn, queueArn, logGroupArn stri
 		logsStatement(logGroupArn),
 	}
 	st = append(st, archiveKeyStatements(archiveKeyArn, "kms:GenerateDataKey", "kms:Decrypt")...)
+	st = append(st, secrets.statements()...)
 	if audience != "" {
 		st = append(st, webIdentityStatement(audience))
 	}

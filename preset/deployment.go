@@ -3,6 +3,7 @@ package preset
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"sigs.k8s.io/yaml"
 )
@@ -13,7 +14,9 @@ import (
 // retention is a property of the profile and every one of them has to agree
 // about it.
 type Deployment struct {
-	// APIVersion is `truvity.github.io/audit-deployment/v1`, or absent, which means the same.
+	// APIVersion is `audit.truvity.github.io/audit-deployment/v2`. The version
+	// before it, `truvity.github.io/audit-deployment/v1`, or absent, means the
+	// same document and is read with a deprecation warning.
 	APIVersion string                   `json:"apiVersion,omitempty"`
 	Profiles   map[string]ProfileConfig `json:"profiles"`
 	// ExternalIdentifiersAreOpaque is the deployment saying that the
@@ -37,8 +40,13 @@ type ProfileConfig struct {
 	Presets []string `json:"presets"`
 }
 
-// DeploymentAPIVersion is the version of the deployment document this build reads.
-const DeploymentAPIVersion = "truvity.github.io/audit-deployment/v1"
+// DeploymentAPIVersion is the version of the deployment document this build
+// writes and reads first. DeploymentAPIVersionV1 is the one before it, which is
+// read for one minor with a warning: the document did not change, only its group.
+const (
+	DeploymentAPIVersion   = "audit.truvity.github.io/audit-deployment/v2"
+	DeploymentAPIVersionV1 = "truvity.github.io/audit-deployment/v1"
+)
 
 // ParseDeployment reads a deployment document. Unknown keys are refused: a
 // misspelt field in a document that decides retention is not one to ignore.
@@ -47,8 +55,14 @@ func ParseDeployment(raw []byte) (*Deployment, error) {
 	if err := yaml.UnmarshalStrict(raw, &d); err != nil {
 		return nil, fmt.Errorf("deployment: %w", err)
 	}
-	if d.APIVersion != "" && d.APIVersion != DeploymentAPIVersion {
-		return nil, fmt.Errorf("deployment: apiVersion %q is not one this build reads (%s)", d.APIVersion, DeploymentAPIVersion)
+	switch d.APIVersion {
+	case DeploymentAPIVersion:
+	case "", DeploymentAPIVersionV1:
+		slog.Warn("the deployment document is in version 1, which is deprecated and read for one minor only: "+
+			"set apiVersion to "+DeploymentAPIVersion, "apiVersion", d.APIVersion)
+	default:
+		return nil, fmt.Errorf("deployment: apiVersion %q is not one this build reads (%s, or %s)",
+			d.APIVersion, DeploymentAPIVersion, DeploymentAPIVersionV1)
 	}
 	if len(d.Profiles) == 0 {
 		return nil, errors.New("deployment: no profiles")

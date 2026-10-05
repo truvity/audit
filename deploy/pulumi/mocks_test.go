@@ -104,6 +104,13 @@ func (r *recorder) Call(a pulumi.MockCallArgs) (resource.PropertyMap, error) {
 			"userId":    resource.NewStringProperty("AIDAMOCK"),
 		}, nil
 	}
+	if a.Token == "aws:index/getRegion:getRegion" {
+		return resource.PropertyMap{
+			"region": resource.NewStringProperty("eu-west-1"), "name": resource.NewStringProperty("eu-west-1"),
+			"id": resource.NewStringProperty("eu-west-1"), "description": resource.NewStringProperty("Europe (Ireland)"),
+			"endpoint": resource.NewStringProperty("ec2.eu-west-1.amazonaws.com"),
+		}, nil
+	}
 	if a.Token == "aws:s3/getObject:getObject" {
 		key := a.Args["key"].StringValue()
 		sha, ok := r.archived[key]

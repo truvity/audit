@@ -116,10 +116,10 @@ func run() error {
 		if err := preset.CheckLockMode(profiles, cfg.Archive.LockMode); err != nil {
 			return err
 		}
-		if archive, err = cli.OpenArchiveFrom(ctx, *cfg.Archive); err != nil {
+		if archive, err = cli.OpenArchiveFrom(ctx, *cfg.Archive, cfg.SecretReader()); err != nil {
 			return err
 		}
-		if provider, err = cli.OpenKeysFrom(ctx, cfg.Keys); err != nil {
+		if provider, err = cli.OpenKeysFrom(ctx, cfg.Keys, cfg.SecretReader()); err != nil {
 			return err
 		}
 	}
@@ -142,7 +142,7 @@ func run() error {
 	// still writes the archive, which is the part that is evidence.
 	var pool *pgxpool.Pool
 	if cfg.Database != nil {
-		poolConfig, err := cfg.Database.PoolConfig()
+		poolConfig, err := cfg.Database.PoolConfig(ctx, cfg.SecretReader())
 		if err != nil {
 			return err
 		}

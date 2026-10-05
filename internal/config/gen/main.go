@@ -1,4 +1,4 @@
-// Command gen writes the configuration schemas into schemas/config/, and the
+// Command gen writes the configuration schemas of version 2 into schemas/config/, and the
 // chart's values schema, which embeds them, into charts/audit/. Run it
 // through `just config-schemas`; the drift check fails when the committed files
 // are not what it writes.

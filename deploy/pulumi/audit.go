@@ -75,6 +75,10 @@ type Audit struct {
 	ObserveReaderRoleArn pulumi.StringOutput
 	// ArchiveWriterRoleArn is the IRSA write role, empty without Args.ArchiveWriter.
 	ArchiveWriterRoleArn pulumi.StringOutput
+	// SecretsRoot is the SSM parameter path the writer reads the secrets its
+	// configuration names from: create the SecureStrings under it. Empty when the
+	// configuration names none (see WriterArgs.Secrets).
+	SecretsRoot pulumi.StringOutput
 	// AlarmTopicArn is the SNS topic every alarm publishes to.
 	AlarmTopicArn pulumi.StringOutput
 	// ScheduleArn is the notary's schedule.
@@ -105,7 +109,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	// gave New (pulumi.Provider, pulumi.Providers) or inherited. A stack with the
 	// default providers disabled has no other one. AccountID skips the lookup.
 	accountID := a.AccountID
-	if accountID == "" && notary {
+	if accountID == "" && (notary || a.Writer.Secrets != nil) {
 		identity, err := aws.GetCallerIdentity(ctx, nil, child)
 		if err != nil {
 			return nil, fmt.Errorf("auditpulumi: the caller's account (pass the AWS provider with pulumi.Provider, or set Args.AccountID): %w", err)
@@ -113,6 +117,19 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		accountID = identity.AccountId
 	}
 	accountRoot := fmt.Sprintf("arn:%s:iam::%s:root", "aws", accountID)
+	// What the writer may read of SSM, when its configuration names secrets.
+	var grant *secretGrant
+	if s := a.Writer.Secrets; s != nil && ingest {
+		region := a.Region
+		if region == "" {
+			r, err := aws.GetRegion(ctx, nil, child)
+			if err != nil {
+				return nil, fmt.Errorf("auditpulumi: the region for the SSM grant (pass the AWS provider with pulumi.Provider, or set Args.Region): %w", err)
+			}
+			region = r.Region
+		}
+		grant = &secretGrant{Root: s.Root, Region: region, Account: accountID, KeyArn: s.KeyArn}
+	}
 
 	// The released packages are read and checked, and what each function's
 	// configuration layer holds is rendered, before anything is created: an
@@ -263,7 +280,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		if _, err := iam.NewRolePolicy(ctx, name+"-writer", &iam.RolePolicyArgs{
 			Role: writerRole.Name,
 			Policy: pulumi.All(bucket.Arn, archiveKeyArn, table.Arn, queue.Arn, writerLogs.Arn).ApplyT(func(v []any) string {
-				return writerPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), v[4].(string), audience, locked)
+				return writerPolicy(v[0].(string), v[1].(string), v[2].(string), v[3].(string), v[4].(string), audience, locked, grant)
 			}).(pulumi.StringOutput),
 		}, child); err != nil {
 			return nil, err
@@ -355,6 +372,10 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	out.WriterRoleArn = pick(ingest, func() pulumi.StringOutput { return writerRole.Arn })
 	out.NotaryRoleArn = pick(notary, func() pulumi.StringOutput { return notaryRole.Arn })
 	out.ObserveReaderRoleArn, out.ArchiveWriterRoleArn = observeArn, archiveWriterArn
+	out.SecretsRoot = pulumi.String("").ToStringOutput()
+	if grant != nil {
+		out.SecretsRoot = pulumi.String(grant.Root).ToStringOutput()
+	}
 	out.AlarmTopicArn = pick(topic != nil, func() pulumi.StringOutput { return topic.Arn })
 	out.ScheduleArn = pick(notary, func() pulumi.StringOutput { return schedule.Arn })
 	if err := ctx.RegisterResourceOutputs(out, pulumi.Map{
@@ -365,6 +386,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		"writerFunctionArn": out.WriterFunctionArn, "notaryFunctionArn": out.NotaryFunctionArn,
 		"writerRoleArn": out.WriterRoleArn, "notaryRoleArn": out.NotaryRoleArn, "observeReaderRoleArn": out.ObserveReaderRoleArn,
 		"archiveWriterRoleArn": out.ArchiveWriterRoleArn,
+		"secretsRoot":          out.SecretsRoot,
 		"alarmTopicArn":        out.AlarmTopicArn, "scheduleArn": out.ScheduleArn,
 	}); err != nil {
 		return nil, err

@@ -46,6 +46,19 @@ outlast both has the kubelet kill the process mid-write. */ -}}
 {{- fail "audit: set `profiles`. A writer with no profile keeps nothing, and every record it took would be dead-lettered." -}}
 {{- end -}}
 
+{{- /* secretFiles project a Secret's keys under /etc/audit/secrets, which is where a
+config's `secrets: {source: file}` has to look for them. A config that names a
+different root, or another source, would read nothing the chart put there, and
+the pod would start and fail at its first secret. */ -}}
+{{- range $where, $comp := dict "writer" .Values.writer "receiver" .Values.receiver "query" .Values.query "observe" .Values.observe "migrate" .Values.migrate "jobs.notary" .Values.jobs.notary "jobs.verify" .Values.jobs.verify "jobs.purge" .Values.jobs.purge "jobs.clockSync" .Values.jobs.clockSync -}}
+{{- if ($comp | default dict).secretFiles -}}
+  {{- $secrets := dig "config" "secrets" nil ($comp | default dict) | default dict -}}
+  {{- if or (ne (dig "source" "env" $secrets) "file") (ne (dig "root" "" $secrets) "/etc/audit/secrets") -}}
+  {{- fail (printf "audit: %s.secretFiles puts each Secret key under /etc/audit/secrets, so %s.config.secrets must be {source: file, root: /etc/audit/secrets}: the config is what says where its secrets are read from." $where $where) -}}
+  {{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{- $on := .Values.writer.enabled -}}
 {{- $writer := .Values.writer.config | default dict -}}
 {{- $mode := dig "mode" "writer" $writer -}}
@@ -198,7 +211,7 @@ and whoever writes it and can also open what it sealed can read what the writer
 must not, so the query service's resolve does too. Only the chart sees both
 configurations. */}}
 {{- $writerBao := dig "transit" "openbao" nil (dig "keys" nil $writer | default dict) -}}
-{{- $writerWho := include "audit.baoIdentity" (dict "bao" $writerBao "env" .Values.writer.secretEnv) -}}
+{{- $writerWho := include "audit.baoIdentity" (dict "bao" $writerBao "env" .Values.writer.secretEnv "files" .Values.writer.secretFiles) -}}
 {{- if .Values.jobs.notary.enabled -}}
   {{- $notary := .Values.jobs.notary.config | default dict -}}
   {{- if eq (include "audit.notaryServiceAccountName" .) (include "audit.serviceAccountName" .) -}}
@@ -208,14 +221,14 @@ configurations. */}}
   {{- if and $notaryRole (eq (toJson $notaryRole) (toJson (.Values.serviceAccount.annotations | default dict))) -}}
   {{- fail "audit: the notary's ServiceAccount carries the writer's annotations, so it would bind the writer's cloud role (Pod Identity, IRSA). Whoever writes the archive and can also sign for it can choose what to sign; bind the notary to a role of its own." -}}
   {{- end -}}
-  {{- $notaryWho := include "audit.baoIdentity" (dict "bao" (dig "signer" "transit" "openbao" nil $notary) "env" .Values.jobs.notary.secretEnv) -}}
+  {{- $notaryWho := include "audit.baoIdentity" (dict "bao" (dig "signer" "transit" "openbao" nil $notary) "env" .Values.jobs.notary.secretEnv "files" .Values.jobs.notary.secretFiles) -}}
   {{- if and $notaryWho $writerWho (eq $notaryWho $writerWho) -}}
   {{- fail "audit: the notary signs in to OpenBAO as the writer. Whoever writes the archive and can also sign for it can choose what to sign; give the notary its own role." -}}
   {{- end -}}
 {{- end -}}
 {{- if and .Values.query.enabled .Values.query.config -}}
   {{- $queryKeys := dig "keys" nil .Values.query.config | default dict -}}
-  {{- $queryWho := include "audit.baoIdentity" (dict "bao" (dig "transit" "openbao" nil $queryKeys) "env" .Values.query.secretEnv) -}}
+  {{- $queryWho := include "audit.baoIdentity" (dict "bao" (dig "transit" "openbao" nil $queryKeys) "env" .Values.query.secretEnv "files" .Values.query.secretFiles) -}}
   {{- if and $queryWho $writerWho (eq $queryWho $writerWho) -}}
   {{- fail "audit: `query.config.keys` signs in as the writer. Resolving and writing are separate privileges: the writer's policy seals and must not open." -}}
   {{- end -}}

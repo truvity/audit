@@ -42,6 +42,8 @@ github.com/aws/aws-sdk-go-v2/service/signin v1.10.1 h1:DzCCWLzcIRQ77F3DEUljud7bE
 github.com/aws/aws-sdk-go-v2/service/signin v1.10.1/go.mod h1:xpo/geVldu8payT375WekctUzopG/hBU7miiqItMUlw=
 github.com/aws/aws-sdk-go-v2/service/sqs v1.52.1 h1:jBQM8NL0q3h0ZpHqo4TxOD9Ope96SlEF1Y6VLsF20nQ=
 github.com/aws/aws-sdk-go-v2/service/sqs v1.52.1/go.mod h1:+TDqZ1h8CLkW9ewfQkSPWHYRjm7/wDThKeDlR46qyvE=
+github.com/aws/aws-sdk-go-v2/service/ssm v1.73.6 h1:eCl+kPQe3f/a3pqFu6hjSiyQtZ6UzLHUwCKDeg5Txq0=
+github.com/aws/aws-sdk-go-v2/service/ssm v1.73.6/go.mod h1:cRBRMxQsb/64CRg7MIDJ1TDjsg1inpOWR3MQB3KBKrU=
 github.com/aws/aws-sdk-go-v2/service/sso v1.38.1 h1:Umtl/0YZhng4xndfW3lKJrYYP7NLEjI6bGXVomwLcs0=
 github.com/aws/aws-sdk-go-v2/service/sso v1.38.1/go.mod h1:rRD/dnm7q0HYE/I5TMaPgkWyyUGLcwuxHLABsLnQ3e0=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.1 h1:orIWdNiLgzrhu/11RcPPKO/SBzUUymbUQuZbSPImghg=
@@ -120,14 +122,8 @@ github.com/truvity/gateway-auth v0.7.1 h1:jSoeB+u9aergNMeNHW3c7g291RxdCED6TaOflw
 github.com/truvity/gateway-auth v0.7.1/go.mod h1:5ZrYGw0qmVo+Xgpa/Au5BiDVkxSKcz+ZUil4JlQo+eU=
 github.com/truvity/gemaal v0.24.0 h1:rEwcwMwAX0C4niHQxEZk0IfR0r7KGXarrNe4Re1Na4E=
 github.com/truvity/gemaal v0.24.0/go.mod h1:GR/Q9MIypo32WInYo+hzfoA3IL+d4/ghZeDDz9dHOVk=
-github.com/truvity/ocictl v0.6.1 h1:1YfBaor5If6Xd0619cVaCt3EPLOhsLXHX3Oq1guPfY4=
-github.com/truvity/ocictl v0.6.1/go.mod h1:wE85/Q7mGKyYqdwUTDf3+KvaOMky0lunB08Z1PTXhBo=
 github.com/truvity/ocictl v0.8.0 h1:nTkXvROo/TfWh8pK9XCmu5m+/68lpN+EHF0DBBs5Urk=
 github.com/truvity/ocictl v0.8.0/go.mod h1:VSN3HLSAygBO6rnEXumPr0yerJiffN5A2VSuY+gMwFM=
-github.com/truvity/policy v1.37.0 h1:fOHopBkTf3acFlvDtpmUHJhDQibpyqkkwLT5wBm9CBA=
-github.com/truvity/policy v1.37.0/go.mod h1:tS3msaabpq9ONQAXMKy7j5k+aVFVoGFysHisLJXR0ak=
-github.com/truvity/policy v1.43.1-0.20261004235901-380a101cf243 h1:PoLgFqLOzyklgBWiz/xdlCeDElBg7dlrMKYSyBUjHtk=
-github.com/truvity/policy v1.43.1-0.20261004235901-380a101cf243/go.mod h1:+523XQBHvdrllFogN6wNUutLWGo6cFhiYfgvUuVTavw=
 github.com/truvity/policy v1.44.0 h1:o9R4+0sLPBLboohEqHW4e7JIQLKnYd3I3a6MgA5pYoQ=
 github.com/truvity/policy v1.44.0/go.mod h1:+523XQBHvdrllFogN6wNUutLWGo6cFhiYfgvUuVTavw=
 github.com/truvity/sluis v1.57.0 h1:jaOp29if6qpSJzUFENL9Psj1PemEGaCpsZ5FgMz418E=

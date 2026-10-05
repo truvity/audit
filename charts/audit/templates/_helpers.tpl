@@ -225,9 +225,11 @@ data:
 {{- end -}}
 
 {{/* What a component takes from the platform beyond its configuration. Each
-takes the component's values: `secretEnv` puts a Secret's key in the variable
-the config names, `secretMounts` mounts a Secret as a directory, and `tokens`
-projects a service-account token. */}}
+takes the component's values: `secretFiles` projects a Secret's key as the file
+a `...Secret` name of the config stands for (`secrets.source: file`, root
+/etc/audit/secrets), `secretEnv` puts a Secret's key in the variable a version-1
+`...Env` field names (deprecated), `secretMounts` mounts a Secret as a
+directory, and `tokens` projects a service-account token. */}}
 {{- define "audit.secretEnv" -}}
 {{- range .secretEnv }}
 - name: {{ .name }}
@@ -276,6 +278,11 @@ are. */}}
 {{- end -}}
 
 {{- define "audit.extraMounts" -}}
+{{- if .secretFiles }}
+- name: secret-files
+  mountPath: /etc/audit/secrets
+  readOnly: true
+{{- end }}
 {{- range $i, $m := .secretMounts }}
 - name: secret-{{ $i }}
   mountPath: {{ $m.mountPath }}
@@ -289,6 +296,21 @@ are. */}}
 {{- end -}}
 
 {{- define "audit.extraVolumes" -}}
+{{- if .secretFiles }}
+- name: secret-files
+  projected:
+    sources:
+      {{- range .secretFiles }}
+      - secret:
+          name: {{ .secretName }}
+          items:
+            - key: {{ .key }}
+              path: {{ .name }}
+          {{- if .optional }}
+          optional: true
+          {{- end }}
+      {{- end }}
+{{- end }}
 {{- range $i, $m := .secretMounts }}
 - name: secret-{{ $i }}
   secret:
@@ -336,7 +358,7 @@ profiles:
 
 {{/* Who an OpenBAO client signs in as: its role on the JWT mount, the file its
 token is read from, or the Secret the variable it names comes from. Takes
-(dict "bao" <the openbao block> "env" <the component's secretEnv>). Empty when
+(dict "bao" <the openbao block> "env" <the component's secretEnv> "files" <its secretFiles>). Empty when
 there is none to compare. */}}
 {{- define "audit.baoIdentity" -}}
 {{- $bao := .bao | default dict -}}
@@ -347,6 +369,9 @@ file:{{ dig "tokenFile" "" $bao }}
 {{- else if dig "tokenEnv" "" $bao -}}
 {{- $name := dig "tokenEnv" "" $bao -}}
 {{- range .env -}}{{- if eq .name $name -}}secret:{{ .secretName }}/{{ .key }}{{- end -}}{{- end -}}
+{{- else if dig "tokenSecret" "" $bao -}}
+{{- $name := dig "tokenSecret" "" $bao -}}
+{{- range .files -}}{{- if eq .name $name -}}secret:{{ .secretName }}/{{ .key }}{{- end -}}{{- end -}}
 {{- end -}}
 {{- end -}}
 

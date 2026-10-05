@@ -12,11 +12,10 @@ var Documents = []string{"audit-deployment", "audit-grants", "audit-workloads"}
 
 // apiVersion is the property every document carries. Absent means v1.
 func apiVersion(name string) m {
-	v1 := Group + "/" + name + "/v1"
+	v2 := Group + "/" + name + "/v2"
 	return m{
-		"enum":        []string{v1},
-		"default":     v1,
-		"description": "The version of this document's shape, `" + v1 + "`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+		"enum":        []string{v2},
+		"description": "The version of this document's shape, `" + v2 + "`. Absent means version 1, which is deprecated and read for one minor (`" + LegacyGroup + "/" + name + "/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
 	}
 }
 

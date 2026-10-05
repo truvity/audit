@@ -94,9 +94,13 @@ key.
 What is not configuration is the platform's, and each component has the same
 three of those:
 
-- `secretEnv`: environment variables from a Secret's keys, which the config
-  names as the holder of a secret (`passwordEnv`, `credentialsEnv`,
-  `tokenEnv`). A secret is never in `config:`;
+- `secretFiles`: a Secret's keys as files under `/etc/audit/secrets`, one for
+  each name the config holds in a `...Secret` field (`passwordSecret`,
+  `credentialsSecret`, `tokenSecret`); the config says
+  `secrets: {source: file, root: /etc/audit/secrets}`, which the chart checks.
+  `secretEnv` is the deprecated version-1 form: environment variables from a
+  Secret's keys, which a version-1 config names (`passwordEnv`,
+  `credentialsEnv`, `tokenEnv`). A secret is never in `config:`;
 - `secretMounts`: a Secret mounted as a directory, for a key or a root a
   config names by path;
 - `tokens`: a projected service-account token of an audience, a file `token`
@@ -120,19 +124,19 @@ The chart takes references; it creates none of these.
 | thing | value |
 |---|---|
 | a bucket belonging to the environment: with Object Lock in compliance mode for a profile that demands it, or without a lock where none does ([0014](../../docs/decisions/0014-lock-modes-and-store-tiers.md)) | `writer.config.archive.bucket`, `.lockMode` |
-| **only on an S3-compatible store that is not AWS**: its endpoint, whether its certificate covers a bucket subdomain, and the names of the variables holding static keys if it has no pod identity | `archive.bucket.endpoint`, `.pathStyle`, `.credentialsEnv` with `secretEnv` |
+| **only on an S3-compatible store that is not AWS**: its endpoint, whether its certificate covers a bucket subdomain, and the names of the variables holding static keys if it has no pod identity | `archive.bucket.endpoint`, `.pathStyle`, `.credentialsSecret` with `secretFiles` |
 | **a prefix of its own within it**, required wherever the bucket is shared: it is what keeps two applications' archives apart, and what each role's IAM is scoped to | `archive.prefix` |
 | a writer role that may put objects with a legal hold on (`s3:PutObjectLegalHold`), read and lengthen their retention (`s3:GetObjectRetention`, `s3:PutObjectRetention`), and read `records/`, `catalogue/` and `holds/` | the writer's ServiceAccount annotation |
 | a reference clock the clock-synchronisation job can reach | `jobs.clockSync.config.ntp` |
-| **a database in the application's existing Postgres**, owned by a role of the migration's own and used by no part. It holds the index, its cursors and the rollups (rebuildable by following the archive again, so no backup) and the writer's dedupe table and registry | `migrate.config.database` and `passwordEnv`, with `migrate.secretEnv` |
-| **a role for the writer**: the dedupe table, the registry and the key directory, and none of the index | `writer.config.database` and `passwordEnv`, with `secretEnv`; `migrate.config.writer` names the role |
-| **a role for the indexer**: read and write on the index and its cursors | `observe.config.database` and `passwordEnv`, with `observe.secretEnv`; `migrate.config.observe` names the role |
-| **a separate read-only role** for the query service: `usage` on the schema, `select` on the index's tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.config.database` and `passwordEnv`, with `query.secretEnv`; `migrate.config.reader` names the role |
+| **a database in the application's existing Postgres**, owned by a role of the migration's own and used by no part. It holds the index, its cursors and the rollups (rebuildable by following the archive again, so no backup) and the writer's dedupe table and registry | `migrate.config.database` and `passwordSecret`, with `migrate.secretFiles` |
+| **a role for the writer**: the dedupe table, the registry and the key directory, and none of the index | `writer.config.database` and `passwordSecret`, with `secretFiles`; `migrate.config.writer` names the role |
+| **a role for the indexer**: read and write on the index and its cursors | `observe.config.database` and `passwordSecret`, with `observe.secretFiles`; `migrate.config.observe` names the role |
+| **a separate read-only role** for the query service: `usage` on the schema, `select` on the index's tables and nothing else. Tenant row-level security binds only a role that does not own the tables | `query.config.database` and `passwordSecret`, with `query.secretFiles`; `migrate.config.reader` names the role |
 | a P-384 signing key the notary may use and the writer may not (KMS `ECC_NIST_P384`, or OpenBAO `ecdsa-p384`), and the thumbprint of its public half for every verifier to pin | `jobs.notary.config.signer`, `jobs.verify.config.seals.roots` |
 | the JetStream stream, already created, with `mode: stream` | `writer.config.stream`, `receiver.config.stream` |
 | **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.nats.tokenFile` and a `tokens` entry of the broker's audience |
 | the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
-| an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsEnv` |
+| an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsSecret` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
 | the images | `image.writer`, `image.query`, `image.observe`, `image.notary`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
 | a role per component — writer, indexer, notary, query and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver, the notary and the indexer, sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `observe.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |

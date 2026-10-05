@@ -24,9 +24,9 @@ import (
 // these read no flag and no variable the file did not name.
 
 // awsConfig is the SDK's configuration for one bucket: the ambient identity a
-// workload has, unless the file names variables holding static credentials,
+// workload has, unless the file names secrets holding static credentials,
 // and a CA bundle when the store's certificate is not signed by a public root.
-func awsConfig(ctx context.Context, b config.Bucket) (aws.Config, error) {
+func awsConfig(ctx context.Context, b config.Bucket, secrets *config.Secrets) (aws.Config, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	if b.Region != "" {
 		opts = append(opts, awsconfig.WithRegion(b.Region))
@@ -39,14 +39,14 @@ func awsConfig(ctx context.Context, b config.Bucket) (aws.Config, error) {
 		defer bundle.Close() //nolint:errcheck // read once
 		opts = append(opts, awsconfig.WithCustomCABundle(bundle))
 	}
-	if c := b.CredentialsEnv; c != nil {
-		id, err := config.Secret(c.AccessKeyID)
+	if c := b.CredentialsSecret; c != nil {
+		id, err := secrets.Get(ctx, "credentialsSecret.accessKeyID", c.AccessKeyID)
 		if err != nil {
-			return aws.Config{}, fmt.Errorf("credentialsEnv.accessKeyID: %w", err)
+			return aws.Config{}, err
 		}
-		secret, err := config.Secret(c.SecretAccessKey)
+		secret, err := secrets.Get(ctx, "credentialsSecret.secretAccessKey", c.SecretAccessKey)
 		if err != nil {
-			return aws.Config{}, fmt.Errorf("credentialsEnv.secretAccessKey: %w", err)
+			return aws.Config{}, err
 		}
 		opts = append(opts, awsconfig.WithCredentialsProvider(
 			credentials.NewStaticCredentialsProvider(id, secret, "")))
@@ -55,12 +55,12 @@ func awsConfig(ctx context.Context, b config.Bucket) (aws.Config, error) {
 }
 
 // OpenArchiveFrom opens the archive the configuration names.
-func OpenArchiveFrom(ctx context.Context, a config.Archive) (*s3store.Store, error) {
+func OpenArchiveFrom(ctx context.Context, a config.Archive, secrets *config.Secrets) (*s3store.Store, error) {
 	lock, err := s3store.ParseLockMode(a.LockMode)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := awsConfig(ctx, a.Bucket)
+	cfg, err := awsConfig(ctx, a.Bucket, secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +72,8 @@ func OpenArchiveFrom(ctx context.Context, a config.Archive) (*s3store.Store, err
 
 // OpenExportsFrom opens the exports bucket, which is a store of its own and has
 // no lock: an export is a copy made to be taken away and then cleared.
-func OpenExportsFrom(ctx context.Context, b config.Bucket) (*s3store.Store, error) {
-	cfg, err := awsConfig(ctx, b)
+func OpenExportsFrom(ctx context.Context, b config.Bucket, secrets *config.Secrets) (*s3store.Store, error) {
+	cfg, err := awsConfig(ctx, b, secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -83,17 +83,17 @@ func OpenExportsFrom(ctx context.Context, b config.Bucket) (*s3store.Store, erro
 }
 
 // Credentials are how to sign in to OpenBAO: a JWT login, a token file, or a
-// token read from the variable the file names.
-func openBAOCredentials(o config.OpenBAO) (login *keys.JWTLogin, token, tokenFile string, err error) {
+// token read from the secret the file names.
+func openBAOCredentials(ctx context.Context, o config.OpenBAO, secrets *config.Secrets) (login *keys.JWTLogin, token, tokenFile string, err error) {
 	switch {
 	case o.Login != nil:
 		return &keys.JWTLogin{Mount: o.Login.Mount, Role: o.Login.Role, TokenFile: o.Login.JWTFile}, "", "", nil
 	case o.TokenFile != "":
 		return nil, "", o.TokenFile, nil
 	default:
-		token, err = config.Secret(o.TokenEnv)
+		token, err = secrets.Get(ctx, "openbao.tokenSecret", o.TokenSecret)
 		if err != nil {
-			return nil, "", "", fmt.Errorf("openbao.tokenEnv: %w", err)
+			return nil, "", "", err
 		}
 		return nil, token, "", nil
 	}
@@ -108,7 +108,7 @@ func mountOrTransit(m string) string {
 
 // OpenKeysFrom opens the key provider the configuration names. It is nil where
 // a deployment runs without one, which is the default.
-func OpenKeysFrom(ctx context.Context, k *config.Keys) (keys.Provider, error) {
+func OpenKeysFrom(ctx context.Context, k *config.Keys, secrets *config.Secrets) (keys.Provider, error) {
 	switch {
 	case !k.Enabled():
 		return nil, nil
@@ -120,7 +120,7 @@ func OpenKeysFrom(ctx context.Context, k *config.Keys) (keys.Provider, error) {
 		return keys.NewLocal(root, k.Local.Dir)
 	default:
 		t := k.Transit
-		login, token, tokenFile, err := openBAOCredentials(t.OpenBAO)
+		login, token, tokenFile, err := openBAOCredentials(ctx, t.OpenBAO, secrets)
 		if err != nil {
 			return nil, err
 		}
@@ -138,7 +138,7 @@ func OpenKeysFrom(ctx context.Context, k *config.Keys) (keys.Provider, error) {
 // OpenSignerFrom opens the key the configuration says seals are signed with.
 // The private half of a managed key (kms, transit) never reaches this process;
 // the file is the exception, and the one to leave to development.
-func OpenSignerFrom(ctx context.Context, s config.Signer) (keys.Signer, error) {
+func OpenSignerFrom(ctx context.Context, s config.Signer, secrets *config.Secrets) (keys.Signer, error) {
 	switch {
 	case s.KMS != nil:
 		cfg, err := awsconfig.LoadDefaultConfig(ctx)
@@ -150,7 +150,7 @@ func OpenSignerFrom(ctx context.Context, s config.Signer) (keys.Signer, error) {
 		}
 		return &keys.KMSSigner{Client: kms.NewFromConfig(cfg), Key: s.KMS.Key}, nil
 	case s.Transit != nil:
-		login, token, tokenFile, err := openBAOCredentials(s.Transit.OpenBAO)
+		login, token, tokenFile, err := openBAOCredentials(ctx, s.Transit.OpenBAO, secrets)
 		if err != nil {
 			return nil, err
 		}

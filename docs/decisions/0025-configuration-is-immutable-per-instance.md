@@ -47,9 +47,26 @@ schemas are authored with tests binding the Go structs.
 4. **Versioning.** Each document carries `apiVersion`; absent means `v1`. A
    binary accepts N and N-1 and converts N-1 on load. Schemas stay authored by
    hand, with tests that bind them to the structs.
+   - *Amendment, 2026-10-05 (owner decision D3).* The group is
+     `<product>.truvity.github.io/<kind>/vN`: audit moves from
+     `truvity.github.io/<kind>/v1` to `audit.truvity.github.io/<kind>/v2`, and
+     the schemas' `$id`s move with it (`.../schemas/v2/config/`). The loader
+     reads both: a version-1 document under the old group, or with no
+     `apiVersion`, is validated against the frozen version-1 schema,
+     converted, validated against version 2's and read, with a deprecation
+     warning. Version 1 is read for one minor and then removed (D1).
 5. **Secrets.** A declared secret name is delivered by an environment
    variable, a mounted file, or a declared secret source (the amendment to
    contract section 5), by the same rule as in sluis.
+   - *Amendment, 2026-10-05 (owner decision D4).* A field that holds a secret is
+     named `...Secret` and holds the secret's **name**; the file's one `secrets:
+     {source: env|file|ssm, root}` says how to find it. `...Env` fields
+     (`passwordEnv`, `credentialsEnv`, `tokenEnv`) are deprecated and exist in
+     version 1 only. On AWS Lambda a secret is never taken from the function's
+     environment: it is a SecureString in SSM under a root
+     (`/audit/<instance>/private/config/<name>`), read with the function's own
+     role, which the Pulumi library grants for that root only. On Kubernetes the
+     chart projects each name as a file (`source: file`).
 
 ## Consequences
 

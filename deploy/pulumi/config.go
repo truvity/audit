@@ -23,6 +23,9 @@ const (
 	writerService     = "audit-writer"
 	notaryService     = "audit-notary"
 	extensionLoopback = "http://127.0.0.1:4318"
+	// apiVersionPrefix is the group of the documents' apiVersion:
+	// `audit.truvity.github.io/<kind>/v2`.
+	apiVersionPrefix = "audit.truvity.github.io/"
 )
 
 // archiveConfig is the `archive` block of both functions: the bucket the library
@@ -61,13 +64,15 @@ func dedupeTable(name string) string     { return name + "-dedupe" }
 // writerConfig is audit-writer-lambda's configuration file
 // (schemas/config/audit-writer-lambda.schema.json). It holds no secret and
 // nothing that is known only after something is created, so it is rendered
-// before the first resource exists and ships in the configuration layer.
+// before the first resource exists and ships in the configuration layer. A
+// secret it names (`...Secret`) is read from SSM under `secrets.root`.
 func writerConfig(name string, a *Args) ([]byte, error) {
 	dyn := map[string]any{"table": dedupeTable(name)}
 	if a.Writer.DedupeWindow != "" {
 		dyn["window"] = a.Writer.DedupeWindow
 	}
 	doc := map[string]any{
+		"apiVersion": apiVersionPrefix + "audit-writer-lambda/v2",
 		"deployment": configRoot + "/" + deploymentFile,
 		"archive":    archiveConfig(name, a),
 		"dedupe":     map[string]any{"dynamodb": dyn},
@@ -79,6 +84,11 @@ func writerConfig(name string, a *Args) ([]byte, error) {
 	if a.Writer.Keys != nil {
 		doc["keys"] = a.Writer.Keys
 	}
+	// The secrets Keys names are read from SSM with the function's role. The
+	// function's environment holds none: what is here is a path.
+	if s := a.Writer.Secrets; s != nil {
+		doc["secrets"] = map[string]any{"source": "ssm", "root": s.Root}
+	}
 	if a.Writer.ForgetIdentities {
 		doc["forgetIdentities"] = true
 	}
@@ -89,9 +99,10 @@ func writerConfig(name string, a *Args) ([]byte, error) {
 // same schema as the Job's, with `signer.kms` naming the seal key by alias.
 func notaryConfig(name string, a *Args) ([]byte, error) {
 	doc := map[string]any{
-		"archive": archiveConfig(name, a),
-		"signer":  map[string]any{"kms": map[string]any{"key": sealKeyAlias(name)}},
-		"settle":  a.Notary.Settle,
+		"apiVersion": apiVersionPrefix + "audit-notary/v2",
+		"archive":    archiveConfig(name, a),
+		"signer":     map[string]any{"kms": map[string]any{"key": sealKeyAlias(name)}},
+		"settle":     a.Notary.Settle,
 	}
 	if len(a.Notary.Profiles) > 0 {
 		doc["profiles"] = a.Notary.Profiles

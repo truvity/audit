@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "sink": {
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-clock-sync.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "dependentRequired": {
+    "require": [
+      "sink"
+    ]
+  },
+  "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "properties": {
+    "apiVersion": {
+      "default": "truvity.github.io/audit-clock-sync/v1",
+      "description": "The version of this document's shape, `truvity.github.io/audit-clock-sync/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "enum": [
+        "truvity.github.io/audit-clock-sync/v1"
+      ]
+    },
+    "maxOffset": {
+      "$ref": "#/$defs/duration",
+      "default": "1s",
+      "description": "How far the clock may be out before the run fails; 0s accepts any offset and only records it."
+    },
+    "ntp": {
+      "description": "Time references; the quickest to answer is believed, and one being unreachable is survivable.",
+      "items": {
+        "description": "A time reference, host or host:port.",
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "require": {
+      "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+      "enum": [
+        "logged",
+        "queued",
+        "archived"
+      ]
+    },
+    "sink": {
+      "$ref": "#/$defs/sink",
+      "description": "The writer the reading is recorded through."
+    },
+    "timeout": {
+      "$ref": "#/$defs/duration",
+      "default": "5s",
+      "description": "How long to wait for a reference."
+    }
+  },
+  "required": [
+    "ntp"
+  ],
+  "title": "audit clock-sync",
+  "type": "object"
+}

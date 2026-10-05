@@ -56,6 +56,12 @@ type Args struct {
 	// call it, sets AccountID and no lookup is made at all.
 	AccountID string
 
+	// Region is the AWS region of the installation, for the ARN of the SSM
+	// parameters the writer reads its secrets from. Empty looks it up as an invoke
+	// made through the component's own provider, as AccountID does, and only when
+	// there are secrets to grant.
+	Region string
+
 	// RolePath is the IAM path of every role the library creates. Default
 	// "/audit/". The roles are `<name>-writer`, `<name>-notary`,
 	// `<name>-observe-reader` and `<name>-scheduler`, where `<name>` is the
@@ -246,6 +252,12 @@ type WriterArgs struct {
 	// no keys, which is the default a deployment should have to argue itself out
 	// of.
 	Keys map[string]any
+	// Secrets is where the function reads the secrets Keys names (a `...Secret`
+	// field, such as `tokenSecret` of an OpenBAO login): SecureStrings in SSM
+	// under a root, granted to the function's role and to nothing else. Nil is
+	// the defaults when Keys names a secret, and no SSM access when it does not.
+	// See SecretsArgs.
+	Secrets *SecretsArgs
 	// ForgetIdentities is `forgetIdentities` in the configuration.
 	ForgetIdentities bool
 	// DedupeWindow is `dedupe.dynamodb.window`, a Go duration. Empty is the
@@ -515,6 +527,11 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	if err := refuseSecrets("Writer.Keys", w.Keys); err != nil {
 		return nil, err
 	}
+	secrets, err := resolveSecrets(name, w)
+	if err != nil {
+		return nil, err
+	}
+	w.Secrets = secrets
 	setInt(&w.MemoryMB, 512)
 	setInt(&w.TimeoutSeconds, 120)
 	setInt(&w.BatchSize, 10)
@@ -654,17 +671,24 @@ func setInt(p *int, def int) {
 var secretKeyRE = regexp.MustCompile(`(?i)(token|secret|password|passwd|private|credential)`)
 
 // refuseSecrets walks a block that is rendered into the configuration layer. A
-// key that names a secret is allowed only as a reference: a name of an
-// environment variable (...Env) or a file (...File), which is what the schemas
-// ask for and what holds no secret.
+// key that names a secret is allowed only as a reference: the name of a secret
+// (...Secret), which the function resolves through SSM, or a file (...File),
+// which is what the schemas ask for and what holds no secret. The `...Env`
+// spelling of version 1 names an environment variable, and a function's
+// environment is not a place for a secret, so it is refused.
 func refuseSecrets(path string, v any) error {
 	switch x := v.(type) {
 	case map[string]any:
 		for k, e := range x {
-			if secretKeyRE.MatchString(k) && !strings.HasSuffix(k, "Env") && !strings.HasSuffix(k, "File") {
-				if _, isStr := e.(string); isStr {
+			if _, isStr := e.(string); isStr {
+				if strings.HasSuffix(k, "Env") {
+					return fmt.Errorf("auditpulumi: %s.%s names an environment variable, and a function's environment "+
+						"is not a place for a secret: name a secret with the …Secret spelling and it is read from SSM "+
+						"(Writer.Secrets)", path, k)
+				}
+				if secretKeyRE.MatchString(k) && !strings.HasSuffix(k, "Secret") && !strings.HasSuffix(k, "File") {
 					return fmt.Errorf("auditpulumi: %s.%s looks like a secret, and the configuration layer is kept for good: "+
-						"name an environment variable (…Env) or a file (…File) instead", path, k)
+						"name a secret (…Secret, read from SSM) or a file (…File) instead", path, k)
 				}
 			}
 			if err := refuseSecrets(path+"."+k, e); err != nil {

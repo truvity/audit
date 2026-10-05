@@ -113,11 +113,11 @@ func run() error {
 	if err := preset.CheckLockMode(profiles, cfg.Archive.LockMode); err != nil {
 		return err
 	}
-	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive)
+	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive, cfg.SecretReader())
 	if err != nil {
 		return err
 	}
-	provider, err := cli.OpenKeysFrom(ctx, cfg.Keys)
+	provider, err := cli.OpenKeysFrom(ctx, cfg.Keys, cfg.SecretReader())
 	if err != nil {
 		return err
 	}

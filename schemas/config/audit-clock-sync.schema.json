@@ -77,7 +77,7 @@
       "type": "object"
     }
   },
-  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-clock-sync.schema.json",
+  "$id": "https://truvity.github.io/audit/schemas/v2/config/audit-clock-sync.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "dependentRequired": {
@@ -85,13 +85,12 @@
       "sink"
     ]
   },
-  "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
   "properties": {
     "apiVersion": {
-      "default": "truvity.github.io/audit-clock-sync/v1",
-      "description": "The version of this document's shape, `truvity.github.io/audit-clock-sync/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "description": "The version of this document's shape, `audit.truvity.github.io/audit-clock-sync/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-clock-sync/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
       "enum": [
-        "truvity.github.io/audit-clock-sync/v1"
+        "audit.truvity.github.io/audit-clock-sync/v2"
       ]
     },
     "maxOffset": {

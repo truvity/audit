@@ -1,0 +1,327 @@
+{
+  "$defs": {
+    "duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "openbao": {
+      "additionalProperties": false,
+      "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
+      "oneOf": [
+        {
+          "required": [
+            "login"
+          ]
+        },
+        {
+          "required": [
+            "tokenFile"
+          ]
+        },
+        {
+          "required": [
+            "tokenEnv"
+          ]
+        }
+      ],
+      "properties": {
+        "address": {
+          "description": "The server, for example https://openbao.example:8200.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "caFile": {
+          "description": "A PEM bundle trusted beside the system roots, for a server on a private chain.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "additionalProperties": false,
+          "description": "Sign in with a JWT: the pod's projected service-account token, presented to an auth mount. Nothing is stored.",
+          "properties": {
+            "jwtFile": {
+              "description": "The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "mount": {
+              "description": "The JWT auth mount, for example jwt-devel.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "role": {
+              "description": "The role on that mount.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "mount",
+            "role",
+            "jwtFile"
+          ],
+          "type": "object"
+        },
+        "mount": {
+          "default": "transit",
+          "description": "Where the transit engine is mounted.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The OpenBAO namespace the engine and the auth mount are in. Unset is the root namespace.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenEnv": {
+          "description": "The NAME of the environment variable holding a token.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenFile": {
+          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "sink": {
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-notary.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "dependentRequired": {
+    "require": [
+      "sink"
+    ]
+  },
+  "description": "The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "properties": {
+    "apiVersion": {
+      "default": "truvity.github.io/audit-notary/v1",
+      "description": "The version of this document's shape, `truvity.github.io/audit-notary/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "enum": [
+        "truvity.github.io/audit-notary/v1"
+      ]
+    },
+    "archive": {
+      "additionalProperties": false,
+      "description": "Where the archive is and how it is written.",
+      "properties": {
+        "bucket": {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
+        },
+        "kmsKey": {
+          "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "lockMode": {
+          "default": "compliance",
+          "description": "The Object Lock mode every object is written in: compliance (the record tier), governance (a lock a privileged role can shorten), or none (the attested tier, for a store without Object Lock). A process refuses to start when a profile demands a stricter mode than this.",
+          "enum": [
+            "compliance",
+            "governance",
+            "none"
+          ]
+        },
+        "prefix": {
+          "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "bucket"
+      ],
+      "type": "object"
+    },
+    "profiles": {
+      "description": "The profiles to seal. Unset seals every profile the archive has records for.",
+      "items": {
+        "description": "A profile name.",
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "require": {
+      "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+      "enum": [
+        "logged",
+        "queued",
+        "archived"
+      ]
+    },
+    "settle": {
+      "$ref": "#/$defs/duration",
+      "default": "10m",
+      "description": "How long after an hour has ended it is sealed, so that a batch put late in the hour it is keyed by is in the seal. An hour is never sealed sooner."
+    },
+    "signer": {
+      "additionalProperties": false,
+      "description": "The key seals are signed with, a P-384 key (ES384). The private half should never be on the notary's disk: a managed key (`kms`, `transit`) keeps it where the writer's role cannot reach it, which a `file` cannot.",
+      "oneOf": [
+        {
+          "required": [
+            "kms"
+          ]
+        },
+        {
+          "required": [
+            "transit"
+          ]
+        },
+        {
+          "required": [
+            "file"
+          ]
+        }
+      ],
+      "properties": {
+        "file": {
+          "additionalProperties": false,
+          "description": "A P-384 private key in a PEM file (PKCS#8 or SEC 1), for development.",
+          "properties": {
+            "path": {
+              "description": "The file.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "type": "object"
+        },
+        "kms": {
+          "additionalProperties": false,
+          "description": "An AWS KMS key: ECC_NIST_P384, SIGN_VERIFY, signing ECDSA_SHA_384. The credentials are the SDK's ambient ones: in a cluster, the notary's Pod Identity or IRSA role, which is not the writer's.",
+          "properties": {
+            "key": {
+              "description": "The key's ARN, ID or alias.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The key's region, when it is not the SDK's.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "key"
+          ],
+          "type": "object"
+        },
+        "transit": {
+          "additionalProperties": false,
+          "description": "An OpenBAO transit key of type ecdsa-p384.",
+          "properties": {
+            "key": {
+              "description": "The transit key's name.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "openbao": {
+              "$ref": "#/$defs/openbao"
+            }
+          },
+          "required": [
+            "key",
+            "openbao"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "sink": {
+      "$ref": "#/$defs/sink",
+      "description": "The writer this job records what it sealed through (`audit.seal.written`)."
+    }
+  },
+  "required": [
+    "archive",
+    "signer"
+  ],
+  "title": "audit-notary",
+  "type": "object"
+}

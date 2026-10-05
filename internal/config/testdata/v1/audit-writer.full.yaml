@@ -1,0 +1,53 @@
+apiVersion: truvity.github.io/audit-writer/v1
+# Every key the writer reads, set. The test that decodes this file strictly and
+# writes it back is what holds the Go type to the schema.
+mode: writer
+require: archived
+listen:
+  address: ":8080"
+deployment: /etc/audit/deployment.yaml
+workloads: /etc/audit/workloads.yaml
+catalogues: /etc/audit/catalogues
+archive:
+  bucket:
+    name: audit-archive
+    region: eu-example-1
+    endpoint: https://s3.example.test
+    ca: /etc/audit/trust/ca.crt
+    pathStyle: true
+    credentialsEnv:
+      accessKeyID: AUDIT_S3_ACCESS_KEY_ID
+      secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+  prefix: app
+  lockMode: governance
+  kmsKey: alias/audit
+database:
+  url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
+  passwordEnv: AUDIT_DATABASE_PASSWORD
+  maxConnections: 20
+replicas: 3
+keys:
+  provider: transit
+  transit:
+    prefix: audit
+    openbao:
+      address: https://openbao.example.test:8200
+      mount: transit
+      namespace: devel
+      caFile: /etc/audit/trust/ca.crt
+      login:
+        mount: jwt-devel
+        role: audit-writer
+        jwtFile: /var/run/openbao/token
+forgetIdentities: true
+stream:
+  nats:
+    url: nats://nats.example.test:4222
+    tokenFile: /var/run/audit/stream/token
+  name: AUDIT
+  consumer: audit-writer
+  batch: 200
+  ackWait: 3m0s
+roll:
+  interval: 45s
+  maxRecords: 1000

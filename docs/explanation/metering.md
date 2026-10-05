@@ -41,7 +41,7 @@ the way object storage and CI providers meter storage. Never deltas.
 
 ## Projection
 
-- `usage_dedup(id, source, seen_at)` with the preset's dedupe window.
+- `usage_dedup(id, source, seen_at)` with the framework profile's dedupe window.
 - `usage_hourly(tenant_id, meter, hour, quantity, event_count, last_event_id)`
   upserted idempotently.
 - `usage_statement(tenant_id, meter, period, quantity, event_id_range,

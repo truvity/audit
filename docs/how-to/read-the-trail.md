@@ -1,4 +1,20 @@
-# Reading the trail
+# Read the trail
+
+## Purpose
+
+Read the audit trail as a person or a program through the query service, from Go or TypeScript, and let an auditor check the archive without trusting anyone.
+
+## Preconditions
+
+- The query service is enabled (`query.enabled`) with grants naming your issuer ([configuration](../reference/configuration-observe-query.md#query-service)).
+- A bearer token from a trusted issuer. The Go code is [`examples/read`](../../examples/read/main.go), compiled on every run of the gate.
+
+## Before you start
+
+- **The query service is the only way back in.** Nothing in the write path can hand a record to a caller, and every read is itself recorded (`audit.get`, `audit.search`).
+- **Grants decide what a caller may read:** the query service trusts only the issuers its grants name, and a group's name can be the grant.
+
+## Steps
 
 How people and programs read the audit trail: who may see what, the API with
 examples, the Go and TypeScript clients, and how an auditor checks the archive
@@ -17,10 +33,10 @@ flowchart LR
   Q -- "3. search, narrowed<br/>to the grant" --> PG[("index")]
   Q -- "4. the read is recorded" --> R["receiver"]
   Q -- "provenance" --> S3[("archive")]
-  A(["an auditor"]) -- "audit verify<br/>read-only, plus the public key" --> S3
+  A(["an auditor"]) -- "audit verify<br/>read-only, plus the pinned root thumbprints" --> S3
 ```
 
-## Access
+### Access
 
 The query service trusts only the issuers its **grants** name
 (`query.grants` in the chart, the file the query service's `grants` names),
@@ -56,7 +72,7 @@ installation's, so the Audit page can call the query service directly with the
 token the person's session already has
 ([the Audit page](connect-an-application.md#the-audit-page)).
 
-With the `access-roster` preset, a group's name is the grant:
+With the `access-roster` grants preset (sluis's group grammar), a group's name is the grant:
 
 | group | may |
 |---|---|
@@ -76,7 +92,7 @@ full rules are in
 Every read — search, facets, get, export, resolve — is itself recorded in the
 trail, naming the caller and the rule that allowed it.
 
-### What a caller may read
+#### What a caller may read
 
 `Access` reports which profiles the caller may read, with the operations it
 holds on each, the tenants and the period:
@@ -92,7 +108,7 @@ installation's profile names. This is how the Audit page decides what to show:
 with no `profiles` passed, it asks `Access` and renders a tab per profile that
 comes back. It reads no record and is not recorded.
 
-## The API
+### The API
 
 Connect RPC, so every method is a `POST` with a JSON body (or binary
 protobuf). JSON field names are snake_case. The contract is
@@ -184,7 +200,7 @@ Errors are Connect codes a client can act on: `permission_denied`,
 outside your grant), `failed_precondition`, `unimplemented`, and `unavailable`
 — retry that one.
 
-## From Go
+### From Go
 
 ```go
 client := auditv1connect.NewQueryServiceClient(httpClientWithYourBearer, "https://audit-query.example.com")
@@ -194,7 +210,7 @@ page, err := client.Search(ctx, connect.NewRequest(&auditv1.SearchRequest{Profil
 [`examples/read`](../../examples/read/main.go) builds a filtered search, pages
 it to the end, and reads one record with its provenance.
 
-## From TypeScript
+### From TypeScript
 
 `@truvity/audit` is the client, the typed contract, the qualifier box compiled
 to the typed filter, and records rendered as their catalogues' sentences.
@@ -221,7 +237,7 @@ const words = new Sentencer([myCatalogue]); // from `audit messages catalogue.ya
 for (const r of page.items) console.log(words.sentence(r));
 ```
 
-## The page
+### The page
 
 `@truvity/audit/react` has the view that goes in the **application's own
 console**. It takes a client over the host's transport, so the console's own
@@ -259,7 +275,7 @@ Where the page sits and how it reaches the query service is
 application's own console hosts it: an installation belongs to one
 application, so there is nothing for a console of its own to front.
 
-## For an auditor
+### For an auditor
 
 An auditor does not have to trust the operator, the database or this service.
 With read-only access to the archive and nothing else:
@@ -298,3 +314,8 @@ It walks each profile's records and checks what the search contract promises:
 It reads and never writes: a run that wrote test records would leave them in a
 locked archive for years. Its reads are recorded like anyone's. A non-zero
 exit names the checks that failed.
+
+## Afterwards
+
+- An auditor needs no query service: `audit verify` against the archive ([verify the trail](verify-the-trail.md)).
+- Run `audit conformance` against the query service after changing grants.

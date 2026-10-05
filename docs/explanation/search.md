@@ -99,7 +99,7 @@ rebuilt against 1.2.0.
 
 `events_core` is what happened; `events_context` is who it happened to, kept
 apart so that a deployment can purge it on a shorter schedule of its own, and
-can grant a reader the event without the person. No shipped preset states such
+can grant a reader the event without the person. No shipped framework profile states such
 a schedule — the frameworks they cite want the actor for the whole retention —
 so the purge job's `identifyingAfter` has no default. `events_data` holds the filterable
 extension properties. `facet_counts` is what the [Audit page](audit-page.md)'s navigation reads.

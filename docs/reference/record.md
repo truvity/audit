@@ -14,8 +14,8 @@ archived record and understand it without this repository. The writer archives
 the proto of a record's major beside the schema on first use. A proto change not
 followed by `just generate` leaves the tree dirty, which CI reads as a failure.
 
-Which profile copies carry a field is decided by the profile's presets
-([presets](profiles.md)); `audit profile explain <name>` prints the result. The
+Which profile copies carry a field is decided by the profile's framework profiles
+([framework profiles](profiles.md)); `audit profile explain <name>` prints the result. The
 record does not say.
 
 | field | set by | notes |

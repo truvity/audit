@@ -84,7 +84,7 @@ is required rather than recommended there; a shorter digest interval; no
 delete permission on any component; and an administrative no-delete rule
 where the store offers one.
 
-Which tier a deployment may run on is the profiles' decision. Every preset
+Which tier a deployment may run on is the profiles' decision. Every framework profile
 says the least lock its framework demands — `compliance` for `pci-dss`,
 `nen-7513`, `dora` and `evidence-etsi`, `none` for `security`, `history` and
 `billing-nl` — and the writer, the digest job and the verify job refuse to
@@ -163,7 +163,7 @@ writer's credentials do not, and the job runs as its own identity.
 
 Emitters and writers run on synchronised clocks. `audit clock-sync` checks the
 offset against UTC daily and records `audit.clock.synchronised`, which the
-evidence and PCI presets require. It measures and records; it never sets the
+evidence and PCI framework profiles require. It measures and records; it never sets the
 clock, because a component that both set the time and recorded the times of
 things would be marking its own paper.
 
@@ -177,7 +177,7 @@ not checked, and saying it was would be worse than a failed job.
 
 ## Anchoring
 
-Presets may require or recommend anchoring the chain head with an RFC 3161
+Framework profiles may require or recommend anchoring the chain head with an RFC 3161
 or ETSI time-stamp. **Not built.** When it is, the token is kept beside the
 digest (`<digest key>.tsr`), not inside it: a time-stamp is over the signed
 digest, so it cannot be part of the body it signs. An earlier version of this

@@ -43,7 +43,7 @@ toolchain's jobs, which export nothing and carry the variables for uniformity.
 Without an `endpoint` nothing is rendered, and a release that never set the
 value renders byte for byte what it did before it existed. The chart refuses an
 `extraEnv` key that does not start with `OTEL_` (a secret reaches a pod through
-`secretEnv`, never through a value rendered into the manifest) and one that
+`secretFiles`, never through a value rendered into the manifest) and one that
 carries `OTEL_EXPORTER_OTLP_ENDPOINT`, which has a value of its own, and an
 endpoint that is not an http(s) URL.
 

@@ -11,7 +11,7 @@ Everything one installation writes, beneath its `prefix`:
 
 | prefix | written by | what | retention |
 |---|---|---|---|
-| `records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>/<ULID>` | writer | one object per ingest batch, by the hour of ingest ([the contract](../reference/bucket-contract.md)) | the profile's, per object at PUT (years after expiry for an `after_expiry` profile) |
+| `records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>/<ULID>` | writer | one object per ingest batch, by the hour of ingest ([the contract](bucket-contract.md)) | the profile's, per object at PUT (years after expiry for an `after_expiry` profile) |
 | `catalogue/<app>/<version>` | writer | the application's catalogue at that version, written once | the longest profile |
 | `seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws` | notary | one signed seal per profile, tenant and hour, empty hours too, chained through `prev` | that of the records it covers, per object at PUT |
 | `keys/roots.jwks` | the notary, once, if absent; otherwise the operator | the root public keys, as a JWK Set: distribution, not trust | none; the bucket versions it |

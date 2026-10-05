@@ -10,7 +10,7 @@ than compiled; the first three are in `sdk/schemas/`:
 | file | describes |
 |---|---|
 | `catalogue.schema.json` | an application's action catalogue |
-| `preset.schema.json` | a framework preset under `presets/` |
+| `preset.schema.json` | a framework profile under `presets/` |
 | `extension.schema.json` | the constraints every extension-slot schema must satisfy, including the `x-audit-*` annotation vocabulary |
 
 `config/` holds the schema of each binary's configuration file

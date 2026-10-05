@@ -194,8 +194,8 @@ The library supports the `aws` partition and one region per stack.
 **One role per function, under the path `/audit/`**, named `<name>-<part>`. The
 name is in the role because an IAM role name is unique across the account whatever
 its path, and one account may hold several installations. For the default
-installation, `audit`, the exact ARNs, which gitops grants and a roster group
-matcher name, are
+installation, `audit`, the exact ARNs, which an estate's gitops grants and the OTLP
+issuer's group matcher name, are
 
 | role | ARN | runs as |
 |---|---|---|

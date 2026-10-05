@@ -28,7 +28,7 @@ Everything else under a component is the platform's, not the binary's:
 | value | meaning |
 |---|---|
 | `secretFiles` | a list of `{name, secretName, key}`: a Secret's key as the file `/etc/audit/secrets/<name>`. The config names `name` in a `...Secret` field (`passwordSecret`, `credentialsSecret`, `tokenSecret`) and says `secrets: {source: file, root: /etc/audit/secrets}`, which the chart checks. `optional: true` allows a missing key |
-| `secretEnv` | **deprecated**, version-1 configs: a list of `{name, secretName, key}`: an environment variable taken from a Secret's key. The config names `name` as the holder of a secret (`passwordEnv`, `credentialsEnv`, `tokenEnv`). `optional: true` allows a missing key |
+| `secretEnv` | **deprecated**, for version-1 configs only ([upgrade](../how-to/upgrade/v0.13.md)): environment variables taken from a Secret's keys. `optional: true` allows a missing key |
 | `secretMounts` | a list of `{secretName, mountPath}`: a Secret mounted read-only as a directory, for a key or a root the config names by path (`local.rootFile`, a key file) |
 | `tokens` | a list of `{audience, mountPath, expirationSeconds, path}`: a projected service-account token of that audience (lifetime 3600 by default), a file named `token` (or `path`) in the directory `mountPath`, which the config names (`tokenFile`, `jwtFile`). It is read afresh by whatever names it, because the kubelet replaces it before it expires |
 | `serviceAccount` | the identity of the component, for Pod Identity or IRSA annotations. Every component has its own, `{create, name, annotations}`: `receiver.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount`. Created, it is `<fullname>-<component>` unless `name` says otherwise; with `create: false` the component runs as `name`, or as the release's own top-level `serviceAccount` (the writer's) when `name` is empty. In stream mode the chart refuses a receiver and a writer with the same name |
@@ -42,7 +42,7 @@ The values that are not configuration of a binary:
 | value | meaning |
 |---|---|
 | `mode` | `direct` (one process: the front door and the write path) or `stream` (a receiver in front, `writer.consumers` writers behind). It decides which Deployments are rendered; the binaries' own `mode` is in `receiver.config` |
-| `profiles`, `externalIdentifiersAreOpaque` | rendered as the profile document, `/etc/audit/deployment.yaml`, which every config's `deployment` names. `externalIdentifiersAreOpaque` declares that the identifiers the installation receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](profiles.md#what-a-deployment-can-relax)) |
+| `profiles`, `externalIdentifiersAreOpaque` | rendered as the profile document, `/etc/audit/deployment.yaml`, which every config's `deployment` names. `externalIdentifiersAreOpaque` declares that the identifiers the installation receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([framework profiles](profiles.md#what-a-deployment-can-relax)) |
 | `workloadIdentity.issuers`, `.audience`, `.workloads` | `audience` is the audience an issuer entry takes when it names none. Rendered as `/etc/audit/workloads.yaml`, which the writer's `workloads` names. The chart refuses an installation that keeps an index and verifies callers with no `workloads` mapping |
 | `query.grants` | rendered as `/etc/audit/grants.yaml`, which the query service's `grants` names |
 | `catalogues` | catalogue documents by name, mounted at `/etc/audit/catalogues` for the writer's `catalogues` |
@@ -105,7 +105,7 @@ The chart checks what only the platform can see, in
   writer's annotations (the same cloud role), or a notary that signs in to
   OpenBAO under the writer's role or token: whoever writes the archive and can
   also sign for it can choose what to sign;
-- `extensions.billing` without a profile composed from a metering preset, and
+- `extensions.billing` without a profile composed from a metering framework profile, and
   `extensions.quotas` without `mode: stream`.
 
 A value from before the file, such as `bucket` or `lockMode` at the top level,

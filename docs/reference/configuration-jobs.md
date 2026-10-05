@@ -74,7 +74,7 @@ chart. It never touches the archive.
 |---|---|---|---|
 | `deployment` | path, required | | the profile configuration |
 | `database` | `database`, required | | the index and the deduplication table, as the purge job's **own** role (`audit migrate --purge`): delete from both, and add nothing to either |
-| `identifyingAfter` | duration | unset: nothing is forgotten early | how long the index keeps who an event happened to. No shipped preset states one, so it is the deployment's own policy |
+| `identifyingAfter` | duration | unset: nothing is forgotten early | how long the index keeps who an event happened to. No shipped framework profile states one, so it is the deployment's own policy |
 | `dedupeWindow` | duration | the widest window the profiles ask for | how long a written identifier is remembered |
 
 ### audit clock-sync

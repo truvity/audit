@@ -82,7 +82,7 @@ flowchart LR
 ```
 
 - **One per application, not shared.** What is shared, and shipped here, is
-  the format and the [presets](../../presets/README.md) that profiles are
+  the format and the [framework profiles](../../presets/README.md) that profiles are
   composed from. A catalogue names profiles; it never defines them.
 - **Versioned with the code.** Every record names the catalogue version it
   was written under, and the archive keeps a copy of every version, so a
@@ -169,7 +169,7 @@ them is the record.
    have no caller to verify; they keep a stamp whose hash still describes its
    record, and stamp afresh one that does not.
 3. **The writer splits the record** into one copy per profile the action names.
-   Each copy keeps only the fields that profile's presets allow (default-deny),
+   Each copy keeps only the fields that profile's framework profiles allow (default-deny),
    and each identity is treated by its category: kept in clear, replaced by a
    keyed pseudonym, or dropped. With `keys.provider: none` — the default — there
    are no pseudonyms, and
@@ -230,7 +230,7 @@ neither puts anything new in the request path.
 
 | | state |
 |---|---|
-| record, catalogue, presets, emitter, writer, query service, v1 bucket layout, verify, legal holds, retention addenda | built |
+| record, catalogue, framework profiles, emitter, writer, query service, v1 bucket layout, verify, legal holds, retention addenda | built |
 | searchers: Postgres, archive scan, memory | built |
 | signers: key file, AWS KMS, OpenBAO transit | built |
 | key providers `local` and OpenBAO `transit`; AWS KMS envelope designed | built, and off by default |

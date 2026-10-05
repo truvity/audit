@@ -15,7 +15,7 @@ receiver copies every version into the archive on first use.
 
 One catalogue belongs to one application, and an installation admits one
 application. What is shared between applications is this format and the
-[presets](../../presets/README.md) that profiles are composed from, never a
+[framework profiles](../../presets/README.md) that profiles are composed from, never a
 catalogue.
 
 ## Fields
@@ -58,7 +58,7 @@ refused where it is loaded, before any emitter sees it.
 
 ## Categories
 
-Presets require categories, never actions. A profile's required categories
+Framework profiles require categories, never actions. A profile's required categories
 must be covered by the installation as a whole — the application's catalogue
 and the component's own together — not by each source: an application that
 signs people in need not also read logs. `audit validate --deployment` fails

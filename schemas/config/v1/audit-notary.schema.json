@@ -90,6 +90,61 @@
       ],
       "type": "object"
     },
+    "policyBucket": {
+      "title": "bucket",
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The bucket. It exists already: a service does not create its own store."
+        },
+        "region": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The region the bucket is in."
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region."
+        },
+        "ca": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store."
+        },
+        "pathStyle": {
+          "type": "boolean",
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations."
+        },
+        "credentialsEnv": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "type": "string",
+              "minLength": 1
+            },
+            "secretAccessKey": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ]
+        }
+      }
+    },
     "sink": {
       "additionalProperties": false,
       "dependentSchemas": {
@@ -184,7 +239,7 @@
       "description": "Where the archive is and how it is written.",
       "properties": {
         "bucket": {
-          "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
+          "$ref": "#/$defs/policyBucket"
         },
         "kmsKey": {
           "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -706,7 +707,7 @@ func (f *fakeSSM) GetParameter(_ context.Context, in *ssm.GetParameterInput, _ .
 	}
 	v, ok := f.params[aws.ToString(in.Name)]
 	if !ok {
-		return nil, errors.New("ParameterNotFound")
+		return nil, &ssmtypes.ParameterNotFound{}
 	}
 	return &ssm.GetParameterOutput{Parameter: &ssmtypes.Parameter{Value: aws.String(v)}}, nil
 }
@@ -894,4 +895,63 @@ func TestAFailedSSMClientIsRetried(t *testing.T) {
 	if v, err := s.Get(context.Background(), "f", "a"); err != nil || v != "v" {
 		t.Fatalf("after the backoff: %q, %v", v, err)
 	}
+}
+
+// Version 1 stays readable after truvity/policy's shared fragments dropped their
+// `...Env` fields: the frozen v1 schemas carry the v1 shapes themselves. A v1
+// file with passwordEnv and credentialsEnv loads off Lambda, is converted with
+// the deprecation warning (naming the fields, never the variables or values),
+// and is still refused on Lambda when the secret is read.
+func TestAVersion1FileWithEnvFieldsStillLoadsWithAWarningAndIsRefusedOnLambda(t *testing.T) {
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(old) })
+	t.Setenv("AUDIT_TEST_ACCESS_KEY", "key-value-1")
+	t.Setenv("AUDIT_TEST_SECRET_KEY", "key-value-2")
+	t.Setenv("AUDIT_TEST_DB_PASSWORD", "pw-value")
+	body := strings.Replace(minimalWriter, "    name: audit-archive\n",
+		"    name: audit-archive\n    credentialsEnv: {accessKeyID: AUDIT_TEST_ACCESS_KEY, secretAccessKey: AUDIT_TEST_SECRET_KEY}\n", 1) +
+		"database: {url: 'postgres://u@h/db', passwordEnv: AUDIT_TEST_DB_PASSWORD}\n"
+	file := write(t, body)
+	if err := config.ValidateLegacy("audit-writer", mustDoc(t, body)); err != nil {
+		t.Fatalf("the frozen v1 schema refuses passwordEnv and credentialsEnv: %v", err)
+	}
+	w, err := config.LoadWriter(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Database.PasswordSecret != "AUDIT_TEST_DB_PASSWORD" || w.Archive.Bucket.CredentialsSecret == nil ||
+		w.Archive.Bucket.CredentialsSecret.AccessKeyID != "AUDIT_TEST_ACCESS_KEY" {
+		t.Errorf("the Env fields were not carried: %+v", w)
+	}
+	for _, want := range []string{"deprecated", "passwordEnv", "credentialsEnv"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("the deprecation warning lacks %q: %s", want, logs.String())
+		}
+	}
+	for _, leak := range []string{"AUDIT_TEST_", "key-value", "pw-value"} {
+		if strings.Contains(logs.String(), leak) {
+			t.Errorf("the warning carries %q", leak)
+		}
+	}
+	if _, err := w.Database.PoolConfig(context.Background(), w.SecretReader()); err != nil {
+		t.Errorf("off Lambda the converted password does not resolve: %v", err)
+	}
+	t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "audit-writer")
+	if _, err := config.LoadWriter(file); err != nil {
+		t.Fatalf("a v1 file that names a secret no longer loads on Lambda: %v", err)
+	}
+	if _, err := w.Database.PoolConfig(context.Background(), config.NewSecrets(w.Secrets)); err == nil || !strings.Contains(err.Error(), "AWS Lambda") {
+		t.Errorf("a converted v1 passwordEnv was read on Lambda: %v", err)
+	}
+}
+
+func mustDoc(t *testing.T, body string) any {
+	t.Helper()
+	var doc any
+	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
+		t.Fatal(err)
+	}
+	return doc
 }

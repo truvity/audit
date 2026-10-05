@@ -54,16 +54,6 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 // another kind of document, is refused by name, so a later shape arrives by a
 // version and not by a file that quietly means something else.
 
-// SecretsSource is the `secrets` block: where a field named `...Secret` finds the
-// secret it names. One source serves the whole file.
-type SecretsSource struct {
-	// Source is env, file or ssm. Unset is env.
-	Source string `json:"source,omitempty"`
-	// Root is the directory (file) or the parameter path (ssm) every name is
-	// under.
-	Root string `json:"root,omitempty"`
-}
-
 // Header is what every configuration file carries beside its own keys: the
 // version of its shape, where its secrets are, and what the loader learned about
 // the file it read.

@@ -338,53 +338,57 @@
       "title": "audit migrate",
       "type": "object"
     },
+    "config-audit-migrate.v1.policyPostgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordEnv": {
+          "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "postgres",
+      "type": "object"
+    },
     "config-audit-migrate.v1.postgres": {
       "allOf": [
         {
-          "additionalProperties": false,
-          "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does.",
-          "properties": {
-            "maxConnections": {
-              "default": 10,
-              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-              "minimum": 1,
-              "type": "integer"
-            },
-            "passwordEnv": {
-              "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
-              "minLength": 1,
-              "type": "string"
-            },
-            "url": {
-              "allOf": [
-                {
-                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-                  "not": {
-                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-                  }
-                },
-                {
-                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-                  "not": {
-                    "pattern": "[?&](password|sslpassword)="
-                  }
-                },
-                {
-                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-                  "not": {
-                    "pattern": "[?&][^=&#]*%[^=&#]*="
-                  }
-                }
-              ],
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
-              "pattern": "^postgres(ql)?://",
-              "type": "string"
-            }
-          },
-          "required": [
-            "url"
-          ],
-          "type": "object"
+          "$ref": "#/$defs/config-audit-migrate.v1.policyPostgres"
         },
         {
           "properties": {
@@ -442,76 +446,198 @@
       "type": "object"
     },
     "config-audit-migrate.v2.postgres": {
-      "additionalProperties": false,
-      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
-      "properties": {
-        "maxConnections": {
-          "default": 10,
-          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-          "minimum": 1,
-          "type": "integer"
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "description": "A PostgreSQL connection. The URL carries no password: `passwordSecret` names the secret that does.",
+          "properties": {
+            "maxConnections": {
+              "default": 10,
+              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "passwordSecret": {
+              "description": "The NAME of the secret holding the password, under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the connection needs none.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            },
+            "url": {
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordSecret.",
+              "pattern": "^postgres(ql)?://",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
         },
-        "passwordSecret": {
-          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "url": {
-          "allOf": [
-            {
-              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-              "not": {
-                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-              }
-            },
-            {
-              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-              "not": {
-                "pattern": "[?&](password|sslpassword)="
-              }
-            },
-            {
-              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-              "not": {
-                "pattern": "[?&][^=&#]*%[^=&#]*="
-              }
-            },
-            {
+        {
+          "properties": {
+            "url": {
               "not": {
                 "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
               }
             }
-          ],
-          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
-          "pattern": "^postgres(ql)?://",
-          "type": "string"
+          }
         }
-      },
-      "required": [
-        "url"
       ],
-      "type": "object"
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it."
     },
     "config-audit-migrate.v2.secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$defs": {
+            "name": {
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "env"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "root"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "ssm"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "openbao"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          ],
+          "description": "Where a service reads its secrets from: ONE declared source, and a root under which every `...Secret` field of the configuration is a name (docs/contracts/config.md rule 5). The file never holds a value. `env` is refused at start-up on a serverless function, whose environment is not a place for a secret; the schema cannot see the platform, the loader does.",
+          "properties": {
+            "root": {
+              "description": "Where the source looks. file: an absolute directory. ssm: an absolute parameter path prefix. openbao: the mount path with no leading slash (for a KV v2 mount include the data segment, `secret/data/<app>`). Absent for env. No empty, `.` or `..` segment.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "source": {
+              "description": "env: each name is an environment variable, for a platform whose environment is a Secret object. file: each name is a file under `root`. ssm: each name is a parameter under `root`. openbao: each name is a path under the mount `root`.",
+              "enum": [
+                "env",
+                "file",
+                "ssm",
+                "openbao"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "config-audit-notary": {
       "else": {
@@ -552,58 +678,7 @@
           "description": "Where the archive is and how it is written.",
           "properties": {
             "bucket": {
-              "additionalProperties": false,
-              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-              "properties": {
-                "ca": {
-                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "credentialsEnv": {
-                  "additionalProperties": false,
-                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-                  "properties": {
-                    "accessKeyID": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "secretAccessKey": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "accessKeyID",
-                    "secretAccessKey"
-                  ],
-                  "type": "object"
-                },
-                "endpoint": {
-                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-                  "format": "uri",
-                  "type": "string"
-                },
-                "name": {
-                  "description": "The bucket. It exists already: a service does not create its own store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "pathStyle": {
-                  "default": false,
-                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-                  "type": "boolean"
-                },
-                "region": {
-                  "description": "The region the bucket is in.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
+              "$ref": "#/$defs/config-audit-notary.v1.policyBucket"
             },
             "kmsKey": {
               "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",
@@ -832,6 +907,61 @@
       "required": [
         "address"
       ],
+      "type": "object"
+    },
+    "config-audit-notary.v1.policyBucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsEnv": {
+          "additionalProperties": false,
+          "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "bucket",
       "type": "object"
     },
     "config-audit-notary.v1.sink": {
@@ -1080,14 +1210,16 @@
         },
         "credentialsSecret": {
           "additionalProperties": false,
-          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "description": "The NAMES of the two secrets holding the credentials, never the values, each a name under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
             "accessKeyID": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             },
             "secretAccessKey": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             }
           },
@@ -1214,25 +1346,138 @@
       "type": "object"
     },
     "config-audit-notary.v2.secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$defs": {
+            "name": {
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "env"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "root"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "ssm"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "openbao"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          ],
+          "description": "Where a service reads its secrets from: ONE declared source, and a root under which every `...Secret` field of the configuration is a name (docs/contracts/config.md rule 5). The file never holds a value. `env` is refused at start-up on a serverless function, whose environment is not a place for a secret; the schema cannot see the platform, the loader does.",
+          "properties": {
+            "root": {
+              "description": "Where the source looks. file: an absolute directory. ssm: an absolute parameter path prefix. openbao: the mount path with no leading slash (for a KV v2 mount include the data segment, `secret/data/<app>`). Absent for env. No empty, `.` or `..` segment.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "source": {
+              "description": "env: each name is an environment variable, for a platform whose environment is a Secret object. file: each name is a file under `root`. ssm: each name is a parameter under `root`. openbao: each name is a path under the mount `root`.",
+              "enum": [
+                "env",
+                "file",
+                "ssm",
+                "openbao"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "config-audit-notary.v2.sink": {
       "additionalProperties": false,
@@ -1339,58 +1584,7 @@
           "description": "The archive to follow. Observe only reads it: it lists, and gets the objects and the catalogues beside them.",
           "properties": {
             "bucket": {
-              "additionalProperties": false,
-              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-              "properties": {
-                "ca": {
-                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "credentialsEnv": {
-                  "additionalProperties": false,
-                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-                  "properties": {
-                    "accessKeyID": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "secretAccessKey": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "accessKeyID",
-                    "secretAccessKey"
-                  ],
-                  "type": "object"
-                },
-                "endpoint": {
-                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-                  "format": "uri",
-                  "type": "string"
-                },
-                "name": {
-                  "description": "The bucket. It exists already: a service does not create its own store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "pathStyle": {
-                  "default": false,
-                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-                  "type": "boolean"
-                },
-                "region": {
-                  "description": "The region the bucket is in.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
+              "$ref": "#/$defs/config-audit-observe.v1.policyBucket"
             },
             "prefix": {
               "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
@@ -1550,53 +1744,112 @@
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-observe.v1.postgres": {
-      "allOf": [
-        {
+    "config-audit-observe.v1.policyBucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsEnv": {
           "additionalProperties": false,
-          "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does.",
+          "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
-            "maxConnections": {
-              "default": 10,
-              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-              "minimum": 1,
-              "type": "integer"
-            },
-            "passwordEnv": {
-              "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+            "accessKeyID": {
               "minLength": 1,
               "type": "string"
             },
-            "url": {
-              "allOf": [
-                {
-                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-                  "not": {
-                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-                  }
-                },
-                {
-                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-                  "not": {
-                    "pattern": "[?&](password|sslpassword)="
-                  }
-                },
-                {
-                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-                  "not": {
-                    "pattern": "[?&][^=&#]*%[^=&#]*="
-                  }
-                }
-              ],
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
-              "pattern": "^postgres(ql)?://",
+            "secretAccessKey": {
+              "minLength": 1,
               "type": "string"
             }
           },
           "required": [
-            "url"
+            "accessKeyID",
+            "secretAccessKey"
           ],
           "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "bucket",
+      "type": "object"
+    },
+    "config-audit-observe.v1.policyPostgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordEnv": {
+          "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "postgres",
+      "type": "object"
+    },
+    "config-audit-observe.v1.postgres": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/config-audit-observe.v1.policyPostgres"
         },
         {
           "properties": {
@@ -1794,14 +2047,16 @@
         },
         "credentialsSecret": {
           "additionalProperties": false,
-          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "description": "The NAMES of the two secrets holding the credentials, never the values, each a name under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
             "accessKeyID": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             },
             "secretAccessKey": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             }
           },
@@ -1843,76 +2098,198 @@
       "type": "string"
     },
     "config-audit-observe.v2.postgres": {
-      "additionalProperties": false,
-      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
-      "properties": {
-        "maxConnections": {
-          "default": 10,
-          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-          "minimum": 1,
-          "type": "integer"
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "description": "A PostgreSQL connection. The URL carries no password: `passwordSecret` names the secret that does.",
+          "properties": {
+            "maxConnections": {
+              "default": 10,
+              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "passwordSecret": {
+              "description": "The NAME of the secret holding the password, under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the connection needs none.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            },
+            "url": {
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordSecret.",
+              "pattern": "^postgres(ql)?://",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
         },
-        "passwordSecret": {
-          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "url": {
-          "allOf": [
-            {
-              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-              "not": {
-                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-              }
-            },
-            {
-              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-              "not": {
-                "pattern": "[?&](password|sslpassword)="
-              }
-            },
-            {
-              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-              "not": {
-                "pattern": "[?&][^=&#]*%[^=&#]*="
-              }
-            },
-            {
+        {
+          "properties": {
+            "url": {
               "not": {
                 "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
               }
             }
-          ],
-          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
-          "pattern": "^postgres(ql)?://",
-          "type": "string"
+          }
         }
-      },
-      "required": [
-        "url"
       ],
-      "type": "object"
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it."
     },
     "config-audit-observe.v2.secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$defs": {
+            "name": {
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "env"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "root"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "ssm"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "openbao"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          ],
+          "description": "Where a service reads its secrets from: ONE declared source, and a root under which every `...Secret` field of the configuration is a name (docs/contracts/config.md rule 5). The file never holds a value. `env` is refused at start-up on a serverless function, whose environment is not a place for a secret; the schema cannot see the platform, the loader does.",
+          "properties": {
+            "root": {
+              "description": "Where the source looks. file: an absolute directory. ssm: an absolute parameter path prefix. openbao: the mount path with no leading slash (for a KV v2 mount include the data segment, `secret/data/<app>`). Absent for env. No empty, `.` or `..` segment.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "source": {
+              "description": "env: each name is an environment variable, for a platform whose environment is a Secret object. file: each name is a file under `root`. ssm: each name is a parameter under `root`. openbao: each name is a path under the mount `root`.",
+              "enum": [
+                "env",
+                "file",
+                "ssm",
+                "openbao"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "config-audit-purge": {
       "else": {
@@ -1972,53 +2349,57 @@
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
+    "config-audit-purge.v1.policyPostgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordEnv": {
+          "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "postgres",
+      "type": "object"
+    },
     "config-audit-purge.v1.postgres": {
       "allOf": [
         {
-          "additionalProperties": false,
-          "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does.",
-          "properties": {
-            "maxConnections": {
-              "default": 10,
-              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-              "minimum": 1,
-              "type": "integer"
-            },
-            "passwordEnv": {
-              "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
-              "minLength": 1,
-              "type": "string"
-            },
-            "url": {
-              "allOf": [
-                {
-                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-                  "not": {
-                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-                  }
-                },
-                {
-                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-                  "not": {
-                    "pattern": "[?&](password|sslpassword)="
-                  }
-                },
-                {
-                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-                  "not": {
-                    "pattern": "[?&][^=&#]*%[^=&#]*="
-                  }
-                }
-              ],
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
-              "pattern": "^postgres(ql)?://",
-              "type": "string"
-            }
-          },
-          "required": [
-            "url"
-          ],
-          "type": "object"
+          "$ref": "#/$defs/config-audit-purge.v1.policyPostgres"
         },
         {
           "properties": {
@@ -2075,76 +2456,198 @@
       "type": "string"
     },
     "config-audit-purge.v2.postgres": {
-      "additionalProperties": false,
-      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
-      "properties": {
-        "maxConnections": {
-          "default": 10,
-          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-          "minimum": 1,
-          "type": "integer"
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "description": "A PostgreSQL connection. The URL carries no password: `passwordSecret` names the secret that does.",
+          "properties": {
+            "maxConnections": {
+              "default": 10,
+              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "passwordSecret": {
+              "description": "The NAME of the secret holding the password, under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the connection needs none.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            },
+            "url": {
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordSecret.",
+              "pattern": "^postgres(ql)?://",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
         },
-        "passwordSecret": {
-          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "url": {
-          "allOf": [
-            {
-              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-              "not": {
-                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-              }
-            },
-            {
-              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-              "not": {
-                "pattern": "[?&](password|sslpassword)="
-              }
-            },
-            {
-              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-              "not": {
-                "pattern": "[?&][^=&#]*%[^=&#]*="
-              }
-            },
-            {
+        {
+          "properties": {
+            "url": {
               "not": {
                 "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
               }
             }
-          ],
-          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
-          "pattern": "^postgres(ql)?://",
-          "type": "string"
+          }
         }
-      },
-      "required": [
-        "url"
       ],
-      "type": "object"
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it."
     },
     "config-audit-purge.v2.secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$defs": {
+            "name": {
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "env"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "root"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "ssm"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "openbao"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          ],
+          "description": "Where a service reads its secrets from: ONE declared source, and a root under which every `...Secret` field of the configuration is a name (docs/contracts/config.md rule 5). The file never holds a value. `env` is refused at start-up on a serverless function, whose environment is not a place for a secret; the schema cannot see the platform, the loader does.",
+          "properties": {
+            "root": {
+              "description": "Where the source looks. file: an absolute directory. ssm: an absolute parameter path prefix. openbao: the mount path with no leading slash (for a KV v2 mount include the data segment, `secret/data/<app>`). Absent for env. No empty, `.` or `..` segment.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "source": {
+              "description": "env: each name is an environment variable, for a platform whose environment is a Secret object. file: each name is a file under `root`. ssm: each name is a parameter under `root`. openbao: each name is a path under the mount `root`.",
+              "enum": [
+                "env",
+                "file",
+                "ssm",
+                "openbao"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "config-audit-query": {
       "else": {
@@ -2204,58 +2707,7 @@
           "description": "The archive the records are in: what the s3scan searcher reads. Get answers where a copy is and, until seals vouch for it, nothing about whether it has been verified.",
           "properties": {
             "bucket": {
-              "additionalProperties": false,
-              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-              "properties": {
-                "ca": {
-                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "credentialsEnv": {
-                  "additionalProperties": false,
-                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-                  "properties": {
-                    "accessKeyID": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "secretAccessKey": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "accessKeyID",
-                    "secretAccessKey"
-                  ],
-                  "type": "object"
-                },
-                "endpoint": {
-                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-                  "format": "uri",
-                  "type": "string"
-                },
-                "name": {
-                  "description": "The bucket. It exists already: a service does not create its own store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "pathStyle": {
-                  "default": false,
-                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-                  "type": "boolean"
-                },
-                "region": {
-                  "description": "The region the bucket is in.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
+              "$ref": "#/$defs/config-audit-query.v1.policyBucket"
             },
             "prefix": {
               "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
@@ -2282,58 +2734,7 @@
           "description": "Where exports go: a bucket of its own with no Object Lock, which clears them. Without it the export operation is refused.",
           "properties": {
             "bucket": {
-              "additionalProperties": false,
-              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-              "properties": {
-                "ca": {
-                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "credentialsEnv": {
-                  "additionalProperties": false,
-                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-                  "properties": {
-                    "accessKeyID": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "secretAccessKey": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "accessKeyID",
-                    "secretAccessKey"
-                  ],
-                  "type": "object"
-                },
-                "endpoint": {
-                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-                  "format": "uri",
-                  "type": "string"
-                },
-                "name": {
-                  "description": "The bucket. It exists already: a service does not create its own store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "pathStyle": {
-                  "default": false,
-                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-                  "type": "boolean"
-                },
-                "region": {
-                  "description": "The region the bucket is in.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
+              "$ref": "#/$defs/config-audit-query.v1.policyBucket"
             },
             "expiry": {
               "$ref": "#/$defs/config-audit-query.v1.duration",
@@ -2609,53 +3010,112 @@
       ],
       "type": "object"
     },
-    "config-audit-query.v1.postgres": {
-      "allOf": [
-        {
+    "config-audit-query.v1.policyBucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsEnv": {
           "additionalProperties": false,
-          "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does.",
+          "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
-            "maxConnections": {
-              "default": 10,
-              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-              "minimum": 1,
-              "type": "integer"
-            },
-            "passwordEnv": {
-              "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+            "accessKeyID": {
               "minLength": 1,
               "type": "string"
             },
-            "url": {
-              "allOf": [
-                {
-                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-                  "not": {
-                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-                  }
-                },
-                {
-                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-                  "not": {
-                    "pattern": "[?&](password|sslpassword)="
-                  }
-                },
-                {
-                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-                  "not": {
-                    "pattern": "[?&][^=&#]*%[^=&#]*="
-                  }
-                }
-              ],
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
-              "pattern": "^postgres(ql)?://",
+            "secretAccessKey": {
+              "minLength": 1,
               "type": "string"
             }
           },
           "required": [
-            "url"
+            "accessKeyID",
+            "secretAccessKey"
           ],
           "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "bucket",
+      "type": "object"
+    },
+    "config-audit-query.v1.policyPostgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordEnv": {
+          "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "postgres",
+      "type": "object"
+    },
+    "config-audit-query.v1.postgres": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/config-audit-query.v1.policyPostgres"
         },
         {
           "properties": {
@@ -2889,14 +3349,16 @@
         },
         "credentialsSecret": {
           "additionalProperties": false,
-          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "description": "The NAMES of the two secrets holding the credentials, never the values, each a name under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
             "accessKeyID": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             },
             "secretAccessKey": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             }
           },
@@ -3140,76 +3602,198 @@
       "type": "object"
     },
     "config-audit-query.v2.postgres": {
-      "additionalProperties": false,
-      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
-      "properties": {
-        "maxConnections": {
-          "default": 10,
-          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-          "minimum": 1,
-          "type": "integer"
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "description": "A PostgreSQL connection. The URL carries no password: `passwordSecret` names the secret that does.",
+          "properties": {
+            "maxConnections": {
+              "default": 10,
+              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "passwordSecret": {
+              "description": "The NAME of the secret holding the password, under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the connection needs none.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            },
+            "url": {
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordSecret.",
+              "pattern": "^postgres(ql)?://",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
         },
-        "passwordSecret": {
-          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "url": {
-          "allOf": [
-            {
-              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-              "not": {
-                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-              }
-            },
-            {
-              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-              "not": {
-                "pattern": "[?&](password|sslpassword)="
-              }
-            },
-            {
-              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-              "not": {
-                "pattern": "[?&][^=&#]*%[^=&#]*="
-              }
-            },
-            {
+        {
+          "properties": {
+            "url": {
               "not": {
                 "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
               }
             }
-          ],
-          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
-          "pattern": "^postgres(ql)?://",
-          "type": "string"
+          }
         }
-      },
-      "required": [
-        "url"
       ],
-      "type": "object"
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it."
     },
     "config-audit-query.v2.secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$defs": {
+            "name": {
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "env"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "root"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "ssm"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "openbao"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          ],
+          "description": "Where a service reads its secrets from: ONE declared source, and a root under which every `...Secret` field of the configuration is a name (docs/contracts/config.md rule 5). The file never holds a value. `env` is refused at start-up on a serverless function, whose environment is not a place for a secret; the schema cannot see the platform, the loader does.",
+          "properties": {
+            "root": {
+              "description": "Where the source looks. file: an absolute directory. ssm: an absolute parameter path prefix. openbao: the mount path with no leading slash (for a KV v2 mount include the data segment, `secret/data/<app>`). Absent for env. No empty, `.` or `..` segment.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "source": {
+              "description": "env: each name is an environment variable, for a platform whose environment is a Secret object. file: each name is a file under `root`. ssm: each name is a parameter under `root`. openbao: each name is a path under the mount `root`.",
+              "enum": [
+                "env",
+                "file",
+                "ssm",
+                "openbao"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "config-audit-query.v2.sink": {
       "additionalProperties": false,
@@ -3321,58 +3905,7 @@
           "description": "Where the archive is and how it is written.",
           "properties": {
             "bucket": {
-              "additionalProperties": false,
-              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-              "properties": {
-                "ca": {
-                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "credentialsEnv": {
-                  "additionalProperties": false,
-                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-                  "properties": {
-                    "accessKeyID": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "secretAccessKey": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "accessKeyID",
-                    "secretAccessKey"
-                  ],
-                  "type": "object"
-                },
-                "endpoint": {
-                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-                  "format": "uri",
-                  "type": "string"
-                },
-                "name": {
-                  "description": "The bucket. It exists already: a service does not create its own store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "pathStyle": {
-                  "default": false,
-                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-                  "type": "boolean"
-                },
-                "region": {
-                  "description": "The region the bucket is in.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
+              "$ref": "#/$defs/config-audit-verify.v1.policyBucket"
             },
             "prefix": {
               "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
@@ -3461,6 +3994,61 @@
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
+    },
+    "config-audit-verify.v1.policyBucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsEnv": {
+          "additionalProperties": false,
+          "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "bucket",
+      "type": "object"
     },
     "config-audit-verify.v1.sink": {
       "additionalProperties": false,
@@ -3652,14 +4240,16 @@
         },
         "credentialsSecret": {
           "additionalProperties": false,
-          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "description": "The NAMES of the two secrets holding the credentials, never the values, each a name under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
             "accessKeyID": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             },
             "secretAccessKey": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             }
           },
@@ -3701,25 +4291,138 @@
       "type": "string"
     },
     "config-audit-verify.v2.secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$defs": {
+            "name": {
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "env"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "root"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "ssm"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "openbao"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          ],
+          "description": "Where a service reads its secrets from: ONE declared source, and a root under which every `...Secret` field of the configuration is a name (docs/contracts/config.md rule 5). The file never holds a value. `env` is refused at start-up on a serverless function, whose environment is not a place for a secret; the schema cannot see the platform, the loader does.",
+          "properties": {
+            "root": {
+              "description": "Where the source looks. file: an absolute directory. ssm: an absolute parameter path prefix. openbao: the mount path with no leading slash (for a KV v2 mount include the data segment, `secret/data/<app>`). Absent for env. No empty, `.` or `..` segment.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "source": {
+              "description": "env: each name is an environment variable, for a platform whose environment is a Secret object. file: each name is a file under `root`. ssm: each name is a parameter under `root`. openbao: each name is a path under the mount `root`.",
+              "enum": [
+                "env",
+                "file",
+                "ssm",
+                "openbao"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "config-audit-verify.v2.sink": {
       "additionalProperties": false,
@@ -3932,58 +4635,7 @@
           "description": "Where the archive is and how it is written.",
           "properties": {
             "bucket": {
-              "additionalProperties": false,
-              "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-              "properties": {
-                "ca": {
-                  "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "credentialsEnv": {
-                  "additionalProperties": false,
-                  "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-                  "properties": {
-                    "accessKeyID": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "secretAccessKey": {
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "accessKeyID",
-                    "secretAccessKey"
-                  ],
-                  "type": "object"
-                },
-                "endpoint": {
-                  "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-                  "format": "uri",
-                  "type": "string"
-                },
-                "name": {
-                  "description": "The bucket. It exists already: a service does not create its own store.",
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "pathStyle": {
-                  "default": false,
-                  "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-                  "type": "boolean"
-                },
-                "region": {
-                  "description": "The region the bucket is in.",
-                  "minLength": 1,
-                  "type": "string"
-                }
-              },
-              "required": [
-                "name"
-              ],
-              "type": "object"
+              "$ref": "#/$defs/config-audit-writer.v1.policyBucket"
             },
             "kmsKey": {
               "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",
@@ -4629,53 +5281,112 @@
       ],
       "type": "object"
     },
-    "config-audit-writer.v1.postgres": {
-      "allOf": [
-        {
+    "config-audit-writer.v1.policyBucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsEnv": {
           "additionalProperties": false,
-          "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does.",
+          "description": "The NAMES of the environment variables holding the credentials, never the values. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
-            "maxConnections": {
-              "default": 10,
-              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-              "minimum": 1,
-              "type": "integer"
-            },
-            "passwordEnv": {
-              "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+            "accessKeyID": {
               "minLength": 1,
               "type": "string"
             },
-            "url": {
-              "allOf": [
-                {
-                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-                  "not": {
-                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-                  }
-                },
-                {
-                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-                  "not": {
-                    "pattern": "[?&](password|sslpassword)="
-                  }
-                },
-                {
-                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-                  "not": {
-                    "pattern": "[?&][^=&#]*%[^=&#]*="
-                  }
-                }
-              ],
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
-              "pattern": "^postgres(ql)?://",
+            "secretAccessKey": {
+              "minLength": 1,
               "type": "string"
             }
           },
           "required": [
-            "url"
+            "accessKeyID",
+            "secretAccessKey"
           ],
           "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "bucket",
+      "type": "object"
+    },
+    "config-audit-writer.v1.policyPostgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordEnv": {
+          "description": "The NAME of the environment variable holding the password. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "title": "postgres",
+      "type": "object"
+    },
+    "config-audit-writer.v1.postgres": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/config-audit-writer.v1.policyPostgres"
         },
         {
           "properties": {
@@ -5263,14 +5974,16 @@
         },
         "credentialsSecret": {
           "additionalProperties": false,
-          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "description": "The NAMES of the two secrets holding the credentials, never the values, each a name under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the SDK's ambient credentials, which is what a workload identity provides.",
           "properties": {
             "accessKeyID": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             },
             "secretAccessKey": {
-              "minLength": 1,
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
               "type": "string"
             }
           },
@@ -5514,76 +6227,198 @@
       "type": "object"
     },
     "config-audit-writer.v2.postgres": {
-      "additionalProperties": false,
-      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
-      "properties": {
-        "maxConnections": {
-          "default": 10,
-          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
-          "minimum": 1,
-          "type": "integer"
+      "allOf": [
+        {
+          "additionalProperties": false,
+          "description": "A PostgreSQL connection. The URL carries no password: `passwordSecret` names the secret that does.",
+          "properties": {
+            "maxConnections": {
+              "default": 10,
+              "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "passwordSecret": {
+              "description": "The NAME of the secret holding the password, under the service's one `secrets` source (docs/contracts/config.md rule 5). Unset means the connection needs none.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            },
+            "url": {
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordSecret.",
+              "pattern": "^postgres(ql)?://",
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "type": "object"
         },
-        "passwordSecret": {
-          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "url": {
-          "allOf": [
-            {
-              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
-              "not": {
-                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
-              }
-            },
-            {
-              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
-              "not": {
-                "pattern": "[?&](password|sslpassword)="
-              }
-            },
-            {
-              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
-              "not": {
-                "pattern": "[?&][^=&#]*%[^=&#]*="
-              }
-            },
-            {
+        {
+          "properties": {
+            "url": {
               "not": {
                 "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
               }
             }
-          ],
-          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
-          "pattern": "^postgres(ql)?://",
-          "type": "string"
+          }
         }
-      },
-      "required": [
-        "url"
       ],
-      "type": "object"
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it."
     },
     "config-audit-writer.v2.secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$defs": {
+            "name": {
+              "description": "The NAME of a secret under the service's `secrets` source: a relative path of letters, digits, dots, underscores and dashes, which neither starts at `/` nor climbs. Never a value.",
+              "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "env"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "root"
+                  ]
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "file"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "ssm"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "source": {
+                    "const": "openbao"
+                  }
+                },
+                "required": [
+                  "source"
+                ]
+              },
+              "then": {
+                "properties": {
+                  "root": {
+                    "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$"
+                  }
+                },
+                "required": [
+                  "root"
+                ]
+              }
+            }
+          ],
+          "description": "Where a service reads its secrets from: ONE declared source, and a root under which every `...Secret` field of the configuration is a name (docs/contracts/config.md rule 5). The file never holds a value. `env` is refused at start-up on a serverless function, whose environment is not a place for a secret; the schema cannot see the platform, the loader does.",
+          "properties": {
+            "root": {
+              "description": "Where the source looks. file: an absolute directory. ssm: an absolute parameter path prefix. openbao: the mount path with no leading slash (for a KV v2 mount include the data segment, `secret/data/<app>`). Absent for env. No empty, `.` or `..` segment.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "source": {
+              "description": "env: each name is an environment variable, for a platform whose environment is a Secret object. file: each name is a file under `root`. ssm: each name is a parameter under `root`. openbao: each name is a path under the mount `root`.",
+              "enum": [
+                "env",
+                "file",
+                "ssm",
+                "openbao"
+              ]
+            }
+          },
+          "required": [
+            "source"
+          ],
+          "type": "object"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "image": {
       "additionalProperties": false,

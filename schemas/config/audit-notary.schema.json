@@ -1,58 +1,7 @@
 {
   "$defs": {
     "bucket": {
-      "additionalProperties": false,
-      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
-      "properties": {
-        "ca": {
-          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "credentialsSecret": {
-          "additionalProperties": false,
-          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
-          "properties": {
-            "accessKeyID": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "secretAccessKey": {
-              "minLength": 1,
-              "type": "string"
-            }
-          },
-          "required": [
-            "accessKeyID",
-            "secretAccessKey"
-          ],
-          "type": "object"
-        },
-        "endpoint": {
-          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
-          "format": "uri",
-          "type": "string"
-        },
-        "name": {
-          "description": "The bucket. It exists already: a service does not create its own store.",
-          "minLength": 1,
-          "type": "string"
-        },
-        "pathStyle": {
-          "default": false,
-          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
-          "type": "boolean"
-        },
-        "region": {
-          "description": "The region the bucket is in.",
-          "minLength": 1,
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
+      "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
     },
     "duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
@@ -145,25 +94,23 @@
       "type": "object"
     },
     "secrets": {
-      "additionalProperties": false,
-      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
-      "properties": {
-        "root": {
-          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
-          "minLength": 1,
-          "type": "string"
+      "allOf": [
+        {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/secrets.json"
         },
-        "source": {
-          "default": "env",
-          "description": "Where secrets are read from.",
-          "enum": [
-            "env",
-            "file",
-            "ssm"
-          ]
+        {
+          "properties": {
+            "source": {
+              "enum": [
+                "env",
+                "file",
+                "ssm"
+              ]
+            }
+          }
         }
-      },
-      "type": "object"
+      ],
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."
     },
     "sink": {
       "additionalProperties": false,

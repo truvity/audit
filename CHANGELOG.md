@@ -4,6 +4,11 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
+- **`github.com/truvity/policy` v1.45.0** (the root module; `deploy/pulumi` moves from v1.37.0), whose release is breaking for its own consumers: the shared `postgres` and `bucket` fragments name a secret (`passwordSecret`, `credentialsSecret`) and the `…Env` fields are gone from them. Nothing a configuration file says changes. Version 2 `$ref`s the fragments and the shared `secrets` fragment directly (the code that derived the v2 shapes from the v1.44 fragments is deleted; `secrets.source` is still `env`, `file` or `ssm` in the schema). **Version 1 is read exactly as in v0.13**: its frozen schemas (`schemas/config/v1/`) now carry the v1.44 `postgres` and `bucket` shapes themselves, with `passwordEnv` and `credentialsEnv`, instead of referring to the fragments.
+- **One secret resolver.** `config.Secrets` resolves through truvity/policy's `config.NewSecrets` (the model for it): the roots rules, the refusal of `env` on AWS Lambda and the redaction of names and values are policy's, and the SSM read is an audit `Store` that keeps the client's retry with a backoff. An error from SSM no longer prints the AWS error (policy never prints a store's cause), only the field, the root and whether the parameter does not exist or could not be read.
+
 ## v0.13.0
 
 Configuration is version 2: the group is `audit.truvity.github.io`, a secret is named by `...Secret` and found through one declared source, and on AWS Lambda secrets come from SSM and never from the function's environment. Version 1 is read for one minor.

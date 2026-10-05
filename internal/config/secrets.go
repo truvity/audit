@@ -4,80 +4,45 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path"
-	"path/filepath"
-	"regexp"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
+	policyconfig "github.com/truvity/policy/config"
 )
 
-// The sources a `secrets` block names.
+// The sources a `secrets` block names. This repository reads env, file and ssm;
+// truvity/policy's resolver also knows openbao, for which it has no store here.
 const (
-	SourceEnv  = "env"
-	SourceFile = "file"
-	SourceSSM  = "ssm"
+	SourceEnv  = policyconfig.SourceEnv
+	SourceFile = policyconfig.SourceFile
+	SourceSSM  = policyconfig.SourceSSM
 )
 
-// lambdaEnv is the variable the Lambda runtime sets in every function. A function's
-// environment is not a place for a secret (it is shown by the console and the API
-// and kept in every version), so a process that finds it set refuses to read a
-// secret from the environment, whatever the file says.
-const lambdaEnv = "AWS_LAMBDA_FUNCTION_NAME"
+// SecretsSource is the `secrets` block: where a field named `...Secret` finds the
+// secret it names. One source serves the whole file. It is truvity/policy's, so
+// that one implementation holds the rules for a root and for the source.
+type SecretsSource = policyconfig.SecretsSource
 
-// rootSegment is one segment of a root: no empty segment and no `.` or `..`, so
-// path cleaning cannot move a name out from under it.
-var rootSegment = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
-
-// cleanRoot says whether root is made of rootSegments after its first slash.
-func cleanRoot(root string) bool {
-	if !strings.HasPrefix(root, "/") || root == "/" {
-		return false
-	}
-	for _, seg := range strings.Split(root[1:], "/") {
-		if !rootSegment.MatchString(seg) {
-			return false
-		}
-	}
-	return true
-}
-
-// secretName is a name under a root: relative, made of path segments that start
-// with a letter, a digit or an underscore, so that it cannot be `..` and cannot
-// start at `/`.
-var secretName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$`)
-
-var envName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-// check holds a `secrets` block to what the schema's shape cannot say: a root
-// where there is a place to read from, and none where there is not.
-func (s *SecretsSource) check() error {
-	if s.Source == "" {
-		s.Source = SourceEnv
-	}
+// checkSecretsSource holds a `secrets` block to what the schema's shape cannot say. It is
+// truvity/policy's check without its refusal of env on Lambda, which is made
+// when a secret is read, so that a function whose file names no secret still
+// loads, and with openbao refused, which has no store here.
+func checkSecretsSource(s *SecretsSource) error {
 	switch s.Source {
-	case SourceEnv:
+	case "", SourceEnv:
+		s.Source = SourceEnv
 		if s.Root != "" {
 			return errors.New("secrets.root is for source file and ssm: an environment variable has no root")
 		}
-	case SourceFile:
-		if !filepath.IsAbs(s.Root) || !cleanRoot(s.Root) {
-			return errors.New("secrets.root must be an absolute directory with source file, with no empty, . or .. segment")
-		}
-	case SourceSSM:
-		if !cleanRoot(s.Root) || !strings.HasPrefix(s.Root, "/") {
-			return errors.New("secrets.root must be an SSM parameter path starting with / and not ending in one, " +
-				"such as /audit/main/private/config")
-		}
-	default:
+		return nil
+	case policyconfig.SourceOpenBao:
 		return fmt.Errorf("secrets.source is %q and must be env, file or ssm", s.Source)
 	}
-	return nil
+	return s.Check()
 }
 
 // ParameterAPI is the part of the SSM client a secret is read with.
@@ -95,10 +60,10 @@ var OpenSSM = func(ctx context.Context) (ParameterAPI, error) {
 	return ssm.NewFromConfig(cfg), nil
 }
 
-// Secrets resolves the name a field holds to the secret it stands for, from the
-// one source the file declares. The zero value reads environment variables.
-type Secrets struct {
-	src SecretsSource
+// ssmStore is the policyconfig.Store over SSM Parameter Store: it reads one
+// SecureString decrypted by its full name. truvity/policy's resolver checks the
+// root and the name and never prints what the store returns.
+type ssmStore struct {
 	mu  sync.Mutex
 	api ParameterAPI
 	// failedAt and failures back off a client that could not be made: the next read
@@ -111,7 +76,7 @@ type Secrets struct {
 
 // client is the SSM client, made on first use. A failure to make it is kept for
 // a wait that grows with each (1s, 2s, ... 30s) and then tried again.
-func (s *Secrets) client(ctx context.Context) (ParameterAPI, error) {
+func (s *ssmStore) client(ctx context.Context) (ParameterAPI, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.api != nil {
@@ -132,6 +97,39 @@ func (s *Secrets) client(ctx context.Context) (ParameterAPI, error) {
 func backoff(failures int) time.Duration {
 	d := time.Second << min(failures-1, 5)
 	return min(d, 30*time.Second)
+}
+
+func (s *ssmStore) Get(ctx context.Context, path string) (string, error) {
+	api, err := s.client(ctx)
+	if err != nil {
+		return "", err
+	}
+	out, err := api.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(path), WithDecryption: aws.Bool(true)})
+	if err != nil {
+		var nf *ssmtypes.ParameterNotFound
+		if errors.As(err, &nf) {
+			return "", fmt.Errorf("%w: %w", policyconfig.ErrNotFound, err)
+		}
+		return "", err
+	}
+	if out.Parameter == nil {
+		return "", nil
+	}
+	return aws.ToString(out.Parameter.Value), nil
+}
+
+// Secrets resolves the name a field holds to the secret it stands for, from the
+// one source the file declares, through truvity/policy's resolver. The zero value
+// reads environment variables.
+//
+// The resolver is made on the first read and not when the file is loaded, so a
+// source it refuses (env on Lambda) fails the read of a secret, as it always
+// has, and a file that names no secret still loads there.
+type Secrets struct {
+	src  SecretsSource
+	once sync.Once
+	r    *policyconfig.Secrets
+	err  error
 }
 
 // NewSecrets is a resolver for a `secrets` block that has been checked.
@@ -160,74 +158,18 @@ func (s *Secrets) Source() string {
 
 // Get reads the secret `name` that `field` holds. field is the key as the file
 // spells it. An error names the field, the source and the root, and neither the
-// name nor a value: the file says which name the field holds, an error is logged
-// and rendered where a name that is a path or a variable has no business, and a
-// refusal that quoted what it was given would be one more place a mistake (a
-// secret pasted in place of its name) reaches a log.
+// name nor a value; see [policyconfig.Secrets.Get]. On AWS Lambda the env source
+// is refused whatever the file says.
 func (s *Secrets) Get(ctx context.Context, field, name string) (string, error) {
-	v, err := s.get(ctx, name)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", field, err)
+	s.once.Do(func() {
+		src := s.src
+		if src.Source == "" {
+			src.Source = SourceEnv
+		}
+		s.r, s.err = policyconfig.NewSecrets(src, policyconfig.WithStore(SourceSSM, &ssmStore{}))
+	})
+	if s.err != nil {
+		return "", fmt.Errorf("%s: %w", field, s.err)
 	}
-	return v, nil
-}
-
-func (s *Secrets) get(ctx context.Context, name string) (string, error) {
-	switch s.Source() {
-	case SourceEnv:
-		if os.Getenv(lambdaEnv) != "" {
-			return "", errors.New("secrets.source is env on AWS Lambda, where a function's environment is not a place for a secret: " +
-				"use secrets.source ssm")
-		}
-		if !envName.MatchString(name) {
-			return "", errors.New("the name is not that of an environment variable (secrets.source is env)")
-		}
-		v, ok := os.LookupEnv(name)
-		switch {
-		case !ok:
-			return "", errors.New("the environment variable it names is not set (secrets.source is env)")
-		case v == "":
-			return "", errors.New("the environment variable it names is empty (secrets.source is env)")
-		}
-		return v, nil
-	case SourceFile:
-		if !secretName.MatchString(name) {
-			return "", errors.New("the name is not a secret name: a relative path of letters, digits, dots, underscores and dashes, which does not climb")
-		}
-		b, err := os.ReadFile(filepath.Join(s.src.Root, filepath.FromSlash(name)))
-		if err != nil {
-			return "", fmt.Errorf("the secret it names is not readable under secrets.root %s: %w", s.src.Root, pathError(err))
-		}
-		v := strings.TrimSuffix(string(b), "\n")
-		if v == "" {
-			return "", fmt.Errorf("the secret it names is empty (a file under secrets.root %s)", s.src.Root)
-		}
-		return v, nil
-	case SourceSSM:
-		if !secretName.MatchString(name) {
-			return "", errors.New("the name is not a secret name: a relative path of letters, digits, dots, underscores and dashes, which does not climb")
-		}
-		api, err := s.client(ctx)
-		if err != nil {
-			return "", err
-		}
-		out, err := api.GetParameter(ctx, &ssm.GetParameterInput{Name: aws.String(path.Join(s.src.Root, name)), WithDecryption: aws.Bool(true)})
-		if err != nil {
-			return "", fmt.Errorf("the SSM parameter it names under secrets.root %s could not be read: %w", s.src.Root, err)
-		}
-		if out.Parameter == nil || aws.ToString(out.Parameter.Value) == "" {
-			return "", fmt.Errorf("the SSM parameter it names under secrets.root %s is empty", s.src.Root)
-		}
-		return aws.ToString(out.Parameter.Value), nil
-	}
-	return "", fmt.Errorf("secrets.source %q is not env, file or ssm", s.src.Source)
-}
-
-// pathError drops the path an *os.PathError repeats.
-func pathError(err error) error {
-	var pe *os.PathError
-	if errors.As(err, &pe) {
-		return pe.Err
-	}
-	return err
+	return s.r.Get(ctx, field, name)
 }

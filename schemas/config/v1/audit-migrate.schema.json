@@ -1,9 +1,56 @@
 {
   "$defs": {
+    "policyPostgres": {
+      "title": "postgres",
+      "description": "A PostgreSQL connection. The URL carries no password: it names the environment variable that does. Frozen from truvity/policy v1.44.0 (version 1 of this document names a secret by its environment variable, `...Env`, which the shared fragment no longer has).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^postgres(ql)?://",
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv."
+        },
+        "passwordEnv": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The NAME of the environment variable holding the password. Unset means the connection needs none."
+        },
+        "maxConnections": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed."
+        }
+      }
+    },
     "postgres": {
       "allOf": [
         {
-          "$ref": "https://github.com/truvity/policy/schemas/fragments/postgres.json"
+          "$ref": "#/$defs/policyPostgres"
         },
         {
           "properties": {

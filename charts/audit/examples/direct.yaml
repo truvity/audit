@@ -6,9 +6,10 @@
 # `config:` block is the binary's own configuration, key for key
 # (docs/reference/configuration.md): the chart passes it through, and the same
 # schema validates it here and when the process starts. A secret is never in
-# one: the file names an environment variable, and `secretEnv` puts a Secret's
-# key there. The sink URL names the writer's Service, which is the release's
-# full name: `audit` here, and `<release>-audit` under an application's own.
+# one: the file names a secret, `secrets` says they are files under
+# /etc/audit/secrets, and `secretFiles` puts a Secret's key at each name. The
+# sink URL names the writer's Service, which is the release's full name:
+# `audit` here, and `<release>-audit` under an application's own.
 mode: direct
 
 # Two pods. The writer is told how many there are, because it refuses to run
@@ -40,20 +41,28 @@ workloadIdentity:
 migrate:
   enabled: true
   config:
+    apiVersion: audit.truvity.github.io/audit-migrate/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     database:
       url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
     writer: audit_writer
     observe: audit_observe
     reader: audit_query
     purge: audit_purge
-  secretEnv:
-    - name: AUDIT_DATABASE_PASSWORD
+  secretFiles:
+    - name: database-password
       secretName: audit-db-owner
       key: password
 
 writer:
   config:
+    apiVersion: audit.truvity.github.io/audit-writer/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     deployment: /etc/audit/deployment.yaml
     workloads: /etc/audit/workloads.yaml
     replicas: 2
@@ -67,9 +76,9 @@ writer:
       kmsKey: alias/audit-archive
     database:
       url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_DATABASE_PASSWORD
-  secretEnv:
-    - name: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
+  secretFiles:
+    - name: database-password
       secretName: audit-db
       key: password
 
@@ -82,6 +91,10 @@ writer:
 observe:
   enabled: true
   config:
+    apiVersion: audit.truvity.github.io/audit-observe/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     archive:
       bucket:
         name: audit-eu-example-1
@@ -89,11 +102,11 @@ observe:
       prefix: audit/app
     database:
       url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      passwordSecret: observe-database-password
     settle: 2m
     interval: 30s
-  secretEnv:
-    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+  secretFiles:
+    - name: observe-database-password
       secretName: audit-db-observe
       key: password
 
@@ -105,6 +118,10 @@ query:
       - url: https://console.example.com
         audience: audit
   config:
+    apiVersion: audit.truvity.github.io/audit-query/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     deployment: /etc/audit/deployment.yaml
     grants: /etc/audit/grants.yaml
     sink:
@@ -112,14 +129,14 @@ query:
       tokenFile: /var/run/audit/token
     database:
       url: postgres://audit_query@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+      passwordSecret: query-database-password
     archive:
       bucket:
         name: audit-eu-example-1
         region: eu-example-1
       prefix: audit/app
-  secretEnv:
-    - name: AUDIT_QUERY_DATABASE_PASSWORD
+  secretFiles:
+    - name: query-database-password
       secretName: audit-db-reader
       key: password
   tokens:
@@ -136,6 +153,7 @@ jobs:
       annotations:
         example.test/cloud-role: audit-notary
     config:
+      apiVersion: audit.truvity.github.io/audit-notary/v2
       archive:
         bucket:
           name: audit-eu-example-1
@@ -155,6 +173,7 @@ jobs:
   verify:
     enabled: true
     config:
+      apiVersion: audit.truvity.github.io/audit-verify/v2
       deployment: /etc/audit/deployment.yaml
       archive:
         bucket:
@@ -175,17 +194,22 @@ jobs:
   purge:
     enabled: true
     config:
+      apiVersion: audit.truvity.github.io/audit-purge/v2
+      secrets:
+        source: file
+        root: /etc/audit/secrets
       deployment: /etc/audit/deployment.yaml
       database:
         url: postgres://audit_purge@db.example.com:5432/audit?sslmode=verify-full
-        passwordEnv: AUDIT_DATABASE_PASSWORD
-    secretEnv:
-      - name: AUDIT_DATABASE_PASSWORD
+        passwordSecret: database-password
+    secretFiles:
+      - name: database-password
         secretName: audit-db-purge
         key: password
   clockSync:
     enabled: true
     config:
+      apiVersion: audit.truvity.github.io/audit-clock-sync/v2
       # Required by every preset with a compliance obligation. On AWS this is
       # the instance's own time service.
       ntp: ["169.254.169.123"]

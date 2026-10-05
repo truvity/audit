@@ -222,9 +222,17 @@ replicas: 1
 
 # What the three kinds of pod take from the platform beyond their `config`:
 #
-#   secretEnv      environment variables from a Secret's keys, which the
-#                  config names as the holder of a secret (`passwordEnv`,
-#                  `credentialsEnv`, `tokenEnv`).
+#   secretFiles    a Secret's keys as files under /etc/audit/secrets, one
+#                  for each name the config holds in a `...Secret` field
+#                  (`passwordSecret`, `credentialsSecret`, `tokenSecret`),
+#                  with `secrets: {source: file, root: /etc/audit/secrets}`
+#                  in the config.
+#                    - name: database-password
+#                      secretName: audit-db
+#                      key: password
+#   secretEnv      DEPRECATED, for a version-1 config: environment variables
+#                  from a Secret's keys, which the config names as the holder
+#                  of a secret (`passwordEnv`, `credentialsEnv`, `tokenEnv`).
 #                    - name: AUDIT_DATABASE_PASSWORD
 #                      secretName: audit-db
 #                      key: password

@@ -102,7 +102,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	exportTo, err := exportsFor(ctx, cfg.Exports)
+	exportTo, err := exportsFor(ctx, cfg.Exports, cfg.SecretReader())
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func run() error {
 	// resolve. Without it resolve is not offered.
 	var archive store.Store
 	if cfg.Archive != nil {
-		if archive, err = cli.OpenArchiveFrom(ctx, *cfg.Archive); err != nil {
+		if archive, err = cli.OpenArchiveFrom(ctx, *cfg.Archive, cfg.SecretReader()); err != nil {
 			return err
 		}
 	}
@@ -122,7 +122,7 @@ func run() error {
 	// pseudonym at all, whatever a grant says.
 	var sealer keys.Sealer
 	if cfg.Keys.Enabled() {
-		provider, err := cli.OpenKeysFrom(ctx, cfg.Keys)
+		provider, err := cli.OpenKeysFrom(ctx, cfg.Keys, cfg.SecretReader())
 		if err != nil {
 			return err
 		}
@@ -186,11 +186,11 @@ func run() error {
 // bucket policy denies every delete, so an export written there would stay
 // forever, and the bucket needs a lifecycle rule on the export prefix, which
 // is a rule nobody should ever write against the archive.
-func exportsFor(ctx context.Context, exports *config.Exports) (*query.Exports, error) {
+func exportsFor(ctx context.Context, exports *config.Exports, secrets *config.Secrets) (*query.Exports, error) {
 	if exports == nil {
 		return nil, nil
 	}
-	files, err := cli.OpenExportsFrom(ctx, exports.Bucket)
+	files, err := cli.OpenExportsFrom(ctx, exports.Bucket, secrets)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +204,7 @@ func exportsFor(ctx context.Context, exports *config.Exports) (*query.Exports, e
 func searcherFor(ctx context.Context, cfg *config.Query) (index.Searcher, error) {
 	switch cfg.Searcher {
 	case "postgres":
-		poolConfig, err := cfg.Database.PoolConfig()
+		poolConfig, err := cfg.Database.PoolConfig(ctx, cfg.SecretReader())
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +217,7 @@ func searcherFor(ctx context.Context, cfg *config.Query) (index.Searcher, error)
 		}
 		return postgres.NewReader(pool)
 	default: // s3scan; the schema admits no other
-		scanned, err := cli.OpenArchiveFrom(ctx, *cfg.Archive)
+		scanned, err := cli.OpenArchiveFrom(ctx, *cfg.Archive, cfg.SecretReader())
 		if err != nil {
 			return nil, err
 		}

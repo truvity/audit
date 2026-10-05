@@ -1,10 +1,13 @@
-apiVersion: truvity.github.io/audit-query/v1
+apiVersion: audit.truvity.github.io/audit-query/v2
+secrets:
+  source: file
+  root: /etc/audit/secrets
 listen:
   address: ":8080"
 searcher: postgres
 database:
   url: postgres://audit_reader@db.example.test:5432/audit
-  passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+  passwordSecret: query-database-password
   maxConnections: 5
 grants: /etc/audit/grants.yaml
 deployment: /etc/audit/deployment.yaml
@@ -21,9 +24,9 @@ exports:
     name: audit-exports
     endpoint: https://files.example.test
     pathStyle: true
-    credentialsEnv:
-      accessKeyID: AUDIT_EXPORTS_ACCESS_KEY_ID
-      secretAccessKey: AUDIT_EXPORTS_SECRET_ACCESS_KEY
+    credentialsSecret:
+      accessKeyID: archive-access-key-id
+      secretAccessKey: archive-secret-access-key
   expiry: 168h0m0s
   linkValid: 1h0m0s
 keys:

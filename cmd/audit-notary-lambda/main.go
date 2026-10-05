@@ -91,11 +91,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive)
+	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive, cfg.SecretReader())
 	if err != nil {
 		return err
 	}
-	signer, err := cli.OpenSignerFrom(ctx, cfg.Signer)
+	signer, err := cli.OpenSignerFrom(ctx, cfg.Signer, cfg.SecretReader())
 	if err != nil {
 		return err
 	}

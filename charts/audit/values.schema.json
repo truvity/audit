@@ -1,6 +1,24 @@
 {
   "$defs": {
     "config-audit-clock-sync": {
+      "else": {
+        "$ref": "#/$defs/config-audit-clock-sync.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-clock-sync/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-clock-sync.v2"
+      }
+    },
+    "config-audit-clock-sync.v1": {
       "additionalProperties": false,
       "dependentRequired": {
         "require": [
@@ -17,7 +35,7 @@
           ]
         },
         "maxOffset": {
-          "$ref": "#/$defs/config-audit-clock-sync.duration",
+          "$ref": "#/$defs/config-audit-clock-sync.v1.duration",
           "default": "1s",
           "description": "How far the clock may be out before the run fails; 0s accepts any offset and only records it."
         },
@@ -40,11 +58,11 @@
           ]
         },
         "sink": {
-          "$ref": "#/$defs/config-audit-clock-sync.sink",
+          "$ref": "#/$defs/config-audit-clock-sync.v1.sink",
           "description": "The writer the reading is recorded through."
         },
         "timeout": {
-          "$ref": "#/$defs/config-audit-clock-sync.duration",
+          "$ref": "#/$defs/config-audit-clock-sync.v1.duration",
           "default": "5s",
           "description": "How long to wait for a reference."
         }
@@ -55,12 +73,142 @@
       "title": "audit clock-sync",
       "type": "object"
     },
-    "config-audit-clock-sync.duration": {
+    "config-audit-clock-sync.v1.duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-clock-sync.sink": {
+    "config-audit-clock-sync.v1.sink": {
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "config-audit-clock-sync.v2": {
+      "additionalProperties": false,
+      "dependentRequired": {
+        "require": [
+          "sink"
+        ]
+      },
+      "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-clock-sync/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-clock-sync/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-clock-sync/v2"
+          ]
+        },
+        "maxOffset": {
+          "$ref": "#/$defs/config-audit-clock-sync.v2.duration",
+          "default": "1s",
+          "description": "How far the clock may be out before the run fails; 0s accepts any offset and only records it."
+        },
+        "ntp": {
+          "description": "Time references; the quickest to answer is believed, and one being unreachable is survivable.",
+          "items": {
+            "description": "A time reference, host or host:port.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sink": {
+          "$ref": "#/$defs/config-audit-clock-sync.v2.sink",
+          "description": "The writer the reading is recorded through."
+        },
+        "timeout": {
+          "$ref": "#/$defs/config-audit-clock-sync.v2.duration",
+          "default": "5s",
+          "description": "How long to wait for a reference."
+        }
+      },
+      "required": [
+        "ntp"
+      ],
+      "title": "audit clock-sync",
+      "type": "object"
+    },
+    "config-audit-clock-sync.v2.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-clock-sync.v2.sink": {
       "additionalProperties": false,
       "dependentSchemas": {
         "sqs": {
@@ -132,6 +280,24 @@
       "type": "object"
     },
     "config-audit-migrate": {
+      "else": {
+        "$ref": "#/$defs/config-audit-migrate.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-migrate/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-migrate.v2"
+      }
+    },
+    "config-audit-migrate.v1": {
       "additionalProperties": false,
       "description": "The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
@@ -143,7 +309,7 @@
           ]
         },
         "database": {
-          "$ref": "#/$defs/config-audit-migrate.postgres"
+          "$ref": "#/$defs/config-audit-migrate.v1.postgres"
         },
         "observe": {
           "description": "A role to grant what the indexer needs: read and write on the index and its cursors, and the creation of monthly partitions through one function. Must exist and be none of the other roles.",
@@ -172,7 +338,7 @@
       "title": "audit migrate",
       "type": "object"
     },
-    "config-audit-migrate.postgres": {
+    "config-audit-migrate.v1.postgres": {
       "allOf": [
         {
           "additionalProperties": false,
@@ -232,7 +398,140 @@
       ],
       "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
     },
+    "config-audit-migrate.v2": {
+      "additionalProperties": false,
+      "description": "The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-migrate/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-migrate/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-migrate/v2"
+          ]
+        },
+        "database": {
+          "$ref": "#/$defs/config-audit-migrate.v2.postgres"
+        },
+        "observe": {
+          "description": "A role to grant what the indexer needs: read and write on the index and its cursors, and the creation of monthly partitions through one function. Must exist and be none of the other roles.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "purge": {
+          "description": "A role to grant what the purge job needs: to delete from the index and the deduplication table. Must exist and be none of the other roles.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "reader": {
+          "description": "A role to grant what the query service needs: usage on the schema and select on the index's tables, and nothing else. The role must already exist and must not own the tables.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "secrets": {
+          "$ref": "#/$defs/config-audit-migrate.v2.secrets"
+        },
+        "writer": {
+          "description": "A role to grant what the write path needs: the deduplication table, the catalogue registry and the key directory, and none of the index. Must exist and be none of the other roles.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "database"
+      ],
+      "title": "audit migrate",
+      "type": "object"
+    },
+    "config-audit-migrate.v2.postgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordSecret": {
+          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            },
+            {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "config-audit-migrate.v2.secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "config-audit-notary": {
+      "else": {
+        "$ref": "#/$defs/config-audit-notary.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-notary/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-notary.v2"
+      }
+    },
+    "config-audit-notary.v1": {
       "additionalProperties": false,
       "dependentRequired": {
         "require": [
@@ -351,7 +650,7 @@
           ]
         },
         "settle": {
-          "$ref": "#/$defs/config-audit-notary.duration",
+          "$ref": "#/$defs/config-audit-notary.v1.duration",
           "default": "10m",
           "description": "How long after an hour has ended it is sealed, so that a batch put late in the hour it is keyed by is in the seal. An hour is never sealed sooner."
         },
@@ -421,7 +720,7 @@
                   "type": "string"
                 },
                 "openbao": {
-                  "$ref": "#/$defs/config-audit-notary.openbao"
+                  "$ref": "#/$defs/config-audit-notary.v1.openbao"
                 }
               },
               "required": [
@@ -434,7 +733,7 @@
           "type": "object"
         },
         "sink": {
-          "$ref": "#/$defs/config-audit-notary.sink",
+          "$ref": "#/$defs/config-audit-notary.v1.sink",
           "description": "The writer this job records what it sealed through (`audit.seal.written`)."
         }
       },
@@ -445,12 +744,12 @@
       "title": "audit-notary",
       "type": "object"
     },
-    "config-audit-notary.duration": {
+    "config-audit-notary.v1.duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-notary.openbao": {
+    "config-audit-notary.v1.openbao": {
       "additionalProperties": false,
       "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
       "oneOf": [
@@ -535,7 +834,407 @@
       ],
       "type": "object"
     },
-    "config-audit-notary.sink": {
+    "config-audit-notary.v1.sink": {
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "config-audit-notary.v2": {
+      "additionalProperties": false,
+      "dependentRequired": {
+        "require": [
+          "sink"
+        ]
+      },
+      "description": "The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-notary/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-notary/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-notary/v2"
+          ]
+        },
+        "archive": {
+          "additionalProperties": false,
+          "description": "Where the archive is and how it is written.",
+          "properties": {
+            "bucket": {
+              "$ref": "#/$defs/config-audit-notary.v2.bucket"
+            },
+            "kmsKey": {
+              "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "lockMode": {
+              "default": "compliance",
+              "description": "The Object Lock mode every object is written in: compliance (the record tier), governance (a lock a privileged role can shorten), or none (the attested tier, for a store without Object Lock). A process refuses to start when a profile demands a stricter mode than this.",
+              "enum": [
+                "compliance",
+                "governance",
+                "none"
+              ]
+            },
+            "prefix": {
+              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "profiles": {
+          "description": "The profiles to seal. Unset seals every profile the archive has records for.",
+          "items": {
+            "description": "A profile name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "secrets": {
+          "$ref": "#/$defs/config-audit-notary.v2.secrets"
+        },
+        "settle": {
+          "$ref": "#/$defs/config-audit-notary.v2.duration",
+          "default": "10m",
+          "description": "How long after an hour has ended it is sealed, so that a batch put late in the hour it is keyed by is in the seal. An hour is never sealed sooner."
+        },
+        "signer": {
+          "additionalProperties": false,
+          "description": "The key seals are signed with, a P-384 key (ES384). The private half should never be on the notary's disk: a managed key (`kms`, `transit`) keeps it where the writer's role cannot reach it, which a `file` cannot.",
+          "oneOf": [
+            {
+              "required": [
+                "kms"
+              ]
+            },
+            {
+              "required": [
+                "transit"
+              ]
+            },
+            {
+              "required": [
+                "file"
+              ]
+            }
+          ],
+          "properties": {
+            "file": {
+              "additionalProperties": false,
+              "description": "A P-384 private key in a PEM file (PKCS#8 or SEC 1), for development.",
+              "properties": {
+                "path": {
+                  "description": "The file.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "type": "object"
+            },
+            "kms": {
+              "additionalProperties": false,
+              "description": "An AWS KMS key: ECC_NIST_P384, SIGN_VERIFY, signing ECDSA_SHA_384. The credentials are the SDK's ambient ones: in a cluster, the notary's Pod Identity or IRSA role, which is not the writer's.",
+              "properties": {
+                "key": {
+                  "description": "The key's ARN, ID or alias.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The key's region, when it is not the SDK's.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key"
+              ],
+              "type": "object"
+            },
+            "transit": {
+              "additionalProperties": false,
+              "description": "An OpenBAO transit key of type ecdsa-p384.",
+              "properties": {
+                "key": {
+                  "description": "The transit key's name.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "openbao": {
+                  "$ref": "#/$defs/config-audit-notary.v2.openbao"
+                }
+              },
+              "required": [
+                "key",
+                "openbao"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "sink": {
+          "$ref": "#/$defs/config-audit-notary.v2.sink",
+          "description": "The writer this job records what it sealed through (`audit.seal.written`)."
+        }
+      },
+      "required": [
+        "archive",
+        "signer"
+      ],
+      "title": "audit-notary",
+      "type": "object"
+    },
+    "config-audit-notary.v2.bucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsSecret": {
+          "additionalProperties": false,
+          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "config-audit-notary.v2.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-notary.v2.openbao": {
+      "additionalProperties": false,
+      "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
+      "oneOf": [
+        {
+          "required": [
+            "login"
+          ]
+        },
+        {
+          "required": [
+            "tokenFile"
+          ]
+        },
+        {
+          "required": [
+            "tokenSecret"
+          ]
+        }
+      ],
+      "properties": {
+        "address": {
+          "description": "The server, for example https://openbao.example:8200.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "caFile": {
+          "description": "A PEM bundle trusted beside the system roots, for a server on a private chain.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "additionalProperties": false,
+          "description": "Sign in with a JWT: the pod's projected service-account token, presented to an auth mount. Nothing is stored.",
+          "properties": {
+            "jwtFile": {
+              "description": "The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "mount": {
+              "description": "The JWT auth mount, for example jwt-devel.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "role": {
+              "description": "The role on that mount.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "mount",
+            "role",
+            "jwtFile"
+          ],
+          "type": "object"
+        },
+        "mount": {
+          "default": "transit",
+          "description": "Where the transit engine is mounted.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The OpenBAO namespace the engine and the auth mount are in. Unset is the root namespace.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenFile": {
+          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenSecret": {
+          "description": "The NAME of the secret holding a token, resolved through `secrets`.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "config-audit-notary.v2.secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "config-audit-notary.v2.sink": {
       "additionalProperties": false,
       "dependentSchemas": {
         "sqs": {
@@ -607,6 +1306,24 @@
       "type": "object"
     },
     "config-audit-observe": {
+      "else": {
+        "$ref": "#/$defs/config-audit-observe.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-observe/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-observe.v2"
+      }
+    },
+    "config-audit-observe.v1": {
       "additionalProperties": false,
       "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
@@ -693,11 +1410,11 @@
           "type": "integer"
         },
         "database": {
-          "$ref": "#/$defs/config-audit-observe.postgres",
+          "$ref": "#/$defs/config-audit-observe.v1.postgres",
           "description": "The index, as the role `audit migrate --observe` granted: read and write on the index and its cursors, and nothing of the deduplication table. Not the owner, and not the writer's or the query service's."
         },
         "interval": {
-          "$ref": "#/$defs/config-audit-observe.duration",
+          "$ref": "#/$defs/config-audit-observe.v1.duration",
           "default": "30s",
           "description": "How often a pass runs when nothing woke it. A lost wake-up costs at most this."
         },
@@ -728,7 +1445,7 @@
           "uniqueItems": true
         },
         "settle": {
-          "$ref": "#/$defs/config-audit-observe.duration",
+          "$ref": "#/$defs/config-audit-observe.v1.duration",
           "default": "2m",
           "description": "How far behind now the cursor stays. An object's key is fixed when its put starts and it is visible when the put ends, so a later key can be visible before an earlier one; this must be longer than a writer's put can take and than the clocks of the writers and of this process can disagree. It is the least time between a record's acknowledgement and its appearance in search."
         },
@@ -828,12 +1545,12 @@
       "title": "audit-observe",
       "type": "object"
     },
-    "config-audit-observe.duration": {
+    "config-audit-observe.v1.duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-observe.postgres": {
+    "config-audit-observe.v1.postgres": {
       "allOf": [
         {
           "additionalProperties": false,
@@ -893,7 +1610,329 @@
       ],
       "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
     },
+    "config-audit-observe.v2": {
+      "additionalProperties": false,
+      "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-observe/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-observe/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-observe/v2"
+          ]
+        },
+        "archive": {
+          "additionalProperties": false,
+          "description": "The archive to follow. Observe only reads it: it lists, and gets the objects and the catalogues beside them.",
+          "properties": {
+            "bucket": {
+              "$ref": "#/$defs/config-audit-observe.v2.bucket"
+            },
+            "prefix": {
+              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "batch": {
+          "default": 500,
+          "description": "How many rows are written in one transaction. A transaction ends at an object's end, so an object is never split.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "database": {
+          "$ref": "#/$defs/config-audit-observe.v2.postgres",
+          "description": "The index, as the role `audit migrate --observe` granted: read and write on the index and its cursors, and nothing of the deduplication table. Not the owner, and not the writer's or the query service's."
+        },
+        "interval": {
+          "$ref": "#/$defs/config-audit-observe.v2.duration",
+          "default": "30s",
+          "description": "How often a pass runs when nothing woke it. A lost wake-up costs at most this."
+        },
+        "listen": {
+          "additionalProperties": false,
+          "description": "A TCP listener. `address` is a host:port the service binds; an empty host binds every interface.",
+          "properties": {
+            "address": {
+              "description": "host:port, for example \":8080\" or \"127.0.0.1:8080\".",
+              "pattern": "^[^\\s]*:[0-9]{1,5}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address"
+          ],
+          "type": "object"
+        },
+        "profiles": {
+          "description": "The profiles to follow. Unset follows every profile the archive has, found by listing.",
+          "items": {
+            "description": "A profile name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "secrets": {
+          "$ref": "#/$defs/config-audit-observe.v2.secrets"
+        },
+        "settle": {
+          "$ref": "#/$defs/config-audit-observe.v2.duration",
+          "default": "2m",
+          "description": "How far behind now the cursor stays. An object's key is fixed when its put starts and it is visible when the put ends, so a later key can be visible before an earlier one; this must be longer than a writer's put can take and than the clocks of the writers and of this process can disagree. It is the least time between a record's acknowledgement and its appearance in search."
+        },
+        "wake": {
+          "additionalProperties": false,
+          "description": "Where bucket notifications arrive, to make a pass run now instead of at the next interval. Optional, and only ever a shortcut: nothing a pass does depends on a notification, so a lost or repeated one costs latency and nothing else.",
+          "maxProperties": 1,
+          "minProperties": 1,
+          "properties": {
+            "nats": {
+              "additionalProperties": false,
+              "description": "A NATS subject carrying bucket notifications. Core NATS: the messages are not read, and one missed is the poll's to make up.",
+              "properties": {
+                "nats": {
+                  "additionalProperties": false,
+                  "description": "A NATS connection, and nothing else. What a service does with the connection — publish to a subject, bind a durable consumer to a stream — differs per component and is described beside it: a publisher with a `consumer` field it never reads is a field somebody will eventually set.",
+                  "properties": {
+                    "tls": {
+                      "additionalProperties": false,
+                      "description": "Connect over TLS and authenticate with the service's own workload identity instead of a token. The certificate presented is the one the service's own top-level `tls` block loads (its mode must not be `off`); the broker maps the identity in it to a user with its own permissions, so what the service may do is the broker's decision and nothing in this file. The certificate is re-read on every connect, so the platform's rotation is picked up without a restart and a rotation drops no connection already made. Only a service that declares this key in its own schema acts on it.",
+                      "properties": {
+                        "caFile": {
+                          "description": "Path to the trust bundle the BROKER's certificate is verified against. The broker's, not the workload identity's: a broker has a name and no workload identity, and usually a different chain.",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "description": "The name the broker's certificate was issued for, when that is not the host in `url`. Empty verifies the host dialled.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "caFile"
+                      ],
+                      "type": "object"
+                    },
+                    "tokenFile": {
+                      "description": "Path to a file holding the token the client authenticates with, mounted by the platform and re-read on every reconnect so that a rotated token is picked up without a restart. It is the workload's own account token: the broker asks an authorisation service who the bearer is, and that service answers from the account rather than from anything the client claims. Unset with `tls` unset means no authentication, which is a test configuration and not a deployment; unset with `tls` set means the certificate is the credential.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "The server URL, for example nats://nats:4222.",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "type": "object"
+                },
+                "subject": {
+                  "description": "The subject.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "nats",
+                "subject"
+              ],
+              "type": "object"
+            },
+            "sqs": {
+              "additionalProperties": false,
+              "description": "An SQS queue of bucket notifications that is observe's own: each message is taken to wake a pass and deleted. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+              "properties": {
+                "fifo": {
+                  "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+                  "type": "boolean"
+                },
+                "queueUrl": {
+                  "description": "The queue's URL.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "queueUrl"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "archive",
+        "database"
+      ],
+      "title": "audit-observe",
+      "type": "object"
+    },
+    "config-audit-observe.v2.bucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsSecret": {
+          "additionalProperties": false,
+          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "config-audit-observe.v2.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-observe.v2.postgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordSecret": {
+          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            },
+            {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "config-audit-observe.v2.secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "config-audit-purge": {
+      "else": {
+        "$ref": "#/$defs/config-audit-purge.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-purge/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-purge.v2"
+      }
+    },
+    "config-audit-purge.v1": {
       "additionalProperties": false,
       "description": "The configuration of `audit purge --config`, which brings the index and the deduplication table within the profiles. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
@@ -905,10 +1944,10 @@
           ]
         },
         "database": {
-          "$ref": "#/$defs/config-audit-purge.postgres"
+          "$ref": "#/$defs/config-audit-purge.v1.postgres"
         },
         "dedupeWindow": {
-          "$ref": "#/$defs/config-audit-purge.duration",
+          "$ref": "#/$defs/config-audit-purge.v1.duration",
           "description": "How long a written identifier is remembered. Unset is the widest window the profiles ask for."
         },
         "deployment": {
@@ -917,7 +1956,7 @@
           "type": "string"
         },
         "identifyingAfter": {
-          "$ref": "#/$defs/config-audit-purge.duration",
+          "$ref": "#/$defs/config-audit-purge.v1.duration",
           "description": "How long the index keeps who an event happened to, as opposed to what happened. Unset forgets nothing early: no shipped preset states a schedule, so the number is a deployment's own policy."
         }
       },
@@ -928,12 +1967,12 @@
       "title": "audit purge",
       "type": "object"
     },
-    "config-audit-purge.duration": {
+    "config-audit-purge.v1.duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-purge.postgres": {
+    "config-audit-purge.v1.postgres": {
       "allOf": [
         {
           "additionalProperties": false,
@@ -993,7 +2032,139 @@
       ],
       "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
     },
+    "config-audit-purge.v2": {
+      "additionalProperties": false,
+      "description": "The configuration of `audit purge --config`, which brings the index and the deduplication table within the profiles. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-purge/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-purge/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-purge/v2"
+          ]
+        },
+        "database": {
+          "$ref": "#/$defs/config-audit-purge.v2.postgres"
+        },
+        "dedupeWindow": {
+          "$ref": "#/$defs/config-audit-purge.v2.duration",
+          "description": "How long a written identifier is remembered. Unset is the widest window the profiles ask for."
+        },
+        "deployment": {
+          "description": "Path to the profile configuration.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "identifyingAfter": {
+          "$ref": "#/$defs/config-audit-purge.v2.duration",
+          "description": "How long the index keeps who an event happened to, as opposed to what happened. Unset forgets nothing early: no shipped preset states a schedule, so the number is a deployment's own policy."
+        },
+        "secrets": {
+          "$ref": "#/$defs/config-audit-purge.v2.secrets"
+        }
+      },
+      "required": [
+        "deployment",
+        "database"
+      ],
+      "title": "audit purge",
+      "type": "object"
+    },
+    "config-audit-purge.v2.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-purge.v2.postgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordSecret": {
+          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            },
+            {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "config-audit-purge.v2.secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "config-audit-query": {
+      "else": {
+        "$ref": "#/$defs/config-audit-query.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-query/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-query.v2"
+      }
+    },
+    "config-audit-query.v1": {
       "additionalProperties": false,
       "allOf": [
         {
@@ -1098,7 +2269,7 @@
           "type": "object"
         },
         "database": {
-          "$ref": "#/$defs/config-audit-query.postgres",
+          "$ref": "#/$defs/config-audit-query.v1.postgres",
           "description": "The index, as a role that does NOT own the tables: tenant row-level security binds only a non-owner."
         },
         "deployment": {
@@ -1165,12 +2336,12 @@
               "type": "object"
             },
             "expiry": {
-              "$ref": "#/$defs/config-audit-query.duration",
+              "$ref": "#/$defs/config-audit-query.v1.duration",
               "default": "168h",
               "description": "How long an export is kept before the bucket clears it."
             },
             "linkValid": {
-              "$ref": "#/$defs/config-audit-query.duration",
+              "$ref": "#/$defs/config-audit-query.v1.duration",
               "default": "1h",
               "description": "How long a download link works."
             }
@@ -1186,7 +2357,7 @@
           "type": "string"
         },
         "keys": {
-          "$ref": "#/$defs/config-audit-query.keys",
+          "$ref": "#/$defs/config-audit-query.v1.keys",
           "description": "The writer's key provider, which turns resolve on: a query service without the keys cannot undo a pseudonym whatever a grant says. It needs `archive`."
         },
         "listen": {
@@ -1221,7 +2392,7 @@
           ]
         },
         "sink": {
-          "$ref": "#/$defs/config-audit-query.sink"
+          "$ref": "#/$defs/config-audit-query.v1.sink"
         }
       },
       "required": [
@@ -1231,12 +2402,12 @@
       "title": "audit-query",
       "type": "object"
     },
-    "config-audit-query.duration": {
+    "config-audit-query.v1.duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-query.keys": {
+    "config-audit-query.v1.keys": {
       "additionalProperties": false,
       "allOf": [
         {
@@ -1333,7 +2504,7 @@
           "description": "The transit provider.",
           "properties": {
             "openbao": {
-              "$ref": "#/$defs/config-audit-query.openbao"
+              "$ref": "#/$defs/config-audit-query.v1.openbao"
             },
             "prefix": {
               "default": "audit",
@@ -1353,7 +2524,7 @@
       ],
       "type": "object"
     },
-    "config-audit-query.openbao": {
+    "config-audit-query.v1.openbao": {
       "additionalProperties": false,
       "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
       "oneOf": [
@@ -1438,7 +2609,7 @@
       ],
       "type": "object"
     },
-    "config-audit-query.postgres": {
+    "config-audit-query.v1.postgres": {
       "allOf": [
         {
           "additionalProperties": false,
@@ -1498,7 +2669,549 @@
       ],
       "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
     },
-    "config-audit-query.sink": {
+    "config-audit-query.v1.sink": {
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "config-audit-query.v2": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "required": [
+              "database"
+            ]
+          },
+          "if": {
+            "properties": {
+              "searcher": {
+                "const": "s3scan"
+              }
+            },
+            "required": [
+              "searcher"
+            ]
+          },
+          "then": {
+            "required": [
+              "archive"
+            ]
+          }
+        }
+      ],
+      "description": "The configuration of audit-query, the read path. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-query/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-query/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-query/v2"
+          ]
+        },
+        "archive": {
+          "additionalProperties": false,
+          "description": "The archive the records are in: what the s3scan searcher reads. Get answers where a copy is and, until seals vouch for it, nothing about whether it has been verified.",
+          "properties": {
+            "bucket": {
+              "$ref": "#/$defs/config-audit-query.v2.bucket"
+            },
+            "prefix": {
+              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "database": {
+          "$ref": "#/$defs/config-audit-query.v2.postgres",
+          "description": "The index, as a role that does NOT own the tables: tenant row-level security binds only a non-owner."
+        },
+        "deployment": {
+          "description": "Path to the profile configuration, which a grant preset turns roles into profiles with.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "exports": {
+          "additionalProperties": false,
+          "description": "Where exports go: a bucket of its own with no Object Lock, which clears them. Without it the export operation is refused.",
+          "properties": {
+            "bucket": {
+              "$ref": "#/$defs/config-audit-query.v2.bucket"
+            },
+            "expiry": {
+              "$ref": "#/$defs/config-audit-query.v2.duration",
+              "default": "168h",
+              "description": "How long an export is kept before the bucket clears it."
+            },
+            "linkValid": {
+              "$ref": "#/$defs/config-audit-query.v2.duration",
+              "default": "1h",
+              "description": "How long a download link works."
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "grants": {
+          "description": "Path to the file naming the trusted issuers and mapping their claims to grants.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "keys": {
+          "$ref": "#/$defs/config-audit-query.v2.keys",
+          "description": "The writer's key provider, which turns resolve on: a query service without the keys cannot undo a pseudonym whatever a grant says. It needs `archive`."
+        },
+        "listen": {
+          "additionalProperties": false,
+          "description": "A TCP listener. `address` is a host:port the service binds; an empty host binds every interface.",
+          "properties": {
+            "address": {
+              "description": "host:port, for example \":8080\" or \"127.0.0.1:8080\".",
+              "pattern": "^[^\\s]*:[0-9]{1,5}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address"
+          ],
+          "type": "object"
+        },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "searcher": {
+          "default": "postgres",
+          "description": "Where answers come from: `postgres` (the index), or `s3scan` (the archive, within a budget) for a deployment with no database.",
+          "enum": [
+            "postgres",
+            "s3scan"
+          ]
+        },
+        "secrets": {
+          "$ref": "#/$defs/config-audit-query.v2.secrets"
+        },
+        "sink": {
+          "$ref": "#/$defs/config-audit-query.v2.sink"
+        }
+      },
+      "required": [
+        "grants",
+        "sink"
+      ],
+      "title": "audit-query",
+      "type": "object"
+    },
+    "config-audit-query.v2.bucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsSecret": {
+          "additionalProperties": false,
+          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "config-audit-query.v2.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-query.v2.keys": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "local"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "transit": false
+            },
+            "required": [
+              "local"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "transit"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "local": false
+            },
+            "required": [
+              "transit"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "local": false,
+              "transit": false
+            }
+          }
+        }
+      ],
+      "description": "Where pseudonymisation keys live. Unset, or `none`, means no pseudonyms, no key material and no resolve.",
+      "properties": {
+        "local": {
+          "additionalProperties": false,
+          "description": "The local provider.",
+          "properties": {
+            "dir": {
+              "description": "Where the wrapped data keys are kept. They are random, not derived, so this directory is the only copy; unset keeps them in memory, which a trial install may do and nothing else should.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "rootFile": {
+              "description": "A file holding the 32-byte root the data keys are wrapped under.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "rootFile"
+          ],
+          "type": "object"
+        },
+        "provider": {
+          "description": "`none`, `local` (a root and a directory) or `transit` (OpenBAO).",
+          "enum": [
+            "none",
+            "local",
+            "transit"
+          ]
+        },
+        "transit": {
+          "additionalProperties": false,
+          "description": "The transit provider.",
+          "properties": {
+            "openbao": {
+              "$ref": "#/$defs/config-audit-query.v2.openbao"
+            },
+            "prefix": {
+              "default": "audit",
+              "description": "What every key's name starts with: <prefix>.<purpose>.<tenant>.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "openbao"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "config-audit-query.v2.openbao": {
+      "additionalProperties": false,
+      "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
+      "oneOf": [
+        {
+          "required": [
+            "login"
+          ]
+        },
+        {
+          "required": [
+            "tokenFile"
+          ]
+        },
+        {
+          "required": [
+            "tokenSecret"
+          ]
+        }
+      ],
+      "properties": {
+        "address": {
+          "description": "The server, for example https://openbao.example:8200.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "caFile": {
+          "description": "A PEM bundle trusted beside the system roots, for a server on a private chain.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "additionalProperties": false,
+          "description": "Sign in with a JWT: the pod's projected service-account token, presented to an auth mount. Nothing is stored.",
+          "properties": {
+            "jwtFile": {
+              "description": "The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "mount": {
+              "description": "The JWT auth mount, for example jwt-devel.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "role": {
+              "description": "The role on that mount.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "mount",
+            "role",
+            "jwtFile"
+          ],
+          "type": "object"
+        },
+        "mount": {
+          "default": "transit",
+          "description": "Where the transit engine is mounted.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The OpenBAO namespace the engine and the auth mount are in. Unset is the root namespace.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenFile": {
+          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenSecret": {
+          "description": "The NAME of the secret holding a token, resolved through `secrets`.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "config-audit-query.v2.postgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordSecret": {
+          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            },
+            {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "config-audit-query.v2.secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "config-audit-query.v2.sink": {
       "additionalProperties": false,
       "dependentSchemas": {
         "sqs": {
@@ -1570,6 +3283,24 @@
       "type": "object"
     },
     "config-audit-verify": {
+      "else": {
+        "$ref": "#/$defs/config-audit-verify.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-verify/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-verify.v2"
+      }
+    },
+    "config-audit-verify.v1": {
       "additionalProperties": false,
       "dependentRequired": {
         "require": [
@@ -1660,7 +3391,7 @@
           "type": "string"
         },
         "last": {
-          "$ref": "#/$defs/config-audit-verify.duration",
+          "$ref": "#/$defs/config-audit-verify.v1.duration",
           "default": "24h",
           "description": "Check the objects ingested in the last this long, ending at the hour that has closed."
         },
@@ -1688,7 +3419,7 @@
           "description": "Check the seals too: each one's signature, the chain through `prev`, its count and root against the objects, and that no sealed hour is missing. Unset checks no seal.",
           "properties": {
             "grace": {
-              "$ref": "#/$defs/config-audit-verify.duration",
+              "$ref": "#/$defs/config-audit-verify.v1.duration",
               "default": "1h",
               "description": "How long after an hour is sealable its seal may still be missing before that is a finding: the notary runs hourly, so a seal is up to an hour behind."
             },
@@ -1704,7 +3435,7 @@
               "uniqueItems": true
             },
             "settle": {
-              "$ref": "#/$defs/config-audit-verify.duration",
+              "$ref": "#/$defs/config-audit-verify.v1.duration",
               "default": "10m",
               "description": "The notary's settle window: an hour is sealable once it has ended and this long has passed. Keep it equal to the notary's."
             }
@@ -1715,7 +3446,7 @@
           "type": "object"
         },
         "sink": {
-          "$ref": "#/$defs/config-audit-verify.sink",
+          "$ref": "#/$defs/config-audit-verify.v1.sink",
           "description": "The writer this job records what it checked through."
         }
       },
@@ -1726,12 +3457,271 @@
       "title": "audit verify",
       "type": "object"
     },
-    "config-audit-verify.duration": {
+    "config-audit-verify.v1.duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-verify.sink": {
+    "config-audit-verify.v1.sink": {
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "config-audit-verify.v2": {
+      "additionalProperties": false,
+      "dependentRequired": {
+        "require": [
+          "sink"
+        ]
+      },
+      "description": "The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "properties": {
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-verify/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-verify/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-verify/v2"
+          ]
+        },
+        "archive": {
+          "additionalProperties": false,
+          "description": "Where the archive is and how it is written.",
+          "properties": {
+            "bucket": {
+              "$ref": "#/$defs/config-audit-verify.v2.bucket"
+            },
+            "prefix": {
+              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "deployment": {
+          "description": "Path to the profile configuration; the check holds each object's lock to what its profile demands.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "last": {
+          "$ref": "#/$defs/config-audit-verify.v2.duration",
+          "default": "24h",
+          "description": "Check the objects ingested in the last this long, ending at the hour that has closed."
+        },
+        "profiles": {
+          "description": "The profiles whose objects to check. Unset checks every profile the deployment composes.",
+          "items": {
+            "description": "A profile name.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "require": {
+          "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "seals": {
+          "additionalProperties": false,
+          "description": "Check the seals too: each one's signature, the chain through `prev`, its count and root against the objects, and that no sealed hour is missing. Unset checks no seal.",
+          "properties": {
+            "grace": {
+              "$ref": "#/$defs/config-audit-verify.v2.duration",
+              "default": "1h",
+              "description": "How long after an hour is sealable its seal may still be missing before that is a finding: the notary runs hourly, so a seal is up to an hour behind."
+            },
+            "roots": {
+              "description": "The roots this verifier trusts, by thumbprint. A seal is believed only if a pinned root signed it or delegated to its key; `keys/roots.jwks` in the bucket is how the keys are distributed and is never what is trusted.",
+              "items": {
+                "description": "The RFC 7638 thumbprint of a root key (`audit key public --thumbprint`).",
+                "pattern": "^[A-Za-z0-9_-]{43}$",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "settle": {
+              "$ref": "#/$defs/config-audit-verify.v2.duration",
+              "default": "10m",
+              "description": "The notary's settle window: an hour is sealable once it has ended and this long has passed. Keep it equal to the notary's."
+            }
+          },
+          "required": [
+            "roots"
+          ],
+          "type": "object"
+        },
+        "secrets": {
+          "$ref": "#/$defs/config-audit-verify.v2.secrets"
+        },
+        "sink": {
+          "$ref": "#/$defs/config-audit-verify.v2.sink",
+          "description": "The writer this job records what it checked through."
+        }
+      },
+      "required": [
+        "deployment",
+        "archive"
+      ],
+      "title": "audit verify",
+      "type": "object"
+    },
+    "config-audit-verify.v2.bucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsSecret": {
+          "additionalProperties": false,
+          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "config-audit-verify.v2.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-verify.v2.secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "config-audit-verify.v2.sink": {
       "additionalProperties": false,
       "dependentSchemas": {
         "sqs": {
@@ -1803,6 +3793,24 @@
       "type": "object"
     },
     "config-audit-writer": {
+      "else": {
+        "$ref": "#/$defs/config-audit-writer.v1"
+      },
+      "if": {
+        "properties": {
+          "apiVersion": {
+            "const": "audit.truvity.github.io/audit-writer/v2"
+          }
+        },
+        "required": [
+          "apiVersion"
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/config-audit-writer.v2"
+      }
+    },
+    "config-audit-writer.v1": {
       "additionalProperties": false,
       "allOf": [
         {
@@ -2028,7 +4036,7 @@
               "description": "A NATS JetStream stream; what `stream` says.",
               "properties": {
                 "ackWait": {
-                  "$ref": "#/$defs/config-audit-writer.duration",
+                  "$ref": "#/$defs/config-audit-writer.v1.duration",
                   "default": "2m",
                   "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
                 },
@@ -2120,7 +4128,7 @@
                   "type": "string"
                 },
                 "visibility": {
-                  "$ref": "#/$defs/config-audit-writer.duration",
+                  "$ref": "#/$defs/config-audit-writer.v1.duration",
                   "default": "1m",
                   "description": "How long a received message is hidden from other consumers while the writer writes it. It must outlast the write, or the message is delivered twice."
                 }
@@ -2134,7 +4142,7 @@
           "type": "object"
         },
         "database": {
-          "$ref": "#/$defs/config-audit-writer.postgres",
+          "$ref": "#/$defs/config-audit-writer.v1.postgres",
           "description": "The shared deduplication table and the catalogue registry, as the writer's own database role: it holds those and none of the index, which audit-observe writes. Without it the writer deduplicates in process and may only run one replica."
         },
         "deployment": {
@@ -2178,7 +4186,7 @@
               "description": "A NATS JetStream stream; what `stream` says.",
               "properties": {
                 "ackWait": {
-                  "$ref": "#/$defs/config-audit-writer.duration",
+                  "$ref": "#/$defs/config-audit-writer.v1.duration",
                   "default": "2m",
                   "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
                 },
@@ -2273,7 +4281,7 @@
           "type": "object"
         },
         "keys": {
-          "$ref": "#/$defs/config-audit-writer.keys"
+          "$ref": "#/$defs/config-audit-writer.v1.keys"
         },
         "listen": {
           "additionalProperties": false,
@@ -2317,7 +4325,7 @@
           "description": "How much a writer gathers from the stream before it writes, which decides how many objects a day of records becomes.",
           "properties": {
             "interval": {
-              "$ref": "#/$defs/config-audit-writer.duration",
+              "$ref": "#/$defs/config-audit-writer.v1.duration",
               "default": "30s",
               "description": "How long gathered records wait before they are written, and how long an object stays open within one write."
             },
@@ -2335,7 +4343,7 @@
           "description": "The wide stream, as the NATS shorthand: for a receiver it is `forward.nats`, for a writer `consume.nats`. Give it or the longhand, not both.",
           "properties": {
             "ackWait": {
-              "$ref": "#/$defs/config-audit-writer.duration",
+              "$ref": "#/$defs/config-audit-writer.v1.duration",
               "default": "2m",
               "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
             },
@@ -2414,12 +4422,12 @@
       "title": "audit-writer",
       "type": "object"
     },
-    "config-audit-writer.duration": {
+    "config-audit-writer.v1.duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
       "type": "string"
     },
-    "config-audit-writer.keys": {
+    "config-audit-writer.v1.keys": {
       "additionalProperties": false,
       "allOf": [
         {
@@ -2516,7 +4524,7 @@
           "description": "The transit provider.",
           "properties": {
             "openbao": {
-              "$ref": "#/$defs/config-audit-writer.openbao"
+              "$ref": "#/$defs/config-audit-writer.v1.openbao"
             },
             "prefix": {
               "default": "audit",
@@ -2536,7 +4544,7 @@
       ],
       "type": "object"
     },
-    "config-audit-writer.openbao": {
+    "config-audit-writer.v1.openbao": {
       "additionalProperties": false,
       "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
       "oneOf": [
@@ -2621,7 +4629,7 @@
       ],
       "type": "object"
     },
-    "config-audit-writer.postgres": {
+    "config-audit-writer.v1.postgres": {
       "allOf": [
         {
           "additionalProperties": false,
@@ -2681,6 +4689,902 @@
       ],
       "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
     },
+    "config-audit-writer.v2": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "not": {
+              "required": [
+                "stream",
+                "consume"
+              ]
+            },
+            "properties": {
+              "forward": false
+            },
+            "required": [
+              "archive"
+            ]
+          },
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "receiver"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "forward": {
+                      "required": [
+                        "log"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "forward"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "require": {
+                      "const": "logged"
+                    }
+                  },
+                  "required": [
+                    "require"
+                  ]
+                }
+              }
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "stream"
+                ]
+              },
+              {
+                "required": [
+                  "forward"
+                ]
+              }
+            ],
+            "properties": {
+              "archive": false,
+              "catalogues": false,
+              "consume": false,
+              "keys": false,
+              "require": {
+                "enum": [
+                  "logged",
+                  "queued"
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "description": "The configuration of audit-writer, the installation's front door and write path. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
+      "oneOf": [
+        {
+          "not": {
+            "required": [
+              "anonymousWrites"
+            ]
+          },
+          "required": [
+            "workloads"
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "workloads"
+            ]
+          },
+          "required": [
+            "anonymousWrites"
+          ]
+        }
+      ],
+      "properties": {
+        "anonymousWrites": {
+          "const": true,
+          "description": "Accept writes over HTTP from callers nobody verified, stamped with no observer. For a trial install only."
+        },
+        "apiVersion": {
+          "description": "The version of this document's shape, `audit.truvity.github.io/audit-writer/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-writer/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "enum": [
+            "audit.truvity.github.io/audit-writer/v2"
+          ]
+        },
+        "archive": {
+          "additionalProperties": false,
+          "description": "Where the archive is and how it is written.",
+          "properties": {
+            "bucket": {
+              "$ref": "#/$defs/config-audit-writer.v2.bucket"
+            },
+            "kmsKey": {
+              "description": "The key objects are encrypted with. Unset uses the bucket's default encryption, which a deployment should still be setting.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "lockMode": {
+              "default": "compliance",
+              "description": "The Object Lock mode every object is written in: compliance (the record tier), governance (a lock a privileged role can shorten), or none (the attested tier, for a store without Object Lock). A process refuses to start when a profile demands a stricter mode than this.",
+              "enum": [
+                "compliance",
+                "governance",
+                "none"
+              ]
+            },
+            "prefix": {
+              "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "bucket"
+          ],
+          "type": "object"
+        },
+        "catalogues": {
+          "description": "A directory of catalogues to register at start-up.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "consume": {
+          "additionalProperties": false,
+          "description": "What a writer reads its records from, beside its own sink: exactly one of `nats` and `sqs`.",
+          "oneOf": [
+            {
+              "required": [
+                "nats"
+              ]
+            },
+            {
+              "required": [
+                "sqs"
+              ]
+            }
+          ],
+          "properties": {
+            "nats": {
+              "additionalProperties": false,
+              "description": "A NATS JetStream stream; what `stream` says.",
+              "properties": {
+                "ackWait": {
+                  "$ref": "#/$defs/config-audit-writer.v2.duration",
+                  "default": "2m",
+                  "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+                },
+                "batch": {
+                  "default": 100,
+                  "description": "How many records are taken from the stream at once.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "consumer": {
+                  "default": "audit-writer",
+                  "description": "The durable consumer this installation's writers share.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "default": "AUDIT",
+                  "description": "The stream.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "nats": {
+                  "additionalProperties": false,
+                  "description": "A NATS connection, and nothing else. What a service does with the connection — publish to a subject, bind a durable consumer to a stream — differs per component and is described beside it: a publisher with a `consumer` field it never reads is a field somebody will eventually set.",
+                  "properties": {
+                    "tls": {
+                      "additionalProperties": false,
+                      "description": "Connect over TLS and authenticate with the service's own workload identity instead of a token. The certificate presented is the one the service's own top-level `tls` block loads (its mode must not be `off`); the broker maps the identity in it to a user with its own permissions, so what the service may do is the broker's decision and nothing in this file. The certificate is re-read on every connect, so the platform's rotation is picked up without a restart and a rotation drops no connection already made. Only a service that declares this key in its own schema acts on it.",
+                      "properties": {
+                        "caFile": {
+                          "description": "Path to the trust bundle the BROKER's certificate is verified against. The broker's, not the workload identity's: a broker has a name and no workload identity, and usually a different chain.",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "description": "The name the broker's certificate was issued for, when that is not the host in `url`. Empty verifies the host dialled.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "caFile"
+                      ],
+                      "type": "object"
+                    },
+                    "tokenFile": {
+                      "description": "Path to a file holding the token the client authenticates with, mounted by the platform and re-read on every reconnect so that a rotated token is picked up without a restart. It is the workload's own account token: the broker asks an authorisation service who the bearer is, and that service answers from the account rather than from anything the client claims. Unset with `tls` unset means no authentication, which is a test configuration and not a deployment; unset with `tls` set means the certificate is the credential.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "The server URL, for example nats://nats:4222.",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "nats"
+              ],
+              "type": "object"
+            },
+            "sqs": {
+              "additionalProperties": false,
+              "description": "An SQS queue the writer consumes. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+              "properties": {
+                "batch": {
+                  "default": 10,
+                  "description": "How many messages are received at once, one to ten.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "fifo": {
+                  "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+                  "type": "boolean"
+                },
+                "queueUrl": {
+                  "description": "The queue's URL.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "visibility": {
+                  "$ref": "#/$defs/config-audit-writer.v2.duration",
+                  "default": "1m",
+                  "description": "How long a received message is hidden from other consumers while the writer writes it. It must outlast the write, or the message is delivered twice."
+                }
+              },
+              "required": [
+                "queueUrl"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "database": {
+          "$ref": "#/$defs/config-audit-writer.v2.postgres",
+          "description": "The shared deduplication table and the catalogue registry, as the writer's own database role: it holds those and none of the index, which audit-observe writes. Without it the writer deduplicates in process and may only run one replica."
+        },
+        "deployment": {
+          "description": "Path to the profile configuration: which presets each profile is composed from.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "forgetIdentities": {
+          "description": "Do not keep the identity behind each pseudonym, sealed under its key. By default it is kept, so that resolve can find it.",
+          "type": "boolean"
+        },
+        "forward": {
+          "additionalProperties": false,
+          "description": "Where a receiver sends what it took: exactly one of `nats`, `sqs` and `log`. `log` is allowed only with `require: logged`.",
+          "oneOf": [
+            {
+              "required": [
+                "nats"
+              ]
+            },
+            {
+              "required": [
+                "sqs"
+              ]
+            },
+            {
+              "required": [
+                "log"
+              ]
+            }
+          ],
+          "properties": {
+            "log": {
+              "additionalProperties": false,
+              "description": "The log sink: one JSON line per record on standard output, which survives nothing but the log pipeline. Nothing to configure.",
+              "properties": {},
+              "type": "object"
+            },
+            "nats": {
+              "additionalProperties": false,
+              "description": "A NATS JetStream stream; what `stream` says.",
+              "properties": {
+                "ackWait": {
+                  "$ref": "#/$defs/config-audit-writer.v2.duration",
+                  "default": "2m",
+                  "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+                },
+                "batch": {
+                  "default": 100,
+                  "description": "How many records are taken from the stream at once.",
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "consumer": {
+                  "default": "audit-writer",
+                  "description": "The durable consumer this installation's writers share.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "name": {
+                  "default": "AUDIT",
+                  "description": "The stream.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "nats": {
+                  "additionalProperties": false,
+                  "description": "A NATS connection, and nothing else. What a service does with the connection — publish to a subject, bind a durable consumer to a stream — differs per component and is described beside it: a publisher with a `consumer` field it never reads is a field somebody will eventually set.",
+                  "properties": {
+                    "tls": {
+                      "additionalProperties": false,
+                      "description": "Connect over TLS and authenticate with the service's own workload identity instead of a token. The certificate presented is the one the service's own top-level `tls` block loads (its mode must not be `off`); the broker maps the identity in it to a user with its own permissions, so what the service may do is the broker's decision and nothing in this file. The certificate is re-read on every connect, so the platform's rotation is picked up without a restart and a rotation drops no connection already made. Only a service that declares this key in its own schema acts on it.",
+                      "properties": {
+                        "caFile": {
+                          "description": "Path to the trust bundle the BROKER's certificate is verified against. The broker's, not the workload identity's: a broker has a name and no workload identity, and usually a different chain.",
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "serverName": {
+                          "description": "The name the broker's certificate was issued for, when that is not the host in `url`. Empty verifies the host dialled.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "caFile"
+                      ],
+                      "type": "object"
+                    },
+                    "tokenFile": {
+                      "description": "Path to a file holding the token the client authenticates with, mounted by the platform and re-read on every reconnect so that a rotated token is picked up without a restart. It is the workload's own account token: the broker asks an authorisation service who the bearer is, and that service answers from the account rather than from anything the client claims. Unset with `tls` unset means no authentication, which is a test configuration and not a deployment; unset with `tls` set means the certificate is the credential.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "url": {
+                      "description": "The server URL, for example nats://nats:4222.",
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "nats"
+              ],
+              "type": "object"
+            },
+            "sqs": {
+              "additionalProperties": false,
+              "description": "An SQS queue the receiver publishes to. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+              "properties": {
+                "fifo": {
+                  "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+                  "type": "boolean"
+                },
+                "queueUrl": {
+                  "description": "The queue's URL.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "region": {
+                  "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "queueUrl"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "keys": {
+          "$ref": "#/$defs/config-audit-writer.v2.keys"
+        },
+        "listen": {
+          "additionalProperties": false,
+          "description": "A TCP listener. `address` is a host:port the service binds; an empty host binds every interface.",
+          "properties": {
+            "address": {
+              "description": "host:port, for example \":8080\" or \"127.0.0.1:8080\".",
+              "pattern": "^[^\\s]*:[0-9]{1,5}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "address"
+          ],
+          "type": "object"
+        },
+        "mode": {
+          "default": "writer",
+          "description": "`writer` serves the sink, writes the archive and consumes the stream when there is one. `receiver` serves the sink and publishes to the stream and nothing else: it holds no archive and no keys, because a receiver holding either would be a writer.",
+          "enum": [
+            "writer",
+            "receiver"
+          ]
+        },
+        "replicas": {
+          "default": 1,
+          "description": "How many writers share this stream. Above one it needs a database, and with local keys a directory every replica shares.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "require": {
+          "description": "The weakest durability this process's chain may give. Unset is `archived` for a writer and `queued` for a receiver. At start-up the process refuses to run if what it is configured with can never give that: a receiver, which holds no archive, cannot promise `archived`, and `forward.log` cannot promise more than `logged`. A write acknowledged weaker than this fails. See ADR 0017.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "roll": {
+          "additionalProperties": false,
+          "description": "How much a writer gathers from the stream before it writes, which decides how many objects a day of records becomes.",
+          "properties": {
+            "interval": {
+              "$ref": "#/$defs/config-audit-writer.v2.duration",
+              "default": "30s",
+              "description": "How long gathered records wait before they are written, and how long an object stays open within one write."
+            },
+            "maxRecords": {
+              "default": 5000,
+              "description": "How many gathered records are written at once.",
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "secrets": {
+          "$ref": "#/$defs/config-audit-writer.v2.secrets"
+        },
+        "stream": {
+          "additionalProperties": false,
+          "description": "The wide stream, as the NATS shorthand: for a receiver it is `forward.nats`, for a writer `consume.nats`. Give it or the longhand, not both.",
+          "properties": {
+            "ackWait": {
+              "$ref": "#/$defs/config-audit-writer.v2.duration",
+              "default": "2m",
+              "description": "How long the stream waits for a batch to be taken before offering it again. It must exceed `roll.interval` plus the longest a put can take."
+            },
+            "batch": {
+              "default": 100,
+              "description": "How many records are taken from the stream at once.",
+              "minimum": 1,
+              "type": "integer"
+            },
+            "consumer": {
+              "default": "audit-writer",
+              "description": "The durable consumer this installation's writers share.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "name": {
+              "default": "AUDIT",
+              "description": "The stream.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "nats": {
+              "additionalProperties": false,
+              "description": "A NATS connection, and nothing else. What a service does with the connection — publish to a subject, bind a durable consumer to a stream — differs per component and is described beside it: a publisher with a `consumer` field it never reads is a field somebody will eventually set.",
+              "properties": {
+                "tls": {
+                  "additionalProperties": false,
+                  "description": "Connect over TLS and authenticate with the service's own workload identity instead of a token. The certificate presented is the one the service's own top-level `tls` block loads (its mode must not be `off`); the broker maps the identity in it to a user with its own permissions, so what the service may do is the broker's decision and nothing in this file. The certificate is re-read on every connect, so the platform's rotation is picked up without a restart and a rotation drops no connection already made. Only a service that declares this key in its own schema acts on it.",
+                  "properties": {
+                    "caFile": {
+                      "description": "Path to the trust bundle the BROKER's certificate is verified against. The broker's, not the workload identity's: a broker has a name and no workload identity, and usually a different chain.",
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "serverName": {
+                      "description": "The name the broker's certificate was issued for, when that is not the host in `url`. Empty verifies the host dialled.",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "caFile"
+                  ],
+                  "type": "object"
+                },
+                "tokenFile": {
+                  "description": "Path to a file holding the token the client authenticates with, mounted by the platform and re-read on every reconnect so that a rotated token is picked up without a restart. It is the workload's own account token: the broker asks an authorisation service who the bearer is, and that service answers from the account rather than from anything the client claims. Unset with `tls` unset means no authentication, which is a test configuration and not a deployment; unset with `tls` set means the certificate is the credential.",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "url": {
+                  "description": "The server URL, for example nats://nats:4222.",
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "url"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "nats"
+          ],
+          "type": "object"
+        },
+        "workloads": {
+          "description": "Path to the file naming the issuers trusted to say which workload is publishing, and which source each speaks for. Exactly one of `workloads` and `anonymousWrites`.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "deployment"
+      ],
+      "title": "audit-writer",
+      "type": "object"
+    },
+    "config-audit-writer.v2.bucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsSecret": {
+          "additionalProperties": false,
+          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "config-audit-writer.v2.duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "config-audit-writer.v2.keys": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "local"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "transit": false
+            },
+            "required": [
+              "local"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "transit"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "local": false
+            },
+            "required": [
+              "transit"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "provider": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "provider"
+            ]
+          },
+          "then": {
+            "properties": {
+              "local": false,
+              "transit": false
+            }
+          }
+        }
+      ],
+      "description": "Where pseudonymisation keys live. Unset, or `none`, means no pseudonyms, no key material and no resolve.",
+      "properties": {
+        "local": {
+          "additionalProperties": false,
+          "description": "The local provider.",
+          "properties": {
+            "dir": {
+              "description": "Where the wrapped data keys are kept. They are random, not derived, so this directory is the only copy; unset keeps them in memory, which a trial install may do and nothing else should.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "rootFile": {
+              "description": "A file holding the 32-byte root the data keys are wrapped under.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "rootFile"
+          ],
+          "type": "object"
+        },
+        "provider": {
+          "description": "`none`, `local` (a root and a directory) or `transit` (OpenBAO).",
+          "enum": [
+            "none",
+            "local",
+            "transit"
+          ]
+        },
+        "transit": {
+          "additionalProperties": false,
+          "description": "The transit provider.",
+          "properties": {
+            "openbao": {
+              "$ref": "#/$defs/config-audit-writer.v2.openbao"
+            },
+            "prefix": {
+              "default": "audit",
+              "description": "What every key's name starts with: <prefix>.<purpose>.<tenant>.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "openbao"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "config-audit-writer.v2.openbao": {
+      "additionalProperties": false,
+      "description": "How a process reaches an OpenBAO transit engine: where it is, and exactly one way of signing in.",
+      "oneOf": [
+        {
+          "required": [
+            "login"
+          ]
+        },
+        {
+          "required": [
+            "tokenFile"
+          ]
+        },
+        {
+          "required": [
+            "tokenSecret"
+          ]
+        }
+      ],
+      "properties": {
+        "address": {
+          "description": "The server, for example https://openbao.example:8200.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "caFile": {
+          "description": "A PEM bundle trusted beside the system roots, for a server on a private chain.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "login": {
+          "additionalProperties": false,
+          "description": "Sign in with a JWT: the pod's projected service-account token, presented to an auth mount. Nothing is stored.",
+          "properties": {
+            "jwtFile": {
+              "description": "The file holding the JWT, read at every login because the kubelet replaces a projected token before it expires.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "mount": {
+              "description": "The JWT auth mount, for example jwt-devel.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "role": {
+              "description": "The role on that mount.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "mount",
+            "role",
+            "jwtFile"
+          ],
+          "type": "object"
+        },
+        "mount": {
+          "default": "transit",
+          "description": "Where the transit engine is mounted.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "namespace": {
+          "description": "The OpenBAO namespace the engine and the auth mount are in. Unset is the root namespace.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenFile": {
+          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "tokenSecret": {
+          "description": "The NAME of the secret holding a token, resolved through `secrets`.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "config-audit-writer.v2.postgres": {
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "passwordSecret": {
+          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            },
+            {
+              "not": {
+                "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
+              }
+            }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "config-audit-writer.v2.secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "image": {
       "additionalProperties": false,
       "description": "One of the chart's images.",
@@ -2717,7 +5621,7 @@
       "type": "object"
     },
     "secretEnv": {
-      "description": "Environment variables from a Secret's keys: the holders of the secrets a config names (`passwordEnv`, `credentialsEnv`, `tokenEnv`). A secret is never in `config`.",
+      "description": "Deprecated (version 1 configs only): environment variables from a Secret's keys, the holders of the secrets a version-1 config names (`passwordEnv`, `credentialsEnv`, `tokenEnv`). A version-2 config names its secrets and reads them from files: see `secretFiles`. A secret is never in `config`.",
       "items": {
         "additionalProperties": false,
         "description": "One variable.",
@@ -2729,6 +5633,41 @@
           },
           "name": {
             "description": "The variable, as the config names it.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "optional": {
+            "description": "Start without it when the Secret or the key is absent.",
+            "type": "boolean"
+          },
+          "secretName": {
+            "description": "The Secret.",
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "secretName",
+          "key"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "secretFiles": {
+      "description": "Secrets projected as files under /etc/audit/secrets, one per name a version-2 config holds in a `...Secret` field (`passwordSecret`, `credentialsSecret`, `tokenSecret`). The config's `secrets` must be `{source: file, root: /etc/audit/secrets}`. A secret is never in `config`.",
+      "items": {
+        "additionalProperties": false,
+        "description": "One secret.",
+        "properties": {
+          "key": {
+            "description": "The key in the Secret.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "description": "The name as the config holds it: the file's path under /etc/audit/secrets, such as `database-password` or `openbao/token`.",
             "minLength": 1,
             "type": "string"
           },
@@ -3611,6 +6550,9 @@
             "secretEnv": {
               "$ref": "#/$defs/secretEnv"
             },
+            "secretFiles": {
+              "$ref": "#/$defs/secretFiles"
+            },
             "secretMounts": {
               "$ref": "#/$defs/secretMounts"
             },
@@ -3642,6 +6584,9 @@
             },
             "secretEnv": {
               "$ref": "#/$defs/secretEnv"
+            },
+            "secretFiles": {
+              "$ref": "#/$defs/secretFiles"
             },
             "secretMounts": {
               "$ref": "#/$defs/secretMounts"
@@ -3675,6 +6620,9 @@
             "secretEnv": {
               "$ref": "#/$defs/secretEnv"
             },
+            "secretFiles": {
+              "$ref": "#/$defs/secretFiles"
+            },
             "secretMounts": {
               "$ref": "#/$defs/secretMounts"
             },
@@ -3703,6 +6651,9 @@
             },
             "secretEnv": {
               "$ref": "#/$defs/secretEnv"
+            },
+            "secretFiles": {
+              "$ref": "#/$defs/secretFiles"
             },
             "secretMounts": {
               "$ref": "#/$defs/secretMounts"
@@ -3766,6 +6717,9 @@
         },
         "secretEnv": {
           "$ref": "#/$defs/secretEnv"
+        },
+        "secretFiles": {
+          "$ref": "#/$defs/secretFiles"
         }
       },
       "type": "object"
@@ -3819,6 +6773,9 @@
         },
         "secretEnv": {
           "$ref": "#/$defs/secretEnv"
+        },
+        "secretFiles": {
+          "$ref": "#/$defs/secretFiles"
         },
         "secretMounts": {
           "$ref": "#/$defs/secretMounts"
@@ -3879,6 +6836,9 @@
         "secretEnv": {
           "$ref": "#/$defs/secretEnv"
         },
+        "secretFiles": {
+          "$ref": "#/$defs/secretFiles"
+        },
         "secretMounts": {
           "$ref": "#/$defs/secretMounts"
         },
@@ -3913,6 +6873,9 @@
         },
         "secretEnv": {
           "$ref": "#/$defs/secretEnv"
+        },
+        "secretFiles": {
+          "$ref": "#/$defs/secretFiles"
         },
         "secretMounts": {
           "$ref": "#/$defs/secretMounts"
@@ -4125,6 +7088,9 @@
         },
         "secretEnv": {
           "$ref": "#/$defs/secretEnv"
+        },
+        "secretFiles": {
+          "$ref": "#/$defs/secretFiles"
         },
         "secretMounts": {
           "$ref": "#/$defs/secretMounts"

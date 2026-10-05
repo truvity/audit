@@ -1,0 +1,186 @@
+{
+  "$defs": {
+    "duration": {
+      "description": "A Go duration: 30s, 2m, 168h.",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "type": "string"
+    },
+    "sink": {
+      "additionalProperties": false,
+      "dependentSchemas": {
+        "sqs": {
+          "properties": {
+            "expect": {
+              "const": "queued"
+            },
+            "tokenFile": false
+          }
+        }
+      },
+      "description": "The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).",
+      "oneOf": [
+        {
+          "required": [
+            "url"
+          ]
+        },
+        {
+          "required": [
+            "sqs"
+          ]
+        }
+      ],
+      "properties": {
+        "expect": {
+          "description": "What the writer at `url` is configured to give: `archived` for a writer, `queued` for a receiver in front of a queue, `logged` for one that only logs. A client cannot learn it until it writes, so the file says, and `require` is checked against it at start-up and against every acknowledgement afterwards. With `sqs` it is `queued`, which is all a queue gives, and may be left out.",
+          "enum": [
+            "logged",
+            "queued",
+            "archived"
+          ]
+        },
+        "sqs": {
+          "additionalProperties": false,
+          "description": "The SQS queue a writer that runs elsewhere consumes: the process sends its records there and the acknowledgement is `queued`. The pod's identity needs `sqs:SendMessage` on it. Credentials are never in the file: the process uses the SDK's ambient ones, which on Kubernetes is the pod's workload identity (EKS Pod Identity or IRSA) bound through the service account.",
+          "properties": {
+            "fifo": {
+              "description": "The queue is FIFO. It must agree with the URL, which ends in `.fifo` for one. A FIFO queue absorbs a repeated record itself, inside its five-minute window; a standard queue relies on the writer's deduplication.",
+              "type": "boolean"
+            },
+            "queueUrl": {
+              "description": "The queue's URL.",
+              "minLength": 1,
+              "type": "string"
+            },
+            "region": {
+              "description": "The queue's region. Unset is the SDK's: AWS_REGION, which EKS Pod Identity and IRSA set.",
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "queueUrl"
+          ],
+          "type": "object"
+        },
+        "tokenFile": {
+          "description": "A file holding the token presented to the writer, read afresh on every request: in a cluster, the pod's projected service-account token. Unset presents none, which an anonymous trial install accepts. Not with `sqs`.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "description": "The writer's base URL.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-verify.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "dependentRequired": {
+    "require": [
+      "sink"
+    ]
+  },
+  "description": "The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "properties": {
+    "apiVersion": {
+      "default": "truvity.github.io/audit-verify/v1",
+      "description": "The version of this document's shape, `truvity.github.io/audit-verify/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "enum": [
+        "truvity.github.io/audit-verify/v1"
+      ]
+    },
+    "archive": {
+      "additionalProperties": false,
+      "description": "Where the archive is and how it is written.",
+      "properties": {
+        "bucket": {
+          "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
+        },
+        "prefix": {
+          "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "bucket"
+      ],
+      "type": "object"
+    },
+    "deployment": {
+      "description": "Path to the profile configuration; the check holds each object's lock to what its profile demands.",
+      "minLength": 1,
+      "type": "string"
+    },
+    "last": {
+      "$ref": "#/$defs/duration",
+      "default": "24h",
+      "description": "Check the objects ingested in the last this long, ending at the hour that has closed."
+    },
+    "profiles": {
+      "description": "The profiles whose objects to check. Unset checks every profile the deployment composes.",
+      "items": {
+        "description": "A profile name.",
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "require": {
+      "description": "The weakest durability an acknowledgement from the writer may carry (`logged`, `queued` or `archived`). Unset checks nothing. Set, it needs `sink.expect` at least as strong, which is checked at start-up, and an acknowledgement weaker than this fails the write instead of passing it with a caveat. See ADR 0017.",
+      "enum": [
+        "logged",
+        "queued",
+        "archived"
+      ]
+    },
+    "seals": {
+      "additionalProperties": false,
+      "description": "Check the seals too: each one's signature, the chain through `prev`, its count and root against the objects, and that no sealed hour is missing. Unset checks no seal.",
+      "properties": {
+        "grace": {
+          "$ref": "#/$defs/duration",
+          "default": "1h",
+          "description": "How long after an hour is sealable its seal may still be missing before that is a finding: the notary runs hourly, so a seal is up to an hour behind."
+        },
+        "roots": {
+          "description": "The roots this verifier trusts, by thumbprint. A seal is believed only if a pinned root signed it or delegated to its key; `keys/roots.jwks` in the bucket is how the keys are distributed and is never what is trusted.",
+          "items": {
+            "description": "The RFC 7638 thumbprint of a root key (`audit key public --thumbprint`).",
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "settle": {
+          "$ref": "#/$defs/duration",
+          "default": "10m",
+          "description": "The notary's settle window: an hour is sealable once it has ended and this long has passed. Keep it equal to the notary's."
+        }
+      },
+      "required": [
+        "roots"
+      ],
+      "type": "object"
+    },
+    "sink": {
+      "$ref": "#/$defs/sink",
+      "description": "The writer this job records what it checked through."
+    }
+  },
+  "required": [
+    "deployment",
+    "archive"
+  ],
+  "title": "audit verify",
+  "type": "object"
+}

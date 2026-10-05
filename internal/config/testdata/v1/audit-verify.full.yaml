@@ -1,0 +1,18 @@
+apiVersion: truvity.github.io/audit-verify/v1
+deployment: /etc/audit/deployment.yaml
+archive:
+  bucket:
+    name: audit-archive
+  prefix: app
+seals:
+  roots:
+    - 4fVY0m1lq1mWnE7yOa0zYk0o1lq9n2h8bVd3sLQ4wXk
+  settle: 10m0s
+  grace: 1h0m0s
+sink:
+  url: http://audit:8080
+  expect: archived
+require: queued
+profiles:
+  - security
+last: 24h0m0s

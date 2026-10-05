@@ -178,7 +178,7 @@ which holds `audit.yaml` alone), whose zip holds them under `audit/` so that Lam
 extracts them to `/opt/audit/`. The function's `Layers` are the extension, with `Telemetry`, and then the
 configuration layer, last so that nothing after it can shadow `/opt/audit/`: two
 of the five a function may have. A layer is never destroyed, so the library refuses a
-value in `Writer.Keys` whose key says it is a secret (name a variable or a file). Its environment is
+value in `Writer.Keys` whose key says it is a secret (name a secret, `...Secret`, or a file; an `...Env` name is refused too, see [Secrets](#secrets)). Its environment is
 `AUDIT_CONFIG=/opt/audit/audit.yaml`, `AUDIT_CONFIG_LAYER=<the layer version's ARN>`
 and the telemetry's `OTEL_*`.
 
@@ -203,6 +203,37 @@ catalogues, and the layer version's ARN
 ([configuration](../reference/configuration.md#evidence-the-writers-start-up-record)).
 The platform does not tell a function which layers it has, so the ARN is what the
 library puts in `AUDIT_CONFIG_LAYER`.
+
+### Secrets
+
+A function's environment is not a place for a secret: the console and the API show it
+to whoever may describe the function, and every version of the function keeps it. The
+library sets no secret in it (the environment is `AUDIT_CONFIG`, `AUDIT_CONFIG_LAYER`
+and the telemetry's `OTEL_*`, which the tests hold it to), and a secret reaches the
+function through SSM Parameter Store instead, as `/audit/<name>/private/config/<secret
+name>` SecureStrings, the layout sluis uses for its own.
+
+A `...Secret` field of `Writer.Keys` (the `tokenSecret` of an OpenBAO login, say) holds
+the secret's **name**. When there is one the library renders
+`secrets: {source: ssm, root: <root>}` into the writer's `audit.yaml` and grants the
+writer's role:
+
+- `ssm:GetParameter` and `ssm:GetParameters` on `arn:aws:ssm:<region>:<account>:parameter<root>/*`,
+  and nothing else of SSM: no list, no put, no other path, and no other role;
+- with `Writer.Secrets.KeyArn` (a customer-managed key the SecureStrings are encrypted
+  with), `kms:Decrypt` on that key through SSM only (`kms:ViaService`) and for
+  parameters under the root only (the `PARAMETER_ARN` encryption context). Without one
+  the parameters are under the AWS-managed `alias/aws/ssm` and no grant is needed.
+
+The library does not create the parameters: it is not given their values, and a value
+passed through Pulumi is kept in its state. Create each `SecureString` under the
+`SecretsRoot` output (`<root>/openbao/token` for `tokenSecret: openbao/token`) outside
+this program, or from a secret in yours. `Writer.Secrets.Root` overrides the default
+root `/audit/<name>/private/config`; it is a path, and a pattern, a trailing slash or a
+`..` is refused. A name that climbs out of the root is refused at plan time here and
+again by the binary at start. A missing parameter fails the function's init, which is
+the point of reading it at cold start: a configuration fault is found by the first
+invocation of a new version, not by messages draining to the dead-letter queue later.
 
 ### Guards before the function is updated
 
@@ -463,6 +494,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Archive.KeyArn` | empty | an existing KMS key ARN for `Encryption: kms`: no key is created and the roles are granted it; refused with the other modes |
 | `Archive.Profiles` | **required** | one lifecycle rule per `records/<profile>/` prefix |
 | `Archive.GlacierIRDays`, `.DeepArchiveDays` | 30, 365 | [0023](../decisions/0023-archive-retention-and-lifecycle.md) |
+| `Region` | looked up | the region, for the ARN of the SSM parameters; looked up like `AccountID`, and only when there are secrets to grant |
+| `Writer.Secrets.Root`, `.KeyArn` | `/audit/<name>/private/config`, none | where the writer reads the secrets `Writer.Keys` names, and the customer-managed key they are encrypted with; see [secrets](#secrets). Unset and `Writer.Keys` naming no secret: no SSM access at all |
 | `Ingest.Disabled` | false | leaves out the queue, the table, the writer and their alarms; see [optional parts](#optional-parts) |
 | `Ingest.Senders` | none | principals allowed to send to the queue; none adds no sender statement, so only identity policies in the account grant sending |
 | `Ingest.MaxReceiveCount` | 5 | deliveries before a message moves to the DLQ |
@@ -513,6 +546,7 @@ Required inputs are marked. Anything not listed has the default stated.
 | `WriterFunctionArn`, `NotaryFunctionArn` | the functions |
 | `WriterRoleArn`, `NotaryRoleArn`, `ObserveReaderRoleArn` | the roles, see below; `ObserveReaderRoleArn` is empty without `Observe`; the outputs of a part that is turned off are empty too |
 | `ArchiveWriterRoleArn` | the IRSA write role, empty without `ArchiveWriter` |
+| `SecretsRoot` | the SSM parameter path the writer reads secrets from, empty when its configuration names none |
 | `AlarmTopicArn` | the SNS topic every alarm publishes to |
 | `ScheduleArn` | the notary's schedule |
 

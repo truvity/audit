@@ -1,5 +1,59 @@
 {
   "$defs": {
+    "bucket": {
+      "additionalProperties": false,
+      "description": "An object store addressed by the S3 API. The vendor is not part of the configuration: an endpoint, a region and a path-style flag are enough to reach a cloud service, an in-cluster store or a test double, and a service that hard-codes one of them cannot be tested without it.",
+      "properties": {
+        "ca": {
+          "description": "Path to a certificate authority bundle the platform mounts, for a store whose endpoint is not signed by a public root. A store inside somebody's own network is the ordinary case, not the exotic one. Unset means the system trust store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "credentialsSecret": {
+          "additionalProperties": false,
+          "description": "The NAMES of the secrets holding static credentials, never the values, resolved through `secrets`. Unset means the SDK's ambient credentials, which is what a workload identity provides.",
+          "properties": {
+            "accessKeyID": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "secretAccessKey": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "accessKeyID",
+            "secretAccessKey"
+          ],
+          "type": "object"
+        },
+        "endpoint": {
+          "description": "Override the API endpoint. Unset means the SDK's own resolution for the region.",
+          "format": "uri",
+          "type": "string"
+        },
+        "name": {
+          "description": "The bucket. It exists already: a service does not create its own store.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "pathStyle": {
+          "default": false,
+          "description": "Address the bucket as a path rather than as a host. Required by most non-cloud implementations.",
+          "type": "boolean"
+        },
+        "region": {
+          "description": "The region the bucket is in.",
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "duration": {
       "description": "A Go duration: 30s, 2m, 168h.",
       "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
@@ -138,7 +192,7 @@
         },
         {
           "required": [
-            "tokenEnv"
+            "tokenSecret"
           ]
         }
       ],
@@ -191,13 +245,13 @@
           "minLength": 1,
           "type": "string"
         },
-        "tokenEnv": {
-          "description": "The NAME of the environment variable holding a token.",
+        "tokenFile": {
+          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
           "minLength": 1,
           "type": "string"
         },
-        "tokenFile": {
-          "description": "A file holding a token, read on every call, for a token something else keeps renewed.",
+        "tokenSecret": {
+          "description": "The NAME of the secret holding a token, resolved through `secrets`.",
           "minLength": 1,
           "type": "string"
         }
@@ -208,21 +262,76 @@
       "type": "object"
     },
     "postgres": {
-      "allOf": [
-        {
-          "$ref": "https://github.com/truvity/policy/schemas/fragments/postgres.json"
+      "additionalProperties": false,
+      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
+      "properties": {
+        "maxConnections": {
+          "default": 10,
+          "description": "Pool size for this instance. Sized against the server's limit divided by the number of instances, not guessed.",
+          "minimum": 1,
+          "type": "integer"
         },
-        {
-          "properties": {
-            "url": {
+        "passwordSecret": {
+          "description": "The NAME of the secret holding the password, resolved through `secrets`. Unset means the connection needs none.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "allOf": [
+            {
+              "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+              "not": {
+                "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+              }
+            },
+            {
+              "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+              "not": {
+                "pattern": "[?&](password|sslpassword)="
+              }
+            },
+            {
+              "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+              "not": {
+                "pattern": "[?&][^=&#]*%[^=&#]*="
+              }
+            },
+            {
               "not": {
                 "pattern": "^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@"
               }
             }
-          }
+          ],
+          "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to `passwordSecret`.",
+          "pattern": "^postgres(ql)?://",
+          "type": "string"
         }
+      },
+      "required": [
+        "url"
       ],
-      "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordEnv` names the environment variable that holds it."
+      "type": "object"
+    },
+    "secrets": {
+      "additionalProperties": false,
+      "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+      "properties": {
+        "root": {
+          "description": "The directory (`file`) or the parameter path (`ssm`, starting with `/`) every secret's name is under. Required with `file` and `ssm`, refused with `env`. A name is relative to it and cannot leave it.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "default": "env",
+          "description": "Where secrets are read from.",
+          "enum": [
+            "env",
+            "file",
+            "ssm"
+          ]
+        }
+      },
+      "type": "object"
     },
     "sink": {
       "additionalProperties": false,
@@ -296,7 +405,7 @@
       "type": "object"
     }
   },
-  "$id": "https://truvity.github.io/audit/schemas/v1/config/audit-query.schema.json",
+  "$id": "https://truvity.github.io/audit/schemas/v2/config/audit-query.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "allOf": [
@@ -323,13 +432,12 @@
       }
     }
   ],
-  "description": "The configuration of audit-query, the read path. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
+  "description": "The configuration of audit-query, the read path. Secrets are never in this file: a field named ...Secret holds the NAME of a secret, which the `secrets` block says how to find (an environment variable, a file or an SSM parameter). Telemetry is the OTEL_* environment, not configuration.",
   "properties": {
     "apiVersion": {
-      "default": "truvity.github.io/audit-query/v1",
-      "description": "The version of this document's shape, `truvity.github.io/audit-query/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "description": "The version of this document's shape, `audit.truvity.github.io/audit-query/v2`. Absent means version 1, which is deprecated and read for one minor (`truvity.github.io/audit-query/v1`); another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
       "enum": [
-        "truvity.github.io/audit-query/v1"
+        "audit.truvity.github.io/audit-query/v2"
       ]
     },
     "archive": {
@@ -337,7 +445,7 @@
       "description": "The archive the records are in: what the s3scan searcher reads. Get answers where a copy is and, until seals vouch for it, nothing about whether it has been verified.",
       "properties": {
         "bucket": {
-          "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
+          "$ref": "#/$defs/bucket"
         },
         "prefix": {
           "description": "The prefix within the bucket. Required in a bucket shared with other installations: it is what keeps two of them apart.",
@@ -364,7 +472,7 @@
       "description": "Where exports go: a bucket of its own with no Object Lock, which clears them. Without it the export operation is refused.",
       "properties": {
         "bucket": {
-          "$ref": "https://github.com/truvity/policy/schemas/fragments/bucket.json"
+          "$ref": "#/$defs/bucket"
         },
         "expiry": {
           "$ref": "#/$defs/duration",
@@ -409,6 +517,9 @@
         "postgres",
         "s3scan"
       ]
+    },
+    "secrets": {
+      "$ref": "#/$defs/secrets"
     },
     "sink": {
       "$ref": "#/$defs/sink"

@@ -142,7 +142,7 @@ func TestTheRenderedConfigurationIsTheValuesConfiguration(t *testing.T) {
 				if !reflect.DeepEqual(got, want) {
 					t.Errorf("%s is not %s of the values:\n got %v\nwant %v", name, strings.Join(c.path, "."), got, want)
 				}
-				if err := config.Validate(c.schema, got); err != nil {
+				if err := config.ValidateAsWritten(c.schema, got); err != nil {
 					t.Errorf("%s is not a file %s accepts: %v", name, c.schema, err)
 				}
 			}

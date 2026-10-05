@@ -2,8 +2,10 @@ package config
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path"
@@ -20,18 +22,32 @@ import (
 )
 
 // Group is the group of every apiVersion in this repository's documents:
-// `truvity.github.io/<kind>/v1`.
+// `audit.truvity.github.io/<kind>/v2`. Version 1 was written under
+// LegacyGroup.
 const Group = schema.Group
 
+// LegacyGroup is the group of version 1: `truvity.github.io/<kind>/v1`.
+const LegacyGroup = schema.LegacyGroup
+
 // KindName is a document's kind in truvity/policy's sense, `<group>/<kind>`: the
-// name of its schema under the group, `truvity.github.io/audit-writer`.
+// name of its schema under the group, `audit.truvity.github.io/audit-writer`.
 func KindName(schemaName string) string { return Group + "/" + schemaName }
+
+// legacyKindName is the same kind under the group version 1 was written in.
+func legacyKindName(schemaName string) string { return LegacyGroup + "/" + schemaName }
 
 // schemaFor reads the committed schema of one binary: the one embedded in the
 // release, which is the one the chart's tests and a deployer's CI validate
 // against.
-func schemaFor(name string) []byte {
-	b, err := audit.ConfigSchemas.ReadFile(path.Join("schemas/config", name+".schema.json"))
+func schemaFor(name string) []byte { return embedded(path.Join("schemas/config", name+".schema.json")) }
+
+// legacySchemaFor is version 1's.
+func legacySchemaFor(name string) []byte {
+	return embedded(path.Join("schemas/config/v1", name+".schema.json"))
+}
+
+func embedded(file string) []byte {
+	b, err := audit.ConfigSchemas.ReadFile(file)
 	if err != nil {
 		// Unreachable: the files are embedded at build time, so a missing one
 		// fails to compile rather than at run time.
@@ -40,47 +56,224 @@ func schemaFor(name string) []byte {
 	return b
 }
 
-// ValidateDocument checks the raw YAML of a document a configuration names
-// (`audit-deployment`, `audit-grants`, `audit-workloads`) against its schema.
-// The documents are still decoded strictly by the code that reads them; this is
-// the same contract as a file the deployer can validate in CI, and a refusal
-// that names the path that failed.
-func ValidateDocument(name string, raw []byte) error {
+// version is which shape of a document a file is written in.
+type version int
+
+const (
+	versionCurrent version = iota + 1 // audit.truvity.github.io/<kind>/v2
+	versionLegacy                     // truvity.github.io/<kind>/v1, or no apiVersion
+)
+
+// versionOf reads the document's apiVersion, as truvity/policy's LoadKind does,
+// except that the kind is spelled under two groups: version 2 under Group and
+// version 1 under LegacyGroup. Absent is version 1. Anything else is refused by
+// key, never quoting a value that could be anything.
+func versionOf(doc any, name string) (version, error) {
+	m, ok := doc.(map[string]any)
+	if !ok {
+		// Not a mapping: the schema says so, naming the root.
+		return versionCurrent, nil
+	}
+	raw, present := m["apiVersion"]
+	if !present {
+		return versionLegacy, nil
+	}
+	s, ok := raw.(string)
+	switch {
+	case ok && s == KindName(name)+"/v2":
+		return versionCurrent, nil
+	case ok && s == legacyKindName(name)+"/v1":
+		return versionLegacy, nil
+	case !ok:
+		return 0, errors.New("apiVersion: not of the form <group>/<kind>/v<N>")
+	}
+	return 0, fmt.Errorf("apiVersion: this binary reads %s/v2, and %s/v1 or no apiVersion (deprecated); "+
+		"it names another version or another kind of document", KindName(name), legacyKindName(name))
+}
+
+// upgrade turns a valid version-1 document into version 2: the fields that named
+// an environment variable (`passwordEnv`, `credentialsEnv`, `tokenEnv`) name a
+// secret (`passwordSecret`, ...), and the file's `secrets` is the environment,
+// which is where version 1 read them from.
+func upgrade(doc map[string]any) (map[string]any, error) {
+	renamed := false
+	var walk func(v any) any
+	walk = func(v any) any {
+		switch t := v.(type) {
+		case map[string]any:
+			out := make(map[string]any, len(t))
+			for k, x := range t {
+				switch k {
+				case "passwordEnv":
+					k, renamed = "passwordSecret", true
+				case "credentialsEnv":
+					k, renamed = "credentialsSecret", true
+				case "tokenEnv":
+					k, renamed = "tokenSecret", true
+				}
+				out[k] = walk(x)
+			}
+			return out
+		case []any:
+			out := make([]any, len(t))
+			for i, x := range t {
+				out[i] = walk(x)
+			}
+			return out
+		}
+		return v
+	}
+	out := walk(doc).(map[string]any)
+	if renamed {
+		out["secrets"] = map[string]any{"source": SourceEnv}
+	}
+	return out, nil
+}
+
+// readDocument parses a file into a document normalised through JSON, so that
+// validation and decoding see exactly the same thing.
+func readDocument(raw []byte) (any, error) {
 	var doc any
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return fmt.Errorf("not valid YAML: %w", err)
+		return nil, fmt.Errorf("not valid YAML: %w", err)
 	}
 	if doc == nil {
-		return errors.New("the document is empty")
+		return nil, errors.New("file is empty")
 	}
+	asJSON, err := json.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("cannot be represented as JSON: %w", err)
+	}
+	var normalised any
+	if err := json.Unmarshal(asJSON, &normalised); err != nil {
+		return nil, err
+	}
+	return normalised, nil
+}
+
+// inFile names the file, and how it was read, on an error from Validate.
+func inFile(err error, file, as string) error {
+	var pe *policyconfig.Error
+	if errors.As(err, &pe) {
+		pe.File, pe.As = file, as
+		return pe
+	}
+	return &policyconfig.Error{File: file, As: as, Err: err}
+}
+
+// decodeAs reads a document of the version it is written in, into one of the
+// current: version 2 is validated against its schema; version 1 against its own,
+// converted, and validated again against version 2's, so a conversion that
+// produces something version 2 does not accept is refused and not decoded. A
+// version-1 file is accepted with a warning, because it is read for one minor.
+func decodeAs(file, name string, doc any) (any, error) {
+	v, err := versionOf(doc, name)
+	if err != nil {
+		return nil, &policyconfig.Error{File: file, Failures: []string{err.Error()}}
+	}
+	current := KindName(name) + "/v2"
+	if v == versionCurrent {
+		if err := policyconfig.Validate(doc, schemaFor(name)); err != nil {
+			return nil, inFile(err, file, "as "+current)
+		}
+		return doc, nil
+	}
+	previous := legacyKindName(name) + "/v1"
+	if err := policyconfig.Validate(doc, legacySchemaFor(name)); err != nil {
+		return nil, inFile(err, file, "as "+previous)
+	}
+	m, ok := doc.(map[string]any)
+	if !ok {
+		return nil, &policyconfig.Error{File: file, Err: errors.New("the document is not a mapping")}
+	}
+	up, err := upgrade(m)
+	if err != nil {
+		return nil, &policyconfig.Error{File: file, Err: fmt.Errorf("upgrading v1 to v2: %w", err)}
+	}
+	up["apiVersion"] = current
+	if err := policyconfig.Validate(any(up), schemaFor(name)); err != nil {
+		return nil, inFile(err, file, "upgraded from v1 to "+current)
+	}
+	slog.Warn("configuration is in version 1, which is deprecated and read for one minor only: move it to version 2",
+		"file", file, "apiVersion", current, "was", previous)
+	return up, nil
+}
+
+// ValidateDocument checks the raw YAML of a document a configuration names
+// (`audit-deployment`, `audit-grants`, `audit-workloads`) against its schema,
+// in version 2 or, with a deprecation warning, in version 1. The documents are
+// still decoded strictly by the code that reads them; this is the same contract
+// as a file the deployer can validate in CI, and a refusal that names the path
+// that failed.
+func ValidateDocument(name string, raw []byte) error {
+	doc, err := readDocument(raw)
+	if err != nil {
+		return err
+	}
+	_, err = decodeAs("", name, doc)
+	return err
+}
+
+// Validate checks a decoded document against one binary's schema, in version 2.
+// The chart's tests call it on what the chart renders, which is what stops the
+// two drifting.
+func Validate(name string, doc any) error {
 	return policyconfig.Validate(doc, schemaFor(name))
 }
 
-// Validate checks a decoded document against one binary's schema. The chart's
-// tests call it on what the chart renders, which is what stops the two
-// drifting.
-func Validate(name string, doc any) error {
-	return policyconfig.Validate(doc, schemaFor(name))
+// ValidateAsWritten checks a decoded document against the schema of the version
+// it says it is: version 2's, or, for an absent apiVersion or the old group,
+// version 1's. It is what the loader would validate it against first.
+func ValidateAsWritten(name string, doc any) error {
+	v, err := versionOf(doc, name)
+	if err != nil {
+		return &policyconfig.Error{Failures: []string{err.Error()}}
+	}
+	if v == versionCurrent {
+		return Validate(name, doc)
+	}
+	return ValidateLegacy(name, doc)
+}
+
+// ValidateLegacy checks a decoded document against version 1's schema.
+func ValidateLegacy(name string, doc any) error {
+	return policyconfig.Validate(doc, legacySchemaFor(name))
 }
 
 func load[T any](file, name string, after func(*T) error) (*T, error) {
 	var c T
 	// The digest is of the bytes that were validated: the file is read before
-	// and after the loader reads it, and a file that changed between is refused,
+	// and after it is parsed, and a file that changed between is refused,
 	// because a record that says which configuration ran must not name another.
-	before, readErr := os.ReadFile(file)
-	kind := policyconfig.Kind{Name: KindName(name), Schema: schemaFor(name)}
-	if err := policyconfig.LoadKind(file, kind, &c); err != nil {
+	before, err := os.ReadFile(file)
+	if err != nil {
+		return nil, &policyconfig.Error{File: file, Err: err}
+	}
+	doc, err := readDocument(before)
+	if err != nil {
+		return nil, &policyconfig.Error{File: file, Err: err}
+	}
+	doc, err = decodeAs(file, name, doc)
+	if err != nil {
 		return nil, err
 	}
-	if readErr != nil {
-		return nil, &policyconfig.Error{File: file, Err: readErr}
+	asJSON, err := json.Marshal(doc)
+	if err != nil {
+		return nil, &policyconfig.Error{File: file, Err: err}
+	}
+	if err := json.Unmarshal(asJSON, &c); err != nil {
+		return nil, &policyconfig.Error{File: file, Err: fmt.Errorf("valid against the schema but does not fit %T: %w", &c, err)}
 	}
 	if again, err := os.ReadFile(file); err != nil || !bytes.Equal(before, again) {
 		return nil, &policyconfig.Error{File: file, Err: errors.New("the file changed while it was being read")}
 	}
 	if h, ok := any(&c).(interface{ setSource(Source) }); ok {
 		h.setSource(Source{File: file, Digest: DigestBytes(before)})
+	}
+	if h, ok := any(&c).(interface{ secretsSource() *SecretsSource }); ok {
+		if err := h.secretsSource().check(); err != nil {
+			return nil, &policyconfig.Error{File: file, Err: err}
+		}
 	}
 	if err := after(&c); err != nil {
 		return nil, &policyconfig.Error{File: file, Err: err}
@@ -122,10 +315,6 @@ func LoadClockSync(file string) (*ClockSync, error) {
 func LoadMigrate(file string) (*Migrate, error) {
 	return load(file, "audit-migrate", (*Migrate).finish)
 }
-
-// Secret reads the environment variable the configuration names. An unset or
-// empty variable is an error naming the variable, never quoting anything.
-func Secret(name string) (string, error) { return policyconfig.Secret(name) }
 
 // The rest of the contract: what a schema cannot say, or says less clearly than
 // a sentence can. Each of these runs after the schema has accepted the file.

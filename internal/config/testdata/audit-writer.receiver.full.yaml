@@ -1,4 +1,7 @@
-apiVersion: truvity.github.io/audit-writer/v1
+apiVersion: audit.truvity.github.io/audit-writer/v2
+secrets:
+  source: file
+  root: /etc/audit/secrets
 # A receiver forwarding to SQS, every key it has set.
 mode: receiver
 require: queued
@@ -8,7 +11,7 @@ deployment: /etc/audit/deployment.yaml
 workloads: /etc/audit/workloads.yaml
 database:
   url: postgres://audit@db.example.test:5432/audit?sslmode=verify-full
-  passwordEnv: AUDIT_DATABASE_PASSWORD
+  passwordSecret: database-password
 forward:
   sqs:
     queueUrl: https://sqs.eu-example-1.amazonaws.com/ACCOUNT/audit

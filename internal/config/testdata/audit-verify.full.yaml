@@ -1,4 +1,4 @@
-apiVersion: truvity.github.io/audit-verify/v1
+apiVersion: audit.truvity.github.io/audit-verify/v2
 deployment: /etc/audit/deployment.yaml
 archive:
   bucket:

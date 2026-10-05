@@ -1,4 +1,7 @@
-apiVersion: truvity.github.io/audit-observe/v1
+apiVersion: audit.truvity.github.io/audit-observe/v2
+secrets:
+  source: file
+  root: /etc/audit/secrets
 listen:
   address: ":8080"
 archive:
@@ -8,7 +11,7 @@ archive:
   prefix: app
 database:
   url: postgres://audit_observe@db.example.test:5432/audit
-  passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+  passwordSecret: observe-database-password
   maxConnections: 5
 settle: 2m0s
 interval: 30s

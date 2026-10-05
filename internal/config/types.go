@@ -48,19 +48,37 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 }
 
 // The version of a configuration's shape that this build reads is
-// `truvity.github.io/<kind>/v1` (see KindName), which is what an absent
-// apiVersion means. truvity/policy's LoadKind chooses by it: another version, or
+// `audit.truvity.github.io/<kind>/v2` (see KindName), and the one before it,
+// `truvity.github.io/<kind>/v1`, which is what an absent apiVersion means. The
+// loader chooses by it, as truvity/policy's LoadKind does: another version, or
 // another kind of document, is refused by name, so a later shape arrives by a
 // version and not by a file that quietly means something else.
 
+// SecretsSource is the `secrets` block: where a field named `...Secret` finds the
+// secret it names. One source serves the whole file.
+type SecretsSource struct {
+	// Source is env, file or ssm. Unset is env.
+	Source string `json:"source,omitempty"`
+	// Root is the directory (file) or the parameter path (ssm) every name is
+	// under.
+	Root string `json:"root,omitempty"`
+}
+
 // Header is what every configuration file carries beside its own keys: the
-// version of its shape, and what the loader learned about the file it read.
+// version of its shape, where its secrets are, and what the loader learned about
+// the file it read.
 type Header struct {
-	// APIVersion is `truvity.github.io/<kind>/v1`, or absent, which means the same.
+	// APIVersion is `audit.truvity.github.io/<kind>/v2`. A version-1 file
+	// (`truvity.github.io/<kind>/v1`, or no apiVersion) is converted by the loader,
+	// which sets this to version 2.
 	APIVersion string `json:"apiVersion,omitempty"`
+	// Secrets says how a field named `...Secret` is resolved.
+	Secrets SecretsSource `json:"secrets,omitzero"`
 	// Source is where the file was and what it held, set by the loader and never
 	// part of the file. The writer puts it in its own start-up record.
 	Source Source `json:"-"`
+
+	reader *Secrets
 }
 
 // Source is the file a configuration was read from.
@@ -74,6 +92,8 @@ type Source struct {
 
 func (h *Header) setSource(s Source) { h.Source = s }
 
+func (h *Header) secretsSource() *SecretsSource { return &h.Secrets }
+
 type (
 	// Listen is a TCP listener.
 	Listen struct {
@@ -84,7 +104,7 @@ type (
 	// It is the shared shape of truvity/policy's fragments/postgres.json.
 	Postgres struct {
 		URL            string `json:"url"`
-		PasswordEnv    string `json:"passwordEnv,omitempty"`
+		PasswordSecret string `json:"passwordSecret,omitempty"`
 		MaxConnections int    `json:"maxConnections,omitempty"`
 	}
 
@@ -95,9 +115,9 @@ type (
 		TokenFile string `json:"tokenFile,omitempty"`
 	}
 
-	// CredentialsEnv names the variables that hold an object store's static
+	// CredentialsSecret names the secrets that hold an object store's static
 	// credentials.
-	CredentialsEnv struct {
+	CredentialsSecret struct {
 		AccessKeyID     string `json:"accessKeyID"`
 		SecretAccessKey string `json:"secretAccessKey"`
 	}
@@ -105,12 +125,12 @@ type (
 	// Bucket is an object store addressed by the S3 API. It is the shared
 	// shape of truvity/policy's fragments/bucket.json.
 	Bucket struct {
-		Name           string          `json:"name"`
-		Region         string          `json:"region,omitempty"`
-		Endpoint       string          `json:"endpoint,omitempty"`
-		CA             string          `json:"ca,omitempty"`
-		PathStyle      bool            `json:"pathStyle,omitempty"`
-		CredentialsEnv *CredentialsEnv `json:"credentialsEnv,omitempty"`
+		Name              string             `json:"name"`
+		Region            string             `json:"region,omitempty"`
+		Endpoint          string             `json:"endpoint,omitempty"`
+		CA                string             `json:"ca,omitempty"`
+		PathStyle         bool               `json:"pathStyle,omitempty"`
+		CredentialsSecret *CredentialsSecret `json:"credentialsSecret,omitempty"`
 	}
 
 	// Archive is where the archive is and how it is written. The lock mode is a
@@ -149,13 +169,13 @@ type (
 	// OpenBAO is how a process reaches an OpenBAO transit engine: where it is,
 	// and exactly one way of signing in.
 	OpenBAO struct {
-		Address   string        `json:"address"`
-		Mount     string        `json:"mount,omitempty"`
-		Namespace string        `json:"namespace,omitempty"`
-		CAFile    string        `json:"caFile,omitempty"`
-		Login     *OpenBAOLogin `json:"login,omitempty"`
-		TokenFile string        `json:"tokenFile,omitempty"`
-		TokenEnv  string        `json:"tokenEnv,omitempty"`
+		Address     string        `json:"address"`
+		Mount       string        `json:"mount,omitempty"`
+		Namespace   string        `json:"namespace,omitempty"`
+		CAFile      string        `json:"caFile,omitempty"`
+		Login       *OpenBAOLogin `json:"login,omitempty"`
+		TokenFile   string        `json:"tokenFile,omitempty"`
+		TokenSecret string        `json:"tokenSecret,omitempty"`
 	}
 
 	// LocalKeys is the local key provider: a root the data keys are wrapped

@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	policyconfig "github.com/truvity/policy/config"
 	yaml "go.yaml.in/yaml/v3"
 
@@ -199,8 +203,10 @@ func TestASecretInTheFileIsRefused(t *testing.T) {
 // The environment supplies exactly the secrets the file names.
 func TestADeclaredSecretIsReadFromTheEnvironment(t *testing.T) {
 	t.Setenv("AUDIT_TEST_DB_PASSWORD", "s3cr:et@/x")
-	p := config.Postgres{URL: "postgres://audit@db.example.test:5432/audit", PasswordEnv: "AUDIT_TEST_DB_PASSWORD", MaxConnections: 7}
-	cfg, err := p.PoolConfig()
+	ctx := context.Background()
+	env := config.NewSecrets(config.SecretsSource{})
+	p := config.Postgres{URL: "postgres://audit@db.example.test:5432/audit", PasswordSecret: "AUDIT_TEST_DB_PASSWORD", MaxConnections: 7}
+	cfg, err := p.PoolConfig(ctx, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,15 +214,15 @@ func TestADeclaredSecretIsReadFromTheEnvironment(t *testing.T) {
 		t.Errorf("the pool does not carry what the block names: %+v", cfg.ConnConfig.Config)
 	}
 
-	p.PasswordEnv = "AUDIT_TEST_NOT_SET"
-	_, err = p.PoolConfig()
+	p.PasswordSecret = "AUDIT_TEST_NOT_SET"
+	_, err = p.PoolConfig(ctx, env)
 	if err == nil || !strings.Contains(err.Error(), "AUDIT_TEST_NOT_SET") {
 		t.Errorf("an unset variable must be named: %v", err)
 	}
 	// And a variable nobody named is never read: PGPASSWORD is not a way in.
 	t.Setenv("AUDIT_TEST_UNNAMED", "x")
-	p.PasswordEnv = ""
-	cfg, err = p.PoolConfig()
+	p.PasswordSecret = ""
+	cfg, err = p.PoolConfig(ctx, env)
 	if err != nil || cfg.ConnConfig.Password == "x" {
 		t.Errorf("a variable the file did not name reached the connection: %v", err)
 	}
@@ -530,28 +536,228 @@ func TestTheLambdaWriterTakesADynamoDBAndRefusesWhatItCannotRun(t *testing.T) {
 }
 
 // A file that does not say which version of the shape it is, is v1; one that
-// says v1 is the same; one that says another is refused at the schema, before
-// the typed decode could read it as something it is not.
-func TestTheAPIVersionIsV1OrAbsent(t *testing.T) {
+// says v1 under the old group is the same; v2 is read as it is; one that says
+// another is refused at the schema, before the typed decode could read it as
+// something it is not.
+func TestTheAPIVersionIsV2OrTheDeprecatedV1(t *testing.T) {
+	const v2 = "audit.truvity.github.io/audit-writer/v2"
 	for name, body := range map[string]string{
-		"absent": minimalWriter, "v1": "apiVersion: truvity.github.io/audit-writer/v1\n" + minimalWriter,
+		"absent": minimalWriter,
+		"v1":     "apiVersion: truvity.github.io/audit-writer/v1\n" + minimalWriter,
+		"v2":     "apiVersion: " + v2 + "\n" + minimalWriter,
 	} {
 		w, err := config.LoadWriter(write(t, body))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if w.APIVersion != "" && w.APIVersion != "truvity.github.io/audit-writer/v1" {
-			t.Errorf("%s: apiVersion = %q", name, w.APIVersion)
+		// Whatever it was written in, the loader hands back version 2.
+		if w.APIVersion != v2 && name != "v2" {
+			t.Errorf("%s: apiVersion = %q, want it converted to %s", name, w.APIVersion, v2)
 		}
 	}
-	_, err := config.LoadWriter(write(t, "apiVersion: truvity.github.io/audit-writer/v2\n"+minimalWriter))
-	if err == nil || !strings.Contains(err.Error(), "apiVersion") {
-		t.Fatalf("a file of a version this build does not read was accepted or the refusal does not name the key: %v", err)
+	for name, v := range map[string]string{
+		"v3":                  "audit.truvity.github.io/audit-writer/v3",
+		"the old group at v2": "truvity.github.io/audit-writer/v2",
+		"the new group at v1": "audit.truvity.github.io/audit-writer/v1",
+		"another kind, v2":    "audit.truvity.github.io/audit-query/v2",
+		"another kind, v1":    "truvity.github.io/audit-query/v1",
+		"not of the form":     "v2",
+		"another group":       "example.com/audit-writer/v2",
+	} {
+		_, err := config.LoadWriter(write(t, "apiVersion: "+v+"\n"+minimalWriter))
+		if err == nil || !strings.Contains(err.Error(), "apiVersion") {
+			t.Errorf("%s: accepted, or the refusal does not name the key: %v", name, err)
+		}
 	}
-	// Another kind of document is refused by name, not read as this one.
-	_, err = config.LoadWriter(write(t, "apiVersion: truvity.github.io/audit-query/v1\n"+minimalWriter))
-	if err == nil || !strings.Contains(err.Error(), "apiVersion") {
-		t.Fatalf("a query file was read as a writer's: %v", err)
+}
+
+// A version-1 file is converted, not reinterpreted: the fields that named an
+// environment variable name a secret, and the file's secrets are the environment.
+func TestAVersion1FileIsConvertedAndItsEnvFieldsBecomeSecrets(t *testing.T) {
+	t.Setenv("AUDIT_TEST_DB_PASSWORD", "from-the-environment")
+	body := minimalWriter + "database: {url: 'postgres://u@h/db', passwordEnv: AUDIT_TEST_DB_PASSWORD}\n" +
+		"keys: {provider: transit, transit: {openbao: {address: 'https://b.example.test', tokenEnv: AUDIT_TEST_DB_PASSWORD}}}\n"
+	w, err := config.LoadWriter(write(t, body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Database.PasswordSecret != "AUDIT_TEST_DB_PASSWORD" || w.Keys.Transit.OpenBAO.TokenSecret != "AUDIT_TEST_DB_PASSWORD" {
+		t.Errorf("the Env fields were not carried to Secret: %+v %+v", w.Database, w.Keys.Transit.OpenBAO)
+	}
+	if got := w.SecretReader().Source(); got != config.SourceEnv {
+		t.Errorf("a converted file reads its secrets from %q, want env", got)
+	}
+	pool, err := w.Database.PoolConfig(context.Background(), w.SecretReader())
+	if err != nil || pool.ConnConfig.Password != "from-the-environment" {
+		t.Errorf("the converted password does not resolve: %v", err)
+	}
+	// A v2 file does not take the old spelling: it is not v1's reading.
+	_, err = config.LoadWriter(write(t, "apiVersion: audit.truvity.github.io/audit-writer/v2\n"+minimalWriter+
+		"database: {url: 'postgres://u@h/db', passwordEnv: X}\n"))
+	if err == nil || !strings.Contains(err.Error(), "passwordEnv") {
+		t.Errorf("passwordEnv in a version-2 file was accepted or not named: %v", err)
+	}
+}
+
+// The v1 schemas are frozen and the examples written in them are what v1 files
+// look like; a v2 example does not validate against them, and the reverse.
+func TestTheFrozenVersion1SchemasStillAcceptTheVersion1Examples(t *testing.T) {
+	for _, c := range []struct{ file, name string }{
+		{"audit-writer.full.yaml", "audit-writer"}, {"audit-writer.consume.full.yaml", "audit-writer"},
+		{"audit-writer.receiver.full.yaml", "audit-writer"}, {"audit-query.full.yaml", "audit-query"},
+		{"audit-observe.full.yaml", "audit-observe"}, {"audit-notary.full.yaml", "audit-notary"},
+		{"audit-writer-lambda.full.yaml", "audit-writer-lambda"}, {"audit-verify.full.yaml", "audit-verify"},
+	} {
+		raw, err := os.ReadFile(filepath.Join("testdata", "v1", c.file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc any
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.ValidateLegacy(c.name, doc); err != nil {
+			t.Errorf("%s: the v1 example does not validate against the v1 schema: %v", c.file, err)
+		}
+		if err := config.Validate(c.name, doc); err == nil {
+			t.Errorf("%s: a v1 example validates against the v2 schema", c.file)
+		}
+		// And it loads, converted.
+		p := filepath.Join("testdata", "v1", c.file)
+		var err2 error
+		switch c.name {
+		case "audit-writer":
+			_, err2 = config.LoadWriter(p)
+		case "audit-query":
+			_, err2 = config.LoadQuery(p)
+		case "audit-observe":
+			_, err2 = config.LoadObserve(p)
+		case "audit-notary":
+			_, err2 = config.LoadNotary(p)
+		case "audit-writer-lambda":
+			_, err2 = config.LoadWriterLambda(p)
+		case "audit-verify":
+			_, err2 = config.LoadVerify(p)
+		}
+		if err2 != nil {
+			t.Errorf("%s: a v1 file is not read: %v", c.file, err2)
+		}
+	}
+}
+
+// The secrets block: one source for the file, and a name cannot leave its root.
+func TestSecretsAreReadFromTheDeclaredSourceOnly(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "db"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "db", "password"), []byte("from-a-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "empty"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("db", "from-the-environment")
+
+	files := config.NewSecrets(config.SecretsSource{Source: config.SourceFile, Root: dir})
+	if v, err := files.Get(ctx, "database.passwordSecret", "db/password"); err != nil || v != "from-a-file" {
+		t.Errorf("file: %q, %v", v, err)
+	}
+	for _, name := range []string{"../etc/passwd", "/etc/passwd", "db/../../x", "", "db//password", ".hidden/../x"} {
+		if _, err := files.Get(ctx, "f", name); err == nil {
+			t.Errorf("the name %q was accepted by the file source", name)
+		}
+	}
+	if _, err := files.Get(ctx, "f", "empty"); err == nil {
+		t.Error("an empty secret file was accepted")
+	}
+	_, err := files.Get(ctx, "database.passwordSecret", "absent")
+	if err == nil || !strings.Contains(err.Error(), "database.passwordSecret") || !strings.Contains(err.Error(), "absent") {
+		t.Errorf("a missing secret must be named by field and name: %v", err)
+	}
+	// The file source never looks at the environment, nor the reverse.
+	if _, err := files.Get(ctx, "f", "db"); err == nil {
+		t.Error("the file source read an environment variable")
+	}
+	env := config.NewSecrets(config.SecretsSource{})
+	if v, err := env.Get(ctx, "f", "db"); err != nil || v != "from-the-environment" {
+		t.Errorf("env: %q, %v", v, err)
+	}
+	if _, err := env.Get(ctx, "f", "db/password"); err == nil {
+		t.Error("the env source took a path")
+	}
+}
+
+type fakeSSM struct {
+	params map[string]string
+	asked  []string
+}
+
+func (f *fakeSSM) GetParameter(_ context.Context, in *ssm.GetParameterInput, _ ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+	f.asked = append(f.asked, aws.ToString(in.Name))
+	if !aws.ToBool(in.WithDecryption) {
+		return nil, errors.New("asked without decryption")
+	}
+	v, ok := f.params[aws.ToString(in.Name)]
+	if !ok {
+		return nil, errors.New("ParameterNotFound")
+	}
+	return &ssm.GetParameterOutput{Parameter: &ssmtypes.Parameter{Value: aws.String(v)}}, nil
+}
+
+func TestTheSSMSourceReadsOneParameterUnderItsRootDecrypted(t *testing.T) {
+	fake := &fakeSSM{params: map[string]string{"/audit/main/private/config/openbao/token": "s.token"}}
+	old := config.OpenSSM
+	config.OpenSSM = func(context.Context) (config.ParameterAPI, error) { return fake, nil }
+	t.Cleanup(func() { config.OpenSSM = old })
+
+	s := config.NewSecrets(config.SecretsSource{Source: config.SourceSSM, Root: "/audit/main/private/config"})
+	v, err := s.Get(context.Background(), "openbao.tokenSecret", "openbao/token")
+	if err != nil || v != "s.token" {
+		t.Fatalf("%q, %v", v, err)
+	}
+	if len(fake.asked) != 1 || fake.asked[0] != "/audit/main/private/config/openbao/token" {
+		t.Errorf("asked %v", fake.asked)
+	}
+	// A name cannot climb out of the root, so a file cannot point the function at
+	// another installation's parameters.
+	if _, err := s.Get(context.Background(), "f", "../../other/token"); err == nil {
+		t.Error("a name climbing out of the root was accepted")
+	}
+	if len(fake.asked) != 1 {
+		t.Errorf("SSM was asked for a name that was refused: %v", fake.asked)
+	}
+	_, err = s.Get(context.Background(), "openbao.tokenSecret", "missing")
+	if err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Errorf("a missing parameter must be named: %v", err)
+	}
+}
+
+func TestTheSecretsBlockIsHeldToItsSource(t *testing.T) {
+	const lambda = "deployment: /d\narchive: {bucket: {name: b}}\ndedupe: {dynamodb: {table: t}}\n"
+	for name, c := range map[string]struct {
+		block string
+		ok    bool
+	}{
+		"ssm with a root":           {"secrets: {source: ssm, root: /audit/main/private/config}\n", true},
+		"ssm without a root":        {"secrets: {source: ssm}\n", false},
+		"ssm with a relative root":  {"secrets: {source: ssm, root: audit/main}\n", false},
+		"ssm with a trailing /":     {"secrets: {source: ssm, root: /audit/main/}\n", false},
+		"file with a root":          {"secrets: {source: file, root: /etc/audit/secrets}\n", true},
+		"file with a relative root": {"secrets: {source: file, root: secrets}\n", false},
+		"file without a root":       {"secrets: {source: file}\n", false},
+		"env":                       {"secrets: {source: env}\n", true},
+		"env with a root":           {"secrets: {source: env, root: /x}\n", false},
+		"another source":            {"secrets: {source: vault, root: /x}\n", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := config.LoadWriterLambda(write(t, "apiVersion: audit.truvity.github.io/audit-writer-lambda/v2\n"+c.block+lambda+
+				"keys: {provider: transit, transit: {openbao: {address: 'https://b.example.test', tokenSecret: openbao/token}}}\n"))
+			if (err == nil) != c.ok {
+				t.Errorf("ok = %v, got %v", c.ok, err)
+			}
+		})
 	}
 }
 
@@ -612,7 +818,9 @@ func TestTheDocumentSchemasAcceptWhatTheCodeAcceptsAndRefuseWhatItWouldNot(t *te
 	}{
 		{"audit-deployment", "profiles:\n  security: {presets: [iso27001]}\n", true},
 		{"audit-deployment", "apiVersion: truvity.github.io/audit-deployment/v1\nprofiles:\n  security: {presets: [iso27001]}\n", true},
+		{"audit-deployment", "apiVersion: audit.truvity.github.io/audit-deployment/v2\nprofiles:\n  security: {presets: [iso27001]}\n", true},
 		{"audit-deployment", "apiVersion: truvity.github.io/audit-deployment/v2\nprofiles:\n  security: {presets: [iso27001]}\n", false},
+		{"audit-deployment", "apiVersion: audit.truvity.github.io/audit-deployment/v1\nprofiles:\n  security: {presets: [iso27001]}\n", false},
 		{"audit-deployment", "profiles: {}\n", false},
 		{"audit-deployment", "profiles:\n  a/b: {presets: [iso27001]}\n", false},
 		{"audit-deployment", "profiles:\n  security: {presets: [iso27001], retention: 1}\n", false},

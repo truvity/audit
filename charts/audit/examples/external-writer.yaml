@@ -28,13 +28,17 @@ externalIdentifiersAreOpaque: true
 migrate:
   enabled: true
   config:
+    apiVersion: audit.truvity.github.io/audit-migrate/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     database:
       url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
     observe: audit_observe
     reader: audit_query
-  secretEnv:
-    - name: AUDIT_DATABASE_PASSWORD
+  secretFiles:
+    - name: database-password
       secretName: audit-db-owner
       key: password
 
@@ -46,6 +50,10 @@ observe:
     annotations:
       eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-OBSERVE-ROLE
   config:
+    apiVersion: audit.truvity.github.io/audit-observe/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     archive:
       bucket:
         name: audit-eu-example-1
@@ -53,10 +61,10 @@ observe:
       prefix: audit/app
     database:
       url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      passwordSecret: observe-database-password
     settle: 2m
-  secretEnv:
-    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+  secretFiles:
+    - name: observe-database-password
       secretName: audit-db-observe
       key: password
 
@@ -74,6 +82,10 @@ query:
       - url: https://id.example.com
         audience: audit
   config:
+    apiVersion: audit.truvity.github.io/audit-query/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     deployment: /etc/audit/deployment.yaml
     grants: /etc/audit/grants.yaml
     require: queued
@@ -83,14 +95,14 @@ query:
         region: eu-west-1
     database:
       url: postgres://audit_query@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_QUERY_DATABASE_PASSWORD
+      passwordSecret: query-database-password
     archive:
       bucket:
         name: audit-eu-example-1
         region: eu-west-1
       prefix: audit/app
-  secretEnv:
-    - name: AUDIT_QUERY_DATABASE_PASSWORD
+  secretFiles:
+    - name: query-database-password
       secretName: audit-db-query
       key: password
 
@@ -106,6 +118,7 @@ jobs:
         # Read on the archive, put on seals/ and keys/, and sqs:SendMessage.
         eks.amazonaws.com/role-arn: ROLE-ARN-OF-THE-NOTARY-ROLE
     config:
+      apiVersion: audit.truvity.github.io/audit-notary/v2
       archive:
         bucket:
           name: audit-eu-example-1

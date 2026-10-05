@@ -81,10 +81,23 @@ or command, and ship in the release:
 | `audit-query` | `audit-query.schema.json` |
 | `audit verify`, `purge`, `clock-sync`, `migrate` | `audit-verify.schema.json`, `audit-purge.schema.json`, `audit-clock-sync.schema.json`, `audit-migrate.schema.json` |
 
-Every file may carry `apiVersion: truvity.github.io/<kind>/v1` (`<kind>` is the
-schema's name: `audit-writer`, `audit-query`, `audit-writer-lambda`, and so on),
-and absent means the same. Another version or another kind's is refused, so that a later shape arrives by a version and not by a file
-that quietly means something else.
+Every file carries `apiVersion: audit.truvity.github.io/<kind>/v2` (`<kind>` is
+the schema's name: `audit-writer`, `audit-query`, `audit-writer-lambda`, and so
+on). The group is `<product>.truvity.github.io`. A binary reads version N and
+N-1 (ADR 0025): **version 1**, `apiVersion: truvity.github.io/<kind>/v1` or no
+`apiVersion` at all, is **deprecated**, is converted on load (see
+[Secrets](#secrets) for what changed) and logs a warning, and is read for one
+more minor. Another version or another kind's is refused, so that a later shape
+arrives by a version and not by a file that quietly means something else. The
+version-2 schemas are `schemas/config/<kind>.schema.json`
+(`$id` `https://truvity.github.io/audit/schemas/v2/config/<kind>.schema.json`);
+version 1's are kept, frozen, in `schemas/config/v1/`. The `audit-deployment`
+document moved to the new group and nothing else.
+
+The rest of this page, and the chart's examples, are written in version 2.
+Version 1 differs only in the secret fields below (`...Env` for `...Secret`, no
+`secrets` block); a page or example that still shows `passwordEnv`,
+`credentialsEnv`, `tokenEnv` or `secretEnv` is a version-1 file, which still works.
 
 An unknown key, a missing required key or a value of the wrong type is a
 start-up error that names the path to it. A few rules a schema cannot say run
@@ -97,16 +110,40 @@ Durations are strings in Go's notation: `30s`, `2m`, `168h`.
 
 ### Secrets
 
-A secret is never in the file. A field that holds one is named `...Env` and
-holds the **name** of an environment variable; the process reads exactly the
-variables the file names, and an unset or empty one is an error naming the
-variable. These are all of them:
+A secret is never in the file. A field that holds one is named `...Secret` and
+holds the **name** of the secret, which the file's one `secrets` block says how
+to find. The process reads exactly the secrets the file names, and one that is
+absent or empty is an error naming the field, the name and where it looked, never
+a value. These are all of them:
 
 | key | holds |
 |---|---|
-| `database.passwordEnv` | the Postgres password |
-| `bucket.credentialsEnv.accessKeyID`, `.secretAccessKey` | the static credentials of an S3-compatible store |
-| `openbao.tokenEnv` | an OpenBAO token |
+| `database.passwordSecret` | the Postgres password |
+| `bucket.credentialsSecret.accessKeyID`, `.secretAccessKey` | the static credentials of an S3-compatible store |
+| `openbao.tokenSecret` | an OpenBAO token |
+
+```yaml
+secrets:
+  source: file                      # env (the default), file or ssm
+  root: /etc/audit/secrets          # a directory (file) or a parameter path (ssm); not with env
+```
+
+| `source` | a name is | `root` |
+|---|---|---|
+| `env` | the name of an environment variable | refused |
+| `file` | a path under `root`, one file per secret, read as it is (one trailing newline is dropped): a mounted Kubernetes Secret | an absolute directory, required |
+| `ssm` | a SecureString parameter `<root>/<name>` in AWS Systems Manager Parameter Store, read decrypted with the process's own identity | a path starting with `/` and not ending in one, required |
+
+A name for `file` and `ssm` is relative and cannot leave the root: segments of
+letters, digits, `.`, `_` and `-`, no `..`. **On AWS Lambda use `ssm`: the
+function's environment is not a place for a secret.** The Pulumi library renders
+the block and grants the function `ssm:GetParameter(s)` on its root and nothing
+else of SSM ([AWS](../deployment/aws.md#secrets)). On Kubernetes use `file`: the
+chart's `secretFiles` projects each Secret key as the file the name stands for.
+
+Version 1's `passwordEnv`, `credentialsEnv` and `tokenEnv` (the name of an
+environment variable) are **deprecated**: the loader reads them as the
+`...Secret` field of the same name with `secrets: {source: env}`.
 
 A password inside a database URL is refused. Token, key and root **files** are
 referenced by path, not by name: `tokenFile`, `jwtFile`, `rootFile`,
@@ -141,7 +178,7 @@ that changed in between is refused, so that the digest names the bytes that ran.
 Four things a file names by path are separate documents, each with its own
 contract, and not part of the file. Three of them have a JSON Schema in
 `schemas/config/` (`audit-deployment.schema.json`, `audit-grants.schema.json`,
-`audit-workloads.schema.json`) and carry `apiVersion` as the file does; the code
+`audit-workloads.schema.json`) and carry `apiVersion` as the file does (version 2 under `audit.truvity.github.io`, version 1 deprecated); the code
 that reads them validates against it and then decodes strictly:
 
 | key | document | in the chart |
@@ -162,7 +199,7 @@ component contract (`postgres.json`, `bucket.json`, `listen.json`,
 | key | type | default | meaning |
 |---|---|---|---|
 | `url` | string, required | | a `postgres://` or `postgresql://` URL without a password. A URL with one is refused, and one that does not parse is refused |
-| `passwordEnv` | string | none: the connection needs no password | secret by reference: the name of the variable holding the password |
+| `passwordSecret` | string | none: the connection needs no password | secret by reference: the name of the secret holding the password (`passwordEnv` in version 1) |
 | `maxConnections` | integer, at least 1 | 10 | the pool size of this process. Size it against the server's limit divided by the number of processes |
 
 **`bucket`** (an object store addressed by the S3 API)
@@ -174,7 +211,7 @@ component contract (`postgres.json`, `bucket.json`, `listen.json`,
 | `endpoint` | URI | the SDK's own resolution for the region | override the API endpoint, for a store that is not AWS |
 | `ca` | path | the system trust store | a CA bundle trusted for that endpoint, mounted by the platform |
 | `pathStyle` | boolean | false | address the bucket as a path rather than a host, for a certificate that does not cover a bucket subdomain |
-| `credentialsEnv.accessKeyID`, `.secretAccessKey` | strings, both required if the block is present | none: the SDK's ambient credentials, which is what a workload identity provides | secret by reference: the names of the variables holding static credentials |
+| `credentialsSecret.accessKeyID`, `.secretAccessKey` | strings, both required if the block is present | none: the SDK's ambient credentials, which is what a workload identity provides | secret by reference: the names of the secrets holding static credentials (`credentialsEnv` in version 1) |
 
 **`archive`** (where the archive is, and how it is written)
 
@@ -207,9 +244,9 @@ block is present). Both servers default it to `:8080`.
 | `caFile` | path | the system roots | a PEM bundle trusted beside them |
 | `login.mount`, `.role`, `.jwtFile` | strings, all required | | sign in with a JWT: the auth mount, the role on it, and the file holding the pod's projected token, read at every login. Nothing is stored |
 | `tokenFile` | path | | sign in with a token read from a file on every call |
-| `tokenEnv` | string | | secret by reference: the name of the variable holding a token |
+| `tokenSecret` | string | | secret by reference: the name of the secret holding a token (`tokenEnv` in version 1) |
 
-Exactly one of `login`, `tokenFile` and `tokenEnv`.
+Exactly one of `login`, `tokenFile` and `tokenSecret`.
 
 **`keys`** (where pseudonymisation keys live)
 
@@ -624,7 +661,9 @@ Beyond types, required keys and unknown keys, the schemas refuse:
 - `keys.provider` of `local` without `local`, of `transit` without `transit`,
   or either block beside a provider that is not its own;
 - an `openbao` with none, or more than one, of `login`, `tokenFile` and
-  `tokenEnv`;
+  `tokenSecret`;
+- `secrets` with `root` and source `env`, or with source `file` or `ssm` and a
+  root that is not an absolute directory or an SSM path;
 - a `signer` with none, or more than one, of `keyFile`, `kmsKey` and `transit`;
 - a database URL that carries a password;
 - a query service with the `postgres` searcher and no `database`, or with
@@ -714,7 +753,8 @@ Everything else under a component is the platform's, not the binary's:
 
 | value | meaning |
 |---|---|
-| `secretEnv` | a list of `{name, secretName, key}`: an environment variable taken from a Secret's key. The config names `name` as the holder of a secret (`passwordEnv`, `credentialsEnv`, `tokenEnv`). `optional: true` allows a missing key |
+| `secretFiles` | a list of `{name, secretName, key}`: a Secret's key as the file `/etc/audit/secrets/<name>`. The config names `name` in a `...Secret` field (`passwordSecret`, `credentialsSecret`, `tokenSecret`) and says `secrets: {source: file, root: /etc/audit/secrets}`, which the chart checks. `optional: true` allows a missing key |
+| `secretEnv` | **deprecated**, version-1 configs: a list of `{name, secretName, key}`: an environment variable taken from a Secret's key. The config names `name` as the holder of a secret (`passwordEnv`, `credentialsEnv`, `tokenEnv`). `optional: true` allows a missing key |
 | `secretMounts` | a list of `{secretName, mountPath}`: a Secret mounted read-only as a directory, for a key or a root the config names by path (`local.rootFile`, a key file) |
 | `tokens` | a list of `{audience, mountPath, expirationSeconds, path}`: a projected service-account token of that audience (lifetime 3600 by default), a file named `token` (or `path`) in the directory `mountPath`, which the config names (`tokenFile`, `jwtFile`). It is read afresh by whatever names it, because the kubelet replaces it before it expires |
 | `serviceAccount` | the identity of the component, for Pod Identity or IRSA annotations. Every component has its own, `{create, name, annotations}`: `receiver.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount`. Created, it is `<fullname>-<component>` unless `name` says otherwise; with `create: false` the component runs as `name`, or as the release's own top-level `serviceAccount` (the writer's) when `name` is empty. In stream mode the chart refuses a receiver and a writer with the same name |

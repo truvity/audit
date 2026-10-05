@@ -75,11 +75,11 @@ func run() error {
 		return err
 	}
 
-	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive)
+	archive, err := cli.OpenArchiveFrom(ctx, cfg.Archive, cfg.SecretReader())
 	if err != nil {
 		return err
 	}
-	poolConfig, err := cfg.Database.PoolConfig()
+	poolConfig, err := cfg.Database.PoolConfig(ctx, cfg.SecretReader())
 	if err != nil {
 		return err
 	}

@@ -32,15 +32,19 @@ workloadIdentity:
 migrate:
   enabled: true
   config:
+    apiVersion: audit.truvity.github.io/audit-migrate/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     # The OWNER of the tables, which no part connects as. Each role below must
     # exist, and is granted what its part needs and nothing else.
     database:
       url: postgres://audit_owner@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
     writer: audit_writer
     observe: audit_observe
-  secretEnv:
-    - name: AUDIT_DATABASE_PASSWORD
+  secretFiles:
+    - name: database-password
       secretName: audit-db-owner
       key: password
 
@@ -49,20 +53,24 @@ migrate:
 # a log in its place is a refusal at start-up rather than a gap in the trail.
 receiver:
   config:
+    apiVersion: audit.truvity.github.io/audit-writer/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     mode: receiver
     require: queued
     deployment: /etc/audit/deployment.yaml
     workloads: /etc/audit/workloads.yaml
     database:
       url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
     forward:
       sqs:
         queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit.fifo
         region: eu-west-1
         fifo: true
-  secretEnv:
-    - name: AUDIT_DATABASE_PASSWORD
+  secretFiles:
+    - name: database-password
       secretName: audit-db
       key: password
 
@@ -72,6 +80,10 @@ receiver:
 writer:
   consumers: 3
   config:
+    apiVersion: audit.truvity.github.io/audit-writer/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     require: archived
     deployment: /etc/audit/deployment.yaml
     workloads: /etc/audit/workloads.yaml
@@ -84,7 +96,7 @@ writer:
       kmsKey: alias/audit-archive
     database:
       url: postgres://audit_writer@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_DATABASE_PASSWORD
+      passwordSecret: database-password
     consume:
       sqs:
         queueUrl: https://sqs.eu-west-1.amazonaws.com/ACCOUNT/audit.fifo
@@ -95,8 +107,8 @@ writer:
     roll:
       interval: 30s
       maxRecords: 5000
-  secretEnv:
-    - name: AUDIT_DATABASE_PASSWORD
+  secretFiles:
+    - name: database-password
       secretName: audit-db
       key: password
 
@@ -107,6 +119,10 @@ writer:
 observe:
   enabled: true
   config:
+    apiVersion: audit.truvity.github.io/audit-observe/v2
+    secrets:
+      source: file
+      root: /etc/audit/secrets
     archive:
       bucket:
         name: audit-eu-example-1
@@ -114,10 +130,10 @@ observe:
       prefix: audit/app
     database:
       url: postgres://audit_observe@db.example.com:5432/audit?sslmode=verify-full
-      passwordEnv: AUDIT_OBSERVE_DATABASE_PASSWORD
+      passwordSecret: observe-database-password
     settle: 2m
-  secretEnv:
-    - name: AUDIT_OBSERVE_DATABASE_PASSWORD
+  secretFiles:
+    - name: observe-database-password
       secretName: audit-db-observe
       key: password
 

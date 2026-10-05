@@ -1,4 +1,7 @@
-apiVersion: truvity.github.io/audit-writer-lambda/v1
+apiVersion: audit.truvity.github.io/audit-writer-lambda/v2
+secrets:
+  source: ssm
+  root: /audit/main/private/config
 deployment: /var/task/deployment.yaml
 catalogues: /var/task/catalogues
 archive:
@@ -15,7 +18,7 @@ keys:
     openbao:
       address: https://openbao.example.test:8200
       mount: transit
-      tokenEnv: AUDIT_OPENBAO_TOKEN
+      tokenSecret: openbao/token
 forgetIdentities: true
 dedupe:
   dynamodb:

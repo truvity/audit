@@ -281,7 +281,7 @@ func load[T any](file, name string, after func(*T) error) (*T, error) {
 		h.setSource(Source{File: file, Digest: DigestBytes(before)})
 	}
 	if h, ok := any(&c).(interface{ secretsSource() *SecretsSource }); ok {
-		if err := h.secretsSource().check(); err != nil {
+		if err := checkSecretsSource(h.secretsSource()); err != nil {
 			return nil, &policyconfig.Error{File: file, Err: err}
 		}
 	}

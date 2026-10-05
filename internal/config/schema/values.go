@@ -328,10 +328,16 @@ func rewrite(v any, prefix string) any {
 			switch {
 			case strings.HasPrefix(r, "#/$defs/"):
 				out["$ref"] = "#/$defs/" + prefix + "." + strings.TrimPrefix(r, "#/$defs/")
+			case r == policy+"fragments/secrets.json#/$defs/name":
+				for k, x := range fragment("fragments/secrets.json")["$defs"].(map[string]any)["name"].(map[string]any) {
+					if _, set := out[k]; !set {
+						out[k] = x
+					}
+				}
 			case strings.HasPrefix(r, policy):
 				for k, x := range fragment(strings.TrimPrefix(r, policy)) {
 					if _, set := out[k]; !set {
-						out[k] = x
+						out[k] = rewrite(x, prefix)
 					}
 				}
 			default:

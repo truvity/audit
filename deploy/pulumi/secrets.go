@@ -24,7 +24,9 @@ type SecretsArgs struct {
 	// Root is the parameter path every secret is under, without a trailing slash.
 	// Default `/audit/<name>/private/config`, `<name>` being the name the
 	// component is registered under: one installation's, and nothing of another's.
-	// It is a path and never a pattern: no `*` or `?`.
+	// It is a path and never a pattern: no `*` or `?`, no `.` or `..` segment, and
+	// it is under `/audit/` (at least two segments, the first `audit`), so that the
+	// grant cannot reach another service's tree.
 	Root string
 	// KeyArn is the customer-managed KMS key the SecureStrings are encrypted with.
 	// The role is granted `kms:Decrypt` on it through SSM only
@@ -83,9 +85,15 @@ func resolveSecrets(name string, w *WriterArgs) (*SecretsArgs, error) {
 	if s.Root == "" {
 		s.Root = "/audit/" + name + "/private/config"
 	}
-	if !rootRE.MatchString(s.Root) || strings.Contains(s.Root, "..") {
-		return nil, fmt.Errorf("auditpulumi: Writer.Secrets.Root %q must be an SSM parameter path such as "+
-			"/audit/%s/private/config: segments of letters, digits, . _ and -, no trailing slash, no wildcard", s.Root, name)
+	if !rootRE.MatchString(s.Root) || !strings.HasPrefix(s.Root, "/audit/") {
+		return nil, fmt.Errorf("auditpulumi: Writer.Secrets.Root %q must be an SSM parameter path under /audit/ such as "+
+			"/audit/%s/private/config: at least two segments, the first `audit`, segments of letters, digits, . _ and -, "+
+			"no trailing slash, no wildcard", s.Root, name)
+	}
+	for _, seg := range strings.Split(s.Root[1:], "/") {
+		if seg == "." || seg == ".." || strings.HasPrefix(seg, ".") {
+			return nil, fmt.Errorf("auditpulumi: Writer.Secrets.Root %q has the segment %q: no segment may start with a dot, which rules out the dot and dot-dot segments", s.Root, seg)
+		}
 	}
 	if s.KeyArn != "" && !kmsArnRE.MatchString(s.KeyArn) {
 		return nil, fmt.Errorf("auditpulumi: Writer.Secrets.KeyArn %q must be the ARN of a KMS key", s.KeyArn)

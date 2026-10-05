@@ -3,6 +3,7 @@ package auditpulumi_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -18,20 +19,38 @@ func transitKeys(secret string) map[string]any {
 	}}}
 }
 
-// Secrets never reach the function's environment: whatever the configuration
-// names, the environment holds the path of the file and the telemetry's own
-// settings, and nothing else.
-func TestNoSecretIsInTheFunctionEnvironment(t *testing.T) {
+// Secrets never reach a function's environment: whatever the configuration names,
+// every function the library makes has the path of the file and the telemetry's
+// own settings, and nothing that looks like a credential, by key or by value.
+func TestNoSecretIsInAnyFunctionEnvironment(t *testing.T) {
 	rec, _, err := build(t, func(a *auditpulumi.Args) { a.Writer.Keys = transitKeys("openbao/token") })
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, fn := range []string{"audit-writer", "audit-notary"} {
-		for k, v := range variables(t, rec.one(t, "aws:lambda/function:Function", fn)) {
-			ok := k == "AUDIT_CONFIG" || k == "AUDIT_CONFIG_LAYER" || strings.HasPrefix(k, "ACCESS_ROSTER_") || strings.HasPrefix(k, "OTEL_")
-			if !ok || strings.Contains(v, "ssm:") || strings.Contains(strings.ToLower(k), "token") {
-				t.Errorf("%s: environment variable %s is not one the library sets", fn, k)
+	keyLooksSecret := regexp.MustCompile(`(?i)(token|secret|password|passwd|private|credential|headers|authorization|api[_-]?key)`)
+	valueLooksSecret := regexp.MustCompile(`(?i)(^bearer\s|^basic\s|authorization\s*=|://[^/\s:@]+:[^/\s@]+@|ssm:|^s\.[A-Za-z0-9]{8,}|^eyJ)`)
+	fns := rec.ofType("aws:lambda/function:Function")
+	if len(fns) < 2 {
+		t.Fatalf("only %d functions: the writer and the notary are both made", len(fns))
+	}
+	for _, f := range fns {
+		for k, v := range variables(t, f) {
+			ok := k == "AUDIT_CONFIG" || k == "AUDIT_CONFIG_LAYER"
+			for _, prefix := range []string{"ACCESS_ROSTER_", "AUDIT_OTLP_", "OTEL_"} {
+				ok = ok || strings.HasPrefix(k, prefix)
 			}
+			if !ok || keyLooksSecret.MatchString(k) || valueLooksSecret.MatchString(v) {
+				t.Errorf("%s: environment variable %s is not one the library sets, or looks like a credential", f.Name, k)
+			}
+		}
+	}
+}
+
+func TestTelemetryExtraEnvCannotCarryACredential(t *testing.T) {
+	for _, k := range []string{"OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_TRACES_HEADERS", "OTEL_X_TOKEN", "OTEL_X_SECRET"} {
+		_, _, err := build(t, func(a *auditpulumi.Args) { a.Telemetry.ExtraEnv = map[string]string{k: "x"} })
+		if err == nil || !strings.Contains(err.Error(), "credential") {
+			t.Errorf("%s accepted: %v", k, err)
 		}
 	}
 }
@@ -102,7 +121,7 @@ func TestACustomerKeyIsGrantedThroughSSMForTheRootOnly(t *testing.T) {
 	key := arnp + "kms:eu-west-1:" + account + ":key/1234abcd-12ab-34cd-56ef-1234567890ab"
 	rec, _, err := build(t, func(a *auditpulumi.Args) {
 		a.Writer.Keys = transitKeys("openbao/token")
-		a.Writer.Secrets = &auditpulumi.SecretsArgs{Root: "/acme/audit/private", KeyArn: key}
+		a.Writer.Secrets = &auditpulumi.SecretsArgs{Root: "/audit/acme/private", KeyArn: key}
 		a.Region = "eu-west-1"
 	})
 	if err != nil {
@@ -117,7 +136,7 @@ func TestACustomerKeyIsGrantedThroughSSMForTheRootOnly(t *testing.T) {
 		c := s["Condition"].(map[string]any)
 		via := c["StringEquals"].(map[string]any)["kms:ViaService"]
 		ctx := c["StringLike"].(map[string]any)["kms:EncryptionContext:PARAMETER_ARN"]
-		if via == "ssm.eu-west-1.amazonaws.com" && ctx == arnp+"ssm:eu-west-1:"+account+":parameter/acme/audit/private/*" {
+		if via == "ssm.eu-west-1.amazonaws.com" && ctx == arnp+"ssm:eu-west-1:"+account+":parameter/audit/acme/private/*" {
 			found = true
 		}
 	}
@@ -152,6 +171,9 @@ func TestASecretsRootThatIsAPatternOrLeavesItsPlaceIsRefused(t *testing.T) {
 		"a question mark":      {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "/audit/?"}, "Root"},
 		"a trailing slash":     {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "/audit/x/"}, "Root"},
 		"a relative root":      {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "audit/x"}, "Root"},
+		"outside /audit":       {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "/other/tree"}, "under /audit/"},
+		"only /audit":          {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "/audit"}, "under /audit/"},
+		"a dot segment":        {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "/audit/./x"}, "Root"},
 		"the root of all":      {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "/"}, "Root"},
 		"a parent":             {transitKeys("t"), &auditpulumi.SecretsArgs{Root: "/audit/../x"}, "Root"},
 		"a bad key arn":        {transitKeys("t"), &auditpulumi.SecretsArgs{KeyArn: "alias/aws/ssm"}, "KeyArn"},

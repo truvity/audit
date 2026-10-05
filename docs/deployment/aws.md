@@ -229,8 +229,8 @@ The library does not create the parameters: it is not given their values, and a 
 passed through Pulumi is kept in its state. Create each `SecureString` under the
 `SecretsRoot` output (`<root>/openbao/token` for `tokenSecret: openbao/token`) outside
 this program, or from a secret in yours. `Writer.Secrets.Root` overrides the default
-root `/audit/<name>/private/config`; it is a path, and a pattern, a trailing slash or a
-`..` is refused. A name that climbs out of the root is refused at plan time here and
+root `/audit/<name>/private/config`; it must be under `/audit/` (so the grant cannot reach another tree), and a pattern, a trailing slash or a
+`.` or `..` segment is refused. A name that climbs out of the root is refused at plan time here and
 again by the binary at start. A missing parameter fails the function's init, which is
 the point of reading it at cold start: a configuration fault is found by the first
 invocation of a new version, not by messages draining to the dead-letter queue later.

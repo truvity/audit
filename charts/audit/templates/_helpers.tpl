@@ -299,6 +299,8 @@ are. */}}
 {{- if .secretFiles }}
 - name: secret-files
   projected:
+    # Readable by the owner and the pod's fsGroup and by nobody else.
+    defaultMode: 0440
     sources:
       {{- range .secretFiles }}
       - secret:

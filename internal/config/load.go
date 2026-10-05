@@ -97,6 +97,7 @@ func versionOf(doc any, name string) (version, error) {
 // which is where version 1 read them from.
 func upgrade(doc map[string]any) (map[string]any, error) {
 	renamed := false
+	var fields []string
 	var walk func(v any) any
 	walk = func(v any) any {
 		switch t := v.(type) {
@@ -106,10 +107,13 @@ func upgrade(doc map[string]any) (map[string]any, error) {
 				switch k {
 				case "passwordEnv":
 					k, renamed = "passwordSecret", true
+					fields = append(fields, "passwordEnv")
 				case "credentialsEnv":
 					k, renamed = "credentialsSecret", true
+					fields = append(fields, "credentialsEnv")
 				case "tokenEnv":
 					k, renamed = "tokenSecret", true
+					fields = append(fields, "tokenEnv")
 				}
 				out[k] = walk(x)
 			}
@@ -126,6 +130,12 @@ func upgrade(doc map[string]any) (map[string]any, error) {
 	out := walk(doc).(map[string]any)
 	if renamed {
 		out["secrets"] = map[string]any{"source": SourceEnv}
+		// One warning for every conversion, naming the field and not what it holds.
+		for _, f := range fields {
+			slog.Warn("a version-1 ...Env field is read as a ...Secret with secrets.source env, which is deprecated "+
+				"and is refused on AWS Lambda: name the secret and declare where it is found",
+				"field", f, "replacement", strings.TrimSuffix(f, "Env")+"Secret")
+		}
 	}
 	return out, nil
 }

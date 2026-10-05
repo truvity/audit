@@ -136,7 +136,9 @@ secrets:
 
 A name for `file` and `ssm` is relative and cannot leave the root: segments of
 letters, digits, `.`, `_` and `-`, no `..`. **On AWS Lambda use `ssm`: the
-function's environment is not a place for a secret.** The Pulumi library renders
+function's environment is not a place for a secret, so `source: env` is refused there
+(when `AWS_LAMBDA_FUNCTION_NAME` is set), which includes a version-1 `...Env` converted
+to it.** A `root` has no empty, `.` or `..` segment. The Pulumi library renders
 the block and grants the function `ssm:GetParameter(s)` on its root and nothing
 else of SSM ([AWS](../deployment/aws.md#secrets)). On Kubernetes use `file`: the
 chart's `secretFiles` projects each Secret key as the file the name stands for.

@@ -302,6 +302,8 @@ spec:
         
         - name: secret-files
           projected:
+            # Readable by the owner and the pod's fsGroup and by nobody else.
+            defaultMode: 0440
             sources:
               - secret:
                   name: audit-db-observe
@@ -422,6 +424,8 @@ spec:
         
         - name: secret-files
           projected:
+            # Readable by the owner and the pod's fsGroup and by nobody else.
+            defaultMode: 0440
             sources:
               - secret:
                   name: audit-db
@@ -535,6 +539,8 @@ spec:
         
         - name: secret-files
           projected:
+            # Readable by the owner and the pod's fsGroup and by nobody else.
+            defaultMode: 0440
             sources:
               - secret:
                   name: audit-db
@@ -674,6 +680,8 @@ spec:
         
         - name: secret-files
           projected:
+            # Readable by the owner and the pod's fsGroup and by nobody else.
+            defaultMode: 0440
             sources:
               - secret:
                   name: audit-db-owner

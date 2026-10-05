@@ -386,3 +386,29 @@ func TestTheCataloguesChecksumIsOnTheWritersThatReadThem(t *testing.T) {
 		t.Error("a changed catalogue left the checksum as it was")
 	}
 }
+
+// A secret projected as a file is readable by the pod's own user and group and by
+// nobody else.
+func TestSecretFilesAreProjectedWithMode0440(t *testing.T) {
+	docs := render(t, "examples/direct.yaml")
+	var found int
+	for _, d := range docs {
+		spec, _ := dig(d, "spec", "template", "spec")
+		if spec == nil {
+			continue
+		}
+		vols, _ := dig(spec, "volumes")
+		for _, v := range vols.([]any) {
+			if n, _ := dig(v, "name"); n != "secret-files" {
+				continue
+			}
+			found++
+			if mode, _ := dig(v, "projected", "defaultMode"); mode != float64(0o440) {
+				t.Errorf("secret-files defaultMode = %v, want %d", mode, 0o440)
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("no secret-files volume was rendered by examples/direct.yaml")
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -843,5 +844,54 @@ func TestTheDocumentSchemasAcceptWhatTheCodeAcceptsAndRefuseWhatItWouldNot(t *te
 		if !c.ok && err == nil {
 			t.Errorf("%s accepted %q", c.name, c.doc)
 		}
+	}
+}
+
+// On Lambda the environment is not a place for a secret, whatever the file says,
+// and a version-1 ...Env that was converted to source env fails there too.
+func TestTheEnvSourceIsRefusedOnLambda(t *testing.T) {
+	t.Setenv("AUDIT_TEST_DB_PASSWORD", "x")
+	t.Setenv("AWS_LAMBDA_FUNCTION_NAME", "audit-writer")
+	_, err := config.NewSecrets(config.SecretsSource{}).Get(context.Background(), "database.passwordSecret", "AUDIT_TEST_DB_PASSWORD")
+	if err == nil || !strings.Contains(err.Error(), "database.passwordSecret") || !strings.Contains(err.Error(), "AWS Lambda") {
+		t.Errorf("env on Lambda: %v", err)
+	}
+	if strings.Contains(err.Error(), "AUDIT_TEST_DB_PASSWORD") {
+		t.Errorf("the refusal quotes the name: %v", err)
+	}
+	w, err := config.LoadWriter(write(t, minimalWriter+"database: {url: 'postgres://u@h/db', passwordEnv: AUDIT_TEST_DB_PASSWORD}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Database.PoolConfig(context.Background(), w.SecretReader()); err == nil {
+		t.Error("a converted v1 passwordEnv was read on Lambda")
+	}
+}
+
+// A client that could not be made is tried again on the next read, after a wait,
+// and not kept as the answer for the life of the process.
+func TestAFailedSSMClientIsRetried(t *testing.T) {
+	fake := &fakeSSM{params: map[string]string{"/audit/main/private/config/a": "v"}}
+	calls := 0
+	old := config.OpenSSM
+	config.OpenSSM = func(context.Context) (config.ParameterAPI, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("no credentials yet")
+		}
+		return fake, nil
+	}
+	t.Cleanup(func() { config.OpenSSM = old })
+	s := config.NewSecrets(config.SecretsSource{Source: config.SourceSSM, Root: "/audit/main/private/config"})
+	if _, err := s.Get(context.Background(), "f", "a"); err == nil {
+		t.Fatal("the first read succeeded without a client")
+	}
+	// Inside the wait the failure is the answer and the client is not made again.
+	if _, err := s.Get(context.Background(), "f", "a"); err == nil || calls != 1 {
+		t.Fatalf("inside the backoff: %v after %d calls", err, calls)
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if v, err := s.Get(context.Background(), "f", "a"); err != nil || v != "v" {
+		t.Fatalf("after the backoff: %q, %v", v, err)
 	}
 }

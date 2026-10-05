@@ -25,7 +25,7 @@ A deployment composes presets into **profiles**. Composition is a union:
 - `review`: the most frequent cadence wins.
 
 The validator (`sdk/schemas/preset.schema.json` plus the composition rules in
-[the presets reference](../docs/reference/presets.md)) refuses a profile whose presets both require and
+[the presets reference](../docs/reference/profiles.md)) refuses a profile whose presets both require and
 forbid a field, directly or through an ancestor, and a deployment whose
 catalogues do not emit a category a profile requires. `audit profile explain
 <name>` prints what a profile keeps.
@@ -57,4 +57,4 @@ Where a framework gives no number, and NIS2, ISO 27001 and DORA all say
 `configurable`.
 
 Which of these an installation is expected to compose, and what each costs to
-run, is [the presets policy](../docs/operations/presets-policy.md).
+run, is [the presets policy](../docs/explanation/which-profiles-to-compose.md).

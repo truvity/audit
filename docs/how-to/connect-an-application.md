@@ -8,8 +8,8 @@ is no central installation to connect to, and an application is not a plugin
 of one: the trail is a part of the application, the way its database is.
 
 This page is what the application itself ends up with. Running the
-installation beside it is [deploying](deploy.md), and the shape it runs in is
-[direct](../deployment/direct.md) or [stream](../deployment/stream.md).
+installation beside it is [deploying](../getting-started/kubernetes.md), and the shape it runs in is
+[direct](../explanation/direct-mode.md) or [stream](../explanation/stream-mode.md).
 
 ## What the application ends up with
 
@@ -177,7 +177,7 @@ err = emitter.Record(ctx, shopaudit.OrderPlaced(tenant, customerID, orderID))
   `audit.emit.records.dropped`: a queue that is filling is the warning, a drop
   is the incident.
 
-[Emitting records](emit.md) is the full walkthrough, and
+[Emitting records](emit-records.md) is the full walkthrough, and
 [`examples/emit`](../../examples/emit/main.go) is the working code, compiled
 on every run of the gate.
 
@@ -244,11 +244,11 @@ const audit = createQueryClient(createConnectTransport({
   profiles the person may search (`Access`) and shows those. A console that
   wants fewer passes `profiles`.
 - **Grants** are the query service's, not the page's:
-  [access](read.md#access) says how they are written, and what the page can
+  [access](read-the-trail.md#access) says how they are written, and what the page can
   offer follows from them.
 
 What the view does with a record, and where a console draws its own instead,
-is [the Audit page's design](../design/audit-page.md).
+is [the Audit page's design](../explanation/audit-page.md).
 
 ### A console with a session of its own
 

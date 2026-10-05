@@ -14,8 +14,8 @@ person, but that is a second line and not the one the claim rests on
 
 It runs in either deployment shape. The rollups are filled at index time by
 whichever process writes, and only the
-[usage quotas](../deployment/extensions/quotas.md) extension — a second
-consumer of the same records — needs [stream mode](../deployment/stream.md).
+[usage quotas](../how-to/enable-usage-quotas.md) extension — a second
+consumer of the same records — needs [stream mode](stream-mode.md).
 
 ## Fields
 

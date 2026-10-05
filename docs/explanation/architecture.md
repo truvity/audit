@@ -5,18 +5,18 @@ are, what each holds and must never hold, how the application's catalogue
 binds them together, what an acknowledgement means, and what can be lost.
 
 [Concepts](concepts.md) defines the vocabulary. The
-[deployment pages](deployment/direct.md) show each shape as it is actually
-run. The [decisions](decisions/README.md) say why, starting with
-[0011](decisions/0011-one-installation-per-service-or-product.md).
+[deployment pages](direct-mode.md) show each shape as it is actually
+run. The [decisions](../decisions/README.md) say why, starting with
+[0011](../decisions/0011-one-installation-per-service-or-product.md).
 
 This page describes what is built. The target architecture — three parts
 installed independently over a versioned bucket contract, a sink
 acknowledgement that says how durable it is, and signed seals — is in the
 decisions from
-[0016](decisions/0016-three-parts-installed-independently.md) to
-[0023](decisions/0023-archive-retention-and-lifecycle.md), the
-[bucket contract](reference/bucket-contract.md) and the
-[capabilities](capabilities.md) matrix, which says what exists on each
+[0016](../decisions/0016-three-parts-installed-independently.md) to
+[0023](../decisions/0023-archive-retention-and-lifecycle.md), the
+[bucket contract](../reference/bucket-contract.md) and the
+[capabilities](../reference/capabilities.md) matrix, which says what exists on each
 platform. Where they differ from this page, this page is the present and
 they are the direction.
 
@@ -48,13 +48,13 @@ flowchart LR
 | **writer** | the same image in consumer mode, N pods (stream mode); the receiver itself (direct mode) | write rights on its prefix, a database role for the dedupe table and the registry | the index, and any way to hand a record back to a caller |
 | **stream** | one JetStream stream on the application's own account (stream mode only) | records not yet archived, replicated | — |
 | **bucket** | one per environment, Object Lock in compliance mode where a profile demands it | every record, one copy per profile, locked where the profile demands it | — |
-| **indexer** | `audit-observe`, one pod ([0020](decisions/0020-observe-follows-the-bucket.md), [0024](decisions/0024-indexer-and-query-are-separate-processes.md)) | read on the archive, its own database role: the index and its cursors | write on the archive, the dedupe table |
+| **indexer** | `audit-observe`, one pod ([0020](../decisions/0020-observe-follows-the-bucket.md), [0024](../decisions/0024-indexer-and-query-are-separate-processes.md)) | read on the archive, its own database role: the index and its cursors | write on the archive, the dedupe table |
 | **index** | one database in the application's existing Postgres | rows, facet counts, cursors, rollups, and the writer's dedupe table and registry beside them under another role | anything that is not rebuildable |
 | **notary** | `audit-notary`, an hourly CronJob | read on the prefix, put under `seals/`, the seal key | write on `records/`; the writer's identity |
 | **verify** | a CronJob | read on the prefix, and nothing else | write rights on the archive |
 | **query service** | `audit-query`, one or two pods | a read-only index role, read on the prefix, the application's grants | write on the archive or the index |
 | **Audit page** | a React component in the application's console | nothing — it calls the query service with the console's own token | credentials of its own |
-| **usage consumer** | a small Deployment, [quotas](deployment/extensions/quotas.md) only | the counter cache | — |
+| **usage consumer** | a small Deployment, [quotas](../how-to/enable-usage-quotas.md) only | the counter cache | — |
 
 Two things follow from the table. The application holds no credentials for
 anything the trail is kept in, so a compromised application pod cannot reach
@@ -82,7 +82,7 @@ flowchart LR
 ```
 
 - **One per application, not shared.** What is shared, and shipped here, is
-  the format and the [presets](../presets/README.md) that profiles are
+  the format and the [presets](../../presets/README.md) that profiles are
   composed from. A catalogue names profiles; it never defines them.
 - **Versioned with the code.** Every record names the catalogue version it
   was written under, and the archive keeps a copy of every version, so a
@@ -93,11 +93,11 @@ flowchart LR
   receiver that is merely unreachable is retried. There is no registry
   service: the receiver serves that call, because an installation has one
   application to hear it from
-  ([0011](decisions/0011-one-installation-per-service-or-product.md)).
+  ([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 - **One constructor per action in the application's code**, so the name is
   spelled once and `check-emitters` can hold the code to the file.
 
-[The catalogue reference](reference/catalogue.md) is the full format.
+[The catalogue reference](../reference/catalogue.md) is the full format.
 
 ## What an acknowledgement means
 
@@ -115,8 +115,8 @@ stream or an SQS queue. `Logged` is a line in the process's log. The
 difference between the deliveries is only who waits — the application under
 `block`, its own queue under `async`. A chain's start-up guard,
 `sink.Require`, refuses one that can never give what the deployment needs.
-[0017](decisions/0017-sink-durability-and-transports.md) has the reasoning;
-it supersedes [0012](decisions/0012-two-deliveries-and-a-durable-ack.md).
+[0017](../decisions/0017-sink-durability-and-transports.md) has the reasoning;
+it supersedes [0012](../decisions/0012-two-deliveries-and-a-durable-ack.md).
 
 ## What each mode can lose
 
@@ -173,7 +173,7 @@ them is the record.
    and each identity is treated by its category: kept in clear, replaced by a
    keyed pseudonym, or dropped. With `keys.provider: none` — the default — there
    are no pseudonyms, and
-   [0013](decisions/0013-no-pseudonymisation-keys-by-default.md) says what the
+   [0013](../decisions/0013-no-pseudonymisation-keys-by-default.md) says what the
    deployment must declare instead.
 4. **It rolls copies into objects** — one per ingest batch, profile and tenant,
    keyed by the hour of ingest — and puts each under an Object Lock retention
@@ -185,11 +185,11 @@ them is the record.
    exactly once. The writer does not index: the indexer finds the object by
    listing the bucket from its cursor once it is older than the settle window,
    and writes each copy's row and facet counts a couple of minutes later
-   ([0020](decisions/0020-observe-follows-the-bucket.md)).
+   ([0020](../decisions/0020-observe-follows-the-bucket.md)).
 6. **Every night the verify job** checks the previous day's objects against the
-   [bucket contract](reference/bucket-contract.md) — each object's key, metadata
+   [bucket contract](../reference/bucket-contract.md) — each object's key, metadata
    and bytes, and the hash of every record — and records what it checked. Seals
-   ([0019](decisions/0019-seals.md)), which will say that nothing was removed,
+   ([0019](../decisions/0019-seals.md)), which will say that nothing was removed,
    are not built yet.
 7. **A reader asks** through the query service. Their token names them; the
    grants say which profiles, tenants, operations and period they may read, and
@@ -202,7 +202,7 @@ being kept.
 
 ## The two shapes
 
-| | [direct](deployment/direct.md) | [stream](deployment/stream.md) |
+| | [direct](direct-mode.md) | [stream](stream-mode.md) |
 |---|---|---|
 | for | an internal service, low volume, or a cluster with no stream | a product: many pods, metering, quotas |
 | the receiver | is the writer: it puts to the bucket | publishes to JetStream |
@@ -220,9 +220,9 @@ installations on different versions can share one bucket.
 Both are projections of the same records, switched on per installation, and
 neither puts anything new in the request path.
 
-- [Billing](deployment/extensions/billing.md): rollups at index time and an
+- [Billing](../how-to/enable-billing.md): rollups at index time and an
   immutable monthly statement.
-- [Usage quotas](deployment/extensions/quotas.md): a second stream consumer
+- [Usage quotas](../how-to/enable-usage-quotas.md): a second stream consumer
   counting into a cache, a decision point in front of the application, and
   an hourly reconciler that corrects the cache from the index.
 
@@ -234,7 +234,7 @@ neither puts anything new in the request path.
 | searchers: Postgres, archive scan, memory | built |
 | signers: key file, AWS KMS, OpenBAO transit | built |
 | key providers `local` and OpenBAO `transit`; AWS KMS envelope designed | built, and off by default |
-| one configuration file per binary, validated against a schema ([0021](decisions/0021-one-validated-configuration-file.md)) | built; the chart passes it through |
+| one configuration file per binary, validated against a schema ([0021](../decisions/0021-one-validated-configuration-file.md)) | built; the chart passes it through |
 | the chart, instantiated per application: `mode`, receiver, writer, query service, the four jobs, the extension toggles | built; a golden per shape, and every documented example rendered |
 | `@truvity/audit`: query client, sentences, React hooks and view | built; consumed from a release tag (`github:truvity/audit#vX.Y.Z`), not from a registry |
 | TypeScript emitter | designed, not built |

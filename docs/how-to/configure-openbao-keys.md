@@ -3,10 +3,10 @@
 Pseudonymisation keys are off by default: `keys.provider: none`, and nothing
 on this page applies
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),
-[key custody](key-custody.md)). Read on only for a deployment that must be
+[key custody](../explanation/key-custody.md)). Read on only for a deployment that must be
 able to crypto-shred and has chosen `transit` to do it with. A transit key
 that will sign seals is a different key
-([signing key](key-custody.md#signing-key)); nothing in the chart uses one
+([signing key](../explanation/key-custody.md#signing-key)); nothing in the chart uses one
 today.
 
 The `transit` key provider keeps every tenant's key for every purpose in an

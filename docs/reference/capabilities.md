@@ -1,9 +1,9 @@
 # Capabilities
 
 What each platform can do today and what is designed. The
-[architecture](architecture.md) says how the parts fit; the decisions
-[0016](decisions/0016-three-parts-installed-independently.md) to
-[0024](decisions/0024-indexer-and-query-are-separate-processes.md) say where it is
+[architecture](../explanation/architecture.md) says how the parts fit; the decisions
+[0016](../decisions/0016-three-parts-installed-independently.md) to
+[0024](../decisions/0024-indexer-and-query-are-separate-processes.md) say where it is
 going.
 
 | mark | means |
@@ -27,7 +27,7 @@ only with the previous release's CLI (v0.6.x).
 | `nats` sink and consumer (JetStream) | ✅ | — | 📄 |
 | `sqs` sink and consumer, selectable as `forward.sqs` and `consume.sqs` (untested live) | — | 🧪 | — |
 | `lambda` sink (direct invocation of the writer) | — | 📄 | — |
-| the writer as an AWS Lambda behind an SQS event source mapping, with partial batch responses (`audit-writer-lambda`, [AWS](deployment/aws.md)) | — | 🧪 | — |
+| the writer as an AWS Lambda behind an SQS event source mapping, with partial batch responses (`audit-writer-lambda`, [AWS](aws-pulumi-library.md)) | — | 🧪 | — |
 | `s3` sink (in process: the writer puts the object) | ✅ | ✅ | ✅ |
 | `log` sink | 🧪 | 🧪 | 🧪 |
 | acknowledgement carries Archived, Queued or Logged | 🧪 | 🧪 | 🧪 |
@@ -41,25 +41,25 @@ only with the previous release's CLI (v0.6.x).
 | metrics over OTLP: acknowledgements by durability, write latency per transport, index lag, consumer failures | 🧪 | 🧪 | 🧪 |
 | queue metrics: the age of each message at receive (`audit.queue.message.age`, from `SentTimestamp`), and CloudWatch alarms on the DLQ and the oldest message | — | 🧪 | — |
 | chart value `telemetry.otlp` (`endpoint`, `protocol`, `extraEnv`): the OpenTelemetry environment on every pod | 🧪 | — | — |
-| telemetry from a Lambda with the function role's identity and no secret (the access-roster extension layer, [AWS](deployment/aws.md#telemetry)) | — | 🧪 | — |
+| telemetry from a Lambda with the function role's identity and no secret (the access-roster extension layer, [AWS](aws-pulumi-library.md#telemetry)) | — | 🧪 | — |
 | traces over OTLP: server and client spans, `traceparent` across NATS headers and SQS attributes, no personal data on a span | 🧪 | 🧪 | 🧪 |
 | chart `renders: alerts`: seven alert rules as a `VMRule` or `PrometheusRule`, unit-tested on vmalert-tool | 🧪 | 🧪 | 🧪 |
 | chart `renders: dashboards`: the audit overview for Grafana's sidecar, held to the observability dashboard lint | 🧪 | 🧪 | 🧪 |
 
 The `s3` sink works against any store that speaks the S3 API; on a store
 without Object Lock it is the `attested` tier of
-[0014](decisions/0014-lock-modes-and-store-tiers.md).
+[0014](../decisions/0014-lock-modes-and-store-tiers.md).
 
 ## The archive
 
 | feature | Kubernetes | AWS | self-hosted |
 |---|---|---|---|
-| v1 layout, written and read ([bucket contract](reference/bucket-contract.md)): one object per ingest batch, keyed by ingest time | 🧪 | 🧪 | 🧪 |
+| v1 layout, written and read ([bucket contract](bucket-contract.md)): one object per ingest batch, keyed by ingest time | 🧪 | 🧪 | 🧪 |
 | `catalogue/<app>/<version>`, written once, compared when present | 🧪 | 🧪 | 🧪 |
 | `audit verify`: key, metadata, sha256 and per-record hashes of every object | 🧪 | 🧪 | 🧪 |
 | `audit verify --root`: the seals of a range, against pinned roots (below) | 🧪 | 🧪 | 🧪 |
 | Object Lock, compliance mode | ✅ | ✅ | — |
-| governance trial, then compliance ([0023](decisions/0023-archive-retention-and-lifecycle.md)) | 📄 | 📄 | — |
+| governance trial, then compliance ([0023](../decisions/0023-archive-retention-and-lifecycle.md)) | 📄 | 📄 | — |
 | lifecycle to Glacier Instant Retrieval and Deep Archive | — | 📄 | — |
 | bucket-contract conformance suite (records, catalogue and ordering, against the memory store and S3) | 🧪 | 🧪 | 🧪 |
 | conformance of seals, delegation and revocation: against the memory store and S3, with a key file and a KMS P-384 key (LocalStack) | 🧪 | 🧪 | 🧪 |
@@ -67,7 +67,7 @@ without Object Lock it is the `attested` tier of
 ## Notary
 
 The v0 digest job was removed with the v0 layout; seals replace it
-([0019](decisions/0019-seals.md)). The notary is `audit-notary`, a binary and an
+([0019](../decisions/0019-seals.md)). The notary is `audit-notary`, a binary and an
 image of its own.
 
 | feature | Kubernetes | AWS | self-hosted |
@@ -97,9 +97,9 @@ ed25519 or P-256 key) still sign and verify in `keys`, and sign no seal.
 | feature | Kubernetes | AWS | self-hosted |
 |---|---|---|---|
 | index and search on Postgres | ✅ | 📄 | 📄 |
-| cursor observe: `audit-observe` lists the bucket from a durable cursor per profile and tenant, behind a settle window ([0020](decisions/0020-observe-follows-the-bucket.md)) | 🧪 | 🧪 | 🧪 |
+| cursor observe: `audit-observe` lists the bucket from a durable cursor per profile and tenant, behind a settle window ([0020](../decisions/0020-observe-follows-the-bucket.md)) | 🧪 | 🧪 | 🧪 |
 | notifications as a wake-up (a NATS subject or an SQS queue that only shortens the poll) | 🧪 | 🧪 | 🧪 |
-| one database role per part: the writer's has no index, observe's writes it, the query service's reads it ([0024](decisions/0024-indexer-and-query-are-separate-processes.md)) | 🧪 | 🧪 | 🧪 |
+| one database role per part: the writer's has no index, observe's writes it, the query service's reads it ([0024](../decisions/0024-indexer-and-query-are-separate-processes.md)) | 🧪 | 🧪 | 🧪 |
 | reindex from the archive (v1), and a cursor reset | 🧪 | 🧪 | 🧪 |
 | usage quotas | 📄 | 📄 | 📄 |
 | billing statements | 📄 | 📄 | 📄 |

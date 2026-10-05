@@ -87,7 +87,7 @@ none and as `INVALID` under one that does.
 ## Compensating controls for the `attested` tier
 
 These are what the deployment supplies in place of the lock, and the
-[S3 guide](../operations/s3-guide.md) says how.
+[S3 guide](../how-to/prepare-the-bucket.md) says how.
 
 - **A managed signing key is required, not recommended.** On the record
   tier a local signer proved that objects had not changed since signing,

@@ -15,7 +15,7 @@ the proto of a record's major beside the schema on first use. A proto change not
 followed by `just generate` leaves the tree dirty, which CI reads as a failure.
 
 Which profile copies carry a field is decided by the profile's presets
-([presets](presets.md)); `audit profile explain <name>` prints the result. The
+([presets](profiles.md)); `audit profile explain <name>` prints the result. The
 record does not say.
 
 | field | set by | notes |

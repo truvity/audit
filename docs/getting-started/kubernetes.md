@@ -7,19 +7,19 @@ chart as a dependency
 
 This page is the **procedure**: what to prepare before anything is installed,
 how to install it, and how to tell that it works. It does not repeat the
-shapes. Pick one first — [direct](../deployment/direct.md) or
-[stream](../deployment/stream.md) — and take that page's values as the body of
-your values file; [what to prepare](../deployment/README.md) is the same for
+shapes. Pick one first — [direct](../explanation/direct-mode.md) or
+[stream](../explanation/stream-mode.md) — and take that page's values as the body of
+your values file; [what to prepare](../explanation/deployment-shapes.md) is the same for
 both. For what each part is and what it holds, read
-[the architecture](../architecture.md). For what the application does at its
-end, [integrating](integrate.md).
+[the architecture](../explanation/architecture.md). For what the application does at its
+end, [integrating](../how-to/connect-an-application.md).
 
 ## 1. Pick the shape
 
 | shape | for | needs |
 |---|---|---|
-| [direct](../deployment/direct.md) | an internal service, or any cluster without a stream | a bucket, a database |
-| [stream](../deployment/stream.md) | a product: many pods, metering, quotas | a bucket, a database, a NATS account |
+| [direct](../explanation/direct-mode.md) | an internal service, or any cluster without a stream | a bucket, a database |
+| [stream](../explanation/stream-mode.md) | a product: many pods, metering, quotas | a bucket, a database, a NATS account |
 
 Switching later is a change to the receiver's configuration and to no record,
 so a first installation that is unsure should start direct.
@@ -56,15 +56,15 @@ profiles the installation composes:
   store that is not AWS — a service from another provider, MinIO, Ceph — add
   `bucket.endpoint`, `bucket.pathStyle` if its certificate does not cover a
   bucket subdomain, and `bucket.credentialsEnv` with static keys if it has no
-  pod identity; the [S3 guide](../operations/s3-guide.md#s3-compatible-stores)
+  pod identity; the [S3 guide](../how-to/prepare-the-bucket.md#s3-compatible-stores)
   has the recipe.
 
 The bucket needs no default retention: on the record tier the writer sets
 each object's from its profile, and on the attested tier retention is the
 bucket's lifecycle rule. Each application then writes under a **prefix of its own**
 (`audit/<application>/…`), which is what keeps two installations apart in one
-bucket. [Sharing a bucket](../operations/s3-guide.md#sharing-a-bucket) has the
-policy, and [IAM per component](../operations/s3-guide.md#iam-per-component)
+bucket. [Sharing a bucket](../how-to/prepare-the-bucket.md#sharing-a-bucket) has the
+policy, and [IAM per component](../how-to/prepare-the-bucket.md#iam-per-component)
 has the statements for each of the roles, each scoped to its own part of
 the prefix and none of them with a delete:
 
@@ -175,7 +175,7 @@ crypto-shred configures a provider deliberately
 `ECC_NIST_P384` key, an OpenBAO transit `ecdsa-p384` key, or a key file in
 development, and the notary's identity is not the writer's: the chart refuses
 one that is
-([key custody](../operations/key-custody.md#signing-key)). Turn the notary on
+([key custody](../explanation/key-custody.md#signing-key)). Turn the notary on
 with `jobs.notary` once you have the key; it is off by default. `audit verify`
 needs no key, only the thumbprints of the public ones it pins
 (`audit key public --thumbprint`).
@@ -198,8 +198,8 @@ whole of what a deployment pins. The images default to the chart's
 which is a lag to close rather than a thing to configure.
 
 and its values file carries an `audit:` block. Take the body of that block
-from the shape you picked — [direct](../deployment/direct.md#values) or
-[stream](../deployment/stream.md#values) — which is where every value and its
+from the shape you picked — [direct](../explanation/direct-mode.md#values) or
+[stream](../explanation/stream-mode.md#values) — which is where every value and its
 reason lives. What every installation sets, whichever shape:
 
 | value | what it is |
@@ -214,7 +214,7 @@ reason lives. What every installation sets, whichever shape:
 | `jobs.*.config` | verify, purge and clock-sync |
 
 Which presets to compose is a policy question, not a values question:
-[which presets a deployment composes](../operations/presets-policy.md).
+[which presets a deployment composes](../explanation/which-profiles-to-compose.md).
 Compose `security` always, `billing-nl` where the installation meters, and the
 rest only where an obligation is real — retention cannot be shortened later.
 
@@ -280,22 +280,22 @@ and both modes, and the first rollout is where it shows.
    `audit.observe.index.deferred` and `audit.observe.index.lag` (the index is
    behind the archive) and the dead-letter counter (records the writer could not take), and — in the
    application — on `audit.emit.records.dropped`. The
-   [runbook](../operations/runbook.md) says what to do about each.
+   [runbook](../how-to/rebuild-the-index.md) says what to do about each.
 
 Each shape has one more thing to watch, and its page says which: the roll
-interval in [direct](../deployment/direct.md#checking-it-works), the
-consumer's pending count in [stream](../deployment/stream.md#checking-it-works).
+interval in [direct](../explanation/direct-mode.md#checking-it-works), the
+consumer's pending count in [stream](../explanation/stream-mode.md#checking-it-works).
 
 ## 5. Day two
 
-- [Runbook](../operations/runbook.md): the index is behind, a dead letter, a
+- [Runbook](../how-to/rebuild-the-index.md): the index is behind, a dead letter, a
   clock out of tolerance, a gap in the chain.
-- [Legal holds](../operations/s3-guide.md#legal-hold):
+- [Legal holds](../how-to/prepare-the-bucket.md#legal-hold):
   `audit hold place|release|list`.
 - Rebuilding the index: `audit reindex --profile <p> --reset-cursor`, and the
   indexer catches up; or `audit reindex --profile <p> --from <day> --to <day>`.
-- [Verification](../operations/verify.md), which an auditor performs against
+- [Verification](../how-to/verify-the-trail.md), which an auditor performs against
   the archive and nothing else.
 - Extensions, switched on per installation and neither in the request path:
-  [billing](../deployment/extensions/billing.md),
-  [usage quotas](../deployment/extensions/quotas.md).
+  [billing](../how-to/enable-billing.md),
+  [usage quotas](../how-to/enable-usage-quotas.md).

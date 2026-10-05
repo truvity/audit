@@ -82,11 +82,11 @@ actions:
   histogram are the ones to alert on.
 - **The monthly close**: a statement is written after the period ends and
   after the last hour of it is sealed
-  ([0019](../../decisions/0019-seals.md)). Running it earlier produces a
+  ([0019](../decisions/0019-seals.md)). Running it earlier produces a
   statement that names a seal that does not cover the period.
 - **A meter renamed** is a new meter. The old name keeps its history; the
   rollups do not migrate.
 
 Retention for the metering copy is the metering preset's — seven years under
 `billing-nl`, for the Dutch tax administration's retention duty. See
-[which presets a deployment composes](../../operations/presets-policy.md).
+[which presets a deployment composes](../explanation/which-profiles-to-compose.md).

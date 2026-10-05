@@ -10,8 +10,8 @@ application's own chart with this one as a dependency
 ([0011](../../docs/decisions/0011-one-installation-per-service-or-product.md)).
 There is no central installation and no shape that puts the writer inside
 the application. The deployment pages show the values each shape takes:
-[direct](../../docs/deployment/direct.md),
-[stream](../../docs/deployment/stream.md).
+[direct](../../docs/explanation/direct-mode.md),
+[stream](../../docs/explanation/stream-mode.md).
 
 ## What it deploys
 
@@ -59,7 +59,7 @@ writer, receiver, consumers or Service are rendered, and everything that records
 (the query service, the notary and the other jobs) sends to the writer's queue
 with `sink: {sqs: {queueUrl, region}}` under its own pod identity; the chart
 refuses a sink that names the release's own front door
-([AWS](../../docs/deployment/aws.md#observe-and-query-in-kubernetes-writer-on-lambda),
+([AWS](../../docs/reference/aws-pulumi-library.md#observe-and-query-in-kubernetes-writer-on-lambda),
 `examples/external-writer.yaml`). In `stream` it renders two: a receiver
 that serves the sink and publishes, holding neither the bucket nor a key, and
 `writer.consumers` writers that read the stream and put the objects. The
@@ -108,7 +108,7 @@ three of those:
 
 Telemetry is the `OTEL_*` environment. `telemetry.otlp` (`endpoint`,
 `protocol`, `extraEnv`) renders it on every pod when an endpoint is set and
-renders nothing otherwise ([telemetry](../../docs/operations/telemetry.md#the-chart-sets-the-environment)).
+renders nothing otherwise ([telemetry](../../docs/reference/telemetry.md#the-chart-sets-the-environment)).
 The documents a config names by path are
 rendered from the chart's own values: `profiles` into
 `/etc/audit/deployment.yaml`, `workloadIdentity` into
@@ -135,12 +135,12 @@ The chart takes references; it creates none of these.
 | a P-384 signing key the notary may use and the writer may not (KMS `ECC_NIST_P384`, or OpenBAO `ecdsa-p384`), and the thumbprint of its public half for every verifier to pin | `jobs.notary.config.signer`, `jobs.verify.config.seals.roots` |
 | the JetStream stream, already created, with `mode: stream` | `writer.config.stream`, `receiver.config.stream` |
 | **if the broker verifies who connects**: an auth callout that reviews a projected service-account token and maps this namespace to an account, accepting the audience the chart projects | `stream.nats.tokenFile` and a `tokens` entry of the broker's audience |
-| the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/guides/read.md#access)) |
+| the issuers callers sign in with, and who may read what | `query.grants` ([access](../../docs/how-to/read-the-trail.md#access)) |
 | an exports bucket with no Object Lock, if exports are wanted; on a store of its own if need be | `query.config.exports.bucket`, with its own `endpoint`, `pathStyle` and `credentialsSecret` |
 | the cluster's service-account issuer, reachable over HTTPS from the pods | `workloadIdentity.issuers` |
 | the images | `image.writer`, `image.query`, `image.observe`, `image.notary`, `image.cli` — one per binary, built by ko from `.goreleaser.yaml`; distroless, no shell |
 | a role per component — writer, indexer, notary, query and verify — bound through its ServiceAccount's annotations. The receiver, purge and clock-sync have accounts and no roles; the chart refuses the receiver, the notary and the indexer, sharing the writer's | `serviceAccount`, `receiver.serviceAccount`, `observe.serviceAccount`, `query.serviceAccount`, `jobs.*.serviceAccount` |
-| **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/operations/openbao-keys.md#what-the-engine-needs)) | `keys.local.rootFile` with `secretMounts`, or `keys.provider: transit` with `keys.transit.openbao.login` and a `tokens` entry |
+| **only if the deployment chooses a key provider**: a Secret with the 32-byte root (`local`), or an OpenBAO transit engine with a JWT role per component ([what the engine needs](../../docs/how-to/configure-openbao-keys.md#what-the-engine-needs)) | `keys.local.rootFile` with `secretMounts`, or `keys.provider: transit` with `keys.transit.openbao.login` and a `tokens` entry |
 | a CA bundle, if OpenBAO or Postgres serve from a private chain (e.g. trust-manager's) | `trust.configMap` |
 | a `ReadWriteMany` storage class, for more than one replica on `local` keys (transit needs none) | `keysVolume` |
 
@@ -193,7 +193,7 @@ present the token to the broker as their NATS token, read afresh on every
 connect; the broker's auth callout, which is the deployment's, reviews it and
 maps the namespace to an account. Without them, they connect with no
 credentials, for a broker that verifies nobody
-([stream](../../docs/deployment/stream.md#authenticating-to-the-stream)).
+([stream](../../docs/explanation/stream-mode.md#authenticating-to-the-stream)).
 
 ## What it refuses to render
 

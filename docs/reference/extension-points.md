@@ -71,7 +71,7 @@ Enforced by [extension.schema.json](../../sdk/schemas/extension.schema.json):
 ## How components use the annotations
 
 - **Emitter**: validates against the composed schema before publishing.
-- **[Split writer](../design/split-writer.md)**: routes each property to the
+- **[Split writer](../explanation/split-writer.md)**: routes each property to the
   profiles whose classes include it; applies each `identifier` property the
   treatment its kind's category has in the profile — which, with no key
   provider, is clear or dropped rather than a pseudonym
@@ -79,7 +79,7 @@ Enforced by [extension.schema.json](../../sdk/schemas/extension.schema.json):
   applies `x-audit-sensitive`.
 - **Indexer**: creates facet columns and typed filter predicates from
   `x-audit-facet` and `x-audit-filter`.
-- **[Audit page](../design/audit-page.md)**: renders the detail panel, facets
+- **[Audit page](../explanation/audit-page.md)**: renders the detail panel, facets
   and filters from `title`, `description`, `enum` and `format`.
 - **Exporters**: map by `x-ocsf-path` and `x-ecs-path`.
 

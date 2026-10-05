@@ -48,7 +48,7 @@ carries `OTEL_EXPORTER_OTLP_ENDPOINT`, which has a value of its own, and an
 endpoint that is not an http(s) URL.
 
 On AWS, a function's telemetry goes through the Lambda extension rather than a
-gateway address: [AWS, telemetry](../deployment/aws.md#telemetry).
+gateway address: [AWS, telemetry](aws-pulumi-library.md#telemetry).
 
 The gateway turns delta temporality into cumulative and keeps only the cluster,
 namespace and tier from the resource as labels
@@ -69,9 +69,9 @@ Names are as the gateway stores them: dots become underscores, a counter gains
 | `audit_observe_index_lag_seconds` | histogram | `profile` | seconds from an object's put into the archive to its rows being in the index, as `audit-observe` measures it; the settle window is its floor |
 | `audit_observe_index_deferred_total` | counter | `profile`, `reason` | objects the indexer could not index: `retry` is tried again, `unreadable` was skipped |
 | `audit_observe_objects_indexed_total`, `audit_observe_records_indexed_total` | counter | `profile` | the indexer's output |
-| `audit_queue_message_age_seconds` | histogram | `transport` | seconds from a message being sent to a queue to the writer receiving it (AWS: the Lambda's `SentTimestamp`); a redelivery's wait is in it, so a message that keeps failing is a long tail. The depth and the dead-letter queue are CloudWatch's, and alarmed there ([AWS](../deployment/aws.md#alarms)) |
+| `audit_queue_message_age_seconds` | histogram | `transport` | seconds from a message being sent to a queue to the writer receiving it (AWS: the Lambda's `SentTimestamp`); a redelivery's wait is in it, so a message that keeps failing is a long tail. The depth and the dead-letter queue are CloudWatch's, and alarmed there ([AWS](aws-pulumi-library.md#alarms)) |
 | `audit_writer_dead_lettered_total` | counter | | records the writer could not process |
-| `audit_writer_catalogue_unknown_total` | counter | `source`, `catalogue_version` | records refused because the catalogue version they name is not registered in this writer (also dead-lettered): a writer and its emitters out of step on a catalogue. The labels are what the record said, so after 20 distinct pairs the rest count as `other`; the log line (`event=unknown_catalogue`) has them all. On AWS the library alarms on that line ([AWS](../deployment/aws.md#alarms)) |
+| `audit_writer_catalogue_unknown_total` | counter | `source`, `catalogue_version` | records refused because the catalogue version they name is not registered in this writer (also dead-lettered): a writer and its emitters out of step on a catalogue. The labels are what the record said, so after 20 distinct pairs the rest count as `other`; the log line (`event=unknown_catalogue`) has them all. On AWS the library alarms on that line ([AWS](aws-pulumi-library.md#alarms)) |
 | `audit_seal_age_seconds` | gauge | `profile` | seconds since the end of the newest sealed hour, of the tenant furthest behind, **as of the notary's last run** |
 | `audit_seal_written_total` | counter | `profile` | seals the notary wrote |
 | `audit_seal_failures_total` | counter | `profile` | tenants a notary run could not seal further |
@@ -221,7 +221,7 @@ The indexer could not index objects the archive holds. Its log line
 database, a catalogue missing from the archive) is fixed, and `unreadable` is an
 object that does not decode and has been skipped, which is the thing to
 investigate. `audit reindex --profile <name> --from <day> --to <day>` reads a
-range again ([runbook](runbook.md#the-index-is-behind)).
+range again ([runbook](../how-to/rebuild-the-index.md#the-index-is-behind)).
 
 #### AuditWriterRejectingRecords
 

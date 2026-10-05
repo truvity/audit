@@ -12,7 +12,7 @@ writes seals, `audit verify`, `audit reindex` and the scan searcher read them,
 and a conformance suite holds all of it to the contract. Signing a delegation
 is the one thing here that is specified and not built: a verifier checks one,
 and nothing in this repository writes one. The
-[capabilities](../capabilities.md) page says what exists. The reasons are in
+[capabilities](capabilities.md) page says what exists. The reasons are in
 [0018](../decisions/0018-v1-bucket-layout.md) (the layout),
 [0019](../decisions/0019-seals.md) (seals) and
 [0020](../decisions/0020-observe-follows-the-bucket.md) (reading it).

@@ -140,7 +140,7 @@ function's environment is not a place for a secret, so `source: env` is refused 
 (when `AWS_LAMBDA_FUNCTION_NAME` is set), which includes a version-1 `...Env` converted
 to it.** A `root` has no empty, `.` or `..` segment. The Pulumi library renders
 the block and grants the function `ssm:GetParameter(s)` on its root and nothing
-else of SSM ([AWS](../deployment/aws.md#secrets)). On Kubernetes use `file`: the
+else of SSM ([AWS](aws-pulumi-library.md#secrets)). On Kubernetes use `file`: the
 chart's `secretFiles` projects each Secret key as the file the name stands for.
 
 Version 1's `passwordEnv`, `credentialsEnv` and `tokenEnv` (the name of an
@@ -158,9 +158,9 @@ Telemetry is the OpenTelemetry SDK's own environment, and the file has nothing
 about it: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME` and the rest of
 `OTEL_*`. The platform decides where signals go, so the same file runs in
 every environment. The chart's `telemetry.otlp` value renders those variables
-on every pod ([telemetry](../operations/telemetry.md#the-chart-sets-the-environment));
+on every pod ([telemetry](telemetry.md#the-chart-sets-the-environment));
 on AWS Lambda they are the function's environment
-([AWS](../deployment/aws.md#telemetry)).
+([AWS](aws-pulumi-library.md#telemetry)).
 
 ### Health: `/healthz` and `/readyz`
 
@@ -310,7 +310,7 @@ the application registers its catalogue with the address it writes to.
 | `consume.sqs.batch` | integer, 1 to 10 | 10 | how many messages are received at once |
 | `consume.sqs.visibility` | duration | `1m` | how long a received message is hidden from other consumers while the writer writes it. It must outlast a write to the bucket, or the message is delivered twice |
 | `stream.nats.url` | string, required with `stream` | | the JetStream server, for example `nats://nats:4222` |
-| `stream.nats.tokenFile` | path | none: no credentials | the token presented to a broker that verifies who connects, read afresh on every connect ([stream](../deployment/stream.md#authenticating-to-the-stream)) |
+| `stream.nats.tokenFile` | path | none: no credentials | the token presented to a broker that verifies who connects, read afresh on every connect ([stream](../explanation/stream-mode.md#authenticating-to-the-stream)) |
 | `stream.name` | string | `AUDIT` | the stream |
 | `stream.consumer` | string | `audit-writer` | the durable consumer this installation's writers share |
 | `stream.batch` | integer, at least 1 | 100 | how many records are taken at once |
@@ -372,7 +372,7 @@ version and is not configurable.
 ### audit-writer-lambda
 
 The write path as an AWS Lambda function behind an SQS event source mapping
-([AWS](../deployment/aws.md)). It runs the same writer under the same
+([AWS](aws-pulumi-library.md)). It runs the same writer under the same
 `require: archived` guard as `audit-writer`, and has none of the rest of it: no
 listener, no registry, no stream, no database, no HTTP front door. A function has
 no process that stays up, so there is nothing to serve and no replica count to
@@ -381,7 +381,7 @@ The file is read from `--config`, or `AUDIT_CONFIG`, or `/opt/audit/audit.yaml`,
 or `/var/task/audit.yaml`, whichever of them is first to exist. In the Pulumi
 library's deployment it is in the function's configuration layer at
 `/opt/audit/audit.yaml`, named by `AUDIT_CONFIG`, rendered from the stack's own
-arguments ([AWS](../deployment/aws.md#configuration-as-a-layer)). The writer says
+arguments ([AWS](aws-pulumi-library.md#configuration-as-a-layer)). The writer says
 which file it read, and its digest, in its start-up record
 ([evidence](#evidence-the-writers-start-up-record)).
 
@@ -445,10 +445,10 @@ the grants. Every read it serves is recorded through the writer.
 |---|---|---|---|
 | `listen` | `listen` | `:8080` | the address it is served on |
 | `grants` | path, required | | the grants file, below |
-| `sink` | `sink`, required | | the writer every read is recorded through: its `url`, or the ingest `sqs` queue of a writer that runs elsewhere ([AWS](../deployment/aws.md#observe-and-query-in-kubernetes-writer-on-lambda)) |
+| `sink` | `sink`, required | | the writer every read is recorded through: its `url`, or the ingest `sqs` queue of a writer that runs elsewhere ([AWS](aws-pulumi-library.md#observe-and-query-in-kubernetes-writer-on-lambda)) |
 | `require` | `logged`, `queued` or `archived` | none: checks nothing | the weakest durability the writer's acknowledgements may carry. Needs `sink.expect` at least as strong ([durability](#durability-require-forward-consume)) |
 | `deployment` | path | none | the profile configuration. A grant preset needs it, because a preset turns roles into the deployment's own profiles |
-| `searcher` | `postgres` or `s3scan` | `postgres` | `postgres` is the index; `s3scan` is the archive, within a budget, for a deployment with no database. The scan orders by `occurred_at` only and refuses `recorded_at`, so a deployment on it can search the trail but cannot follow it: there is no live tail ([search](../design/search.md#tail)) |
+| `searcher` | `postgres` or `s3scan` | `postgres` | `postgres` is the index; `s3scan` is the archive, within a budget, for a deployment with no database. The scan orders by `occurred_at` only and refuses `recorded_at`, so a deployment on it can search the trail but cannot follow it: there is no live tail ([search](../explanation/search.md#tail)) |
 | `database` | `database` | | the index, as the query service's **own** role (`audit migrate --reader`): `usage` on the schema, `select` on the index's tables, not the owner. Tenant row-level security binds only a non-owner. Required unless `searcher` is `s3scan` |
 | `archive.bucket`, `archive.prefix` | `bucket`, string | | what `s3scan` reads, and where Get finds a record's object. Required with `s3scan`. Without it Get still answers, with where the copy is and nothing about whether it has been verified (nothing yet sets that: it is for seals). The service's region is `archive.bucket.region` |
 | `exports.bucket` | `bucket`, required with `exports` | | a separate bucket with no Object Lock, which clears it. Without `exports` the export operation is refused. It inherits nothing from the archive: name its endpoint, path style and `credentialsEnv` here |
@@ -571,7 +571,7 @@ signed seal of what the hour holds, chained to the one before, written to
 `seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws`
 ([bucket contract](bucket-contract.md#seals)). Hourly in the chart. It is the one
 part that signs, so its `signer` is a managed key the writer's identity cannot
-use ([key custody](../operations/key-custody.md#signing-key)), and it runs as an
+use ([key custody](../explanation/key-custody.md#signing-key)), and it runs as an
 identity of its own, which the chart enforces. A rerun writes nothing new, and an
 hour whose objects do not match their metadata is not sealed, nor is any hour
 after it.
@@ -590,7 +590,7 @@ after it.
 
 It reports `audit.seal.age` (the age of the newest sealed hour, per profile, of
 the tenant furthest behind), `audit.seal.written` and `audit.seal.failures`
-over OTLP ([telemetry](../operations/telemetry.md)). The first seal of a tenant is
+over OTLP ([telemetry](telemetry.md)). The first seal of a tenant is
 of the hour of its first object; an hour with no objects is sealed too, from then
 on.
 
@@ -598,7 +598,7 @@ on.
 
 Checks every record object of a range of ingest time against the
 [bucket contract](bucket-contract.md) and reports what it finds
-([verification](../operations/verify.md)). It reads the archive only, so its
+([verification](../how-to/verify-the-trail.md)). It reads the archive only, so its
 `archive` has no `lockMode`, and it needs no key. Nightly in the chart, over the
 last 24 hours. One job checks every profile it names, or every profile the
 deployment composes.
@@ -785,7 +785,7 @@ The values that are not configuration of a binary:
 | value | meaning |
 |---|---|
 | `mode` | `direct` (one process: the front door and the write path) or `stream` (a receiver in front, `writer.consumers` writers behind). It decides which Deployments are rendered; the binaries' own `mode` is in `receiver.config` |
-| `profiles`, `externalIdentifiersAreOpaque` | rendered as the profile document, `/etc/audit/deployment.yaml`, which every config's `deployment` names. `externalIdentifiersAreOpaque` declares that the identifiers the installation receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](presets.md#what-a-deployment-can-relax)) |
+| `profiles`, `externalIdentifiersAreOpaque` | rendered as the profile document, `/etc/audit/deployment.yaml`, which every config's `deployment` names. `externalIdentifiersAreOpaque` declares that the identifiers the installation receives for external people mean nothing outside its own database, which relaxes a profile's `external: pseudonym` to `clear` ([presets](profiles.md#what-a-deployment-can-relax)) |
 | `workloadIdentity.issuers`, `.audience`, `.workloads` | `audience` is the audience an issuer entry takes when it names none. Rendered as `/etc/audit/workloads.yaml`, which the writer's `workloads` names. The chart refuses an installation that keeps an index and verifies callers with no `workloads` mapping |
 | `query.grants` | rendered as `/etc/audit/grants.yaml`, which the query service's `grants` names |
 | `catalogues` | catalogue documents by name, mounted at `/etc/audit/catalogues` for the writer's `catalogues` |

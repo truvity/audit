@@ -31,7 +31,7 @@ flowchart LR
 
 An application team that already has, or can provision, a Postgres
 database, an S3-compatible bucket with Object Lock and a reference clock — the things
-[Before either shape](docs/deployment/README.md#before-either-shape) lists.
+[Before either shape](docs/explanation/deployment-shapes.md#before-either-shape) lists.
 
 It deliberately does not install: a central, multi-tenant audit service (an
 installation belongs to one application,
@@ -127,8 +127,8 @@ from is proven to render, not just plausible.
 
 | shape | for | how a record becomes durable |
 |---|---|---|
-| [direct](docs/deployment/direct.md) | an internal service, or a cluster with no stream | the receiver puts the object, then acknowledges |
-| [stream](docs/deployment/stream.md) | a product: many pods, metering, quotas | the receiver publishes, writers consume and put |
+| [direct](docs/explanation/direct-mode.md) | an internal service, or a cluster with no stream | the receiver puts the object, then acknowledges |
+| [stream](docs/explanation/stream-mode.md) | a product: many pods, metering, quotas | the receiver publishes, writers consume and put |
 
 Both write the same archive and are verified by the same command. There is
 no shape that puts the writer inside the application
@@ -138,8 +138,8 @@ no shape that puts the writer inside the application
 
 | extension | what it adds | needs |
 |---|---|---|
-| [billing](docs/deployment/extensions/billing.md) | rollups at index time, an immutable monthly statement | a metering profile |
-| [usage quotas](docs/deployment/extensions/quotas.md) | a usage consumer, a counter cache, an hourly reconciler | stream mode |
+| [billing](docs/how-to/enable-billing.md) | rollups at index time, an immutable monthly statement | a metering profile |
+| [usage quotas](docs/how-to/enable-usage-quotas.md) | a usage consumer, a counter cache, an hourly reconciler | stream mode |
 
 ## Consumers
 
@@ -159,13 +159,13 @@ no shape that puts the writer inside the application
 
 | you want to | read |
 |---|---|
-| see how it fits together | [Architecture](docs/architecture.md) — the parts, the catalogue, what an acknowledgement means, what can be lost |
-| connect an application | [Integrating](docs/guides/integrate.md) — the catalogue, one constructor per action, the CI check, the Audit page |
-| run one in a cluster | [Deployment](docs/deployment/README.md) — what to prepare, then [direct](docs/deployment/direct.md) or [stream](docs/deployment/stream.md) |
-| record what your application does | [Emitting](docs/guides/emit.md) — deliveries, registration, the Go emitter; [`examples/emit`](examples/emit/main.go) |
-| search the trail, or audit it | [Reading](docs/guides/read.md) — grants, the API, the clients, `audit verify`; [`examples/read`](examples/read/main.go) |
-| know which presets to compose | [Presets policy](docs/operations/presets-policy.md), then [presets/](presets/README.md) |
-| understand why it is built this way | [why](docs/why.md), [concepts](docs/concepts.md), [the decisions](docs/decisions/README.md) |
+| see how it fits together | [Architecture](docs/explanation/architecture.md) — the parts, the catalogue, what an acknowledgement means, what can be lost |
+| connect an application | [Integrating](docs/how-to/connect-an-application.md) — the catalogue, one constructor per action, the CI check, the Audit page |
+| run one in a cluster | [Deployment](docs/explanation/deployment-shapes.md) — what to prepare, then [direct](docs/explanation/direct-mode.md) or [stream](docs/explanation/stream-mode.md) |
+| record what your application does | [Emitting](docs/how-to/emit-records.md) — deliveries, registration, the Go emitter; [`examples/emit`](examples/emit/main.go) |
+| search the trail, or audit it | [Reading](docs/how-to/read-the-trail.md) — grants, the API, the clients, `audit verify`; [`examples/read`](examples/read/main.go) |
+| know which presets to compose | [Presets policy](docs/explanation/which-profiles-to-compose.md), then [presets/](presets/README.md) |
+| understand why it is built this way | [why](docs/explanation/why.md), [concepts](docs/explanation/concepts.md), [the decisions](docs/decisions/README.md) |
 
 ## The rule that makes this repository public
 

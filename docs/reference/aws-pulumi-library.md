@@ -10,7 +10,7 @@ module of its own so that Pulumi is not in the root module's dependency graph.
 Pulumi's mocks (`just pulumi-test`): it declares the right resources with the
 right arguments and creates none. The Lambda binaries are tested against fakes,
 and the DynamoDB store against LocalStack. What has not happened is a run in an
-account, which is why the [capabilities](../capabilities.md) page marks every AWS
+account, which is why the [capabilities](capabilities.md) page marks every AWS
 row here 🧪 and not ✅.
 
 ## The shape
@@ -200,7 +200,7 @@ one an audit trail should not have.
 The writer says which configuration it ran under in its start-up record
 (`audit.writer.started`): the digest of the file, of the profile document and of the
 catalogues, and the layer version's ARN
-([configuration](../reference/configuration.md#evidence-the-writers-start-up-record)).
+([configuration](configuration.md#evidence-the-writers-start-up-record)).
 The platform does not tell a function which layers it has, so the ARN is what the
 library puts in `AUDIT_CONFIG_LAYER`.
 
@@ -503,7 +503,7 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Region` | looked up | the region, for the ARN of the SSM parameters; looked up like `AccountID`, and only when there are secrets to grant |
 | `Writer.Secrets.Root`, `.KeyArn` | `/audit/<name>/private/config`, none | where the writer reads the secrets `Writer.Keys` names, and the customer-managed key they are encrypted with; see [secrets](#secrets). Unset and `Writer.Keys` naming no secret: no SSM access at all |
 | `Ingest.Disabled` | false | leaves out the queue, the table, the writer and their alarms; see [optional parts](#optional-parts) |
-| `Ingest.Senders` | **required** unless `Ingest.AnySenderInAccount` | principals (role or user ARNs) allowed to send to the queue. The queue policy allows them `sqs:SendMessage` and denies every other principal: the queue carries no verified caller identity, so this list is the writer's authenticity on this path ([authn](../design/authn-authz.md#on-the-sqs-path)) |
+| `Ingest.Senders` | **required** unless `Ingest.AnySenderInAccount` | principals (role or user ARNs) allowed to send to the queue. The queue policy allows them `sqs:SendMessage` and denies every other principal: the queue carries no verified caller identity, so this list is the writer's authenticity on this path ([authn](../explanation/authn-authz.md#on-the-sqs-path)) |
 | `Ingest.AnySenderInAccount` | false | the acknowledged alternative, for a trial: no sender statement and no deny, so any principal of the account with `sqs:SendMessage` in its identity policy may send. Refused with `Senders` |
 | `Ingest.MaxReceiveCount` | 5 | deliveries before a message moves to the DLQ |
 | `Ingest.RetentionDays` | 14 | the queue's retention; 14 is SQS's limit and the deduplication window's floor |
@@ -918,7 +918,7 @@ not import the library.
 
 - **A deployment.** Nothing here has run in an account.
 - **The `lambda` sink** (a direct invocation of the writer function) is still
-  designed ([capabilities](../capabilities.md)); the queue is the transport.
+  designed ([capabilities](capabilities.md)); the queue is the transport.
 - **FIFO ingest.** The queue is a standard queue and deduplication is the writer's;
   a FIFO queue would also absorb a repeat inside its five-minute window, and is
   not what the library creates.

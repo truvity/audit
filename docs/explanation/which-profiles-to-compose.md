@@ -59,7 +59,7 @@ other decisions live.
 Composition is a union, and it only ever tightens: the longest retention
 wins, the stricter identity treatment wins, a forbidden field beats an
 optional one, the most frequent review cadence wins. The rules are in
-[the presets reference](../reference/presets.md), and
+[the presets reference](../reference/profiles.md), and
 `audit profile explain <name>` prints what a profile actually keeps after
 composition — including the effect of `external_identifiers_are_opaque`,
 which can relax a preset's `pseudonym` to `clear` when the deployment has

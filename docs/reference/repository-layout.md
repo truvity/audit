@@ -264,7 +264,7 @@ verifier can pick the public half after a change.
 
 **A configuration key.** Add it to the type in `internal/config/types.go` and
 the schema in `internal/config/schema/schema.go`, run `just config-schemas`,
-and document it in the [configuration reference](../reference/configuration.md).
+and document it in the [configuration reference](configuration.md).
 The chart takes it through `config:` with no change.
 
 **A chart value.** For what is the platform's and not the binary's, add it to

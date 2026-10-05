@@ -20,7 +20,21 @@ flowchart LR
   Q["query service"] --> PG
 ```
 
-## Shapes
+## Who it is for
+
+An application team that already has, or can provision, a Postgres database, an S3-compatible bucket
+(with Object Lock for a profile that demands it) and a reference clock. It deliberately does not install
+a central, multi-tenant audit service, its own message bus, or the Audit page, which lives in the
+application's own console.
+
+## The model
+
+An **installation** is one deployment in one application's namespace. It writes **records**, validated
+against the application's **catalogue**, through a **receiver** into the **archive** (an Object-Locked
+bucket) and an **index** (Postgres, rebuildable, not itself evidence) that an **indexer** writes by
+following the bucket. A **query service** reads them back behind declared grants.
+
+## Install and a worked example
 
 An installation belongs to **one application** and runs in that application's namespace
 ([0011](docs/decisions/0011-one-installation-per-service-or-product.md)). It comes in three shapes,
@@ -35,6 +49,9 @@ each with a tutorial from nothing to working:
 They write the same archive, under the same catalogue rules and bucket layout, and are verified by the
 same command. The two combine: writer on Lambda, observe and query in Kubernetes.
 
+The worked example is `charts/audit/examples/direct.yaml`, rendered as a golden fixture, walked through
+in [Getting started on Kubernetes](docs/getting-started/kubernetes.md).
+
 ## Artifacts
 
 | artifact | where |
@@ -48,6 +65,18 @@ same command. The two combine: writer on Lambda, observe and query in Kubernetes
 | `@truvity/audit`: query client, sentences, React view | GitHub Packages, at each release tag |
 | JSON Schemas of the record, the catalogue and every configuration file | `https://truvity.github.io/audit/schemas/` ([`schemas/`](schemas/README.md)) |
 
+## Consumers
+
+| repo | surface |
+|---|---|
+| estates that deploy it | chart `audit`, or the Pulumi library for AWS Lambda |
+| sluis | emits records; see [the sluis page](docs/getting-started/sluis.md) |
+
+## Neighbours
+
+sluis (access management), OpenBAO (a relying party and, optionally, the key provider) and this
+component's own records are one trail: audit is the record each of them writes.
+
 ## Documentation
 
 [`docs/`](docs/README.md) is organised by what you are doing: tutorials in
@@ -55,6 +84,19 @@ same command. The two combine: writer on Lambda, observe and query in Kubernetes
 [`how-to/`](docs/how-to/), lookups in [`reference/`](docs/reference/configuration.md), the why in
 [`explanation/`](docs/explanation/architecture.md) and the [decisions](docs/decisions/README.md). The
 changelog says what changed; the steps to take are in [`how-to/upgrade/`](docs/how-to/upgrade/v0.13.md).
+
+## The rule that makes this repository public
+
+Mechanism only: nothing in this repository may name a real organisation, cluster, account, team, person,
+incident or internal ticket ([CONTRIBUTING](CONTRIBUTING.md)). Every chart value that names one is an
+input with a neutral default; the consuming estate supplies the particulars from its own private
+repository. `hack/leak-canary.sh` enforces it, and `just check` runs it. This repository follows the shared
+[component contract](https://github.com/truvity/policy/blob/master/docs/contracts/component.md).
+
+## Status
+
+**Stabilizing** (see above). What is built, designed and run live, platform by platform:
+[capabilities](docs/reference/capabilities.md).
 
 ## What it is not
 
@@ -69,9 +111,14 @@ Tools come from `devbox.json` through direnv. `just check` is the gate and needs
 checkout. [CONTRIBUTING](CONTRIBUTING.md) has the rest, and
 [the repository layout](docs/reference/repository-layout.md) says where things are.
 
-This repository is public: mechanism only, with nothing that names a real organisation, cluster, account,
-team, person or incident ([CONTRIBUTING](CONTRIBUTING.md)). It follows the shared
-[component contract](https://github.com/truvity/policy/blob/master/docs/contracts/component.md).
+## Releasing
+
+A pushed `v*` tag runs [`release.yaml`](.github/workflows/release.yaml), the shared `release-public`
+workflow: it builds the toolchain archives, the Lambda zips and, through `ko`, the images, and pushes the
+`audit` chart to `oci://ghcr.io/truvity/charts/audit` at the tag's version.
+[`charts/audit/Chart.yaml`](charts/audit/Chart.yaml)'s `version: 0.0.0` / `appVersion: "0.0.0"` are
+placeholders the release stamps over; never bump them by hand. A breaking change links its migration page
+from the CHANGELOG ([upgrade pages](docs/how-to/upgrade/v0.13.md)).
 
 ## Licence
 

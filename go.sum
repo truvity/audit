@@ -114,8 +114,8 @@ github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UV
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
-github.com/truvity/audit/sdk v0.7.0 h1:YD3lmDSykWz3wDK85RFEOxwT/bd95D6KgH0olAvQQSA=
-github.com/truvity/audit/sdk v0.7.0/go.mod h1:jZxW78L/6GqoQNQyhBTBxcDaZ3DNjq+p2FcsZKkPdm8=
+github.com/truvity/audit/sdk v0.11.0 h1:20Ku1+E7CGR7miWebRLZBYFf164+j/KeICvxeQGqkCo=
+github.com/truvity/audit/sdk v0.11.0/go.mod h1:jZxW78L/6GqoQNQyhBTBxcDaZ3DNjq+p2FcsZKkPdm8=
 github.com/truvity/gateway-auth v0.7.1 h1:jSoeB+u9aergNMeNHW3c7g291RxdCED6TaOflwJNSak=
 github.com/truvity/gateway-auth v0.7.1/go.mod h1:5ZrYGw0qmVo+Xgpa/Au5BiDVkxSKcz+ZUil4JlQo+eU=
 github.com/truvity/gemaal v0.24.0 h1:rEwcwMwAX0C4niHQxEZk0IfR0r7KGXarrNe4Re1Na4E=

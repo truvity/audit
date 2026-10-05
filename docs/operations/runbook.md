@@ -107,6 +107,27 @@ under `dlq/` and exits non-zero if anything did. A record refused for not
 satisfying its schema will be refused again, and should be: the archive is not
 where an emitter's mistakes are corrected.
 
+## Redriving the ingest queue's dead-letter queue (AWS)
+
+A message that reached the ingest queue's DLQ is moved back with SQS's message
+move task (`aws sqs start-message-move-task --source-arn <DlqArn>
+--destination-arn <QueueArn>`, or the console's "Start DLQ redrive"). The task
+sends to the ingest queue **as the caller**, so the caller needs `sqs:SendMessage`
+on `QueueArn` in its identity policy and has to be in the queue policy, which
+denies `sqs:SendMessage` to every principal that is not a sender. Name the
+operator's role in **`Ingest.Redrivers`** (a break-glass role; it is allowed and
+excepted from the deny, and is not a sender the trail relies on), and
+`sqs:StartMessageMoveTask` on the DLQ and `sqs:ReceiveMessage`/`DeleteMessage` on
+it in its identity policy. Fix the cause first (the catalogue, the writer's
+release): a message moved back with its cause in place goes round again and
+returns to the DLQ after `MaxReceiveCount` deliveries.
+
+`Ingest.Senders` and `Ingest.Redrivers` take **the ARN of an IAM role or user**,
+`arn:aws:iam::<account>:role/<path>/<name>`, which is what `aws:PrincipalArn` carries
+for a role session. Not an assumed-role session ARN
+(`arn:aws:sts::<account>:assumed-role/<name>/<session>`), not a bare account id
+and no wildcard: the library refuses those at preview, on the resolved values.
+
 ## Verification failed
 
 Treat as an incident. The report names each object that failed and why, one

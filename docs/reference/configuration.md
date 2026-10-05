@@ -162,6 +162,21 @@ on every pod ([telemetry](../operations/telemetry.md#the-chart-sets-the-environm
 on AWS Lambda they are the function's environment
 ([AWS](../deployment/aws.md#telemetry)).
 
+### Health: `/healthz` and `/readyz`
+
+`audit-writer`, `audit-query` and `audit-observe` serve both on their `listen` address.
+`/healthz` says the process is up and, for a writer with a stream or queue consumer,
+that the consumer has not stopped on its own: it is the liveness probe, and a failure
+restarts the pod. `/readyz` says it can do its work now: the database answers (writer
+with a `database`, query with the `postgres` searcher, observe), the catalogue
+registry can be read (writer with a `database`), the archive can be listed (query with
+the `s3scan` searcher, observe's catalogues), and a consumer is running. It is the
+readiness probe: a failure takes the pod out of the Service and does not restart it,
+because restarting does not bring a database back. The checks run at every probe, in
+parallel and within 2 seconds, and a 503 names the checks that failed and never their
+errors (those are in the log). A receiver with no database or consumer is ready when
+it is up.
+
 ### Evidence: the writer's start-up record
 
 `audit.writer.started` carries, as `data` (schema `writer-started.json`, in
@@ -394,12 +409,12 @@ seal key by alias.
 lists `records/<profile>/<tenant>/` from a cursor kept in Postgres, indexes the
 objects older than the settle window, and moves the cursor in the transaction
 that writes their rows. It reads the archive and never writes it, and it serves
-only `/healthz`: the query service is `audit-query`, a process of its own under
+only `/healthz` and `/readyz`: the query service is `audit-query`, a process of its own under
 a role that can only read.
 
 | key | type | default | meaning |
 |---|---|---|---|
-| `listen` | `listen` | `:8080` | the address `/healthz` is served on |
+| `listen` | `listen` | `:8080` | the address `/healthz` and `/readyz` are served on. `/healthz` says the process is up (the liveness probe); `/readyz` says it can work now (the readiness probe): the index database answers and the archive's catalogues can be listed. A failing check is named in the 503, never its error |
 | `archive` | `archive`, required | | the archive to follow (`bucket`, `prefix`). It has no `lockMode`: this process reads. The catalogues and their extension schemas are read from it too |
 | `database` | `database`, required | | the index, as the indexer's **own** role (`audit migrate --observe`): read and write on the index and its cursors, nothing of the deduplication table, not the owner, and not the writer's or the query service's |
 | `settle` | duration | `2m` | how far behind now the cursor stays. An object's key is fixed when its put starts and it is visible when it ends, so it must be longer than a put can take and than the clocks of the writers and of this process can disagree. It is the least time between a record's acknowledgement and its appearance in search |

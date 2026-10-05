@@ -194,10 +194,11 @@ func buildArchived(t *testing.T, archived map[string]string, edit func(*auditpul
 		},
 		Notary: auditpulumi.NotaryArgs{Package: notaryZip, PackageSHA256: notarySHA},
 		Telemetry: &auditpulumi.TelemetryArgs{
-			ExtensionLayerArn: pulumi.String(arnp + "lambda:eu-west-1:" + account + ":layer:access-roster-otlp:3"),
+			ExtensionLayerArn: pulumi.String(arnp + "lambda:eu-west-1:" + account + ":layer:audit-otlp:3"),
 			IssuerURL:         "https://access.example.test",
 			OTLPEndpoint:      "https://otlp.example.test",
 		},
+		Ingest:  auditpulumi.IngestArgs{Senders: []pulumi.StringInput{pulumi.String(arnp + "iam::" + account + ":role/app/receiver")}},
 		Alerts:  auditpulumi.AlertsArgs{EndpointURL: pulumi.String("https://alerts.example.test/sns")},
 		Observe: &auditpulumi.ObserveArgs{TrustedPrincipalArn: pulumi.String(arnp + "iam::" + otherAccount + ":role/kernel/audit-observe")},
 	}

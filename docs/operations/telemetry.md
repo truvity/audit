@@ -71,6 +71,7 @@ Names are as the gateway stores them: dots become underscores, a counter gains
 | `audit_observe_objects_indexed_total`, `audit_observe_records_indexed_total` | counter | `profile` | the indexer's output |
 | `audit_queue_message_age_seconds` | histogram | `transport` | seconds from a message being sent to a queue to the writer receiving it (AWS: the Lambda's `SentTimestamp`); a redelivery's wait is in it, so a message that keeps failing is a long tail. The depth and the dead-letter queue are CloudWatch's, and alarmed there ([AWS](../deployment/aws.md#alarms)) |
 | `audit_writer_dead_lettered_total` | counter | | records the writer could not process |
+| `audit_writer_catalogue_unknown_total` | counter | `source`, `catalogue_version` | records refused because the catalogue version they name is not registered in this writer (also dead-lettered): a writer and its emitters out of step on a catalogue. The labels are what the record said, so after 20 distinct pairs the rest count as `other`; the log line (`event=unknown_catalogue`) has them all. On AWS the library alarms on that line ([AWS](../deployment/aws.md#alarms)) |
 | `audit_seal_age_seconds` | gauge | `profile` | seconds since the end of the newest sealed hour, of the tenant furthest behind, **as of the notary's last run** |
 | `audit_seal_written_total` | counter | `profile` | seals the notary wrote |
 | `audit_seal_failures_total` | counter | `profile` | tenants a notary run could not seal further |

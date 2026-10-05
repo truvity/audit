@@ -62,6 +62,42 @@ pseudonymisation, and a grant to read must not carry it.
   interface for a deployment that already runs a mesh.
 - **none**: tests only.
 
+### On the SQS path
+
+A record that arrives through the ingest queue (the writer Lambda; a receiver or
+a job with `sink.sqs`) carries **no verified identity of its caller**. There is
+no token on that path: SQS delivers the message body and attributes the sender
+chose, and the writer, which has no caller to verify, attributes the record to
+itself (the observer is the writer's own identity, as for a consumer reading
+a stream). Whoever may send to the queue may therefore put a record into the
+trail under any `source` and `actor` a catalogue admits. The writer's
+authenticity on this path rests on **the queue policy's sender principals**
+and on nothing else.
+
+- The Pulumi library makes that list required: `Ingest.Senders`. The queue policy
+  allows `sqs:SendMessage` to those principals and **denies it to every other**
+  (`aws:PrincipalArn`), so an identity policy elsewhere in the account is not
+  enough to send. `Ingest.AnySenderInAccount` is the spelling of "any principal
+  of this account with `sqs:SendMessage` may", for a trial; with it the trail
+  cannot say which of them sent a record. The two are refused together.
+- Name one principal per sender and no more: a role per workload that sends
+  (the receiver, the query service, the notary), each with `sqs:SendMessage` on
+  the queue and nothing else of it. A principal in another account is named the
+  same way.
+- **Not done, and why.** The observer is not taken from a message attribute. A
+  message attribute is the sender's own claim, so stamping it would let any
+  permitted sender record as any other. SQS does stamp a `SenderId` (the sending
+  role's unique id and the session name) that the sender cannot choose, and a
+  sound version would map each named sender's role id to an observer name. The
+  library cannot do that: a role's unique id exists only once the role does and
+  is not readable for a role in another account, and the session name is chosen
+  by the caller. Until a sender map can be tied to the queue policy's own list,
+  the records of this path name the writer, and a deployment that must tell its
+  senders apart gives each its own queue.
+- The HTTP and stream paths are different: there the receiver verifies the
+  caller's token and stamps the observer
+  ([workload tokens](#authenticators)).
+
 ## Authorizers
 
 - **declarative** (default, built): configuration mapping claim values to

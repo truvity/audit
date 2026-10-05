@@ -77,11 +77,11 @@ func ConnectOptions() []connect.HandlerOption { return sdktelemetry.ConnectOptio
 func ConnectClientOptions() []connect.ClientOption { return sdktelemetry.ConnectClientOptions() }
 
 // HTTPHandler wraps a server's mux in an HTTP server span, continuing the
-// caller's traceparent. The liveness probe is left out: a span every few
+// caller's traceparent. The liveness and readiness probes are left out: a span every few
 // seconds per pod is noise.
 func HTTPHandler(h http.Handler, service string) http.Handler {
 	return otelhttp.NewHandler(h, service,
-		otelhttp.WithFilter(func(r *http.Request) bool { return r.URL.Path != "/healthz" }),
+		otelhttp.WithFilter(func(r *http.Request) bool { return r.URL.Path != "/healthz" && r.URL.Path != "/readyz" }),
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string { return r.Method + " " + r.URL.Path }),
 	)
 }

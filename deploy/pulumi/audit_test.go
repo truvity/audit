@@ -1,6 +1,7 @@
 package auditpulumi_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -241,6 +242,50 @@ func TestTheQueuePolicyNamesTheSendersAndDeniesPlainHTTP(t *testing.T) {
 	if !strings.Contains(pol, "role/app/receiver") || !strings.Contains(pol, "aws:SecureTransport") {
 		t.Errorf("queue policy: %s", pol)
 	}
+	// Everybody else is denied, so the list is the whole of who may send.
+	var doc struct{ Statement []map[string]any }
+	if err := json.Unmarshal([]byte(pol), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var denied bool
+	for _, s := range doc.Statement {
+		if s["Effect"] != "Deny" || s["Sid"] != "OnlyTheSenders" {
+			continue
+		}
+		cond := s["Condition"].(map[string]any)["ArnNotEquals"].(map[string]any)["aws:PrincipalArn"]
+		denied = strings.Join(strs(s["Action"]), ",") == "sqs:SendMessage" &&
+			strings.Join(strs(cond), ",") == arnp+"iam::"+otherAccount+":role/app/receiver"
+	}
+	if !denied {
+		t.Errorf("no deny for senders that are not named: %s", pol)
+	}
+}
+
+// What a record is attributed to on this path is whoever could send it, so the
+// senders are required, and the alternative is said out loud.
+func TestTheIngestSendersAreRequiredUnlessAnyoneInTheAccountIsAcknowledged(t *testing.T) {
+	_, _, err := build(t, func(a *auditpulumi.Args) { a.Ingest.Senders = nil })
+	if err == nil || !strings.Contains(err.Error(), "Ingest.Senders is required") {
+		t.Fatalf("no senders: %v", err)
+	}
+	rec, _, err := build(t, func(a *auditpulumi.Args) { a.Ingest.Senders, a.Ingest.AnySenderInAccount = nil, true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := prop(rec.one(t, "aws:sqs/queuePolicy:QueuePolicy", "audit-ingest"), "policy").StringValue()
+	if strings.Contains(pol, "Senders") || !strings.Contains(pol, "aws:SecureTransport") {
+		t.Errorf("an acknowledged open queue has a sender statement or lost the TLS deny: %s", pol)
+	}
+	_, _, err = build(t, func(a *auditpulumi.Args) { a.Ingest.AnySenderInAccount = true })
+	if err == nil || !strings.Contains(err.Error(), "both set") {
+		t.Errorf("senders and the acknowledgement together: %v", err)
+	}
+	// With the ingest side off there is no queue and nothing to name.
+	if _, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Ingest.Senders, a.Ingest.Disabled, a.Writer = nil, true, auditpulumi.WriterArgs{}
+	}); err != nil {
+		t.Errorf("senders required with Ingest.Disabled: %v", err)
+	}
 }
 
 func TestTheDedupeTableIsOnDemandWithTTLOnExpiresAt(t *testing.T) {
@@ -275,7 +320,7 @@ func TestTheFunctionsRunOutsideAVPCOnArm64WithTheExtensionLayer(t *testing.T) {
 		// The configuration layer is the library's own and the extension the second:
 		// two of the five a function may have.
 		if l := prop(f, "layers").ArrayValue(); len(l) != 2 || !strings.Contains(l[1].StringValue(), name+"-config") ||
-			!strings.Contains(l[0].StringValue(), "access-roster-otlp") {
+			!strings.Contains(l[0].StringValue(), "audit-otlp") {
 			t.Errorf("%s layers: %v", name, l)
 		}
 		env := prop(f, "environment").ObjectValue()["variables"].ObjectValue()
@@ -283,6 +328,11 @@ func TestTheFunctionsRunOutsideAVPCOnArm64WithTheExtensionLayer(t *testing.T) {
 			"OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
 			"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 			"OTEL_SERVICE_NAME":           "audit-" + strings.TrimPrefix(name, "audit-"),
+			"AUDIT_OTLP_STS_AUDIENCE":     "otlp",
+			"AUDIT_OTLP_AUDIENCE":         "otlp",
+			"AUDIT_OTLP_ISSUER":           "https://access.example.test",
+			"AUDIT_OTLP_ENDPOINT":         "https://otlp.example.test",
+			// The deprecated names, with the same values, for one minor.
 			"ACCESS_ROSTER_AUDIENCE":      "otlp",
 			"ACCESS_ROSTER_OTLP_AUDIENCE": "otlp",
 			"ACCESS_ROSTER_ISSUER":        "https://access.example.test",
@@ -308,7 +358,7 @@ func TestWithoutTelemetryThereIsNoExtensionNoEnvironmentAndNoWebIdentity(t *test
 	f := rec.one(t, "aws:lambda/function:Function", "audit-writer")
 	env := prop(f, "environment").ObjectValue()["variables"].ObjectValue()
 	for k := range env {
-		if strings.HasPrefix(string(k), "OTEL_") || strings.HasPrefix(string(k), "ACCESS_ROSTER_") {
+		if strings.HasPrefix(string(k), "OTEL_") || strings.HasPrefix(string(k), "AUDIT_OTLP_") || strings.HasPrefix(string(k), "ACCESS_ROSTER_") {
 			t.Errorf("telemetry left behind: %s in %v", k, env)
 		}
 	}
@@ -433,8 +483,8 @@ func TestTheAudienceIsAParameter(t *testing.T) {
 		t.Fatal(err)
 	}
 	f := rec.one(t, "aws:lambda/function:Function", "audit-notary")
-	if v := prop(f, "environment").ObjectValue()["variables"].ObjectValue()["ACCESS_ROSTER_AUDIENCE"].StringValue(); v != "https://access.example.test" {
-		t.Errorf("ACCESS_ROSTER_AUDIENCE = %q", v)
+	if v := prop(f, "environment").ObjectValue()["variables"].ObjectValue()["AUDIT_OTLP_STS_AUDIENCE"].StringValue(); v != "https://access.example.test" {
+		t.Errorf("AUDIT_OTLP_STS_AUDIENCE = %q", v)
 	}
 	if !strings.Contains(prop(rec.one(t, "aws:iam/rolePolicy:RolePolicy", "audit-writer"), "policy").StringValue(), `"https://access.example.test"`) {
 		t.Error("the role policy does not pin the audience the function asks for")
@@ -847,6 +897,54 @@ func TestSwitchingNoneToGovernanceOnlyAddsTheLockResource(t *testing.T) {
 		b, a := before.one(t, c.typ, c.name), after.one(t, c.typ, c.name)
 		if !b.Inputs.DeepEquals(a.Inputs) {
 			t.Errorf("%s changed with the switch:\n%v\n%v", c.typ, b.Inputs, a.Inputs)
+		}
+	}
+}
+
+// A record naming a catalogue version the writer does not have is dead-lettered in
+// the archive and acknowledged, so neither queue's alarm sees it. The writer logs
+// it with fixed words, a metric filter on its log group counts them, and an alarm
+// is on the count.
+func TestAnUnknownCatalogueVersionIsAlarmedOn(t *testing.T) {
+	rec, out, err := build(t, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := rec.one(t, "aws:cloudwatch/logMetricFilter:LogMetricFilter", "audit-unknown-catalogue")
+	if prop(f, "logGroupName").StringValue() != "/aws/lambda/audit-writer" ||
+		prop(f, "pattern").StringValue() != `"event=unknown_catalogue"` {
+		t.Errorf("filter: %v", f.Inputs)
+	}
+	mt := prop(f, "metricTransformation").ObjectValue()
+	if mt["namespace"].StringValue() != "Audit/audit" || mt["name"].StringValue() != "UnknownCatalogueVersion" || mt["value"].StringValue() != "1" {
+		t.Errorf("transformation: %v", mt)
+	}
+	a := rec.one(t, "aws:cloudwatch/metricAlarm:MetricAlarm", "audit-writer-unknown-catalogue")
+	if prop(a, "namespace").StringValue() != "Audit/audit" || prop(a, "metricName").StringValue() != "UnknownCatalogueVersion" ||
+		prop(a, "comparisonOperator").StringValue() != "GreaterThanThreshold" || prop(a, "threshold").NumberValue() != 0 ||
+		prop(a, "treatMissingData").StringValue() != "notBreaching" {
+		t.Errorf("alarm: %v", a.Inputs)
+	}
+	for _, k := range []string{"alarmActions", "okActions"} {
+		if acts := prop(a, k).ArrayValue(); len(acts) != 1 || acts[0].StringValue() != out["topic"] {
+			t.Errorf("%s = %v, want the alarm topic", k, acts)
+		}
+	}
+}
+
+// The deprecated names can be left out once the extension reads the new ones.
+func TestTheLegacyTelemetryNamesCanBeOmitted(t *testing.T) {
+	rec, _, err := build(t, func(a *auditpulumi.Args) { a.Telemetry.OmitLegacyEnv = true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := prop(rec.one(t, "aws:lambda/function:Function", "audit-writer"), "environment").ObjectValue()["variables"].ObjectValue()
+	if env["AUDIT_OTLP_ENDPOINT"].StringValue() != "https://otlp.example.test" {
+		t.Errorf("the new names are missing: %v", env)
+	}
+	for k := range env {
+		if strings.HasPrefix(string(k), "ACCESS_ROSTER_") {
+			t.Errorf("%s is set with OmitLegacyEnv", k)
 		}
 	}
 }

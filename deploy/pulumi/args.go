@@ -184,10 +184,25 @@ type IngestArgs struct {
 	// Writer.DeploymentYAML are then not required and are ignored.
 	Disabled bool
 	// Senders are the principals (role or user ARNs) allowed to send to the
-	// queue, typically the receivers' roles or the application's. Empty adds no
-	// queue policy for senders, so only identity policies in this account grant
-	// sending.
+	// queue, typically the receivers' roles or the application's. **Required**
+	// unless AnySenderInAccount: the queue policy allows these and denies every
+	// other principal `sqs:SendMessage`, because what the writer attributes a
+	// record to on this path is whoever could send it: the queue carries no
+	// verified identity of the caller, so the policy's list of senders is the
+	// writer's authenticity (docs/design/authn-authz.md, "On the SQS path").
 	Senders []pulumi.StringInput
+	// Redrivers are the principals (role or user ARNs) allowed to send to the queue
+	// for a redrive: `StartMessageMoveTask` from the dead-letter queue back to this
+	// one needs `sqs:SendMessage` on the destination as the caller, which the
+	// deny-all-but-senders statement would otherwise refuse. They are an operator's
+	// break-glass role, not a sender: they are added to the allow and to the
+	// exceptions of the deny, and nothing else. Same forms as Senders. Optional.
+	Redrivers []pulumi.StringInput
+	// AnySenderInAccount is the deliberate alternative to Senders: no sender
+	// statement and no deny, so any principal of this account whose identity
+	// policy grants `sqs:SendMessage` on the queue may send a record, and the
+	// trail cannot say which of them did. For a trial. With Senders it is refused.
+	AnySenderInAccount bool
 	// MaxReceiveCount is how many times a message is delivered before the queue
 	// moves it to the dead-letter queue. Default 5.
 	MaxReceiveCount int
@@ -217,8 +232,9 @@ type WriterArgs struct {
 	// catalogue is always registered. A function has no registry service.
 	Catalogues map[string]string
 	// CataloguePaths are catalogue files on disk, read when the stack is
-	// evaluated and merged into Catalogues under their base names (which must be
-	// `catalogue.yaml` or `catalogue-<name>.yaml`). A name given in both places
+	// evaluated and merged into Catalogues under their base names, which the writer
+	// finds as `catalogue.yaml` or `catalogue-<name>.yaml`: a file named otherwise
+	// (`shop.yaml`) is shipped as `catalogue-shop.yaml`. A name given in both places
 	// is refused unless the contents are identical; an unreadable or empty file
 	// is refused before anything is created.
 	//
@@ -241,9 +257,11 @@ type WriterArgs struct {
 	// `catalogues/<file without .yaml>/`, with exactly its schemas beside it.
 	CatalogueSchemas map[string]map[string]string
 	// CatalogueDirs are directories on disk, each holding one catalogue document
-	// (`catalogue.yaml` or `catalogue-<name>.yaml`) and the `.json` schemas it
-	// references: the layout sdk/catalogue.LoadFS reads and an application embeds.
-	// Other files and subdirectories are ignored. Each is merged into Catalogues
+	// (`catalogue.yaml` or `catalogue-<name>.yaml`, or, in a directory with neither,
+	// the one .yaml file it has, whatever it is called: it is shipped as
+	// `catalogue-<name>.yaml`, which is what the writer finds) and the `.json`
+	// schemas it references: the layout sdk/catalogue.LoadFS reads and an
+	// application embeds. Other files and subdirectories are ignored. Each is merged into Catalogues
 	// and CatalogueSchemas as CataloguePaths is, with the same refusals.
 	CatalogueDirs []string
 	// Keys is the `keys:` block of the function's configuration, for a
@@ -309,14 +327,16 @@ type NotaryArgs struct {
 }
 
 // TelemetryArgs wires the functions' OpenTelemetry to the OTLP door with the
-// function role's own identity and no secret (docs/deployment/aws.md): the
-// access-roster Lambda extension is a layer on each function. Nil gives the
+// function role's own identity and no secret (docs/deployment/aws.md): the OTLP
+// Lambda extension (published as the layer `audit-otlp`) is a layer on each
+// function. Nil gives the
 // functions no extension, no OTEL_* environment and no sts:GetWebIdentityToken.
 type TelemetryArgs struct {
-	// ExtensionLayerArn is the layer version of the access-roster OTLP extension,
-	// published in this account and region. Required.
+	// ExtensionLayerArn is the layer version of the OTLP extension, published in
+	// this account and region, conventionally as `audit-otlp`. Required.
 	ExtensionLayerArn pulumi.StringInput
-	// IssuerURL is the access-roster issuer's base URL. Required.
+	// IssuerURL is the base URL of the issuer the extension trades the role's
+	// identity token at. Required.
 	IssuerURL string
 	// OTLPEndpoint is the OTLP/HTTP base URL, https. Required.
 	OTLPEndpoint string
@@ -326,6 +346,12 @@ type TelemetryArgs struct {
 	STSAudience string
 	// OTLPAudience is the exchange's audience and client id. Default "otlp".
 	OTLPAudience string
+	// OmitLegacyEnv leaves out the deprecated ACCESS_ROSTER_* names the extension
+	// has read so far. The functions get AUDIT_OTLP_ISSUER, AUDIT_OTLP_STS_AUDIENCE,
+	// AUDIT_OTLP_ENDPOINT and AUDIT_OTLP_AUDIENCE, and, until this is set, the old
+	// four with the same values: set it once the extension in use reads the new
+	// names. The aliases are removed after one minor.
+	OmitLegacyEnv bool
 	// ExtraEnv is other OTEL_* variables, such as OTEL_TRACES_SAMPLER.
 	ExtraEnv map[string]string
 }
@@ -482,6 +508,19 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 		return nil, errors.New("auditpulumi: Ingest.RetentionDays is at most 14, SQS's own limit")
 	}
 
+	if !in.Disabled {
+		switch {
+		case len(in.Senders) == 0 && !in.AnySenderInAccount:
+			return nil, errors.New("auditpulumi: Ingest.Senders is required: the principals that may send to the ingest queue. " +
+				"The queue carries no verified identity of its caller, so the queue policy's list of senders is what the " +
+				"trail's authenticity rests on (docs/design/authn-authz.md). Name them, or, for a trial, set " +
+				"Ingest.AnySenderInAccount to let every principal of the account with sqs:SendMessage send")
+		case len(in.Senders) > 0 && in.AnySenderInAccount:
+			return nil, errors.New("auditpulumi: Ingest.Senders and Ingest.AnySenderInAccount are both set: name the senders or " +
+				"accept every principal of the account, not both")
+		}
+	}
+
 	w := &c.Writer
 	if !in.Disabled {
 		if w.Package == "" {
@@ -508,7 +547,12 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 			if strings.TrimSpace(string(body)) == "" {
 				return nil, fmt.Errorf("auditpulumi: Writer.CataloguePaths: %s is empty", p)
 			}
-			base := filepath.Base(p)
+			if !isCatalogueFile(filepath.Base(p)) {
+				if err := checkLooksLikeCatalogue("Writer.CataloguePaths", p, string(body)); err != nil {
+					return nil, err
+				}
+			}
+			base := layerName(filepath.Base(p))
 			if prev, ok := merged[base]; ok && prev != string(body) {
 				return nil, fmt.Errorf("auditpulumi: Writer.CataloguePaths: %s is also in Writer.Catalogues with other content", base)
 			}

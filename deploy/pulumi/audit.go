@@ -267,6 +267,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 
 	// ---- the writer: function, policy, and the queue feeding it
 	var writerFn *lambda.Function
+	var writerLogsGroup *cloudwatch.LogGroup
 	if ingest {
 		var writerLogs *cloudwatch.LogGroup
 		writerFn, writerLogs, err = newFunction(ctx, functionSpec{
@@ -277,6 +278,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		if err != nil {
 			return nil, err
 		}
+		writerLogsGroup = writerLogs
 		if _, err := iam.NewRolePolicy(ctx, name+"-writer", &iam.RolePolicyArgs{
 			Role: writerRole.Name,
 			Policy: pulumi.All(bucket.Arn, archiveKeyArn, table.Arn, queue.Arn, writerLogs.Arn).ApplyT(func(v []any) string {
@@ -327,7 +329,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 
 	// ---- alarms
 	topic, err := newAlarms(ctx, name, a, alarmTargets{
-		Queue: queue, Dlq: dlq, Writer: writerFn, Notary: notaryFn,
+		Queue: queue, Dlq: dlq, Writer: writerFn, Notary: notaryFn, WriterLogs: writerLogsGroup,
 	}, tags, child)
 	if err != nil {
 		return nil, err
@@ -580,15 +582,26 @@ func newQueues(ctx *pulumi.Context, name string, a *Args, tags pulumi.StringMap,
 	}, opts...); err != nil {
 		return nil, nil, err
 	}
-	// Who may send. Always TLS only; and, when senders are named, them.
+	// Who may send. Always TLS only; and the senders named, and nobody else:
+	// the queue carries no verified identity of its caller, so this list is what
+	// the trail's authenticity on this path rests on. The deny is what makes it
+	// the whole list: without it an identity policy anywhere in the account
+	// would be enough to send. aws:PrincipalArn is the role's ARN for an assumed
+	// role, the user's for a user.
 	senders := pulumi.StringArray{}
 	for _, s := range a.Ingest.Senders {
 		senders = append(senders, s)
 	}
+	for _, s := range a.Ingest.Redrivers {
+		senders = append(senders, s)
+	}
 	if _, err := sqs.NewQueuePolicy(ctx, name+"-ingest", &sqs.QueuePolicyArgs{
 		QueueUrl: queue.Url,
-		Policy: pulumi.All(queue.Arn, senders).ApplyT(func(v []any) string {
+		Policy: pulumi.All(queue.Arn, senders).ApplyT(func(v []any) (string, error) {
 			arn, who := v[0].(string), v[1].([]string)
+			if err := checkPrincipals(who); err != nil {
+				return "", err
+			}
 			st := []statement{{
 				"Sid": "OnlyOverTLS", "Effect": "Deny", "Principal": "*", "Action": "sqs:*", "Resource": arn,
 				"Condition": map[string]any{"Bool": map[string]any{"aws:SecureTransport": "false"}},
@@ -597,9 +610,13 @@ func newQueues(ctx *pulumi.Context, name string, a *Args, tags pulumi.StringMap,
 				st = append(st, statement{
 					"Sid": "Senders", "Effect": "Allow", "Principal": map[string]any{"AWS": who},
 					"Action": []string{"sqs:SendMessage"}, "Resource": arn,
+				}, statement{
+					"Sid": "OnlyTheSenders", "Effect": "Deny", "Principal": "*",
+					"Action": []string{"sqs:SendMessage"}, "Resource": arn,
+					"Condition": map[string]any{"ArnNotEquals": map[string]any{"aws:PrincipalArn": who}},
 				})
 			}
-			return policyJSON(st...)
+			return policyJSON(st...), nil
 		}).(pulumi.StringOutput),
 	}, opts...); err != nil {
 		return nil, nil, err

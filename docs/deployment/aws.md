@@ -400,8 +400,14 @@ Writer: auditpulumi.WriterArgs{
 },
 ```
 
-File names are `catalogue.yaml` or `catalogue-<name>.yaml`, and `<name>.json` for a
-schema; a directory holds one catalogue. A name given two ways with different
+A catalogue document may be called anything ending in `.yaml`: in a `CatalogueDirs`
+directory that has no `catalogue.yaml` or `catalogue-<name>.yaml` the one `.yaml` it holds is
+the catalogue, and a `CataloguePaths` file is taken under its own name. The writer only finds
+`catalogue.yaml` and `catalogue-<name>.yaml`, so the library ships a document named otherwise
+as `catalogue-<name>.yaml` (`shop.yaml` as `catalogue-shop.yaml`), and an application no
+longer renames its file for the writer's sake. In a directory that does have a
+`catalogue*.yaml` it is the catalogue, as before, and other `.yaml` files in it are not read.
+Schemas are `<name>.json`; a directory holds one catalogue. A name given two ways with different
 content, an unreadable path and an empty file are refused before anything is
 created, and so is **a catalogue the writer would refuse at start-up**: a schema it
 references that is not given, a schema given that it does not reference, a schema
@@ -497,7 +503,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Region` | looked up | the region, for the ARN of the SSM parameters; looked up like `AccountID`, and only when there are secrets to grant |
 | `Writer.Secrets.Root`, `.KeyArn` | `/audit/<name>/private/config`, none | where the writer reads the secrets `Writer.Keys` names, and the customer-managed key they are encrypted with; see [secrets](#secrets). Unset and `Writer.Keys` naming no secret: no SSM access at all |
 | `Ingest.Disabled` | false | leaves out the queue, the table, the writer and their alarms; see [optional parts](#optional-parts) |
-| `Ingest.Senders` | none | principals allowed to send to the queue; none adds no sender statement, so only identity policies in the account grant sending |
+| `Ingest.Senders` | **required** unless `Ingest.AnySenderInAccount` | principals (role or user ARNs) allowed to send to the queue. The queue policy allows them `sqs:SendMessage` and denies every other principal: the queue carries no verified caller identity, so this list is the writer's authenticity on this path ([authn](../design/authn-authz.md#on-the-sqs-path)) |
+| `Ingest.AnySenderInAccount` | false | the acknowledged alternative, for a trial: no sender statement and no deny, so any principal of the account with `sqs:SendMessage` in its identity policy may send. Refused with `Senders` |
 | `Ingest.MaxReceiveCount` | 5 | deliveries before a message moves to the DLQ |
 | `Ingest.RetentionDays` | 14 | the queue's retention; 14 is SQS's limit and the deduplication window's floor |
 | `Writer.Package` | **required** unless `Ingest.Disabled` | the release's `audit-writer-lambda_<version>_linux_arm64.zip`, a path or an https URL; the function's code as released |
@@ -521,7 +528,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Notary.Profiles`, `.Settle` | every profile, `10m` | as `audit-notary` |
 | `Notary.MemoryMB`, `.TimeoutSeconds` | 256, 900 | |
 | `Telemetry` | nil | nil gives the functions no extension, no `OTEL_*` and no `sts:GetWebIdentityToken` |
-| `Telemetry.ExtensionLayerArn` | **required** with `Telemetry` | the access-roster OTLP extension, published as a layer in the account and region |
+| `Telemetry.ExtensionLayerArn` | **required** with `Telemetry` | the OTLP extension, published as a layer in the account and region (by convention `audit-otlp`) |
+| `Telemetry.OmitLegacyEnv` | false | leave out the deprecated `ACCESS_ROSTER_*` names of the extension's settings, which are set beside the `AUDIT_OTLP_*` ones for one minor |
 | `Telemetry.IssuerURL`, `.OTLPEndpoint` | **required** with `Telemetry` | the issuer's base URL, and the OTLP/HTTP base URL (https) |
 | `Telemetry.STSAudience`, `.OTLPAudience` | `otlp` | the audience asked of STS, which the roles' policies pin, and the exchange's audience |
 | `Telemetry.ExtraEnv` | none | other `OTEL_*` variables |
@@ -710,10 +718,11 @@ role holds only its own rights):
 | observe | read the archive; no queue |
 
 Only `sqs:SendMessage` is needed on the queue: a sender does not receive or
-delete. The queue is `QueueArn` in the library's outputs. A role in the same
-account needs only its identity policy; a principal in another account must also
-be named in `Ingest.Senders`, which adds the resource-policy statement. Either
-way the queue policy denies everything that is not TLS.
+delete. The queue is `QueueArn` in the library's outputs. Every sender, in this
+account or another, must be named in `Ingest.Senders`: the queue policy allows
+those and denies `sqs:SendMessage` to every other principal, and denies everything
+that is not TLS. A sender's identity policy still has to allow `sqs:SendMessage`
+on `QueueArn`; the policy names who may, not who does.
 
 ## Telemetry
 
@@ -728,7 +737,10 @@ SDK needs no credential: the library sets
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 OTEL_SERVICE_NAME=audit-writer            # audit-notary for the notary
-ACCESS_ROSTER_ISSUER, ACCESS_ROSTER_AUDIENCE, ACCESS_ROSTER_OTLP_ENDPOINT, ACCESS_ROSTER_OTLP_AUDIENCE
+AUDIT_OTLP_ISSUER, AUDIT_OTLP_STS_AUDIENCE, AUDIT_OTLP_ENDPOINT, AUDIT_OTLP_AUDIENCE
+(and, **deprecated** for one minor, the same four as ACCESS_ROSTER_ISSUER, ACCESS_ROSTER_AUDIENCE,
+ACCESS_ROSTER_OTLP_ENDPOINT, ACCESS_ROSTER_OTLP_AUDIENCE, which the extension reads until a
+build of it reads the new names: `Telemetry.OmitLegacyEnv` drops them)
 ```
 
 The layer is the access-roster release's
@@ -758,6 +770,7 @@ which is subscribed to alert-ingress over HTTPS. This is the D13 set:
 | `<name>-ingest-dlq-not-empty` | `AWS/SQS` `ApproximateNumberOfMessagesVisible`, DLQ | above 0 | a record was delivered `MaxReceiveCount` times and is not in the archive |
 | `<name>-ingest-oldest-message-age` | `AWS/SQS` `ApproximateAgeOfOldestMessage`, ingest | above `Alerts.OldestMessageAgeSeconds` (900) | the writer is behind or not running |
 | `<name>-writer-errors` | `AWS/Lambda` `Errors`, writer | any, in 5 minutes | an invocation failed |
+| `<name>-writer-unknown-catalogue` | `Audit/<name>` `UnknownCatalogueVersion` (a metric filter on the writer's log group, matching the field `event=unknown_catalogue`) | any, in 5 minutes | a record named a catalogue version the writer does not have and was dead-lettered in the archive and acknowledged, which neither queue's alarm sees: the writer and its emitters are out of step. The log line names the `source` and `catalogue_version`; the same count is `audit_writer_catalogue_unknown_total` by `source` and `catalogue_version` over OTLP |
 | `<name>-notary-errors` | `AWS/Lambda` `Errors`, notary | any, in an hour | a tenant could not be sealed, or the signer failed |
 | `<name>-notary-silent` | `AWS/Lambda` `Invocations`, notary | below 1 in each of the last `Alerts.NotarySilenceHours` (3) hours | the schedule or the function is gone, and the chain of seals is growing a gap |
 

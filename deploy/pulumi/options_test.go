@@ -423,20 +423,20 @@ func TestEveryCombinationOfIngestAndNotary(t *testing.T) {
 		want                 want
 	}{
 		"both": {false, false, want{
-			resources: 44,
+			resources: 46,
 			roles:     []string{"audit-notary", "audit-observe-reader", "audit-scheduler", "audit-writer"},
 			keys:      []string{"audit-archive", "audit-seal"}, functions: []string{"audit-notary", "audit-writer"},
 			queues: []string{"audit-ingest", "audit-ingest-dlq"},
 			alarms: []string{"ingest-dlq-not-empty", "ingest-oldest-message-age", "notary-errors", "notary-silent",
-				"notary-throttles", "writer-errors", "writer-throttles"},
+				"notary-throttles", "writer-errors", "writer-throttles", "writer-unknown-catalogue"},
 			table: true, schedule: true, mapping: true, topic: true,
 		}},
 		"ingest only (hive: the notary runs on Talos)": {false, true, want{
-			resources: 30,
+			resources: 32,
 			roles:     []string{"audit-observe-reader", "audit-writer"},
 			keys:      []string{"audit-archive"}, functions: []string{"audit-writer"},
 			queues: []string{"audit-ingest", "audit-ingest-dlq"},
-			alarms: []string{"ingest-dlq-not-empty", "ingest-oldest-message-age", "writer-errors", "writer-throttles"},
+			alarms: []string{"ingest-dlq-not-empty", "ingest-oldest-message-age", "writer-errors", "writer-throttles", "writer-unknown-catalogue"},
 			table:  true, mapping: true, topic: true,
 		}},
 		"notary only": {true, false, want{
@@ -817,6 +817,78 @@ func TestCatalogueDirsShipTheSchemasBesideTheirCatalogue(t *testing.T) {
 	}
 }
 
+// Any .yaml document in a directory is the catalogue when it has no other: the
+// application need not rename its file for the writer's sake, and the library
+// ships it under the name the writer finds.
+func TestCatalogueDirsAcceptAnyYAMLNameAndShipItUnderOneTheWriterFinds(t *testing.T) {
+	dir := writeCatalogueDir(t, map[string]string{"shop.yaml": schemaCatalogue, "thing.json": thingSchema})
+	rec, _, err := build(t, func(a *auditpulumi.Args) { a.Writer.CatalogueDirs = []string{dir} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := layerFiles(t, rec, "audit-writer")
+	if w["catalogues/catalogue-shop/catalogue-shop.yaml"] != schemaCatalogue || w["catalogues/catalogue-shop/thing.json"] != thingSchema {
+		t.Errorf("the layer has %v", keys(w))
+	}
+	for p := range w {
+		if strings.Contains(p, "shop.yaml") && !strings.Contains(p, "catalogue-shop.yaml") {
+			t.Errorf("the layer holds %s, which the writer does not find", p)
+		}
+	}
+	// The same through CataloguePaths.
+	file := writeCatalogue(t, "orders.yaml", plainCatalogue)
+	rec, _, err = build(t, func(a *auditpulumi.Args) { a.Writer.CataloguePaths = []string{file} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := layerFiles(t, rec, "audit-writer"); w["catalogues/catalogue-orders.yaml"] != plainCatalogue {
+		t.Errorf("the layer has %v", keys(w))
+	}
+}
+
+const plainCatalogue = "source: orders\nversion: \"1.0.0\"\nactions:\n  orders.placed: {}\n"
+
+// A .yaml taken as the catalogue only because it is the one there is must be one:
+// a stray values.yaml fails the preview and not the writer's start.
+func TestAStrayYAMLIsNotTakenForACatalogue(t *testing.T) {
+	for name, edit := range map[string]func(*auditpulumi.Args){
+		"a directory": func(a *auditpulumi.Args) {
+			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"values.yaml": "replicas: 2\n"})}
+		},
+		"a path": func(a *auditpulumi.Args) {
+			a.Writer.CataloguePaths = []string{writeCatalogue(t, "values.yaml", "replicas: 2\n")}
+		},
+		"no actions": func(a *auditpulumi.Args) {
+			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"shop.yaml": "source: shop\nversion: \"1.0.0\"\n"})}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := build(t, edit); err == nil || !strings.Contains(err.Error(), "is not one") {
+				t.Errorf("err = %v", err)
+			}
+		})
+	}
+}
+
+// The old rule still decides when it applies: a directory with a catalogue*.yaml
+// is that catalogue, and a .yaml beside it is not read.
+func TestCatalogueDirsKeepTheOldRuleWhenADirectoryNamesItsCatalogue(t *testing.T) {
+	dir := writeCatalogueDir(t, map[string]string{"catalogue.yaml": appCatalogue, "values.yaml": "not: a catalogue\n"})
+	rec, _, err := build(t, func(a *auditpulumi.Args) { a.Writer.CatalogueDirs = []string{dir} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := layerFiles(t, rec, "audit-writer")
+	if w["catalogues/catalogue.yaml"] != appCatalogue {
+		t.Errorf("the layer has %v", keys(w))
+	}
+	for p := range w {
+		if strings.Contains(p, "values") {
+			t.Errorf("the layer holds %s", p)
+		}
+	}
+}
+
 func TestCatalogueSchemasGivenAsStringsAreShippedTheSameWay(t *testing.T) {
 	rec, _, err := build(t, func(a *auditpulumi.Args) {
 		a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": schemaCatalogue}
@@ -875,6 +947,9 @@ func TestACatalogueTheWriterWouldRefuseIsRefused(t *testing.T) {
 		"dir with two catalogues": {func(a *auditpulumi.Args) {
 			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"catalogue-a.yaml": "x: 1\n", "catalogue-b.yaml": "x: 1\n"})}
 		}, "holds one catalogue"},
+		"dir with two unnamed": {func(a *auditpulumi.Args) {
+			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"a.yaml": "x: 1\n", "b.yaml": "x: 1\n"})}
+		}, "neither is named"},
 		"dir with none": {func(a *auditpulumi.Args) {
 			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"thing.json": thingSchema})}
 		}, "holds no catalogue"},

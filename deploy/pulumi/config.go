@@ -118,11 +118,6 @@ func render(doc map[string]any) ([]byte, error) {
 	return b, nil
 }
 
-// telemetryEnv is the environment of a function with the OTLP extension: the
-// extension's own settings (ACCESS_ROSTER_*, see access-roster's
-// docs/integrations/aws-lambda.md) and the SDK's, which points at the
-// extension's loopback proxy. No secret: the extension trades the function
-// role's identity for a token.
 // functionEnv is the environment of a function: the file its process reads, the
 // layer version that carried it (which the writer repeats in its start-up record,
 // because the platform does not tell a function which layers it has), and the
@@ -138,23 +133,47 @@ func functionEnv(t *TelemetryArgs, service string, layerArn pulumi.StringInput) 
 	return env
 }
 
+// telemetryEnv is the environment of a function with the OTLP extension: the
+// extension's own settings and the SDK's, which points at the extension's
+// loopback proxy. No secret: the extension trades the function role's identity
+// for a token.
+//
+// The settings are named for what they are, AUDIT_OTLP_*. The names the extension
+// has read so far, ACCESS_ROSTER_*, are deprecated aliases: they are set beside
+// the new ones for one minor, so that an extension build that reads only them
+// keeps working, and Telemetry.OmitLegacyEnv drops them once the extension reads
+// the new names.
 func telemetryEnv(t *TelemetryArgs, service string) map[string]string {
 	if t == nil {
 		return nil
 	}
 	env := map[string]string{
-		"ACCESS_ROSTER_ISSUER":        t.IssuerURL,
-		"ACCESS_ROSTER_AUDIENCE":      t.STSAudience,
-		"ACCESS_ROSTER_OTLP_ENDPOINT": t.OTLPEndpoint,
+		"AUDIT_OTLP_ISSUER":       t.IssuerURL,
+		"AUDIT_OTLP_STS_AUDIENCE": t.STSAudience,
+		"AUDIT_OTLP_ENDPOINT":     t.OTLPEndpoint,
 		// The exchange's audience and client id.
-		"ACCESS_ROSTER_OTLP_AUDIENCE": t.OTLPAudience,
+		"AUDIT_OTLP_AUDIENCE": t.OTLPAudience,
 		// The SDK exports to the extension, which holds the credential.
 		"OTEL_EXPORTER_OTLP_ENDPOINT": extensionLoopback,
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_SERVICE_NAME":           service,
 	}
+	if !t.OmitLegacyEnv {
+		for legacy, current := range legacyTelemetryEnv {
+			env[legacy] = env[current]
+		}
+	}
 	for k, v := range t.ExtraEnv {
 		env[k] = v
 	}
 	return env
+}
+
+// legacyTelemetryEnv is each deprecated ACCESS_ROSTER_* name and the AUDIT_OTLP_*
+// name that replaces it.
+var legacyTelemetryEnv = map[string]string{
+	"ACCESS_ROSTER_ISSUER":        "AUDIT_OTLP_ISSUER",
+	"ACCESS_ROSTER_AUDIENCE":      "AUDIT_OTLP_STS_AUDIENCE",
+	"ACCESS_ROSTER_OTLP_ENDPOINT": "AUDIT_OTLP_ENDPOINT",
+	"ACCESS_ROSTER_OTLP_AUDIENCE": "AUDIT_OTLP_AUDIENCE",
 }

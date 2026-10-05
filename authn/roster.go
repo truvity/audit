@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/truvity/audit/sdk/auth"
-	"github.com/truvity/sluis/policy"
 )
 
 // AccessRoster reads grants out of access-roster's group vocabulary.
@@ -139,7 +138,7 @@ func (a AccessRoster) Grants(p auth.Principal) []auth.Grant {
 	}
 	var out []auth.Grant
 	for _, name := range p.Claims[claim] {
-		scope, thing, roleName, ok := policy.SplitGroup(name)
+		scope, thing, roleName, ok := SplitGroup(name)
 		if !ok || thing != Thing {
 			continue
 		}
@@ -152,7 +151,7 @@ func (a AccessRoster) Grants(p auth.Principal) []auth.Grant {
 			Profiles:   r.profiles(a.Profiles),
 			Operations: append([]auth.Operation(nil), r.ops...),
 		}
-		if scope == policy.ScopeAll {
+		if scope == ScopeAll {
 			if r.scoped {
 				continue
 			}

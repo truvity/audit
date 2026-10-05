@@ -128,6 +128,8 @@ github.com/truvity/policy v1.37.0 h1:fOHopBkTf3acFlvDtpmUHJhDQibpyqkkwLT5wBm9CBA
 github.com/truvity/policy v1.37.0/go.mod h1:tS3msaabpq9ONQAXMKy7j5k+aVFVoGFysHisLJXR0ak=
 github.com/truvity/policy v1.43.1-0.20261004235901-380a101cf243 h1:PoLgFqLOzyklgBWiz/xdlCeDElBg7dlrMKYSyBUjHtk=
 github.com/truvity/policy v1.43.1-0.20261004235901-380a101cf243/go.mod h1:+523XQBHvdrllFogN6wNUutLWGo6cFhiYfgvUuVTavw=
+github.com/truvity/policy v1.44.0 h1:o9R4+0sLPBLboohEqHW4e7JIQLKnYd3I3a6MgA5pYoQ=
+github.com/truvity/policy v1.44.0/go.mod h1:+523XQBHvdrllFogN6wNUutLWGo6cFhiYfgvUuVTavw=
 github.com/truvity/sluis v1.57.0 h1:jaOp29if6qpSJzUFENL9Psj1PemEGaCpsZ5FgMz418E=
 github.com/truvity/sluis v1.57.0/go.mod h1:pOK5/EEZXRSRKfGNZJd2H/T3edVdIVQ34kHsAoQM4ng=
 github.com/urfave/cli/v3 v3.11.0 h1:P/euJp99kb9p0tlVY+iYTLYYTAQlfl0hR2gUO1Img1Q=

@@ -50,7 +50,7 @@ notary's, verify's and clock-sync's, sends to the writer's ingest queue with
 chart refuses a sink that names the release's own front door, and a
 `writer.enabled: false` release whose components would run as the writer's
 ServiceAccount. The values, the IAM and a worked file are in
-[AWS](../reference/aws-pulumi-library.md#observe-and-query-in-kubernetes-writer-on-lambda).
+[AWS](../how-to/aws-run-readers-in-kubernetes.md).
 
 ## What is implemented
 

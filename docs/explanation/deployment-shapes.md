@@ -1,4 +1,4 @@
-# Deployment
+# Deployment shapes
 
 An installation belongs to one application and runs in that application's
 namespace, rendered by the application's own chart with this repository's
@@ -18,16 +18,16 @@ bucket.
 Switching between them is a change to the receiver's configuration, not to
 any record.
 
-A third shape is not Kubernetes at all: [AWS](../reference/aws-pulumi-library.md) runs the writer and the
-notary as Lambda functions behind an SQS queue, built by a Pulumi library. It is
-built and tested and has not run in an account.
+A third shape is not Kubernetes at all: [AWS Lambda](aws-lambda.md) runs the writer and the
+notary as Lambda functions behind an SQS queue, built by a Pulumi library. Its
+status is on the [capabilities](../reference/capabilities.md) page.
 
 The two combine: **writer on Lambda, observe and query in Kubernetes.** The
 chart with `writer.enabled: false` runs only the indexer, the query service, the
 migration and the jobs, and every one of them that records sends to the Lambda's
 ingest queue (`sink.sqs`) under its own pod identity. No writer pod is left
 behind to host a front door. See
-[AWS](../reference/aws-pulumi-library.md#observe-and-query-in-kubernetes-writer-on-lambda).
+[run observe and query in Kubernetes](../how-to/aws-run-readers-in-kubernetes.md).
 
 How much of the stack an installation runs is a separate axis, the
 [levels](levels.md): `full`, `lite` and `log`.
@@ -67,61 +67,18 @@ environment, not to the installation: one bucket with Object Lock,
 replication and a deny-delete policy, under which each application writes
 its own prefix.
 
-## Before either shape
+## What an installation needs before either shape
 
-- A bucket with versioning, a policy that denies deletes to everyone, and a
-  prefix for this application — with **Object Lock in compliance mode** for a
-  profile that demands it, on any S3-compatible store without one where none
-  does ([0014](../decisions/0014-lock-modes-and-store-tiers.md)). The
-  [S3 guide](../how-to/prepare-the-bucket.md) has the policy.
-- A **Postgres database**, an owner for the migration, and a role each for the
-  writer, the indexer and the query service (read-only). See [one more database](#one-more-database-in-a-cluster-you-already-run).
-- A **reference clock** for the clock-synchronisation job. Every preset with
-  a compliance obligation asks for a daily record of the clock's offset, and
-  the job's configuration requires one.
-- Somewhere for the **Audit page** to live: the application's console, which
-  calls the query service with the console's own token.
+- A **bucket** on the right tier, with a prefix for this application
+  ([prepare the bucket](../how-to/prepare-the-bucket.md)).
+- A **Postgres database**, an owner for the migration, and a role each for the writer, the
+  indexer and the query service ([prepare the database](../how-to/prepare-the-database.md)).
+- A **reference clock** for the clock-synchronisation job: every framework profile with a
+  compliance obligation asks for a daily record of the clock's offset, and the job's
+  configuration requires one.
+- Somewhere for the **Audit page** to live: the application's console, which calls the
+  query service with the console's own token.
 
-## One more database in a cluster you already run
-
-The index is a projection: `audit reindex` rebuilds it from the archive, so it
-needs no backup and no replica. That makes it cheap to put in a Postgres the
-application already has, rather than running one for it.
-
-Make a database and four roles in that cluster: an owner the migration runs as,
-and one role each for the parts that use it, the writer, the indexer
-(`audit-observe`) and the query service. They must be different roles. The
-tenant row-level policies bind the query service's role; an owner bypasses them,
-so a part connecting as the owner would hold more than its own tables and would
-have every tenant's isolation rest on the service alone. The chart refuses to
-render when the writer, the indexer or the query service names the owner's, or
-one another's, credentials.
-
-```sql
-create database audit;
-create role audit_owner login password :'owner';
-create role audit_writer login password :'writer';
-create role audit_observe login password :'observe';
-create role audit_query login password :'reader';
-grant all privileges on database audit to audit_owner;
-```
-
-Then apply the schema and grant each role what its part needs, in one step:
-
-```console
-$ audit migrate --database "$OWNER_URL" --writer audit_writer \
-    --observe audit_observe --reader audit_query
-```
-
-`--writer` gives the deduplication table, the registry and the key directory,
-and none of the index; `--observe` gives the index and its cursors, and the one
-function that creates a month's partition; `--reader` gives select on the
-index and nothing else (each is a key of the job's file as well). The writer
-and the indexer refuse to start against a schema version they do not know and
-never migrate themselves: several replicas would race.
-
-With an operator that manages clusters declaratively, the same thing is a
-database and two users in the cluster's own manifest, and the migration is the
-chart's pre-install hook (`migrate`, whose config carries the roles). Name each
-role's password variable in `database.passwordEnv` of its own component, and
-supply each from its Secret with `secretEnv`.
+To start: [Kubernetes](../getting-started/kubernetes.md) or
+[AWS Lambda](../getting-started/aws-lambda.md); to connect a product that already runs
+sluis, [a sluis-connected install](../getting-started/sluis.md).

@@ -59,7 +59,7 @@ writer, receiver, consumers or Service are rendered, and everything that records
 (the query service, the notary and the other jobs) sends to the writer's queue
 with `sink: {sqs: {queueUrl, region}}` under its own pod identity; the chart
 refuses a sink that names the release's own front door
-([AWS](../../docs/reference/aws-pulumi-library.md#observe-and-query-in-kubernetes-writer-on-lambda),
+([AWS](../../docs/how-to/aws-run-readers-in-kubernetes.md),
 `examples/external-writer.yaml`). In `stream` it renders two: a receiver
 that serves the sink and publishes, holding neither the bucket nor a key, and
 `writer.consumers` writers that read the stream and put the objects. The
@@ -193,7 +193,7 @@ present the token to the broker as their NATS token, read afresh on every
 connect; the broker's auth callout, which is the deployment's, reviews it and
 maps the namespace to an account. Without them, they connect with no
 credentials, for a broker that verifies nobody
-([stream](../../docs/explanation/stream-mode.md#authenticating-to-the-stream)).
+([stream](../../docs/how-to/run-stream-mode.md)).
 
 ## What it refuses to render
 

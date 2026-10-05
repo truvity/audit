@@ -31,7 +31,7 @@ flowchart LR
 
 An application team that already has, or can provision, a Postgres
 database, an S3-compatible bucket with Object Lock and a reference clock — the things
-[Before either shape](docs/explanation/deployment-shapes.md#before-either-shape) lists.
+[Before either shape](docs/explanation/deployment-shapes.md#what-an-installation-needs-before-either-shape) lists.
 
 It deliberately does not install: a central, multi-tenant audit service (an
 installation belongs to one application,

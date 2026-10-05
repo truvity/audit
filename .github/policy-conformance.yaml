@@ -9,3 +9,6 @@ exempt:
     - checks: [domain]
       paths: [sdk/catalogue/schemaid.go]
       reason: sdk/catalogue.schemaid maps the legacy schema base URL to preserve archived record readability
+    - checks: [domain]
+      paths: [deploy/pulumi/catalogues.go]
+      reason: the Pulumi library mirrors sdk/catalogue.CanonicalID (the legacy schema base URL) to check a catalogue's schema references as the writer does, without depending on the SDK

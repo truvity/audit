@@ -6,7 +6,7 @@ namespace
 is actually running depends on the mode, and most of what follows differs
 between the two:
 
-| | [direct](../deployment/direct.md) | [stream](../deployment/stream.md) |
+| | [direct](../explanation/direct-mode.md) | [stream](../explanation/stream-mode.md) |
 |---|---|---|
 | receiver | is the writer: one process validates and puts the object | publishes to the stream and acknowledges when it is replicated |
 | writer | the receiver's own pods | `audit-writer` in consumer mode, N pods, scaled apart |
@@ -393,7 +393,7 @@ provider. `keys.provider: none` (no `keys` block) is the default — most deploy
 pseudonymisation keys at all, there is no `identity/` prefix, and resolve is
 refused as unimplemented
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),
-[key custody](key-custody.md)).
+[key custody](../explanation/key-custody.md)).
 
 ### A tenant asks for erasure
 
@@ -443,7 +443,7 @@ signing key, which will sign seals, can be replaced as long as every public
 half ever used is kept.
 
 The signing key is a different key and a different job, and every
-installation has one: see [key custody](key-custody.md).
+installation has one: see [key custody](../explanation/key-custody.md).
 
 ### The key directory changed
 

@@ -151,7 +151,7 @@ adds, concretely:
   gets a key made and destroyed at once.
 
 The full engine set-up and the policies per role are in
-[OpenBAO keys](openbao-keys.md).
+[OpenBAO keys](../how-to/configure-openbao-keys.md).
 
 **`kms` (AWS KMS envelope) — designed, not built.** One customer-managed
 KMS key per deployment is the root. Each (tenant, purpose) data key is

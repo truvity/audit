@@ -19,7 +19,7 @@ This component exists so that there is one answer.
   compliance mode where a framework demands it. Every object names the
   SHA-256 of its bytes and every record its own hash. A `verify` command lets
   an auditor check them from the archive alone, without trusting the
-  operator; seals ([0019](decisions/0019-seals.md)) will add that nothing was
+  operator; seals ([0019](../decisions/0019-seals.md)) will add that nothing was
   removed.
 - **Purpose-bound.** The same event is kept once per purpose, each copy with
   the fields, identity treatment and retention that purpose justifies.
@@ -29,7 +29,7 @@ This component exists so that there is one answer.
   the product promises.
 - **Owned by the application it records.** One installation belongs to one
   application, in its namespace, rendered by its chart
-  ([0011](decisions/0011-one-installation-per-service-or-product.md)). No
+  ([0011](../decisions/0011-one-installation-per-service-or-product.md)). No
   team waits on another team's audit service to ship, and no application
   holds the archive's credentials.
 - **Extensible without forks.** Applications add their own data through

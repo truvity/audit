@@ -54,7 +54,7 @@ Where the application's console is behind a gateway that issues its own
 tokens, the issuer named here is that gateway and the audience is the
 installation's, so the Audit page can call the query service directly with the
 token the person's session already has
-([the Audit page](integrate.md#the-audit-page)).
+([the Audit page](connect-an-application.md#the-audit-page)).
 
 With the `access-roster` preset, a group's name is the grant:
 
@@ -254,8 +254,8 @@ what the view needs as JSON; ship it with the console. The component's own
 actions (`audit.*`) are built in.
 
 Where the page sits and how it reaches the query service is
-[the Audit page](integrate.md#the-audit-page); what it does with a record is
-[its design](../design/audit-page.md). There is one page, and the
+[the Audit page](connect-an-application.md#the-audit-page); what it does with a record is
+[its design](../explanation/audit-page.md). There is one page, and the
 application's own console hosts it: an installation belongs to one
 application, so there is nothing for a console of its own to front.
 
@@ -275,7 +275,7 @@ SHA-256 of its bytes and the hash of every record in it, and with
 means nothing was found. Both shapes write the same archive, so the same
 command verifies either. It does not show that nothing was removed; seals will.
 An archive written before the v1 layout needs the previous release's CLI
-(v0.6.x). See [verification](../operations/verify.md).
+(v0.6.x). See [verification](verify-the-trail.md).
 
 The query service can be held to its contract the same way, from outside, with
 nothing but a sign-in that may read:

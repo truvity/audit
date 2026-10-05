@@ -12,13 +12,13 @@ bucket.
 
 | shape | for | the receiver | writers | `async` loss window |
 |---|---|---|---|---|
-| [direct](direct.md) | an internal service, or any cluster without a stream | is the writer, and puts to the bucket | the receiver's own pods | one flush interval, plus the batch in flight |
-| [stream](stream.md) | a product: many pods, metering, quotas | publishes to JetStream | N consumers, scaled apart | milliseconds |
+| [direct](direct-mode.md) | an internal service, or any cluster without a stream | is the writer, and puts to the bucket | the receiver's own pods | one flush interval, plus the batch in flight |
+| [stream](stream-mode.md) | a product: many pods, metering, quotas | publishes to JetStream | N consumers, scaled apart | milliseconds |
 
 Switching between them is a change to the receiver's configuration, not to
 any record.
 
-A third shape is not Kubernetes at all: [AWS](aws.md) runs the writer and the
+A third shape is not Kubernetes at all: [AWS](../reference/aws-pulumi-library.md) runs the writer and the
 notary as Lambda functions behind an SQS queue, built by a Pulumi library. It is
 built and tested and has not run in an account.
 
@@ -27,7 +27,7 @@ chart with `writer.enabled: false` runs only the indexer, the query service, the
 migration and the jobs, and every one of them that records sends to the Lambda's
 ingest queue (`sink.sqs`) under its own pod identity. No writer pod is left
 behind to host a front door. See
-[AWS](aws.md#observe-and-query-in-kubernetes-writer-on-lambda).
+[AWS](../reference/aws-pulumi-library.md#observe-and-query-in-kubernetes-writer-on-lambda).
 
 How much of the stack an installation runs is a separate axis, the
 [levels](levels.md): `full`, `lite` and `log`.
@@ -46,8 +46,8 @@ Switched on per installation, and neither adds anything to the request path.
 
 | extension | what it adds | needs |
 |---|---|---|
-| [billing](extensions/billing.md) | rollups at index time, an immutable monthly statement | a metering profile |
-| [usage quotas](extensions/quotas.md) | a usage consumer, a counter cache, an hourly reconciler | stream mode |
+| [billing](../how-to/enable-billing.md) | rollups at index time, an immutable monthly statement | a metering profile |
+| [usage quotas](../how-to/enable-usage-quotas.md) | a usage consumer, a counter cache, an hourly reconciler | stream mode |
 
 ## What each shape stores things in
 
@@ -73,7 +73,7 @@ its own prefix.
   prefix for this application — with **Object Lock in compliance mode** for a
   profile that demands it, on any S3-compatible store without one where none
   does ([0014](../decisions/0014-lock-modes-and-store-tiers.md)). The
-  [S3 guide](../operations/s3-guide.md) has the policy.
+  [S3 guide](../how-to/prepare-the-bucket.md) has the policy.
 - A **Postgres database**, an owner for the migration, and a role each for the
   writer, the indexer and the query service (read-only). See [one more database](#one-more-database-in-a-cluster-you-already-run).
 - A **reference clock** for the clock-synchronisation job. Every preset with

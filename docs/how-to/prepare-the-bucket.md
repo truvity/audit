@@ -313,7 +313,7 @@ later has no way to know whether the matter is over.
 **Before erasing a tenant's keys, list the holds.** Crypto-shredding a tenant
 whose copies are under legal hold destroys evidence that may not be destroyed.
 This applies only where the deployment runs pseudonymisation keys at all; see
-[key custody](key-custody.md).
+[key custody](../explanation/key-custody.md).
 
 ## What breaks verification
 

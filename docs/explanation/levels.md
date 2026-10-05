@@ -1,6 +1,6 @@
 # Levels
 
-How much of audit an installation runs. The [shapes](README.md) say how a record
+How much of audit an installation runs. The [shapes](deployment-shapes.md) say how a record
 reaches the bucket; the level says what protects it once there.
 
 | level | the archive | seals | the index | for |
@@ -19,12 +19,12 @@ vocabulary for choosing a deployment, not chart or library options.
 
 | preset | what it is | level | built from |
 |---|---|---|---|
-| `aws-serverless` | writer and notary Lambdas, S3, DynamoDB dedupe; observe and query where you like | `full` (lock on) or `lite` | [AWS](aws.md) library |
-| `aws-eks` | the chart on EKS, Pod Identity, S3, notary job on KMS | `full` | chart, [direct](direct.md) or [stream](stream.md) |
+| `aws-serverless` | writer and notary Lambdas, S3, DynamoDB dedupe; observe and query where you like | `full` (lock on) or `lite` | [AWS](../reference/aws-pulumi-library.md) library |
+| `aws-eks` | the chart on EKS, Pod Identity, S3, notary job on KMS | `full` | chart, [direct](direct-mode.md) or [stream](stream-mode.md) |
 | `aws-hybrid` | Lambdas for ingest and the notary in AWS, observe and query on Kubernetes with IRSA | `full` | AWS library plus chart (`writer.enabled: false`, `observe`, `query`) |
 | `k8s-openbao` | the chart on any cluster, seals and keys on OpenBao Transit, S3 or compatible | `full` with a lock, else `lite` | chart (`jobs.notary` with `signer.transit`) |
 | `k8s-minimal` | the chart, S3-compatible store, no lock, no notary | `lite` | chart |
-| `server` | the binaries on a host, a local seal key | `lite` | [direct](direct.md) |
+| `server` | the binaries on a host, a local seal key | `lite` | [direct](direct-mode.md) |
 
 The two production estates:
 
@@ -50,7 +50,7 @@ notary's, verify's and clock-sync's, sends to the writer's ingest queue with
 chart refuses a sink that names the release's own front door, and a
 `writer.enabled: false` release whose components would run as the writer's
 ServiceAccount. The values, the IAM and a worked file are in
-[AWS](aws.md#observe-and-query-in-kubernetes-writer-on-lambda).
+[AWS](../reference/aws-pulumi-library.md#observe-and-query-in-kubernetes-writer-on-lambda).
 
 ## What is implemented
 

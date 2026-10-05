@@ -3,7 +3,7 @@
 ## Record
 
 One thing that happened, as seen by one source. Described in
-[record.proto](../proto/audit/v1/record.proto). The spine is: `id`,
+[record.proto](../../proto/audit/v1/record.proto). The spine is: `id`,
 `occurred_at`, `recorded_at`, `source`, `action`, `operation`, `outcome`,
 `tenant_id`, `actor`, `targets`, `context`. Around the spine: `subject`,
 `capture`, `previous_attributes`, `data`, `meter`, `attributes`, `unmapped`.
@@ -34,7 +34,7 @@ the schema of its `data`, a sentence template per locale, and an optional
 meter. Also the source's actor kinds, target types, context areas and
 meters. Authored next to the emitting code, validated in that code's CI,
 registered at deploy, copied into the archive on first use. Format:
-[catalogue.schema.json](../sdk/schemas/catalogue.schema.json).
+[catalogue.schema.json](../../sdk/schemas/catalogue.schema.json).
 
 ## Extension slots
 
@@ -50,7 +50,7 @@ by a discriminator that selects a registered JSON Schema:
 | `meter.dimensions` | meter |
 
 Extension schemas are closed objects with every property annotated with its
-class and PII level. See [extension points](reference/extension-points.md).
+class and PII level. See [extension points](../reference/extension-points.md).
 
 ## Actor kinds and identity tiers
 
@@ -63,7 +63,7 @@ retention because accountability is a legal obligation.
 
 What a preset asks for is not always what a copy gets. A deployment that
 runs no key provider — the default since
-[0013](decisions/0013-no-pseudonymisation-keys-by-default.md) — declares
+[0013](../decisions/0013-no-pseudonymisation-keys-by-default.md) — declares
 that the identifiers it receives for external people are already opaque,
 and a preset's `pseudonym` is then treated as `clear`: the identifier
 written is the one the application minted, which identifies nobody without
@@ -78,7 +78,7 @@ be joined on a person and erasure is key destruction.
 A **preset** is what one framework requires: fields, categories, identity
 treatment, retention, integrity, review, with citations. A **profile** is a
 deployment's composition of presets plus a destination. The split writer
-produces one copy per profile. See [presets](../presets/README.md).
+produces one copy per profile. See [presets](../../presets/README.md).
 
 ## Prefixes
 
@@ -89,7 +89,7 @@ it by the hour it was ingested. The profile comes first because a lifecycle rule
 filters by literal prefix and takes no wildcards, so a rule per profile is only
 expressible that way; a role scoped to one customer still works, because the
 tenant is the next component and a policy's resource may carry a wildcard. The
-layout is specified in the [bucket contract](reference/bucket-contract.md).
+layout is specified in the [bucket contract](../reference/bucket-contract.md).
 
 What describes the records is copied on first use: the catalogue as registered
 under `catalogue/<app>/<version>`, written once, and its extension schemas, the
@@ -107,4 +107,4 @@ idempotent, all rebuildable from the prefixes.
 
 Reads and exports of the trail, catalogue and profile changes, key
 destruction, legal holds, verifications, writer lifecycle and the daily clock
-check are records too, in the [common catalogue](../sdk/catalogue/common.yaml).
+check are records too, in the [common catalogue](../../sdk/catalogue/common.yaml).

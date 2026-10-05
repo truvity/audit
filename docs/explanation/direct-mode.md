@@ -207,4 +207,4 @@ the same way. The second checks every record object of the profile in the last
 day against the bucket contract, from the archive alone; run it after the
 first records have landed.
 
-The [runbook](../operations/runbook.md) has what to do when either fails.
+The [runbook](../how-to/rebuild-the-index.md) has what to do when either fails.

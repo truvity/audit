@@ -73,7 +73,7 @@ it.
   layout is the contract between them, not the code.
 - **The chart is instantiated, not deployed.** It has to render from an
   application's values: the mode, the prefix, the database, the grants. See
-  [the deployment pages](../deployment/direct.md).
+  [the deployment pages](../explanation/direct-mode.md).
 - **What the earlier shape provided is gone**: the central installation, the
   registry service, `workloadIdentity.workloads` as a map of many
   applications, and a shared grants file. An installation admits one

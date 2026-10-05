@@ -1,7 +1,7 @@
 # Usage quotas
 
 A quota — "ten thousand verifications a month on this plan" — is the same
-meter [billing](billing.md) uses, counted quickly into a cache and corrected
+meter [billing](enable-billing.md) uses, counted quickly into a cache and corrected
 slowly from the index. The records stay the source of truth; the cache is
 only fast.
 
@@ -12,7 +12,7 @@ rate-limit service. A quota is a monthly total, tolerates seconds of lag,
 and must agree with the invoice — which is why it is computed from the same
 records the invoice is.
 
-Quotas need [stream mode](../stream.md): without a stream there is nothing
+Quotas need [stream mode](../explanation/stream-mode.md): without a stream there is nothing
 for a second consumer to read.
 
 ## The five slots

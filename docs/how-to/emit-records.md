@@ -9,7 +9,7 @@ module of its own: `go get github.com/truvity/audit/sdk`. An application imports
 `sdk/emit`, `sdk/record`, `sdk/catalogue`, `sdk/sink` and `sdk/gen/audit/v1`,
 and what that brings in is Connect, protobuf and the OpenTelemetry API — not
 the writer's database driver, stream server or object-store client
-([layout](../development/layout.md#the-sdk-module)). Everything
+([layout](../reference/repository-layout.md#the-sdk-module)). Everything
 after it — the receiver, the writer, the query service — is a Deployment in
 the application's namespace
 ([0011](../decisions/0011-one-installation-per-service-or-product.md)), so the
@@ -89,7 +89,7 @@ audit check-emitters ./ --catalogue path/to/catalogue.yaml   # in CI
 `check-emitters` finds the action names your code emits and fails if one is
 not in the catalogue, or if the catalogue declares one nothing emits. Put each
 action name in code exactly once — a constructor per action
-([integrating](integrate.md#one-constructor-per-action)) — so it can see them.
+([integrating](connect-an-application.md#one-constructor-per-action)) — so it can see them.
 
 ### The two deliveries
 
@@ -183,8 +183,8 @@ sink.NewClient(httpClient, receiverURL)
 
 Whether the receiver then puts the object itself or publishes to a stream is
 the installation's business, not the application's — the same catalogue and
-the same code run against [direct](../deployment/direct.md) and
-[stream](../deployment/stream.md). (`natssink.NewPublisher` exists, and the
+the same code run against [direct](../explanation/direct-mode.md) and
+[stream](../explanation/stream-mode.md). (`natssink.NewPublisher` exists, and the
 writer's stream consumer is built on it, but an application publishing
 straight to a stream is not a shape this component describes: it would hold
 the stream's credentials.)

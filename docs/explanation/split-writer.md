@@ -7,9 +7,9 @@ the application
 ([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 
 It runs in one of two ways, and the steps below are the same in both. In
-[stream mode](../deployment/stream.md) it is `audit-writer` in consumer mode,
+[stream mode](stream-mode.md) it is `audit-writer` in consumer mode,
 N pods reading a durable pull consumer. In
-[direct mode](../deployment/direct.md) the receiver is the writer: the same
+[direct mode](direct-mode.md) the receiver is the writer: the same
 code, in the process the application talks to, with the records arriving from
 the request instead of from the stream, and the acknowledgement withheld until
 the roll that holds them has been put and indexed.

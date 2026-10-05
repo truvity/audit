@@ -6,7 +6,7 @@
 > ([0019](../decisions/0019-seals.md)) replace it, and are not built yet. What
 > `audit verify` checks today is the per-object `sha256` and the per-record
 > hashes of the v1 [bucket contract](../reference/bucket-contract.md)
-> ([verification](../operations/verify.md)). The rest of this page is the
+> ([verification](../how-to/verify-the-trail.md)). The rest of this page is the
 > description of the v0 design it was, kept for what it argues about signing.
 
 ## The v0 digest chain

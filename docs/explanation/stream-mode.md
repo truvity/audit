@@ -275,7 +275,7 @@ person may read.
 An application whose console keeps a session of its own instead — a cookie,
 not a gateway token — reaches the query service through the console, which
 mints a short token per person. Both are described in
-[integrating](../guides/integrate.md#the-audit-page).
+[integrating](../how-to/connect-an-application.md#the-audit-page).
 
 ## Scaling
 

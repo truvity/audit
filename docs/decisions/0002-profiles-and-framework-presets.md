@@ -51,7 +51,7 @@ prefix was the earlier reading, and it buys nothing with these presets: the
 only large field, `capture`, is kept by one profile. It would cost a
 seven-year lock on every body, since a writer cannot know which profile will
 reference a payload next and a lock can be extended but never shortened. See
-[the split writer](../design/split-writer.md) for the condition that would
+[the split writer](../explanation/split-writer.md) for the condition that would
 change this.
 
 Presets reference core fields and classes only, never an application's

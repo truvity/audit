@@ -45,8 +45,8 @@ gateway-issued token is preferred if there is one. Either way the grants are
 the query service's, not the console's.
 
 Both are described from the application's side in
-[integrating](../guides/integrate.md#the-audit-page), and the cookie case in
-[a console with a session of its own](../guides/integrate.md#a-console-with-a-session-of-its-own).
+[integrating](../how-to/connect-an-application.md#the-audit-page), and the cookie case in
+[a console with a session of its own](../how-to/connect-an-application.md#a-console-with-a-session-of-its-own).
 
 ## Navigation
 

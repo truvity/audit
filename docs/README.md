@@ -1,27 +1,27 @@
 # Documentation
 
-Start with [architecture](architecture.md): the parts, the catalogue that
+Start with [architecture](explanation/architecture.md): the parts, the catalogue that
 binds them, what an acknowledgement means and what can be lost. Then pick
 the road you are on.
 
 | you are | start at |
 |---|---|
-| connecting an application | [integrating](guides/integrate.md), then [emitting](guides/emit.md) |
-| running an installation | [deployment](deployment/README.md), then [deploying](guides/deploy.md) step by step |
-| reading or auditing the trail | [reading](guides/read.md), then [verification](operations/verify.md) |
-| working on this repository | [layout](development/layout.md) and [CONTRIBUTING](../CONTRIBUTING.md) |
+| connecting an application | [integrating](how-to/connect-an-application.md), then [emitting](how-to/emit-records.md) |
+| running an installation | [deployment](explanation/deployment-shapes.md), then [deploying](getting-started/kubernetes.md) step by step |
+| reading or auditing the trail | [reading](how-to/read-the-trail.md), then [verification](how-to/verify-the-trail.md) |
+| working on this repository | [layout](reference/repository-layout.md) and [CONTRIBUTING](../CONTRIBUTING.md) |
 
 | section | pages |
 |---|---|
-| Entry | [architecture](architecture.md), [capabilities](capabilities.md), [why](why.md), [concepts](concepts.md) |
-| Deployment | [the shapes](deployment/README.md), [direct](deployment/direct.md), [stream](deployment/stream.md), [AWS](deployment/aws.md), [billing](deployment/extensions/billing.md), [usage quotas](deployment/extensions/quotas.md) |
-| Guides | [integrating an application](guides/integrate.md), [deploying](guides/deploy.md), [emitting records](guides/emit.md), [reading the trail](guides/read.md) |
-| Design | [split writer](design/split-writer.md), [search](design/search.md), [authentication and authorization](design/authn-authz.md), [integrity](design/integrity.md), [metering](design/metering.md), [the Audit page](design/audit-page.md) |
+| Entry | [architecture](explanation/architecture.md), [capabilities](reference/capabilities.md), [why](explanation/why.md), [concepts](explanation/concepts.md) |
+| Deployment | [the shapes](explanation/deployment-shapes.md), [direct](explanation/direct-mode.md), [stream](explanation/stream-mode.md), [AWS](reference/aws-pulumi-library.md), [billing](how-to/enable-billing.md), [usage quotas](how-to/enable-usage-quotas.md) |
+| Guides | [integrating an application](how-to/connect-an-application.md), [deploying](getting-started/kubernetes.md), [emitting records](how-to/emit-records.md), [reading the trail](how-to/read-the-trail.md) |
+| Design | [split writer](explanation/split-writer.md), [search](explanation/search.md), [authentication and authorization](explanation/authn-authz.md), [integrity](explanation/integrity.md), [metering](explanation/metering.md), [the Audit page](explanation/audit-page.md) |
 | Decisions | [index](decisions/README.md), and the [target architecture](decisions/0016-three-parts-installed-independently.md) |
-| Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [extension points](reference/extension-points.md), [presets](reference/presets.md), [API](reference/api.md), [configuration](reference/configuration.md), [bucket contract](reference/bucket-contract.md) |
-| Operations | [which presets to compose](operations/presets-policy.md), [S3 guide](operations/s3-guide.md), [verification](operations/verify.md), [runbook](operations/runbook.md), [telemetry](operations/telemetry.md), [key custody](operations/key-custody.md), [OpenBAO keys](operations/openbao-keys.md) |
-| Development | [layout, and how to add to it](development/layout.md) |
-| Roadmap | [to do](roadmap.md) |
+| Reference | [record](reference/record.md), [catalogue](reference/catalogue.md), [extension points](reference/extension-points.md), [presets](reference/profiles.md), [API](reference/api.md), [configuration](reference/configuration.md), [bucket contract](reference/bucket-contract.md) |
+| Operations | [which presets to compose](explanation/which-profiles-to-compose.md), [S3 guide](how-to/prepare-the-bucket.md), [verification](how-to/verify-the-trail.md), [runbook](how-to/rebuild-the-index.md), [telemetry](reference/telemetry.md), [key custody](explanation/key-custody.md), [OpenBAO keys](how-to/configure-openbao-keys.md) |
+| Development | [layout, and how to add to it](reference/repository-layout.md) |
+| Roadmap | [to do](explanation/roadmap.md) |
 
 The decisions explain why the component is shaped as it is; the design
 pages explain each part; the reference pages are the contracts. Operations

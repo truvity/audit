@@ -1,6 +1,6 @@
 # 0021. One configuration file, validated against a schema
 
-- Status: accepted; refined by [0025](0025-configuration-is-immutable-per-instance.md)
+- Status: accepted; refined by [0025](0025-configuration-is-immutable-per-instance.md); the secret fields it names (`<field>Env`) are `<field>Secret` through `secrets.source` in configuration version 2 (truvity/policy decision 0012; [upgrade](../how-to/upgrade/v0.13.md))
 - Date: 2026-10-02
 
 ## Context

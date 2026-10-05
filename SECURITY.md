@@ -14,7 +14,7 @@ Only the latest release is supported with security updates.
 ## Design properties that matter for reports
 
 - Records are append-only. The store is expected to carry S3 Object Lock in
-  compliance mode; see `docs/operations/s3-guide.md`.
+  compliance mode; see `docs/how-to/prepare-the-bucket.md`.
 - Every read of the audit trail is itself recorded.
 - Subjects are referenced by identifiers or keyed pseudonyms, never by
   identity attributes. See `docs/decisions/0005-identity-tiers-and-pseudonymisation.md`.

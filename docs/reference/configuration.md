@@ -80,11 +80,13 @@ to find. The process reads exactly the secrets the file names, and one that is
 absent or empty is an error naming the field and where it looked (the source and
 the root), never the name it holds or a value. These are all of them:
 
+<!-- generated: config-secrets -->
 | key | holds |
 |---|---|
 | `database.passwordSecret` | the Postgres password |
 | `bucket.credentialsSecret.accessKeyID`, `.secretAccessKey` | the static credentials of an S3-compatible store |
 | `openbao.tokenSecret` | an OpenBAO token |
+<!-- /generated -->
 
 ```yaml
 secrets:
@@ -167,6 +169,7 @@ that reads them validates against it and then decodes strictly:
 
 ## Shared blocks
 
+<!-- generated: config-shared-blocks -->
 These blocks recur under several keys. They follow the shared fragments of the
 component contract (`postgres.json`, `bucket.json`, `listen.json`,
 `nats.json`).
@@ -234,7 +237,7 @@ Exactly one of `login`, `tokenFile` and `tokenSecret`.
 | `local.dir` | path | in memory | where the wrapped data keys are kept. They are random, not derived, so this directory is the only copy. Unset keeps them in memory, which only a trial install should |
 | `transit.prefix` | string | `audit` | what every key's name starts with: `<prefix>.<purpose>.<tenant>` |
 | `transit.openbao` | `openbao`, required | | the engine and how to sign in |
-
+<!-- /generated -->
 
 ## Refusals
 

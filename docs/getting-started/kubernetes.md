@@ -20,7 +20,7 @@ when one is missing.
 | a Postgres database and a role for each part | [prepare the database](../how-to/prepare-the-database.md) |
 | a reference clock for the clock-sync job | an NTP address the pods can reach (`169.254.169.123` on AWS) |
 | a workload identity for the pods | Pod Identity or IRSA annotations on each component's ServiceAccount |
-| the images | `ghcr.io/truvity/audit/` (`audit-writer`, `audit`, `audit-query`, `audit-notary`), one tag that also stamps the chart; all distroless with no shell |
+| the images | `ghcr.io/truvity/audit/` (`audit-writer`, `audit-query`, `audit-observe`, `audit-notary` and `audit`, the toolchain the jobs run), one tag that also stamps the chart; none has a shell |
 | the application's catalogue | **nothing to install:** the application registers it with the receiver at start-up |
 
 ## 1. Add the dependency

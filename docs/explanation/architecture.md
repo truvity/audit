@@ -189,8 +189,8 @@ them is the record.
 6. **Every night the verify job** checks the previous day's objects against the
    [bucket contract](../reference/bucket-contract.md) — each object's key, metadata
    and bytes, and the hash of every record — and records what it checked. Seals
-   ([0019](../decisions/0019-seals.md)), which will say that nothing was removed,
-   are not built yet.
+   ([0019](../decisions/0019-seals.md)), which say that nothing was removed or
+   added, are made hourly by the notary and checked with `--root`.
 7. **A reader asks** through the query service. Their token names them; the
    grants say which profiles, tenants, operations and period they may read, and
    the grant becomes one more term of the query, so there is no path to a row
@@ -236,7 +236,7 @@ neither puts anything new in the request path.
 | key providers `local` and OpenBAO `transit`; AWS KMS envelope designed | built, and off by default |
 | one configuration file per binary, validated against a schema ([0021](../decisions/0021-one-validated-configuration-file.md)) | built; the chart passes it through |
 | the chart, instantiated per application: `mode`, receiver, writer, query service, the four jobs, the extension toggles | built; a golden per shape, and every documented example rendered |
-| `@truvity/audit`: query client, sentences, React hooks and view | built; consumed from a release tag (`github:truvity/audit#vX.Y.Z`), not from a registry |
+| `@truvity/audit`: query client, sentences, React hooks and view | built; published to GitHub Packages at each release tag |
 | TypeScript emitter | designed, not built |
 | billing statement, usage consumer, reconciler | designed, not built |
 | exporters (OCSF, ECS, Parquet), adapters | designed, not built |

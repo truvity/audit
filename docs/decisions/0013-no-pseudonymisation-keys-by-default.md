@@ -1,6 +1,6 @@
 # 0013. No pseudonymisation keys by default
 
-- Status: accepted
+- Status: accepted; supersedes the default of [0010](0010-key-providers.md)
 - Date: 2026-09-22
 
 Supersedes the preference in [0010](0010-key-providers.md) for a managed

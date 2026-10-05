@@ -99,6 +99,7 @@ disable it. Use `KeyArn` when the organisation already manages keys centrally.
 
 Required inputs are marked. Anything not listed has the default stated.
 
+<!-- generated: aws-library-inputs -->
 | input | default | meaning |
 |---|---|---|
 | `Tags` | none | on every resource that takes tags |
@@ -154,9 +155,11 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Observe.ExternalID` | none | required of the assuming principal when set; does not apply to IRSA |
 | `Observe.IRSA` | none | a ServiceAccount that may assume the read role by web identity, see [IRSA](../how-to/aws-run-readers-in-kubernetes.md) |
 | `ArchiveWriter` | nil | `IRSA` (the same block) and `Prefixes` (default `seals/`, `keys/`): a write role for a workload outside AWS |
+<!-- /generated -->
 
 ## Outputs
 
+<!-- generated: aws-library-outputs -->
 | output | what |
 |---|---|
 | `BucketName`, `BucketArn` | the archive |
@@ -171,6 +174,7 @@ Required inputs are marked. Anything not listed has the default stated.
 | `SecretsRoot` | the SSM parameter path the writer reads secrets from, empty when its configuration names none |
 | `AlarmTopicArn` | the SNS topic every alarm publishes to |
 | `ScheduleArn` | the notary's schedule |
+<!-- /generated -->
 
 ## What it creates
 

@@ -1,6 +1,6 @@
 # 0002. Profiles composed from framework presets, one copy per profile
 
-- Status: accepted
+- Status: accepted; the compliance bundle this record calls a framework preset is now a *framework profile* (a *preset* is a named bundle of adapter or deployment choices, per truvity/policy decision 0012); the `presets/` directory and key keep the old name until a code change renames them
 - Date: 2026-09-17
 
 ## Context

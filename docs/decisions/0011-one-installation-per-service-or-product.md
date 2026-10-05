@@ -1,6 +1,6 @@
 # 0011. One installation per service or product, in that application's namespace
 
-- Status: accepted
+- Status: accepted; refined by [0016](0016-three-parts-installed-independently.md)
 - Date: 2026-09-22
 
 ## Context

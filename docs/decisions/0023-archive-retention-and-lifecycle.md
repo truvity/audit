@@ -1,6 +1,6 @@
 # 0023. Archive retention: Object Lock compliance as the target, governance first
 
-- Status: accepted
+- Status: accepted; extends [0003](0003-s3-object-lock-as-the-record.md) and [0014](0014-lock-modes-and-store-tiers.md)
 - Date: 2026-10-02
 
 Extends [0003](0003-s3-object-lock-as-the-record.md) and

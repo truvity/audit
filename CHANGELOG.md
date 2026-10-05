@@ -4,7 +4,7 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.13.0
 
 Configuration is version 2: the group is `audit.truvity.github.io`, a secret is named by `...Secret` and found through one declared source, and on AWS Lambda secrets come from SSM and never from the function's environment. Version 1 is read for one minor.
 

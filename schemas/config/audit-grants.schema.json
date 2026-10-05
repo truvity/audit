@@ -5,10 +5,10 @@
   "description": "The grants document a configuration names as `grants`: who may read what. A mapping an auditor can read, kept as a file and not computed by a service.",
   "properties": {
     "apiVersion": {
-      "default": "v1",
-      "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "default": "audit.truvity.com/grants/v1",
+      "description": "The version of this document's shape, `audit.truvity.com/grants/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
       "enum": [
-        "v1"
+        "audit.truvity.com/grants/v1"
       ]
     },
     "issuers": {

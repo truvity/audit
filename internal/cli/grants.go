@@ -21,7 +21,7 @@ import (
 // because the engine is a dependency a deployment should choose rather than
 // inherit.
 type GrantsFile struct {
-	// APIVersion is `v1`, or absent, which means the same.
+	// APIVersion is `audit.truvity.com/<kind>/v1`, or absent, which means the same.
 	APIVersion string `json:"apiVersion,omitempty"`
 	// Issuers are the token issuers trusted to say who a caller is. They live
 	// in this file, beside the rules, because a rule is only as safe as the

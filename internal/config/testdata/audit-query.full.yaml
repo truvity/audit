@@ -1,4 +1,4 @@
-apiVersion: v1
+apiVersion: audit.truvity.com/query/v1
 listen:
   address: ":8080"
 searcher: postgres

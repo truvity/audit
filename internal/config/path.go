@@ -2,46 +2,43 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"strings"
+
+	policyconfig "github.com/truvity/policy/config"
 )
 
 // EnvConfig names the file a process is configured with, as an alternative to
 // --config. The flag wins when both are given: it is the more specific, and
 // a command line that names a file means that one.
-//
-// TODO(policy): truvity/policy is adding config.PathFrom and an apiVersion
-// envelope. When that is released, Path becomes a call to it and this file
-// goes; the rules below are the ones it is to keep, so that no binary's
-// behaviour changes.
 const EnvConfig = "AUDIT_CONFIG"
 
-// Path is the configuration file a process reads: the --config flag when it is
-// set, otherwise AUDIT_CONFIG, otherwise the first of defaults that exists.
-// With none of them it is an error that says how to give one, so that a
-// process never starts on a file nobody named.
+// Path is the configuration file a process reads: truvity/policy's PathFrom
+// (`--config` or `-config` on the command line, otherwise AUDIT_CONFIG), and,
+// for a process that has a conventional place, the first of defaults that exists
+// when neither is given: the Lambda binaries, whose layer mounts the file at
+// /opt/audit/audit.yaml. A binary with no convention passes none, and refuses to
+// start without the flag or the variable.
 //
-// defaults is for a process that has a conventional place: the Lambda
-// binaries, whose layer mounts the file at /opt/audit/audit.yaml. A binary with
-// no convention passes none, and refuses to start without the flag or the
-// variable.
-func Path(flagValue, schemaName string, defaults ...string) (string, error) {
-	if flagValue != "" {
-		return flagValue, nil
+// args is the command line without the program's name, os.Args[1:].
+func Path(args []string, schemaName string, defaults ...string) (string, error) {
+	p, err := policyconfig.PathFrom(args, EnvConfig)
+	if err == nil {
+		return p, nil
 	}
-	if v := strings.TrimSpace(os.Getenv(EnvConfig)); v != "" {
-		return v, nil
-	}
-	for _, d := range defaults {
-		if _, err := os.Stat(d); err == nil {
-			return d, nil
+	// Only "nothing was named" falls back to a default; a flag with no value or
+	// given twice is the person's mistake and is said.
+	var pe *policyconfig.Error
+	if errors.As(err, &pe) && strings.Contains(err.Error(), "no configuration file") {
+		for _, d := range defaults {
+			if _, statErr := os.Stat(d); statErr == nil {
+				return d, nil
+			}
+		}
+		if len(defaults) > 0 {
+			return "", errors.New(err.Error() + ", or put it at " + strings.Join(defaults, " or ") +
+				" (schemas/config/" + schemaName + ".schema.json says what it holds)")
 		}
 	}
-	hint := "give the configuration file with --config or " + EnvConfig
-	if len(defaults) > 0 {
-		hint += ", or put it at " + strings.Join(defaults, " or ")
-	}
-	return "", errors.New(hint + ": it is the only thing that configures this process " +
-		fmt.Sprintf("(schemas/config/%s.schema.json says what it holds)", schemaName))
+	return "", errors.New(err.Error() + " (schemas/config/" + schemaName + ".schema.json says what it holds)")
 }

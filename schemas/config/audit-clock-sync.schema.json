@@ -88,10 +88,10 @@
   "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
   "properties": {
     "apiVersion": {
-      "default": "v1",
-      "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "default": "audit.truvity.com/clock-sync/v1",
+      "description": "The version of this document's shape, `audit.truvity.com/clock-sync/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
       "enum": [
-        "v1"
+        "audit.truvity.com/clock-sync/v1"
       ]
     },
     "maxOffset": {

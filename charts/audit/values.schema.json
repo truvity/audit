@@ -10,10 +10,10 @@
       "description": "The configuration of `audit clock-sync --config`, which compares the clock with UTC and records the answer. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/clock-sync/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/clock-sync/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/clock-sync/v1"
           ]
         },
         "maxOffset": {
@@ -136,10 +136,10 @@
       "description": "The configuration of `audit migrate --config`, which applies the schema and grants each part's database role what it needs and no more. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/migrate/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/migrate/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/migrate/v1"
           ]
         },
         "database": {
@@ -190,7 +190,27 @@
               "type": "string"
             },
             "url": {
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require.",
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
               "pattern": "^postgres(ql)?://",
               "type": "string"
             }
@@ -222,10 +242,10 @@
       "description": "The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/notary/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/notary/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/notary/v1"
           ]
         },
         "archive": {
@@ -591,10 +611,10 @@
       "description": "The configuration of audit-observe, the indexer: it follows the archive by cursor and writes the index the query service reads (ADR 0020). Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/observe/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/observe/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/observe/v1"
           ]
         },
         "archive": {
@@ -831,7 +851,27 @@
               "type": "string"
             },
             "url": {
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require.",
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
               "pattern": "^postgres(ql)?://",
               "type": "string"
             }
@@ -858,10 +898,10 @@
       "description": "The configuration of `audit purge --config`, which brings the index and the deduplication table within the profiles. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/purge/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/purge/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/purge/v1"
           ]
         },
         "database": {
@@ -911,7 +951,27 @@
               "type": "string"
             },
             "url": {
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require.",
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
               "pattern": "^postgres(ql)?://",
               "type": "string"
             }
@@ -962,10 +1022,10 @@
       "description": "The configuration of audit-query, the read path. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/query/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/query/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/query/v1"
           ]
         },
         "archive": {
@@ -1396,7 +1456,27 @@
               "type": "string"
             },
             "url": {
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require.",
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
               "pattern": "^postgres(ql)?://",
               "type": "string"
             }
@@ -1499,10 +1579,10 @@
       "description": "The configuration of `audit verify --config`, which checks record objects against the bucket contract and reports what it finds. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
       "properties": {
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/verify/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/verify/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/verify/v1"
           ]
         },
         "archive": {
@@ -1833,10 +1913,10 @@
           "description": "Accept writes over HTTP from callers nobody verified, stamped with no observer. For a trial install only."
         },
         "apiVersion": {
-          "default": "v1",
-          "description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+          "default": "audit.truvity.com/writer/v1",
+          "description": "The version of this document's shape, `audit.truvity.com/writer/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
           "enum": [
-            "v1"
+            "audit.truvity.com/writer/v1"
           ]
         },
         "archive": {
@@ -2559,7 +2639,27 @@
               "type": "string"
             },
             "url": {
-              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require.",
+              "allOf": [
+                {
+                  "description": "No password in the user information: postgres://user:password@host is refused, postgres://user@host is not.",
+                  "not": {
+                    "pattern": "^postgres(ql)?://[^/?#@]*:[^/?#@]*@"
+                  }
+                },
+                {
+                  "description": "No password as a query parameter: password= and sslpassword= are refused. passfile= is allowed, because it names a file rather than carrying a secret.",
+                  "not": {
+                    "pattern": "[?&](password|sslpassword)="
+                  }
+                },
+                {
+                  "description": "No percent-encoded parameter name: a driver decodes the name before it reads it, so %70assword= is password= by another spelling.",
+                  "not": {
+                    "pattern": "[?&][^=&#]*%[^=&#]*="
+                  }
+                }
+              ],
+              "description": "A connection URL without credentials, for example postgres://user@host:5432/dbname?sslmode=require. A password in the user information or in a password or sslpassword parameter is refused: the file is rendered into objects people read, and the password belongs to passwordEnv.",
               "pattern": "^postgres(ql)?://",
               "type": "string"
             }

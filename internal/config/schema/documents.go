@@ -1,6 +1,8 @@
 //nolint:lll // a schema is prose, and a description is one string
 package schema
 
+import "strings"
+
 // The documents a configuration file names beside itself. Each is YAML that was
 // decoded strictly and checked in code; these are their schemas, so that what a
 // deployer's CI validates against is a file and not a reading of the Go. They
@@ -11,11 +13,12 @@ package schema
 var Documents = []string{"audit-deployment", "audit-grants", "audit-workloads"}
 
 // apiVersion is the property every document carries. Absent means v1.
-func apiVersion() m {
+func apiVersion(name string) m {
+	v1 := Group + "/" + strings.TrimPrefix(name, "audit-") + "/v1"
 	return m{
-		"enum":        []string{"v1"},
-		"default":     "v1",
-		"description": "The version of this document's shape. Absent is `v1`; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+		"enum":        []string{v1},
+		"default":     v1,
+		"description": "The version of this document's shape, `" + v1 + "`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
 	}
 }
 
@@ -30,7 +33,7 @@ func issuers(description string) m {
 }
 
 func document2(name, title, description string, props m, required []string) m {
-	props["apiVersion"] = apiVersion()
+	props["apiVersion"] = apiVersion(name)
 	s := m{
 		"$schema":              "https://json-schema.org/draft/2020-12/schema",
 		"$id":                  BaseID + name + ".schema.json",

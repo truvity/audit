@@ -1,4 +1,4 @@
-apiVersion: v1
+apiVersion: audit.truvity.com/writer/v1
 # Every key the writer reads, set. The test that decodes this file strictly and
 # writes it back is what holds the Go type to the schema.
 mode: writer

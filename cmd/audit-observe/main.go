@@ -45,14 +45,15 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "", "the configuration file, or AUDIT_CONFIG: the one thing that configures this process")
+	// Declared so that the flag package accepts it; config.Path reads it, with AUDIT_CONFIG.
+	flag.String("config", "", "the configuration file, or AUDIT_CONFIG: the one thing that configures this process")
 	showVersion := flag.Bool("version", false, "print this build's version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("audit-observe", buildinfo.Version)
 		return nil
 	}
-	configFile, err := config.Path(*configPath, "audit-observe")
+	configFile, err := config.Path(os.Args[1:], "audit-observe")
 	if err != nil {
 		return err
 	}

@@ -13,7 +13,7 @@ import (
 // retention is a property of the profile and every one of them has to agree
 // about it.
 type Deployment struct {
-	// APIVersion is `v1`, or absent, which means the same.
+	// APIVersion is `audit.truvity.com/deployment/v1`, or absent, which means the same.
 	APIVersion string                   `json:"apiVersion,omitempty"`
 	Profiles   map[string]ProfileConfig `json:"profiles"`
 	// ExternalIdentifiersAreOpaque is the deployment saying that the
@@ -37,6 +37,9 @@ type ProfileConfig struct {
 	Presets []string `json:"presets"`
 }
 
+// DeploymentAPIVersion is the version of the deployment document this build reads.
+const DeploymentAPIVersion = "audit.truvity.com/deployment/v1"
+
 // ParseDeployment reads a deployment document. Unknown keys are refused: a
 // misspelt field in a document that decides retention is not one to ignore.
 func ParseDeployment(raw []byte) (*Deployment, error) {
@@ -44,8 +47,8 @@ func ParseDeployment(raw []byte) (*Deployment, error) {
 	if err := yaml.UnmarshalStrict(raw, &d); err != nil {
 		return nil, fmt.Errorf("deployment: %w", err)
 	}
-	if d.APIVersion != "" && d.APIVersion != "v1" {
-		return nil, fmt.Errorf("deployment: apiVersion %q is not one this build reads (v1)", d.APIVersion)
+	if d.APIVersion != "" && d.APIVersion != DeploymentAPIVersion {
+		return nil, fmt.Errorf("deployment: apiVersion %q is not one this build reads (%s)", d.APIVersion, DeploymentAPIVersion)
 	}
 	if len(d.Profiles) == 0 {
 		return nil, errors.New("deployment: no profiles")

@@ -142,6 +142,7 @@ instrumentation and the exporter to the list.
 Seven rules in one group, `audit.write-path`. Each threshold and its reason is
 in the comment above the rule in `charts/audit/templates/alerts.yaml`.
 
+<!-- generated: alert-rules -->
 | alert | fires when | threshold and why | severity |
 |---|---|---|---|
 | `AuditRecordsDeadLettered` | any increase in 15m | zero is the only healthy count: the writer accepts every well-formed record | critical |
@@ -151,6 +152,7 @@ in the comment above the rule in `charts/audit/templates/alerts.yaml`.
 | `AuditIndexRowsDeferred` | any increase in 15m | an object the indexer could not take: search is late or missing it | warning |
 | `AuditWriterRejectingRecords` | over 5% of records refused and at least 10, for 10m | a share, so one buggy producer on a busy stream is seen and one bad record on a quiet one is not | warning |
 | `AuditQueueConsumerFailing` | a NATS or SQS consumer failing for 15m | one failure is a restart or an election; fifteen minutes is batches going round | critical |
+<!-- /generated -->
 
 ### Installing them
 
@@ -167,7 +169,7 @@ alerts:
   emitterNamespace: ".+"        # the applications' namespaces: their series carry theirs
   ruleLabels:                   # on every rule, for routing
     k8s_cluster_name: prod
-  runbookBaseUrl: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md
+  runbookBaseUrl: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md
 ```
 
 `alerts.format: prometheusrule` renders a `PrometheusRule` instead of a `VMRule`;
@@ -176,67 +178,7 @@ rule, and a release with every rule off is refused.
 
 ### Runbook
 
-#### AuditRecordsDeadLettered
-
-The writer could not process a record and kept it aside under the archive's
-dead-letter prefix. The record is not lost, and it is not in the trail in its
-proper form. Read the writer's log for `dead letter` lines (they name the record
-id, the action and the reason), then the dead-letter objects. The usual causes
-are a catalogue the writer was never given, a schema version it does not know,
-and a record that does not satisfy its catalogue. Fix the cause, then replay the
-dead letters (`audit replay`).
-
-#### AuditEmitterDroppingRecords
-
-An application's async queue overflowed. The records are gone. The emitter's
-log has a line for each. Look at `audit_emit_queue_pending` for the climb that
-preceded it and at the sink for why it was away: the receiver down, the stream
-full, the network. Raise the queue depth only after fixing the sink; a deeper
-queue over a dead sink only delays the loss.
-
-#### AuditSealStale
-
-No hour has been sealed for a profile for three hours. An hour with no seal cannot
-be told from one whose seal was removed. Look at the notary CronJob
-(`kubectl get cronjob`, then the last Job's log). The usual causes are the seal
-key (a KMS or OpenBAO policy, a key that is gone, a role the notary does not
-have), the archive (a `Put` refused), and an object of the profile that does not
-match its own metadata, which the notary refuses to seal past: its log names the
-object and the rule (`hour ... is not sealed: ... problem(s) in its objects`).
-The notary resumes from the last seal on its own once the cause is fixed, and
-needs no operator to catch up; `audit verify --root ...` then confirms the chain.
-
-#### AuditIndexLagHigh
-
-Objects reach the index long after they were put, well past the settle window.
-The archive is unaffected. Look at whether `audit-observe` is running and at its
-log, then at the database's CPU, locks and connection pool. A large backlog (a
-new index, a reset cursor) shows here too until the indexer has caught up.
-
-#### AuditIndexRowsDeferred
-
-The indexer could not index objects the archive holds. Its log line
-`an object was not indexed` names each, and `reason` says what to do:
-`retry` resumes by itself once the cause (the bucket's permissions, the
-database, a catalogue missing from the archive) is fixed, and `unreadable` is an
-object that does not decode and has been skipped, which is the thing to
-investigate. `audit reindex --profile <name> --from <day> --to <day>` reads a
-range again ([runbook](../how-to/rebuild-the-index.md)).
-
-#### AuditWriterRejectingRecords
-
-A producer is sending records the writer refuses. The writer's log names the
-record and the reason for each refusal. The cause is a producer sending what its
-catalogue does not allow, or a catalogue that changed under it. Find the producer
-by the observer on the logged records.
-
-#### AuditQueueConsumerFailing
-
-The consumer's target refuses or fails its batches, and the queue delivers them
-again. Read the writer's log for the refusal (`the writer refused a batch from
-the stream`). Check the archive and the database first: the consumer fails a
-batch only when the writer could not put it. Meanwhile the queue's backlog grows
-and its oldest message ages; both are the broker's own metrics.
+What to do about each is in [respond to an audit alert](../how-to/respond-to-alerts.md); each alert's section there is named for it.
 
 ## The dashboard
 

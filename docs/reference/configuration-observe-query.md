@@ -14,6 +14,7 @@ that writes their rows. It reads the archive and never writes it, and it serves
 only `/healthz` and `/readyz`: the query service is `audit-query`, a process of its own under
 a role that can only read.
 
+<!-- generated: config-audit-observe -->
 | key | type | default | meaning |
 |---|---|---|---|
 | `listen` | `listen` | `:8080` | the address `/healthz` and `/readyz` are served on. `/healthz` says the process is up (the liveness probe); `/readyz` says it can work now (the readiness probe): the index database answers and the archive's catalogues can be listed. A failing check is named in the 503, never its error |
@@ -25,6 +26,7 @@ a role that can only read.
 | `profiles` | list of strings, at least one, unique | every profile the archive has | the profiles to follow. Profiles and tenants are discovered by listing |
 | `wake.nats.nats`, `wake.nats.subject` | `nats` (url, `tokenFile`), string | | a subject carrying the bucket's notifications. Their content is never read |
 | `wake.sqs` | `sqs` | | a queue of the bucket's notifications that is the indexer's own: each message wakes a pass and is deleted. Credentials are the SDK's ambient ones |
+<!-- /generated -->
 
 Exactly one of `wake.nats` and `wake.sqs`, or neither. A wake-up only makes the
 next pass come sooner: nothing a pass does depends on it, so a notification
@@ -43,6 +45,7 @@ start, which changes nothing it has already indexed.
 `audit-query` serves search, facets, get, export, tail and resolve, behind
 the grants. Every read it serves is recorded through the writer.
 
+<!-- generated: config-audit-query -->
 | key | type | default | meaning |
 |---|---|---|---|
 | `listen` | `listen` | `:8080` | the address it is served on |
@@ -57,6 +60,7 @@ the grants. Every read it serves is recorded through the writer.
 | `exports.expiry` | duration | `168h` | how long an export is kept before the bucket clears it |
 | `exports.linkValid` | duration | `1h` | how long a download link works |
 | `keys` | `keys` | none | the writer's key provider, which turns resolve on. With provider `none`, or no `keys`, there is nothing to resolve and the RPC is `unimplemented`. `local` reads the writer's key directory, which must be shared; `transit` signs in as the query service's own identity, never the writer's |
+<!-- /generated -->
 
 The service's limits (`filter` 4 terms, `sort` 4, `in` 100 values, `limit`
 1000) are fixed in the service, not configured; see the

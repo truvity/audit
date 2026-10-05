@@ -37,7 +37,11 @@ only with the previous release's CLI (v0.6.x).
 | deduplication on Postgres or in memory | ✅ | 📄 | 📄 |
 | deduplication on JetStream (duplicate window, KV with TTL) | 📄 | — | — |
 | deduplication on DynamoDB (conditional put with TTL, `dedupe/dynamodbdedupe`; LocalStack in CI) | — | 🧪 | — |
-| one configuration file against a schema | ✅ | 📄 | 📄 |
+| one configuration file against a schema, version 2 (version 1 read for one minor) | ✅ | 🧪 | 📄 |
+| secrets named by `...Secret` and found through `secrets.source` (`env`, `file`, `ssm`); `env` refused on Lambda; SSM read with the function's own role | ✅ | 🧪 | 📄 |
+| `/readyz` beside `/healthz` on the writer, query service and indexer; the chart's readiness probes read it | ✅ | — | 📄 |
+| `event=unknown_catalogue` and `audit_writer_catalogue_unknown_total` for a record naming a catalogue version the writer lacks, and the `<name>-writer-unknown-catalogue` alarm | 🧪 | 🧪 | 🧪 |
+| the ingest queue's sender model: `Ingest.Senders` (required) and `Redrivers`, a deny to every other principal | — | 🧪 | — |
 | metrics over OTLP: acknowledgements by durability, write latency per transport, index lag, consumer failures | 🧪 | 🧪 | 🧪 |
 | queue metrics: the age of each message at receive (`audit.queue.message.age`, from `SentTimestamp`), and CloudWatch alarms on the DLQ and the oldest message | — | 🧪 | — |
 | chart value `telemetry.otlp` (`endpoint`, `protocol`, `extraEnv`): the OpenTelemetry environment on every pod | 🧪 | — | — |
@@ -59,8 +63,8 @@ without Object Lock it is the `attested` tier of
 | `audit verify`: key, metadata, sha256 and per-record hashes of every object | 🧪 | 🧪 | 🧪 |
 | `audit verify --root`: the seals of a range, against pinned roots (below) | 🧪 | 🧪 | 🧪 |
 | Object Lock, compliance mode | ✅ | ✅ | — |
-| governance trial, then compliance ([0023](../decisions/0023-archive-retention-and-lifecycle.md)) | 📄 | 📄 | — |
-| lifecycle to Glacier Instant Retrieval and Deep Archive | — | 📄 | — |
+| governance trial, then compliance ([0023](../decisions/0023-archive-retention-and-lifecycle.md)); the Pulumi library takes `NONE`, `GOVERNANCE` or `COMPLIANCE` | 📄 | 🧪 | — |
+| lifecycle to Glacier Instant Retrieval and Deep Archive (a rule per profile prefix in the Pulumi library) | — | 🧪 | — |
 | bucket-contract conformance suite (records, catalogue and ordering, against the memory store and S3) | 🧪 | 🧪 | 🧪 |
 | conformance of seals, delegation and revocation: against the memory store and S3, with a key file and a KMS P-384 key (LocalStack) | 🧪 | 🧪 | 🧪 |
 
@@ -112,5 +116,5 @@ ed25519 or P-256 key) still sign and verify in `keys`, and sign no seal.
 | Helm chart | ✅ | — | — |
 | Helm chart modes per part | 📄 | — | — |
 | Pulumi library (bucket with Object Lock and lifecycle, keys, queue and DLQ, functions, roles, schedule, alarms, a cross-account read role; `deploy/pulumi`, mocks only) | — | 🧪 | — |
-| CloudWatch alarm set: throttles, DLQ not empty, oldest message age, errors, notary silence, to SNS and alert-ingress | — | 🧪 | — |
+| CloudWatch alarm set: throttles, DLQ not empty, oldest message age, errors, unknown catalogue version, notary silence, to SNS and alert-ingress | — | 🧪 | — |
 | rpm and deb packages | — | — | 📄 |

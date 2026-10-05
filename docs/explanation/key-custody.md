@@ -3,9 +3,6 @@
 **Pseudonymisation keys are off by default.** `keys.provider: none` is what a
 deployment runs unless it says otherwise: no key directory, no login to a
 secret manager, no `identity/` prefix, and resolve refused as unimplemented.
-(`keys.provider: none` and `external_identifiers_are_opaque` are not built
-yet: they arrive with the rewrite this documentation specifies, and the
-chart's default today is `local`.)
 Most installations need none of it, because the identifiers they record are
 already opaque and the staff they record are meant to be readable
 ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)). Such a
@@ -19,14 +16,13 @@ identifiers. That is a deliberate choice, made once and recorded by the
 deployer, and it cannot be undone or migrated afterwards.
 
 The **signing key is different**: it is for seals
-([0019](../decisions/0019-seals.md)), which are not built yet, so nothing signs
-today. It does not depend on what the deployment does about pseudonyms.
+([0019](../decisions/0019-seals.md)): the notary signs each closed hour with it. It does not depend on what the deployment does about pseudonyms.
 [Signing key](#signing-key) is that half of the page.
 
 | kind | what it does | how many | who holds it | ends by |
 |---|---|---|---|---|
 | **pseudonymisation** (symmetric), off by default | turns an identifier into a stable pseudonym; seals the identity behind it | one per **tenant × purpose**, created on first use | the writer (make), resolve (open) | destruction — that is erasure |
-| **signing** (asymmetric), for seals | will sign the seals | one per installation | the signer only, never the writer | replacement, with the old public half kept |
+| **signing** (asymmetric), for seals | signs the seals | one per installation | the signer only, never the writer | replacement, with the old public half kept |
 
 Neither is ever rotated, and that is deliberate.
 
@@ -171,7 +167,7 @@ count in the thousands.
 - Tests, a laptop, a single-instance trial that does: `local`.
 - Anything with more than one replica, or where secrets already live in
   OpenBAO: `transit`.
-- A deployment on AWS with no OpenBAO: `kms`, once built.
+- A deployment on AWS with no OpenBAO: `kms`, once built (designed, not built today).
 
 The choice is permanent for a deployment. Moving keys between providers
 would mean either re-keying every tenant (a new identity for every person)
@@ -246,7 +242,7 @@ hardware module. `audit verify` already checks them: the window, the scope,
 the 25-hour limit, a revocation by a root from a time, and that no root but a
 pinned one counts. **The notary does not take a delegation yet**: it signs with
 the key it is given, which must be listed in `keys/roots.jwks` as a root, so
-today the KMS key above is the root, and the day it is a delegate is a change
+the KMS key above is the root today, and the day it is a delegate is a change
 to the notary and not to the contract.
 
 ### Replaced, not rotated
@@ -277,4 +273,4 @@ chart refuses a receiver and a writer that share a ServiceAccount name.
 | `local` | a 32-byte root in a Secret; a persistent, shared directory | — |
 | `transit` | an OpenBAO transit mount in the environment's namespace; a JWT role per component | writer: `hmac`, `encrypt` on its purposes; resolve: `decrypt`; eraser (human): `read`, `update` on `transit/keys/<prefix>.*` |
 | signing, KMS (for seals) | one asymmetric key | the signer: `kms:Sign`, `kms:GetPublicKey` |
-| signing, transit (for seals) | one ed25519 transit key | the signer: `transit/sign/<key>`, `read` on the key |
+| signing, transit (for seals) | one `ecdsa-p384` transit key | the signer: `transit/sign/<key>`, `read` on the key |

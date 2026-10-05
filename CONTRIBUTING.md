@@ -17,12 +17,31 @@ one that links back.
 
 ## Documentation
 
-- `docs/why.md` and `docs/concepts.md` are the entry points and must stay
+Documentation follows the [documentation contract](https://github.com/truvity/policy/blob/master/docs/contracts/docs.md).
+A page belongs to one directory of `docs/`, by what the reader is doing:
+
+| directory | holds |
+|---|---|
+| `docs/getting-started/` | one tutorial per deployment shape, from nothing to working |
+| `docs/how-to/` | one task per page; runbooks use one template (purpose, preconditions, before you start, steps with command, expected output, verify and rollback, afterwards); migration steps in `docs/how-to/upgrade/vX.Y.md`, linked from the CHANGELOG |
+| `docs/reference/` | configuration keys, chart values, API, catalogue, bucket contract |
+| `docs/explanation/` | design and the why |
+| `docs/decisions/` | the ADRs, with a Status column in the index; a superseded decision has its own Status line changed |
+
+- `docs/explanation/why.md` and `docs/explanation/concepts.md` are the entry points and must stay
   readable by someone who has never seen the code.
-- The CHANGELOG describes the state of the repository, not the journey.
+- Prefer a page under about 400 lines; split by audience, not by length.
+- Where reference can be produced from code or a schema, mark it
+  `<!-- generated: name -->` ... `<!-- /generated -->` so a drift check can regenerate it, and do
+  not edit inside the markers by hand.
+- The CHANGELOG describes the state of the repository, not the journey, and a **Breaking:** entry
+  links its upgrade page.
+- A compliance bundle is a **profile**; the files in `presets/` are *framework profiles*, and the
+  directory keeps its name until a code change renames it.
 - Framework profiles cite the clause they implement and carry the disclaimer that they
   are an engineering reading, not legal advice.
 - Mermaid diagrams: a `;` inside a sequence diagram message splits it.
+- `go test ./internal/docscheck` holds every relative link and anchor to what it points at.
 
 ## Tooling
 
@@ -75,7 +94,7 @@ architecture of
 [0012](docs/decisions/0012-two-deliveries-and-a-durable-ack.md) and
 [0013](docs/decisions/0013-no-pseudonymisation-keys-by-default.md) is being
 built — every name that does not exist yet says so where it is used: `# not
-built yet: arrives with the rewrite`, or a sentence beside it. A reference
+built yet`, or a sentence beside it. A reference
 that cannot be told apart from the built thing is worse than a gap.
 
 ## Commits and pull requests

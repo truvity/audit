@@ -1,6 +1,6 @@
 # 0019. Seals: JOSE ES384, chained, per profile, tenant and hour
 
-- Status: accepted
+- Status: accepted; supersedes [0008](0008-digest-chain-and-verification.md)
 - Date: 2026-10-02
 
 Supersedes [0008](0008-digest-chain-and-verification.md). The reasoning

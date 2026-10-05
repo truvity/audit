@@ -15,6 +15,7 @@ the receiver publishes to JetStream and acknowledges the replicated publish,
 and the same image runs again as the writer. Both serve `RegistryService`, so
 the application registers its catalogue with the address it writes to.
 
+<!-- generated: config-audit-writer -->
 | key | type | default | meaning |
 |---|---|---|---|
 | `mode` | `writer` or `receiver` | `writer` | the role above |
@@ -46,6 +47,7 @@ the application registers its catalogue with the address it writes to.
 | `stream.ackWait` | duration | `2m` | how long the stream waits for a batch to be taken before offering it again. Records are acknowledged only once they are in the archive, so it must exceed `roll.interval` plus the longest a put can take |
 | `roll.interval` | duration | `30s` | how long gathered records wait before they are written. In direct mode there is no stream to gather from, and it is only how long an object may stay open inside one write |
 | `roll.maxRecords` | integer, at least 1 | 5000 | how many gathered records are written at once. The roll ends at whichever of the two is reached first, or at the roller's byte limit |
+<!-- /generated -->
 
 `stream` is the NATS shorthand and is kept as it was: in a receiver it is
 `forward.nats`, in a writer `consume.nats`, with the same defaults. Give it or
@@ -114,6 +116,7 @@ arguments ([AWS](../explanation/aws-lambda.md#configuration-as-a-layer)). The wr
 which file it read, and its digest, in its start-up record
 ([evidence](configuration.md#evidence-the-writers-start-up-record)).
 
+<!-- generated: config-audit-writer-lambda -->
 | key | type | default | meaning |
 |---|---|---|---|
 | `deployment` | path, required | | the profile configuration, in the layer at `/opt/audit/deployment.yaml` |
@@ -125,6 +128,7 @@ which file it read, and its digest, in its start-up record
 | `dedupe.dynamodb.region` | string | the SDK's (`AWS_REGION`) | the table's region |
 | `dedupe.dynamodb.window` | duration | the widest window any profile asks for | how long a written record's id is remembered. It wants to be at least as long as the queue keeps a message (SQS: 14 days at most) |
 | `require` | `logged`, `queued` or `archived` | `archived` | the weakest durability the chain may give; the writer gives `archived` at best |
+<!-- /generated -->
 
 The notary Lambda reads `audit-notary`'s file, unchanged
 ([audit-notary](configuration-jobs.md#audit-notary)), from the same place; its `signer.kms` names the

@@ -1,6 +1,6 @@
 # 0018. The v1 bucket layout, and v0 is dropped
 
-- Status: accepted
+- Status: accepted; supersedes the object layout of [0003](0003-s3-object-lock-as-the-record.md)
 - Date: 2026-10-02
 
 Supersedes the object layout in

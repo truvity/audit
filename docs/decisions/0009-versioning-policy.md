@@ -1,6 +1,6 @@
 # 0009. Versioning: package per major, major.minor on the record, decoders forever
 
-- Status: accepted
+- Status: accepted; refined by [0025](0025-configuration-is-immutable-per-instance.md) for configuration
 - Date: 2026-09-17
 
 ## Context

@@ -98,6 +98,7 @@ events say what they name: a run that checked no seal records none, because a
 record claiming it had would be false assurance. They replace the v0
 `audit.digest.*` events (common catalogue 2.0.0).
 
+<!-- generated: verify-flags -->
 | flag | what |
 |---|---|
 | `--profile <p>` | required; the profile to check |
@@ -109,6 +110,7 @@ record claiming it had would be false assurance. They replace the v0
 | `--deployment <file>` | the profile configuration, so the check knows what lock the profile demands. The scheduled job passes it; an auditor without it still gets keys, bytes and hashes checked, with nothing said about locks |
 | `--json` | print the report as JSON |
 | `--endpoint`, `--path-style` | an S3-compatible store that is not AWS, as [prepare the bucket](../how-to/prepare-the-bucket.md#s3-compatible-stores) has it |
+<!-- /generated -->
 
 `--profile` is required, and a profile is verified on its own: an
 installation composing two profiles is two runs, because each profile has its

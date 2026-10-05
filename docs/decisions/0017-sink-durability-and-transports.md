@@ -1,6 +1,6 @@
 # 0017. Sink durability: the acknowledgement says how durable, and the start-up refuses less
 
-- Status: accepted
+- Status: accepted; supersedes [0012](0012-two-deliveries-and-a-durable-ack.md) and extends [0004](0004-sink-interface-and-transports.md)
 - Date: 2026-10-02
 
 Supersedes [0012](0012-two-deliveries-and-a-durable-ack.md). Extends

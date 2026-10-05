@@ -586,6 +586,11 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 			tc.OTLPAudience = "otlp"
 		}
 		for k := range tc.ExtraEnv {
+			if u := strings.ToUpper(k); strings.Contains(u, "HEADERS") || strings.Contains(u, "TOKEN") || strings.Contains(u, "SECRET") ||
+				strings.Contains(u, "PASSWORD") || strings.Contains(u, "CREDENTIAL") {
+				return nil, fmt.Errorf("auditpulumi: Telemetry.ExtraEnv %q could carry a credential (OTEL_*HEADERS*, a token, a secret): "+
+					"a function's environment is not a place for one", k)
+			}
 			if !strings.HasPrefix(k, "OTEL_") {
 				return nil, fmt.Errorf("auditpulumi: Telemetry.ExtraEnv holds OpenTelemetry SDK variables only: %q does not start with OTEL_", k)
 			}

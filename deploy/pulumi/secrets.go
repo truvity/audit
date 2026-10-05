@@ -92,7 +92,8 @@ func resolveSecrets(name string, w *WriterArgs) (*SecretsArgs, error) {
 	}
 	for _, seg := range strings.Split(s.Root[1:], "/") {
 		if seg == "." || seg == ".." || strings.HasPrefix(seg, ".") {
-			return nil, fmt.Errorf("auditpulumi: Writer.Secrets.Root %q has the segment %q: no segment may start with a dot, which rules out the dot and dot-dot segments", s.Root, seg)
+			return nil, fmt.Errorf("auditpulumi: Writer.Secrets.Root %q has the segment %q: "+
+				"no segment may start with a dot", s.Root, seg)
 		}
 	}
 	if s.KeyArn != "" && !kmsArnRE.MatchString(s.KeyArn) {

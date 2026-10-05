@@ -1,6 +1,6 @@
 apiVersion: v2
 name: audit
-description: The audit trail's write path — the split writer, and the jobs that seal, verify and prune what it writes.
+description: One installation of the audit trail - the writer, the indexer and query service, and the jobs that seal, verify and prune what it writes.
 type: application
 version: 0.0.0
 appVersion: "0.0.0"

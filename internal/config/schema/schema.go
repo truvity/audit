@@ -129,6 +129,31 @@ func duration(description string, def string) m {
 	return o
 }
 
+// secretsDef is the shared `secrets` fragment, narrowed to the sources this
+// repository has a reader for: there is no OpenBao store here, so a file naming
+// it is refused by the schema and not only by the loader.
+func secretsDef() m {
+	return m{
+		"allOf": []any{
+			ref(policy + "fragments/secrets.json"),
+			m{"properties": m{"source": m{"enum": []string{"env", "file", "ssm"}}}},
+		},
+		"description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`.",
+	}
+}
+
+// postgresDef is truvity/policy's postgres shape, with a password in the URL
+// refused where the fragment's own pattern would let one through.
+func postgresDef() m {
+	return m{
+		"allOf": []any{
+			ref(policy + "fragments/postgres.json"),
+			m{"properties": m{"url": m{"not": m{"pattern": `^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@`}}}},
+		},
+		"description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it.",
+	}
+}
+
 // sharedDefs are the shapes more than one schema uses, written once here and
 // carried into each schema that names them, because a schema the loader reads
 // has to stand alone.
@@ -139,20 +164,9 @@ func sharedDefs() map[string]m {
 			"pattern":     `^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`,
 			"description": "A Go duration: 30s, 2m, 168h.",
 		},
-		// The shared `secrets` fragment, narrowed to the sources this repository has
-		// a reader for: there is no OpenBao store here, so a file naming it is refused
-		// by the schema and not only by the loader.
-		"secrets": m{"allOf": []any{
-			ref(policy + "fragments/secrets.json"),
-			m{"properties": m{"source": m{"enum": []string{"env", "file", "ssm"}}}},
-		}, "description": "Where a field named `...Secret` finds the secret it names. One source for the whole file: `env` (the name is an environment variable), `file` (the name is a path under `root`, one file per secret: a mounted Kubernetes Secret) or `ssm` (the name is a SecureString under `root` in AWS Systems Manager Parameter Store, read with the process's own identity). On AWS Lambda use `ssm`: the function's environment is never a place for a secret. Unset is `env`."},
-		"bucket": ref(policy + "fragments/bucket.json"),
-		// truvity/policy's postgres shape, with a password in the URL refused where
-		// the fragment's own pattern would let one through.
-		"postgres": m{"allOf": []any{
-			ref(policy + "fragments/postgres.json"),
-			m{"properties": m{"url": m{"not": m{"pattern": `^[A-Za-z][A-Za-z0-9+.-]*://[^/?#@]*:[^/?#@]*@`}}}},
-		}, "description": "A PostgreSQL connection. The URL carries no password: a password in it is refused, and `passwordSecret` names the secret that holds it."},
+		"secrets":  secretsDef(),
+		"bucket":   ref(policy + "fragments/bucket.json"),
+		"postgres": postgresDef(),
 		"sink": func() m {
 			o := obj("The writer this process records through: exactly one of `url` (a writer or receiver that serves the sink) and `sqs` (the ingest queue of a writer that runs elsewhere, such as the writer Lambda).", m{
 				"url":       str("The writer's base URL."),

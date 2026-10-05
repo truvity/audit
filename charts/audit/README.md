@@ -9,9 +9,10 @@ application and runs in that application's namespace, rendered by the
 application's own chart with this one as a dependency
 ([0011](../../docs/decisions/0011-one-installation-per-service-or-product.md)).
 There is no central installation and no shape that puts the writer inside
-the application. The deployment pages show the values each shape takes:
-[direct](../../docs/explanation/direct-mode.md),
-[stream](../../docs/explanation/stream-mode.md).
+the application. Start with [getting started on Kubernetes](../../docs/getting-started/kubernetes.md);
+the shapes are explained in [direct](../../docs/explanation/direct-mode.md) and
+[stream](../../docs/explanation/stream-mode.md), and every value is in
+[chart values](../../docs/reference/chart-values.md).
 
 ## What it deploys
 

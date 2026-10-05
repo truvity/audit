@@ -48,9 +48,9 @@ a, err := auditpulumi.New(ctx, "audit", &auditpulumi.Args{
 	},
 	Ingest: auditpulumi.IngestArgs{
 		// Required: the whole of who may send. Role or user ARNs, never session ARNs.
-		Senders: []pulumi.StringInput{pulumi.String("arn:aws:iam::111122223333:role/app/emitter")},
+		Senders: []pulumi.StringInput{emitterRoleArn},
 		// An operator's break-glass role, for redriving the DLQ (optional).
-		Redrivers: []pulumi.StringInput{pulumi.String("arn:aws:iam::111122223333:role/ops/break-glass")},
+		Redrivers: []pulumi.StringInput{breakGlassRoleArn},
 	},
 	Writer: auditpulumi.WriterArgs{
 		Package:        "dist/audit-writer-lambda_<version>_linux_arm64.zip",

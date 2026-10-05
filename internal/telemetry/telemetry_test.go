@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -186,5 +187,45 @@ func TestQueueRecordsTheAgeOfAMessageAtReceive(t *testing.T) {
 	}
 	if count != 2 || sum != 12 {
 		t.Fatalf("count %d, sum %v; want 2 messages totalling 12s", count, sum)
+	}
+}
+
+// An unregistered catalogue version is counted by the source and version the
+// record names, and what an emitter can make up is bounded: past a few pairs the
+// rest is "other", so one that sends anything cannot make a series each.
+func TestUnknownCatalogueIsCountedByNameAndBoundedInLabels(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	w, err := telemetry.NewWriter(sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.UnknownCatalogue("wallet", "2.0.0")
+	w.UnknownCatalogue("wallet", "2.0.0")
+	for i := 0; i < 100; i++ {
+		w.UnknownCatalogue("made-up", fmt.Sprintf("%d.0.0", i))
+	}
+	var got metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &got); err != nil {
+		t.Fatal(err)
+	}
+	counts, series := map[string]int64{}, 0
+	for _, scope := range got.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if m.Name != "audit.writer.catalogue.unknown" {
+				continue
+			}
+			for _, p := range m.Data.(metricdata.Sum[int64]).DataPoints {
+				source, _ := p.Attributes.Value("source")
+				version, _ := p.Attributes.Value("catalogue_version")
+				counts[source.AsString()+"@"+version.AsString()] += p.Value
+				series++
+			}
+		}
+	}
+	if counts["wallet@2.0.0"] != 2 {
+		t.Errorf("counts = %v", counts)
+	}
+	if series > 21 || counts["other@other"] == 0 {
+		t.Errorf("%d series, other = %d: the labels are not bounded", series, counts["other@other"])
 	}
 }

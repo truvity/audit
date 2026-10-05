@@ -27,14 +27,17 @@ import (
 )
 
 type built struct {
-	writer        *writer.Writer
-	store         *storetest.Memory
-	dedupe        *writer.MemoryDedupe
-	deadLetter    []string
-	duplicates    int
-	unhandled     map[string][]string
-	unhandledKept map[string][]string
-	identities    *identity.Map
+	writer     *writer.Writer
+	store      *storetest.Memory
+	dedupe     *writer.MemoryDedupe
+	deadLetter []string
+	duplicates int
+	// unknownCatalogue is source@version of each record refused for naming a
+	// catalogue version nobody registered.
+	unknownCatalogue []string
+	unhandled        map[string][]string
+	unhandledKept    map[string][]string
+	identities       *identity.Map
 }
 
 // parts lets a test swap in the real deduplication store, or share a
@@ -127,7 +130,10 @@ func buildWith(t *testing.T, p parts) *built {
 		Hooks: writer.Hooks{
 			OnDeadLettered: func(_ *record.Record, reason string) { b.deadLetter = append(b.deadLetter, reason) },
 			OnDuplicate:    func(*record.Record) { b.duplicates++ },
-			OnUnhandled:    func(action string, p, kept []string) { b.unhandled[action], b.unhandledKept[action] = p, kept },
+			OnUnknownCatalogue: func(source, version string) {
+				b.unknownCatalogue = append(b.unknownCatalogue, source+"@"+version)
+			},
+			OnUnhandled: func(action string, p, kept []string) { b.unhandled[action], b.unhandledKept[action] = p, kept },
 		},
 	})
 	if err != nil {
@@ -322,6 +328,13 @@ func TestWriteDeadLettersRatherThanDropping(t *testing.T) {
 			}
 			if len(b.deadLetter) != 1 || !strings.Contains(b.deadLetter[0], tc.want) {
 				t.Fatalf("dead letters = %v, want one mentioning %q", b.deadLetter, tc.want)
+			}
+			// Only an unregistered catalogue version is the unknown-catalogue signal.
+			if unknown := tc.want == "no catalogue"; unknown != (len(b.unknownCatalogue) == 1) {
+				t.Fatalf("unknown catalogue signals = %v for %q", b.unknownCatalogue, tc.name)
+			}
+			if tc.want == "no catalogue" && b.unknownCatalogue[0] != r.GetSource()+"@9.9.9" {
+				t.Fatalf("the signal names %q, want the record's source and version", b.unknownCatalogue[0])
 			}
 			var found bool
 			for _, key := range b.store.Keys() {

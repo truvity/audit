@@ -48,6 +48,7 @@ import (
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
+	readiness "github.com/truvity/audit/internal/health"
 	"github.com/truvity/audit/internal/registry"
 	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/keys"
@@ -274,6 +275,18 @@ func run() error {
 		}
 	}
 
+	// Readiness: the database, where there is one, and the catalogues the writer
+	// resolves records against, which are loaded before this point (a writer that
+	// cannot load them does not start) and, in the registry, can be read. A
+	// consumer that stopped is not ready either, as it is not alive (/healthz).
+	var checks []readiness.Check
+	if pool != nil {
+		checks = append(checks, readiness.Check{Name: "database", Fn: pool.Ping})
+	}
+	if cfg.Consume != nil {
+		checks = append(checks, readiness.Check{Name: "consumer", Fn: func(context.Context) error { return health.err() }})
+	}
+
 	path, handler := sinkserver.NewHandler(front)
 	if authenticated != nil {
 		handler = auth.Middleware(authenticated, handler)
@@ -308,6 +321,10 @@ func run() error {
 			// what the archive's records mean, so the archive should say when.
 			OnRegistered: recorder(front, version),
 		}
+		checks = append(checks, readiness.Check{Name: "catalogues", Fn: func(ctx context.Context) error {
+			_, err := reg.List(ctx)
+			return err
+		}})
 		regPath, regHandler := registry.NewHandler(reg)
 		mux.Handle(regPath, auth.Middleware(authenticated, regHandler))
 	} else {
@@ -316,6 +333,7 @@ func run() error {
 	}
 
 	mux.Handle("/healthz", health)
+	mux.Handle("/readyz", readiness.Ready(slog.Default(), checks...))
 	server := &http.Server{Addr: cfg.Listen.Address, Handler: telemetry.HTTPHandler(mux, "audit-writer"), ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
@@ -615,9 +633,17 @@ func (h *healthState) consumerStopped(err error) {
 	h.stopped.Store(&err)
 }
 
-func (h *healthState) ServeHTTP(rw http.ResponseWriter, _ *http.Request) {
+// err is why the consumer stopped, or nil while it has not.
+func (h *healthState) err() error {
 	if err := h.stopped.Load(); err != nil {
-		http.Error(rw, "the stream consumer stopped: "+(*err).Error(), http.StatusServiceUnavailable)
+		return *err
+	}
+	return nil
+}
+
+func (h *healthState) ServeHTTP(rw http.ResponseWriter, _ *http.Request) {
+	if err := h.err(); err != nil {
+		http.Error(rw, "the stream consumer stopped: "+err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	rw.WriteHeader(http.StatusOK)

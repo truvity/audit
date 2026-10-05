@@ -23,6 +23,16 @@ type Catalogues interface {
 	Get(ctx context.Context, source, version string) (*catalogue.Catalogue, error)
 }
 
+// UnknownCatalogueError is the answer of a Catalogues for a source and version
+// nobody registered. The writer tells it apart from a catalogue that is there and
+// cannot be loaded, because it is the one an operator causes by deploying a
+// writer older than its emitters, or the reverse, and wants a signal for.
+type UnknownCatalogueError struct{ Source, Version string }
+
+func (e *UnknownCatalogueError) Error() string {
+	return fmt.Sprintf("no catalogue %s version %s is registered", e.Source, e.Version)
+}
+
 // Registry is a Catalogues backed by whatever has been registered.
 type Registry struct {
 	mu         sync.RWMutex
@@ -45,7 +55,7 @@ func (r *Registry) Get(_ context.Context, source, version string) (*catalogue.Ca
 	defer r.mu.RUnlock()
 	c, ok := r.catalogues[source+"@"+version]
 	if !ok {
-		return nil, fmt.Errorf("no catalogue %s version %s is registered", source, version)
+		return nil, &UnknownCatalogueError{Source: source, Version: version}
 	}
 	return c, nil
 }
@@ -58,6 +68,13 @@ type Hooks struct {
 	// A deployment that does not alert on this is one where a fault upstream
 	// is silent until somebody goes looking.
 	OnDeadLettered func(r *record.Record, reason string)
+	// OnUnknownCatalogue is called for each record refused because the catalogue
+	// version it names is not registered here, with the source and version it
+	// names. The record is dead-lettered as well (OnDeadLettered); this is the
+	// signal that says why, which a deployment alarms on, because the cause is a
+	// deployment's own (a writer and its emitters out of step on a catalogue) and
+	// is cured by a deploy and not by the record.
+	OnUnknownCatalogue func(source, version string)
 	// OnDuplicate is called for each record seen before.
 	OnDuplicate func(r *record.Record)
 	// OnDuplicatesLikely is called when records were written but could not be
@@ -258,6 +275,10 @@ func (w *Writer) one(ctx context.Context, r *record.Record, pending *[]extension
 	}
 	c, err := w.Catalogues.Get(ctx, r.GetSource(), r.GetCatalogueVersion())
 	if err != nil {
+		var unknown *UnknownCatalogueError
+		if errors.As(err, &unknown) && w.Hooks.OnUnknownCatalogue != nil {
+			w.Hooks.OnUnknownCatalogue(unknown.Source, unknown.Version)
+		}
 		return w.deadLetter(ctx, r, err.Error())
 	}
 	if w.Archive != nil {

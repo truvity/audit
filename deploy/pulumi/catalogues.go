@@ -28,6 +28,44 @@ func isCatalogueFile(name string) bool {
 	return !strings.ContainsAny(name, "/\\") && strings.HasPrefix(name, "catalogue") && strings.HasSuffix(name, ".yaml")
 }
 
+// isYAMLFile is any document a catalogue directory may hold a catalogue in.
+func isYAMLFile(name string) bool {
+	return !strings.ContainsAny(name, "/\\") && name != ".yaml" && strings.HasSuffix(name, ".yaml")
+}
+
+// checkLooksLikeCatalogue is the preview's check of a document taken as a
+// catalogue only because it was the one .yaml of a directory, or a file given
+// under another name: a stray values.yaml fails here, naming the file, and not at
+// the writer's start, where it would drain the ingest queue into the dead-letter
+// queue. A catalogue has a source, a version and actions (sdk/schemas/catalogue.schema.json).
+func checkLooksLikeCatalogue(where, file, doc string) error {
+	var c struct {
+		Source  string         `yaml:"source"`
+		Version string         `yaml:"version"`
+		Actions map[string]any `yaml:"actions"`
+	}
+	if err := yaml.Unmarshal([]byte(doc), &c); err != nil {
+		return fmt.Errorf("auditpulumi: %s: %s is not YAML, so it is not a catalogue: %w", where, file, err)
+	}
+	if c.Source == "" || c.Version == "" || len(c.Actions) == 0 {
+		return fmt.Errorf("auditpulumi: %s: %s is taken as the catalogue because it is the one .yaml here, and is not one: "+
+			"a catalogue has a source, a version and actions. Name the catalogue catalogue.yaml or catalogue-<name>.yaml, "+
+			"or keep other .yaml files out of the directory", where, file)
+	}
+	return nil
+}
+
+// layerName is the name a catalogue document has in the writer's layer: the
+// writer only finds `catalogue.yaml` and `catalogue-<name>.yaml`, so a document
+// from a file named otherwise (`shop.yaml`) is shipped as `catalogue-shop.yaml`.
+// An application need not name its file for the writer's sake.
+func layerName(file string) string {
+	if isCatalogueFile(file) {
+		return file
+	}
+	return "catalogue-" + file
+}
+
 // isSchemaFile is a data schema's file name: what LoadFS reads beside a
 // catalogue.
 func isSchemaFile(name string) bool {
@@ -54,7 +92,12 @@ func readCatalogueDirs(w *WriterArgs) error {
 		if err != nil {
 			return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %w", err)
 		}
+		// A directory's catalogue is the one `catalogue.yaml` or `catalogue-<name>.yaml`
+		// it holds, as before, and other .yaml files in it are not read. A directory
+		// with none of those holds its catalogue in the one .yaml it has, whatever it
+		// is called: the library ships it under a name the writer finds.
 		var doc string
+		var named, other []string
 		found := map[string]string{}
 		for _, e := range entries {
 			if e.IsDir() {
@@ -63,11 +106,9 @@ func readCatalogueDirs(w *WriterArgs) error {
 			name := e.Name()
 			switch {
 			case isCatalogueFile(name):
-				if doc != "" {
-					return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %s holds %s and %s: a directory holds one catalogue, "+
-						"because the writer gives every .json beside a catalogue to it", dir, doc, name)
-				}
-				doc = name
+				named = append(named, name)
+			case isYAMLFile(name):
+				other = append(other, name)
 			case isSchemaFile(name):
 				body, err := os.ReadFile(filepath.Join(dir, name))
 				if err != nil {
@@ -76,8 +117,19 @@ func readCatalogueDirs(w *WriterArgs) error {
 				found[name] = string(body)
 			}
 		}
-		if doc == "" {
-			return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %s holds no catalogue.yaml or catalogue-<name>.yaml", dir)
+		switch {
+		case len(named) > 1:
+			return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %s holds %s and %s: a directory holds one catalogue, "+
+				"because the writer gives every .json beside a catalogue to it", dir, named[0], named[1])
+		case len(named) == 1:
+			doc = named[0]
+		case len(other) == 1:
+			doc = other[0]
+		case len(other) > 1:
+			return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %s holds %s and %s and neither is named catalogue.yaml or "+
+				"catalogue-<name>.yaml: a directory holds one catalogue, so name the one that is", dir, other[0], other[1])
+		default:
+			return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %s holds no catalogue: a .yaml file, such as catalogue.yaml", dir)
 		}
 		body, err := os.ReadFile(filepath.Join(dir, doc))
 		if err != nil {
@@ -86,6 +138,12 @@ func readCatalogueDirs(w *WriterArgs) error {
 		if strings.TrimSpace(string(body)) == "" {
 			return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %s is empty", filepath.Join(dir, doc))
 		}
+		if !isCatalogueFile(doc) {
+			if err := checkLooksLikeCatalogue("Writer.CatalogueDirs", filepath.Join(dir, doc), string(body)); err != nil {
+				return err
+			}
+		}
+		doc = layerName(doc)
 		if prev, ok := docs[doc]; ok && prev != string(body) {
 			return fmt.Errorf("auditpulumi: Writer.CatalogueDirs: %s is also in Writer.Catalogues with other content", doc)
 		}

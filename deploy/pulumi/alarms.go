@@ -14,7 +14,21 @@ import (
 type alarmTargets struct {
 	Queue, Dlq     *sqs.Queue
 	Writer, Notary *lambda.Function
+	// WriterLogs is the writer's log group, which the unknown-catalogue alarm
+	// reads through a metric filter.
+	WriterLogs *cloudwatch.LogGroup
 }
+
+// unknownCatalogueWords is the field the writer's log line for a record that names
+// a catalogue version it does not have carries (writer/writer.go). The writer keeps
+// the characters of anything a record said from spelling it (`=` is not logged), so
+// an emitter cannot raise the alarm with a string; the metric filter matches it, so
+// it is a contract with the binary: change both together.
+const unknownCatalogueWords = "event=unknown_catalogue"
+
+// unknownCatalogueMetric is the metric the filter publishes, in the namespace
+// `Audit/<name>`.
+const unknownCatalogueMetric = "UnknownCatalogueVersion"
 
 // AlarmNames lists the CloudWatch alarms the library creates, as the suffix after
 // `<name>-`: the alarm set the AWS design calls for. Each publishes to the alarm topic on
@@ -24,6 +38,7 @@ type alarmTargets struct {
 //	ingest-dlq-not-empty                 a message was delivered MaxReceiveCount times and moved aside: a record is not in the archive
 //	ingest-oldest-message-age            the oldest message in the queue is older than the threshold: the writer is behind or stopped
 //	writer-errors, notary-errors         an invocation failed
+//	writer-unknown-catalogue             the writer refused a record for naming a catalogue version it does not have: a writer and its emitters are out of step
 //	notary-silent                        the notary has not been invoked for NotarySilenceHours: the schedule or the function is gone
 //
 // "Silent on OTLP" is the notary's silence, not a metric of the OTLP path
@@ -36,7 +51,7 @@ type alarmTargets struct {
 // the full set.
 var AlarmNames = []string{
 	"writer-throttles", "notary-throttles", "ingest-dlq-not-empty", "ingest-oldest-message-age",
-	"writer-errors", "notary-errors", "notary-silent",
+	"writer-errors", "notary-errors", "notary-silent", "writer-unknown-catalogue",
 }
 
 // newAlarms returns a nil topic, and creates nothing, when neither part exists:
@@ -76,6 +91,29 @@ func newAlarms(ctx *pulumi.Context, name string, a *Args, t alarmTargets, tags p
 	fnDims := func(f *lambda.Function) pulumi.StringMap { return pulumi.StringMap{"FunctionName": f.Name} }
 	queueDims := func(q *sqs.Queue) pulumi.StringMap { return pulumi.StringMap{"QueueName": q.Name} }
 	var alarms []alarm
+	if t.Writer != nil && t.WriterLogs != nil {
+		// A record that names a catalogue version the writer does not have is
+		// dead-lettered in the archive and acknowledged, so the queue's and the
+		// dead-letter queue's alarms never see it: this is the signal. The writer
+		// logs it with fixed words and the source and version; the filter turns each
+		// line into a datapoint.
+		if _, err := cloudwatch.NewLogMetricFilter(ctx, name+"-unknown-catalogue", &cloudwatch.LogMetricFilterArgs{
+			Name:         pulumi.String(name + "-unknown-catalogue"),
+			LogGroupName: t.WriterLogs.Name,
+			Pattern:      pulumi.String(`"` + unknownCatalogueWords + `"`),
+			MetricTransformation: &cloudwatch.LogMetricFilterMetricTransformationArgs{
+				Name:      pulumi.String(unknownCatalogueMetric),
+				Namespace: pulumi.String("Audit/" + name),
+				Value:     pulumi.String("1"),
+			},
+		}, opts...); err != nil {
+			return nil, err
+		}
+		alarms = append(alarms, alarm{"writer-unknown-catalogue",
+			"The writer refused a record for naming a catalogue version it does not have: the writer and its emitters are out of step on a catalogue. " +
+				"The log line names the source and version; deploy the catalogue (or the emitter's release) that matches.",
+			"Audit/" + name, unknownCatalogueMetric, "Sum", "GreaterThanThreshold", nil, 0, 300, 1, 1, "notBreaching"})
+	}
 	if t.Writer != nil {
 		alarms = append(alarms,
 			alarm{"writer-throttles", "The writer was throttled: it is not keeping up, or the account's Lambda concurrency is spent.",

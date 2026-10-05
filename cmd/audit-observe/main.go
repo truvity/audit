@@ -33,8 +33,10 @@ import (
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
+	readiness "github.com/truvity/audit/internal/health"
 	"github.com/truvity/audit/internal/observe"
 	"github.com/truvity/audit/internal/telemetry"
+	"github.com/truvity/audit/store"
 )
 
 func main() {
@@ -123,6 +125,14 @@ func run() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	// Ready when the index database answers and the archive's catalogues can be
+	// read: those are the two things an indexer's every object needs.
+	mux.Handle("/readyz", readiness.Ready(slog.Default(),
+		readiness.Check{Name: "database", Fn: pool.Ping},
+		readiness.Check{Name: "catalogues", Fn: func(ctx context.Context) error {
+			_, err := archive.List(ctx, store.CataloguePrefix, "", 1)
+			return err
+		}}))
 	server := &http.Server{Addr: cfg.Listen.Address, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

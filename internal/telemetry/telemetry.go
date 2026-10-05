@@ -166,7 +166,17 @@ func Start(ctx context.Context, service, version string, log *slog.Logger) (func
 // Observe); what is worth an alert here is a dead letter.
 type Writer struct {
 	objects, records, deadLettered, metaDropped, duplicatesLikely, notExtended metric.Int64Counter
+	unknownCatalogue                                                           metric.Int64Counter
+
+	mu    sync.Mutex
+	named map[string]bool
 }
+
+// unknownCatalogueLabels bounds the label values of audit.writer.catalogue.unknown:
+// a source and a version are what an emitter wrote, so one that sends anything
+// would otherwise make a series each. Past this many distinct pairs they are
+// counted as "other"; the log line has them all.
+const unknownCatalogueLabels = 20
 
 // NewWriter makes the writer's instruments on the given provider, normally the
 // global one Start installed.
@@ -184,6 +194,8 @@ func NewWriter(provider metric.MeterProvider) (*Writer, error) {
 		{&w.metaDropped, "audit.writer.meta.dropped", "{record}", "The writer's own records it could not record."}, // audit:not-an-action — a metric name
 		{&w.duplicatesLikely, "audit.writer.duplicates.likely", "{record}", // audit:not-an-action — a metric name
 			"Records written but not marked as written, so a redelivery will be written again."},
+		{&w.unknownCatalogue, "audit.writer.catalogue.unknown", "{record}", // audit:not-an-action — a metric name
+			"Records refused because the catalogue version they name is not registered here: a writer and its emitters out of step."},
 		{&w.notExtended, "audit.writer.retention.not_extended", "{object}", // audit:not-an-action — a metric name
 			"Objects an addendum should have locked for longer and did not."},
 	} {
@@ -205,6 +217,27 @@ func (w *Writer) Written(key string, records int) {
 
 // DeadLettered counts one record the writer could not process.
 func (w *Writer) DeadLettered() { w.deadLettered.Add(context.Background(), 1) }
+
+// UnknownCatalogue counts one record refused for naming a catalogue version this
+// writer does not have, by the source and version it names, up to a bounded
+// number of distinct pairs and then as "other".
+func (w *Writer) UnknownCatalogue(source, version string) {
+	w.mu.Lock()
+	key := source + "\x00" + version
+	if !w.named[key] {
+		if len(w.named) >= unknownCatalogueLabels {
+			source, version = "other", "other"
+		} else {
+			if w.named == nil {
+				w.named = map[string]bool{}
+			}
+			w.named[key] = true
+		}
+	}
+	w.mu.Unlock()
+	w.unknownCatalogue.Add(context.Background(), 1, metric.WithAttributes(
+		attribute.String("source", source), attribute.String("catalogue_version", version)))
+}
 
 // MetaDropped counts one of the writer's own records that was lost.
 func (w *Writer) MetaDropped() { w.metaDropped.Add(context.Background(), 1) }

@@ -641,8 +641,10 @@ spec:
               port: http
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
+            # The checks together are bounded at 2s (internal/health); the default wait of 1s would fail a slow answer.
+            timeoutSeconds: 3
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -758,8 +760,10 @@ spec:
               port: http
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
+            # The checks together are bounded at 2s (internal/health); the default wait of 1s would fail a slow answer.
+            timeoutSeconds: 3
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -912,8 +916,10 @@ spec:
               port: http
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
+            # The checks together are bounded at 2s (internal/health); the default wait of 1s would fail a slow answer.
+            timeoutSeconds: 3
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -1043,8 +1049,10 @@ spec:
               port: http
           readinessProbe:
             httpGet:
-              path: /healthz
+              path: /readyz
               port: http
+            # The checks together are bounded at 2s (internal/health); the default wait of 1s would fail a slow answer.
+            timeoutSeconds: 3
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

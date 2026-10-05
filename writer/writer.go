@@ -310,8 +310,16 @@ func Open(ctx context.Context, c Config) (*Writer, error) {
 		Evidence: c.Evidence,
 		Hooks: inner.Hooks{
 			OnDeadLettered: func(r *record.Record, reason string) {
-				log.Error("dead letter", "id", r.GetId(), "action", r.GetAction(), "reason", reason)
+				log.Error("dead letter", "id", logSafe(r.GetId(), 128), "action", logSafe(r.GetAction(), 128), "reason", logSafe(reason, 512))
 				counts.DeadLettered()
+			},
+			OnUnknownCatalogue: func(source, version string) {
+				// `event=unknown_catalogue` is the field an alarm on the log group matches
+				// (the Pulumi library's metric filter): keep it, and keep it out of
+				// anything a record can say (logSafe).
+				log.Error("a record names a catalogue version this writer does not have, and is dead-lettered",
+					"event", "unknown_catalogue", "source", logSafe(source, 128), "catalogue_version", logSafe(version, 128))
+				counts.UnknownCatalogue(source, version)
 			},
 			OnDuplicatesLikely: func(ids []string, err error) {
 				log.Warn("records written but not marked; a redelivery will be written again",
@@ -428,7 +436,35 @@ func (r resolver) Get(ctx context.Context, source, version string) (*catalogue.C
 	if err == nil || r.shared == nil {
 		return c, err
 	}
-	return r.shared.Get(ctx, source, version)
+	c, err = r.shared.Get(ctx, source, version)
+	if errors.Is(err, registry.ErrNotFound) {
+		// Neither the files nor the registry has it: the one answer the writer
+		// raises an alarm for.
+		return nil, &inner.UnknownCatalogueError{Source: source, Version: version}
+	}
+	return c, err
+}
+
+// logSafe makes what a record names safe to put in a log line, where an alarm
+// matches the fixed field `event=unknown_catalogue`: control characters become
+// spaces, so one record cannot forge a line of its own, `=` becomes `:`, so that
+// text an emitter chose cannot spell a field, and the length is bounded.
+func logSafe(s string, limit int) string {
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		if len(out) >= limit {
+			out = append(out, '…')
+			break
+		}
+		switch {
+		case r < 0x20 || r == 0x7f:
+			r = ' '
+		case r == '=':
+			r = ':'
+		}
+		out = append(out, r)
+	}
+	return string(out)
 }
 
 // longestDedupe is how long a written identifier is remembered: the widest

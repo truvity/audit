@@ -28,6 +28,7 @@ import (
 	"github.com/truvity/audit/internal/buildinfo"
 	"github.com/truvity/audit/internal/cli"
 	"github.com/truvity/audit/internal/config"
+	readiness "github.com/truvity/audit/internal/health"
 	"github.com/truvity/audit/internal/telemetry"
 	"github.com/truvity/audit/keys"
 	"github.com/truvity/audit/preset"
@@ -98,7 +99,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	found, err := searcherFor(ctx, cfg)
+	found, ready, err := searcherFor(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -163,6 +164,9 @@ func run() error {
 	mux := http.NewServeMux()
 	mux.Handle(path, handler)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	// Ready when what answers its queries can be reached: the index database, or
+	// the archive for the s3scan searcher.
+	mux.Handle("/readyz", readiness.Ready(slog.Default(), ready))
 	server := &http.Server{Addr: cfg.Listen.Address, Handler: telemetry.HTTPHandler(mux, "audit-query"), ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
@@ -201,26 +205,32 @@ func exportsFor(ctx context.Context, exports *config.Exports, secrets *config.Se
 }
 
 // searcherFor builds the searcher a deployment asked for.
-func searcherFor(ctx context.Context, cfg *config.Query) (index.Searcher, error) {
+func searcherFor(ctx context.Context, cfg *config.Query) (index.Searcher, readiness.Check, error) {
 	switch cfg.Searcher {
 	case "postgres":
 		poolConfig, err := cfg.Database.PoolConfig(ctx, cfg.SecretReader())
 		if err != nil {
-			return nil, err
+			return nil, readiness.Check{}, err
 		}
 		pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
-			return nil, err
+			return nil, readiness.Check{}, err
 		}
 		if err := postgres.CheckVersion(ctx, pool); err != nil {
-			return nil, err
+			return nil, readiness.Check{}, err
 		}
-		return postgres.NewReader(pool)
+		reader, err := postgres.NewReader(pool)
+		return reader, readiness.Check{Name: "database", Fn: pool.Ping}, err
 	default: // s3scan; the schema admits no other
 		scanned, err := cli.OpenArchiveFrom(ctx, *cfg.Archive, cfg.SecretReader())
 		if err != nil {
-			return nil, err
+			return nil, readiness.Check{}, err
 		}
-		return &s3scan.Scanner{Store: scanned}, nil
+		// The archive is what answers: one entry under the catalogue prefix is a
+		// call as cheap as a ping and fails when the bucket cannot be reached.
+		return &s3scan.Scanner{Store: scanned}, readiness.Check{Name: "archive", Fn: func(ctx context.Context) error {
+			_, err := scanned.List(ctx, store.CataloguePrefix, "", 1)
+			return err
+		}}, nil
 	}
 }

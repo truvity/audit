@@ -757,3 +757,151 @@ func TestBadCataloguePathsAreRefused(t *testing.T) {
 		})
 	}
 }
+
+// ---- the catalogue's data schemas
+
+const (
+	schemaCatalogue = "source: app\nversion: \"1.0.0\"\nactions:\n  app.thing.done:\n    data_schema: https://schemas.example/app/v1/thing.json\n"
+	thingSchema     = `{"$id": "https://schemas.example/app/v1/thing.json", "type": "object"}`
+)
+
+// writeCatalogueDir lays a catalogue out as an application embeds it: the
+// document and its schemas in one directory, with something else beside them.
+func writeCatalogueDir(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "testdata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// The writer reads a catalogue with the .json files beside it and refuses to
+// start without the schemas it references (seen in production 2026-10-04: every
+// record dead-lettered behind a deploy that had succeeded). A catalogue with
+// schemas gets a directory of its own, so that no other catalogue is handed
+// them; one without stays where it was.
+func TestCatalogueDirsShipTheSchemasBesideTheirCatalogue(t *testing.T) {
+	dir := writeCatalogueDir(t, map[string]string{
+		"catalogue-app.yaml": schemaCatalogue, "thing.json": thingSchema, "README.md": "not shipped",
+	})
+	rec, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Writer.CatalogueDirs = []string{dir}
+		a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: other\nversion: \"1.0.0\"\n"}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := layerFiles(t, rec, "audit-writer")
+	want := map[string]string{
+		"catalogues/catalogue-app/catalogue-app.yaml": schemaCatalogue,
+		"catalogues/catalogue-app/thing.json":         thingSchema,
+		"catalogues/catalogue.yaml":                   "source: other\nversion: \"1.0.0\"\n",
+	}
+	for p, body := range want {
+		if w[p] != body {
+			t.Errorf("%s = %q, want %q (layer has %v)", p, w[p], body, keys(w))
+		}
+	}
+	for p := range w {
+		if strings.HasPrefix(p, "catalogues/") {
+			if _, ok := want[p]; !ok {
+				t.Errorf("the layer also holds %s", p)
+			}
+		}
+	}
+}
+
+func TestCatalogueSchemasGivenAsStringsAreShippedTheSameWay(t *testing.T) {
+	rec, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": schemaCatalogue}
+		a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"thing.json": thingSchema}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := layerFiles(t, rec, "audit-writer"); w["catalogues/catalogue-app/thing.json"] != thingSchema {
+		t.Errorf("layer has %v", keys(w))
+	}
+}
+
+// What the writer would refuse at start-up is refused before anything is
+// created.
+func TestACatalogueTheWriterWouldRefuseIsRefused(t *testing.T) {
+	legacy := strings.Replace(schemaCatalogue, "https://schemas.example/app/v1/thing.json",
+		"https://schemas.truvity.com/audit/v1/thing.json", 1)
+	for name, c := range map[string]struct {
+		edit func(*auditpulumi.Args)
+		want string
+	}{
+		"schema missing": {func(a *auditpulumi.Args) {
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": schemaCatalogue}
+		}, "references schema https://schemas.example/app/v1/thing.json, which was not supplied"},
+		"schema missing from a path": {func(a *auditpulumi.Args) {
+			a.Writer.CataloguePaths = []string{writeCatalogue(t, "catalogue-app.yaml", schemaCatalogue)}
+		}, "dead-letter queue"},
+		"schema unreferenced": {func(a *auditpulumi.Args) {
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": "source: app\nversion: \"1.0.0\"\n"}
+			a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"thing.json": thingSchema}}
+		}, "supplied but nothing references it"},
+		"schemas of no catalogue": {func(a *auditpulumi.Args) {
+			a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"thing.json": thingSchema}}
+		}, "not one of the catalogues"},
+		"schema without $id": {func(a *auditpulumi.Args) {
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": schemaCatalogue}
+			a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"thing.json": `{"type": "object"}`}}
+		}, "no $id"},
+		"schema not JSON": {func(a *auditpulumi.Args) {
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": schemaCatalogue}
+			a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"thing.json": "type: object"}}
+		}, "not a JSON object"},
+		"schema badly named": {func(a *auditpulumi.Args) {
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": schemaCatalogue}
+			a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"../thing.json": thingSchema}}
+		}, "<name>.json"},
+		"two schemas, one $id": {func(a *auditpulumi.Args) {
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": schemaCatalogue}
+			a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"thing.json": thingSchema, "again.json": thingSchema}}
+		}, "both claim"},
+		"legacy id, schema missing": {func(a *auditpulumi.Args) {
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": legacy}
+			a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {"thing.json": thingSchema}}
+		}, "which was not supplied"},
+		"dir with two catalogues": {func(a *auditpulumi.Args) {
+			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"catalogue-a.yaml": "x: 1\n", "catalogue-b.yaml": "x: 1\n"})}
+		}, "holds one catalogue"},
+		"dir with none": {func(a *auditpulumi.Args) {
+			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"thing.json": thingSchema})}
+		}, "holds no catalogue"},
+		"dir missing": {func(a *auditpulumi.Args) { a.Writer.CatalogueDirs = []string{"/nonexistent"} }, "CatalogueDirs"},
+		"dir conflicts": {func(a *auditpulumi.Args) {
+			a.Writer.CatalogueDirs = []string{writeCatalogueDir(t, map[string]string{"catalogue-app.yaml": schemaCatalogue, "thing.json": thingSchema})}
+			a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": "source: app\nversion: \"2.0.0\"\n"}
+		}, "other content"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, err := build(t, c.edit); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+// A legacy id names the same schema as the published one, as the writer reads it.
+func TestALegacySchemaIDMatchesThePublishedOne(t *testing.T) {
+	doc := strings.Replace(schemaCatalogue, "https://schemas.example/app/v1/thing.json",
+		"https://schemas.truvity.com/audit/v1/thing.json", 1)
+	if _, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Writer.Catalogues = map[string]string{"catalogue-app.yaml": doc}
+		a.Writer.CatalogueSchemas = map[string]map[string]string{"catalogue-app.yaml": {
+			"thing.json": `{"$id": "https://truvity.github.io/audit/schemas/v1/thing.json"}`,
+		}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -224,6 +224,22 @@ type WriterArgs struct {
 	// under an unchanged version is refused before the function is updated, see
 	// GuardArgs.
 	CataloguePaths []string
+	// CatalogueSchemas are the data schemas a catalogue references, by the
+	// catalogue's file name (a key of Catalogues) and then the schema's file name
+	// (`<name>.json`) and content. The writer reads a catalogue together with the
+	// `.json` files beside it and refuses to start when one it references is
+	// missing or one there is referenced by nothing, so a catalogue that names a
+	// `data_schema` (or an `attributes_schema`, a `dimensions_schema`, a context
+	// area) is refused here, before anything is created, unless its schemas are
+	// given. A catalogue with schemas is shipped in a directory of its own,
+	// `catalogues/<file without .yaml>/`, with exactly its schemas beside it.
+	CatalogueSchemas map[string]map[string]string
+	// CatalogueDirs are directories on disk, each holding one catalogue document
+	// (`catalogue.yaml` or `catalogue-<name>.yaml`) and the `.json` schemas it
+	// references: the layout sdk/catalogue.LoadFS reads and an application embeds.
+	// Other files and subdirectories are ignored. Each is merged into Catalogues
+	// and CatalogueSchemas as CataloguePaths is, with the same refusals.
+	CatalogueDirs []string
 	// Keys is the `keys:` block of the function's configuration, for a
 	// deployment whose profiles pseudonymise. Only a provider reachable from a
 	// function outside a VPC is usable: `transit` over a public address. Nil is
@@ -487,6 +503,12 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 			merged[base] = string(body)
 		}
 		w.Catalogues = merged
+	}
+	if err := readCatalogueDirs(w); err != nil {
+		return nil, err
+	}
+	if err := checkCatalogueSchemas(w); err != nil {
+		return nil, err
 	}
 	// The configuration layer is never destroyed, so what is rendered into it must
 	// not be a secret: a value is refused where its key says it is one.

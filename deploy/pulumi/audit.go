@@ -24,7 +24,6 @@ package auditpulumi
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
@@ -676,19 +675,20 @@ func newFunction(ctx *pulumi.Context, s functionSpec, a *Args, tags pulumi.Strin
 }
 
 // writerFiles is what the writer's configuration layer holds, by path under
-// /opt/audit: its configuration, the profile document, and the catalogues.
+// /opt/audit: its configuration, the profile document, and the catalogues with
+// their data schemas.
 func writerFiles(name string, a *Args) (map[string]string, error) {
 	cfg, err := writerConfig(name, a)
 	if err != nil {
 		return nil, err
 	}
 	files := map[string]string{configFile: string(cfg), deploymentFile: a.Writer.DeploymentYAML}
-	for file, body := range a.Writer.Catalogues {
-		if strings.ContainsAny(file, "/\\") || !strings.HasPrefix(file, "catalogue") || !strings.HasSuffix(file, ".yaml") {
-			return nil, fmt.Errorf("auditpulumi: Writer.Catalogues has %q: a catalogue file is named catalogue.yaml or catalogue-<name>.yaml, "+
-				"which is what the writer looks for", file)
-		}
-		files[cataloguesDir+"/"+file] = body
+	catalogues, err := catalogueLayerFiles(&a.Writer)
+	if err != nil {
+		return nil, err
+	}
+	for p, body := range catalogues {
+		files[p] = body
 	}
 	return files, nil
 }

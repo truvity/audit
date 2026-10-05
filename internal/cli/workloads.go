@@ -20,7 +20,7 @@ import (
 // service accounts: a workload presents its projected token, and the kubelet —
 // not the workload — decides whose it is.
 type WorkloadsFile struct {
-	// APIVersion is `audit.truvity.com/<kind>/v1`, or absent, which means the same.
+	// APIVersion is `truvity.github.io/<kind>/v1`, or absent, which means the same.
 	APIVersion string          `json:"apiVersion,omitempty"`
 	Issuers    []IssuerEntry   `json:"issuers"`
 	Workloads  []WorkloadEntry `json:"workloads,omitempty"`

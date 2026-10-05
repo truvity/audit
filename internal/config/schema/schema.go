@@ -12,9 +12,7 @@ import (
 )
 
 // Group is the group of every apiVersion in this repository's documents.
-// The name is joined so that a scan for emitted action names, which reads a
-// string of this shape as one, does not take it for an action.
-const Group = "audit" + ".truvity.com"
+const Group = "truvity.github.io"
 
 // BaseID is where the schemas are served: the same site as the record's.
 const BaseID = "https://truvity.github.io/audit/schemas/v1/config/"

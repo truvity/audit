@@ -13,7 +13,7 @@ import (
 // retention is a property of the profile and every one of them has to agree
 // about it.
 type Deployment struct {
-	// APIVersion is `audit.truvity.com/deployment/v1`, or absent, which means the same.
+	// APIVersion is `truvity.github.io/audit-deployment/v1`, or absent, which means the same.
 	APIVersion string                   `json:"apiVersion,omitempty"`
 	Profiles   map[string]ProfileConfig `json:"profiles"`
 	// ExternalIdentifiersAreOpaque is the deployment saying that the
@@ -38,7 +38,7 @@ type ProfileConfig struct {
 }
 
 // DeploymentAPIVersion is the version of the deployment document this build reads.
-const DeploymentAPIVersion = "audit.truvity.com/deployment/v1"
+const DeploymentAPIVersion = "truvity.github.io/audit-deployment/v1"
 
 // ParseDeployment reads a deployment document. Unknown keys are refused: a
 // misspelt field in a document that decides retention is not one to ignore.

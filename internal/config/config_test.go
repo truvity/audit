@@ -216,8 +216,11 @@ func TestADeclaredSecretIsReadFromTheEnvironment(t *testing.T) {
 
 	p.PasswordSecret = "AUDIT_TEST_NOT_SET"
 	_, err = p.PoolConfig(ctx, env)
-	if err == nil || !strings.Contains(err.Error(), "AUDIT_TEST_NOT_SET") {
-		t.Errorf("an unset variable must be named: %v", err)
+	// The refusal says which field and where it looked, and does not quote what the
+	// field holds.
+	if err == nil || !strings.Contains(err.Error(), "database.passwordSecret") || !strings.Contains(err.Error(), "is not set") ||
+		strings.Contains(err.Error(), "AUDIT_TEST_NOT_SET") {
+		t.Errorf("an unset variable must be refused by field, not by quoting its name: %v", err)
 	}
 	// And a variable nobody named is never read: PGPASSWORD is not a way in.
 	t.Setenv("AUDIT_TEST_UNNAMED", "x")
@@ -673,8 +676,9 @@ func TestSecretsAreReadFromTheDeclaredSourceOnly(t *testing.T) {
 		t.Error("an empty secret file was accepted")
 	}
 	_, err := files.Get(ctx, "database.passwordSecret", "absent")
-	if err == nil || !strings.Contains(err.Error(), "database.passwordSecret") || !strings.Contains(err.Error(), "absent") {
-		t.Errorf("a missing secret must be named by field and name: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "database.passwordSecret") || !strings.Contains(err.Error(), dir) ||
+		strings.Contains(err.Error(), "absent") {
+		t.Errorf("a missing secret must be refused by field and root, without quoting its name: %v", err)
 	}
 	// The file source never looks at the environment, nor the reverse.
 	if _, err := files.Get(ctx, "f", "db"); err == nil {
@@ -729,8 +733,9 @@ func TestTheSSMSourceReadsOneParameterUnderItsRootDecrypted(t *testing.T) {
 		t.Errorf("SSM was asked for a name that was refused: %v", fake.asked)
 	}
 	_, err = s.Get(context.Background(), "openbao.tokenSecret", "missing")
-	if err == nil || !strings.Contains(err.Error(), "missing") {
-		t.Errorf("a missing parameter must be named: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "openbao.tokenSecret") || !strings.Contains(err.Error(), "/audit/main/private/config") ||
+		strings.Contains(err.Error(), "missing") {
+		t.Errorf("a missing parameter must be refused by field and root, without quoting its name: %v", err)
 	}
 }
 

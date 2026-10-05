@@ -24,7 +24,7 @@ require (
 	github.com/truvity/audit/sdk v0.11.0
 	github.com/truvity/gateway-auth v0.7.1
 	github.com/truvity/gemaal v0.24.0
-	github.com/truvity/policy v1.37.0
+	github.com/truvity/policy v1.43.1-0.20261004235901-380a101cf243
 	github.com/truvity/sluis v1.57.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0
 	go.opentelemetry.io/otel v1.46.0
@@ -74,7 +74,7 @@ require (
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
-	github.com/truvity/ocictl v0.6.1 // indirect
+	github.com/truvity/ocictl v0.8.0 // indirect
 	github.com/urfave/cli/v3 v3.11.0 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

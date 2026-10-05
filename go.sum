@@ -122,8 +122,12 @@ github.com/truvity/gemaal v0.24.0 h1:rEwcwMwAX0C4niHQxEZk0IfR0r7KGXarrNe4Re1Na4E
 github.com/truvity/gemaal v0.24.0/go.mod h1:GR/Q9MIypo32WInYo+hzfoA3IL+d4/ghZeDDz9dHOVk=
 github.com/truvity/ocictl v0.6.1 h1:1YfBaor5If6Xd0619cVaCt3EPLOhsLXHX3Oq1guPfY4=
 github.com/truvity/ocictl v0.6.1/go.mod h1:wE85/Q7mGKyYqdwUTDf3+KvaOMky0lunB08Z1PTXhBo=
+github.com/truvity/ocictl v0.8.0 h1:nTkXvROo/TfWh8pK9XCmu5m+/68lpN+EHF0DBBs5Urk=
+github.com/truvity/ocictl v0.8.0/go.mod h1:VSN3HLSAygBO6rnEXumPr0yerJiffN5A2VSuY+gMwFM=
 github.com/truvity/policy v1.37.0 h1:fOHopBkTf3acFlvDtpmUHJhDQibpyqkkwLT5wBm9CBA=
 github.com/truvity/policy v1.37.0/go.mod h1:tS3msaabpq9ONQAXMKy7j5k+aVFVoGFysHisLJXR0ak=
+github.com/truvity/policy v1.43.1-0.20261004235901-380a101cf243 h1:PoLgFqLOzyklgBWiz/xdlCeDElBg7dlrMKYSyBUjHtk=
+github.com/truvity/policy v1.43.1-0.20261004235901-380a101cf243/go.mod h1:+523XQBHvdrllFogN6wNUutLWGo6cFhiYfgvUuVTavw=
 github.com/truvity/sluis v1.57.0 h1:jaOp29if6qpSJzUFENL9Psj1PemEGaCpsZ5FgMz418E=
 github.com/truvity/sluis v1.57.0/go.mod h1:pOK5/EEZXRSRKfGNZJd2H/T3edVdIVQ34kHsAoQM4ng=
 github.com/urfave/cli/v3 v3.11.0 h1:P/euJp99kb9p0tlVY+iYTLYYTAQlfl0hR2gUO1Img1Q=

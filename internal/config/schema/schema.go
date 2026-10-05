@@ -11,6 +11,9 @@ import (
 	"encoding/json"
 )
 
+// Group is the group of every apiVersion in this repository's documents.
+const Group = "audit.truvity.com"
+
 // BaseID is where the schemas are served: the same site as the record's.
 const BaseID = "https://truvity.github.io/audit/schemas/v1/config/"
 
@@ -221,7 +224,7 @@ func listen() m { return ref(policy + "fragments/listen.json") }
 // shares.
 func document(name, title, description string, props m, required []string, uses []string, extra m) m {
 	shared := sharedDefs()
-	props["apiVersion"] = apiVersion()
+	props["apiVersion"] = apiVersion(name)
 	defs := m{}
 	for _, u := range uses {
 		defs[u] = shared[u]

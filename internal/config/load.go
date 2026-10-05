@@ -15,8 +15,19 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/truvity/audit"
+	"github.com/truvity/audit/internal/config/schema"
 	"github.com/truvity/audit/sdk/sink"
 )
+
+// Group is the group of every apiVersion in this repository's documents:
+// `audit.truvity.com/<kind>/v1`.
+const Group = schema.Group
+
+// KindName is a document's kind in truvity/policy's sense, `<group>/<kind>`, from
+// the name of its schema: `audit-writer` is `audit.truvity.com/writer`.
+func KindName(schemaName string) string {
+	return Group + "/" + strings.TrimPrefix(schemaName, "audit-")
+}
 
 // schemaFor reads the committed schema of one binary: the one embedded in the
 // release, which is the one the chart's tests and a deployer's CI validate
@@ -60,7 +71,8 @@ func load[T any](file, name string, after func(*T) error) (*T, error) {
 	// and after the loader reads it, and a file that changed between is refused,
 	// because a record that says which configuration ran must not name another.
 	before, readErr := os.ReadFile(file)
-	if err := policyconfig.Load(file, schemaFor(name), &c); err != nil {
+	kind := policyconfig.Kind{Name: KindName(name), Schema: schemaFor(name)}
+	if err := policyconfig.LoadKind(file, kind, &c); err != nil {
 		return nil, err
 	}
 	if readErr != nil {

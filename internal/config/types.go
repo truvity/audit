@@ -47,19 +47,16 @@ func (d Duration) MarshalJSON() ([]byte, error) {
 	return json.Marshal(time.Duration(d).String())
 }
 
-// APIVersion is the version of the configuration's shape that this build reads.
-// A file that does not say is v1, and a file that says another is refused, so a
-// later shape arrives by a version and not by a file that quietly means
-// something else.
-//
-// TODO(policy): the envelope belongs to truvity/policy's config package, which
-// is adding one; take its constant and its check there when it is released.
-const APIVersion = "v1"
+// The version of a configuration's shape that this build reads is
+// `audit.truvity.com/<kind>/v1` (see KindName), which is what an absent
+// apiVersion means. truvity/policy's LoadKind chooses by it: another version, or
+// another kind of document, is refused by name, so a later shape arrives by a
+// version and not by a file that quietly means something else.
 
 // Header is what every configuration file carries beside its own keys: the
 // version of its shape, and what the loader learned about the file it read.
 type Header struct {
-	// APIVersion is `v1`, or absent, which means the same.
+	// APIVersion is `audit.truvity.com/<kind>/v1`, or absent, which means the same.
 	APIVersion string `json:"apiVersion,omitempty"`
 	// Source is where the file was and what it held, set by the loader and never
 	// part of the file. The writer puts it in its own start-up record.

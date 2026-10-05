@@ -81,8 +81,9 @@ or command, and ship in the release:
 | `audit-query` | `audit-query.schema.json` |
 | `audit verify`, `purge`, `clock-sync`, `migrate` | `audit-verify.schema.json`, `audit-purge.schema.json`, `audit-clock-sync.schema.json`, `audit-migrate.schema.json` |
 
-Every file may carry `apiVersion: v1`, and absent means the same. Another
-value is refused, so that a later shape arrives by a version and not by a file
+Every file may carry `apiVersion: audit.truvity.com/<kind>/v1` (`<kind>` is the
+schema's name without `audit-`: `writer`, `query`, `writer-lambda`, and so on),
+and absent means the same. Another version or another kind's is refused, so that a later shape arrives by a version and not by a file
 that quietly means something else.
 
 An unknown key, a missing required key or a value of the wrong type is a

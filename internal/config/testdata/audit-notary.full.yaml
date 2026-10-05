@@ -1,4 +1,4 @@
-apiVersion: v1
+apiVersion: audit.truvity.com/notary/v1
 archive:
   bucket:
     name: audit-archive

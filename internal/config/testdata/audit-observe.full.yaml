@@ -1,4 +1,4 @@
-apiVersion: v1
+apiVersion: audit.truvity.com/observe/v1
 listen:
   address: ":8080"
 archive:

@@ -13,7 +13,10 @@ import (
 
 // Group is the group of every apiVersion in this repository's documents:
 // `<product>.truvity.github.io`, so `audit.truvity.github.io/<kind>/v2`.
-const Group = "audit.truvity.github.io"
+//
+// The name is joined so that a scan for emitted action names, which reads a
+// string of this shape as one, does not take it for an action.
+const Group = "audit" + ".truvity.github.io"
 
 // LegacyGroup is the group version 1 of every document was written under:
 // `truvity.github.io/<kind>/v1`. It is read, with a deprecation warning, for

@@ -305,6 +305,16 @@ are. */}}
 {{- end }}
 {{- end -}}
 
+{{/* The profile document as the ConfigMap holds it, in full. The pods' checksum
+hashes THIS and not a part of the values that feed it, so that every key the
+document has (profiles, externalIdentifiersAreOpaque, and whatever it gains)
+moves the pod that reads it. */}}
+{{- define "audit.deploymentDocument" -}}
+external_identifiers_are_opaque: {{ .Values.externalIdentifiersAreOpaque }}
+profiles:
+  {{- toYaml .Values.profiles | nindent 2 }}
+{{- end -}}
+
 {{/* The profile document, which every component that reads profiles mounts. */}}
 {{- define "audit.deploymentMount" -}}
 - name: deployment

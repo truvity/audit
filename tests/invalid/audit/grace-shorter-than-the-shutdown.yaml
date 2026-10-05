@@ -1,0 +1,2 @@
+# refuse: must be longer than the writer's 30s shutdown budget
+terminationGracePeriodSeconds: 30

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -344,5 +345,38 @@ func TestACatalogueWithNoVersionIsRefused(t *testing.T) {
 	_, _, err := build(t, func(a *auditpulumi.Args) { a.Writer.Catalogues = map[string]string{"catalogue.yaml": "source: app\n"} })
 	if err == nil || !strings.Contains(err.Error(), "no source or no version") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// A key that is not in the archive, and a bucket that is not there yet, are the
+// provider's own not-found text; a deployer without s3:ListBucket gets a 403 and
+// is told which permission is missing.
+func TestTheCatalogueGuardReadsTheProvidersNotFoundAndNamesAMissingPermission(t *testing.T) {
+	with := func(a *auditpulumi.Args) { a.Writer.Catalogues = map[string]string{"catalogue.yaml": appCatalogue} }
+	if _, _, err := buildArchived(t, nil, with, nil); err != nil {
+		t.Errorf("a first deploy, with no bucket or no object, was refused: %v", err)
+	}
+	if !auditpulumi.Absent(errors.New("reading S3 Bucket (b) Object (k): couldn't find resource")) {
+		t.Error("the provider's not-found text is not read as not found")
+	}
+	if auditpulumi.Absent(errors.New("operation error S3: HeadObject, https response error StatusCode: 403, Forbidden")) {
+		t.Error("a 403 was read as not found")
+	}
+	if !auditpulumi.Denied(errors.New("StatusCode: 403, Forbidden")) {
+		t.Error("a 403 is not recognised")
+	}
+}
+
+func TestASecretInTheKeysBlockIsRefusedBeforeItIsKeptInALayer(t *testing.T) {
+	_, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Writer.Keys = map[string]any{"provider": "transit", "transit": map[string]any{"openbao": map[string]any{"token": "s.abc"}}}
+	})
+	if err == nil || !strings.Contains(err.Error(), "looks like a secret") {
+		t.Fatalf("got %v", err)
+	}
+	if _, _, err := build(t, func(a *auditpulumi.Args) {
+		a.Writer.Keys = map[string]any{"provider": "transit", "transit": map[string]any{"openbao": map[string]any{"tokenEnv": "BAO_TOKEN", "tokenFile": "/x"}}}
+	}); err != nil {
+		t.Errorf("a reference was refused: %v", err)
 	}
 }

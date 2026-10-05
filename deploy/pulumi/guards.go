@@ -139,6 +139,11 @@ func checkCatalogues(ctx *pulumi.Context, a *Args, opts ...pulumi.InvokeOption) 
 			if absent(err) {
 				continue
 			}
+			if denied(err) {
+				return fmt.Errorf("auditpulumi: reading %s from the archive bucket was denied: %w. S3 answers a missing key with 403 when the "+
+					"deploying identity lacks s3:ListBucket, so it needs s3:GetObject on catalogue/* AND s3:ListBucket on the bucket "+
+					"(condition s3:prefix = catalogue/); Guards.SkipCatalogueCheck skips this comparison", key, err)
+			}
 			return fmt.Errorf("auditpulumi: could not read %s from the archive bucket to compare it with Writer.Catalogues %s: %w "+
 				"(the deploying identity needs s3:GetObject on catalogue/*; Guards.SkipCatalogueCheck skips this comparison)", key, f, err)
 		}
@@ -162,12 +167,20 @@ func checkCatalogues(ctx *pulumi.Context, a *Args, opts ...pulumi.InvokeOption) 
 // bucket, is not there.
 func absent(err error) bool {
 	m := err.Error()
-	for _, s := range []string{"NoSuchKey", "NoSuchBucket", "NotFound", "StatusCode: 404"} {
+	// The provider's data source wraps a 404 as a not-found error whose text is
+	// "reading S3 Bucket (b) Object (k): couldn't find resource", with none of the
+	// SDK's own words in it.
+	for _, s := range []string{"couldn't find resource", "NoSuchKey", "NoSuchBucket", "NotFound", "StatusCode: 404"} {
 		if strings.Contains(m, s) {
 			return true
 		}
 	}
 	return false
+}
+
+func denied(err error) bool {
+	m := err.Error()
+	return strings.Contains(m, "AccessDenied") || strings.Contains(m, "StatusCode: 403") || strings.Contains(m, "Forbidden")
 }
 
 func metadata(m map[string]string, key string) string {

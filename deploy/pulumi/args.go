@@ -488,6 +488,11 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 		}
 		w.Catalogues = merged
 	}
+	// The configuration layer is never destroyed, so what is rendered into it must
+	// not be a secret: a value is refused where its key says it is one.
+	if err := refuseSecrets("Writer.Keys", w.Keys); err != nil {
+		return nil, err
+	}
 	setInt(&w.MemoryMB, 512)
 	setInt(&w.TimeoutSeconds, 120)
 	setInt(&w.BatchSize, 10)
@@ -622,4 +627,34 @@ func setInt(p *int, def int) {
 	if *p == 0 {
 		*p = def
 	}
+}
+
+var secretKeyRE = regexp.MustCompile(`(?i)(token|secret|password|passwd|private|credential)`)
+
+// refuseSecrets walks a block that is rendered into the configuration layer. A
+// key that names a secret is allowed only as a reference: a name of an
+// environment variable (...Env) or a file (...File), which is what the schemas
+// ask for and what holds no secret.
+func refuseSecrets(path string, v any) error {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, e := range x {
+			if secretKeyRE.MatchString(k) && !strings.HasSuffix(k, "Env") && !strings.HasSuffix(k, "File") {
+				if _, isStr := e.(string); isStr {
+					return fmt.Errorf("auditpulumi: %s.%s looks like a secret, and the configuration layer is kept for good: "+
+						"name an environment variable (…Env) or a file (…File) instead", path, k)
+				}
+			}
+			if err := refuseSecrets(path+"."+k, e); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for i, e := range x {
+			if err := refuseSecrets(fmt.Sprintf("%s[%d]", path, i), e); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

@@ -122,7 +122,7 @@ each function as a zip with `bootstrap` at its root
 `audit-notary-lambda_<version>_linux_arm64.zip`), and the library deploys **that
 file, byte for byte**: it adds nothing to it and builds no package of its own. You
 give it the zip and the SHA-256 the release's `checksums.txt` lists for it
-(`Writer.Package`, `Writer.PackageSHA256`), and it is read, hashed and refused when
+(`Writer.Package`, `Writer.PackageSHA256`; pin the digest in the stack's source, where it is reviewed, and do not fetch `checksums.txt` at deploy time, which would check the file against itself), and it is read, hashed and refused when
 it is not that file. The configuration is a layer beside it.
 
 The functions run **outside a VPC** (a decision of the AWS design). They reach S3, DynamoDB,
@@ -175,8 +175,10 @@ It is 1 to 32 characters of `a-z`, `0-9` and `-`.
 The rendered `audit.yaml`, the profile document and the catalogues are published as
 an `aws.lambda.LayerVersion` named `<name>-writer-config` (and `<name>-notary-config`,
 which holds `audit.yaml` alone), whose zip holds them under `audit/` so that Lambda
-extracts them to `/opt/audit/`. The function's `Layers` are that layer and, with
-`Telemetry`, the extension: two of the five a function may have. Its environment is
+extracts them to `/opt/audit/`. The function's `Layers` are the extension, with `Telemetry`, and then the
+configuration layer, last so that nothing after it can shadow `/opt/audit/`: two
+of the five a function may have. A layer is never destroyed, so the library refuses a
+value in `Writer.Keys` whose key says it is a secret (name a variable or a file). Its environment is
 `AUDIT_CONFIG=/opt/audit/audit.yaml`, `AUDIT_CONFIG_LAYER=<the layer version's ARN>`
 and the telemetry's `OTEL_*`.
 
@@ -226,7 +228,11 @@ failed `pulumi preview`:
   what the writer refuses to start on, and is refused here instead. An object that
   is not there, or a bucket that is not there yet, is nothing to compare; anything
   else that stops the comparison is a refusal. The deploying identity needs
-  `s3:GetObject` on `catalogue/*`; `Guards.SkipCatalogueCheck` says it cannot.
+  `s3:GetObject` on `catalogue/*` **and** `s3:ListBucket` on the bucket (condition
+  `s3:prefix` = `catalogue/`): without the second, S3 answers a missing key with
+  403, which is refused with a message naming it. It also needs
+  `lambda:PublishLayerVersion` and `lambda:GetLayerVersion` for the configuration
+  layer. `Guards.SkipCatalogueCheck` says it cannot read the bucket.
 
 ### The AWS provider
 

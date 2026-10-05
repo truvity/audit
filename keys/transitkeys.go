@@ -23,7 +23,7 @@ import (
 // A key is named <prefix>.<purpose>.<tenant>, so that the engine's policy —
 // not this code — decides who may use which purpose: a role granted
 // transit/hmac/audit.security.* can pseudonymise for the security profile and
-// for nothing else. See docs/operations/openbao-keys.md for the policies.
+// for nothing else. See docs/how-to/configure-openbao-keys.md for the policies.
 //
 // Keys are never rotated, as everywhere in this package, and every call is
 // pinned to the key's first version so that a rotation by somebody else

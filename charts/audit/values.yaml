@@ -94,12 +94,12 @@ fullnameOverride: ""
 #               labelled for Grafana's sidecar, for the cluster Grafana reads.
 #
 # In `alerts` and `dashboards` mode nothing else is validated or rendered: no
-# `profiles`, no `writer.config`. See docs/operations/telemetry.md. This is not
+# `profiles`, no `writer.config`. See docs/reference/telemetry.md. This is not
 # `mode`, which is how the write path is arranged (direct or stream).
 renders: app
 
 # Alert rules, rendered only with `renders: alerts`. Every threshold and the
-# reason for it is in docs/operations/telemetry.md and in the rule's comment in
+# reason for it is in docs/reference/telemetry.md and in the rule's comment in
 # templates/alerts.yaml. The series are what the writer, the receiver and the
 # emitters publish over OTLP (OTEL_EXPORTER_OTLP_ENDPOINT on the pods).
 alerts:
@@ -133,7 +133,7 @@ alerts:
   emitterSelector: ""
   # Where an alert's runbook entry is. The alert's name, lower-cased, is the
   # anchor.
-  runbookBaseUrl: https://github.com/truvity/audit/blob/master/docs/operations/telemetry.md
+  runbookBaseUrl: https://github.com/truvity/audit/blob/master/docs/how-to/respond-to-alerts.md
   rules:
     deadLettered:
       enabled: true
@@ -261,7 +261,7 @@ writer:
   # being the credential (`sqs:SendMessage` on the queue), or the URL of an
   # external front door. The chart refuses a sink that names this release's own
   # front door. Observe, query, the migration and the jobs run as before and
-  # still need Postgres; see docs/deployment/levels.md.
+  # still need Postgres; see docs/explanation/levels.md.
   enabled: true
   # In stream mode, how many writers consume the stream. They scale with the
   # record rate; the receivers (`replicas`) with the application's request rate.
@@ -274,7 +274,7 @@ writer:
   # (docs/reference/bucket-contract.md). The chart creates no bucket, so the
   # bucket's lifecycle is yours and is written against those prefixes, one rule
   # per profile on `records/<profile>/`: Glacier Instant Retrieval at 30 days
-  # and Deep Archive at 1 year (docs/decisions/0023, docs/operations/s3-guide.md).
+  # and Deep Archive at 1 year (docs/decisions/0023, docs/reference/archive-prefixes-and-iam.md).
   config: {}
   secretEnv: []
   secretMounts: []
@@ -299,7 +299,7 @@ receiver:
 # values file that names one profile gets this one as well. Name every profile
 # the installation should keep.
 #
-# `security` is composed everywhere; see docs/operations/presets-policy.md for
+# `security` is composed everywhere; see docs/explanation/which-profiles-to-compose.md for
 # which of the others a deployment should compose, and what each costs.
 profiles:
   security:
@@ -336,7 +336,7 @@ query:
   tokens: []
   # The grants file (`grants` in the config names /etc/audit/grants.yaml): the
   # issuers trusted to sign callers in, presets, and rules. See
-  # docs/guides/read.md#access. Without an issuer nobody can sign in, and the
+  # docs/how-to/read-the-trail.md#access. Without an issuer nobody can sign in, and the
   # service refuses to start.
   grants: {}
   #  issuers:

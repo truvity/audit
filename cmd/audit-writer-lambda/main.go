@@ -19,7 +19,7 @@
 //     there is nothing to fetch at cold start and nothing in the environment
 //     that is a secret;
 //   - telemetry is OTEL_* and nothing else, sent to the extension's loopback
-//     proxy (docs/deployment/aws.md), and flushed at the end of every
+//     proxy (docs/explanation/aws-lambda.md), and flushed at the end of every
 //     invocation because an environment is frozen between them, and again on
 //     SIGTERM.
 //

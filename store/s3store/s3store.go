@@ -4,7 +4,7 @@
 // compliance mode, a policy that denies deletes, encryption with a key the
 // writer may use and nobody may destroy. This package sets a retention on every
 // object it writes and refuses to reuse a key, and it does nothing else that
-// the bucket's own configuration should be doing. See docs/operations/s3-guide.md.
+// the bucket's own configuration should be doing. See docs/how-to/prepare-the-bucket.md.
 //
 // The bucket need not be on AWS. Any store that speaks the S3 API takes the
 // same calls, at an endpoint of its own (Options.Endpoint); which of the

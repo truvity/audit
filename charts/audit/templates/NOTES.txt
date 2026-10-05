@@ -52,7 +52,7 @@ them may delete anything:
 
 Scope each to the objects under {{ .prefix }}/ in {{ .bucket.name }}, and
 condition its s3:ListBucket on that prefix, or one application can read
-another's archive. See docs/operations/s3-guide.md for the policies.
+another's archive. See docs/reference/archive-prefixes-and-iam.md for the policies.
 {{- else }}
 No `prefix` is set, so this installation writes at the root of the bucket. That
 is only safe where the bucket is its own; in a shared one, `prefix` is what

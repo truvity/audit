@@ -17,7 +17,7 @@
 //		Notary:  auditpulumi.NotaryArgs{Package: notaryZip, PackageSHA256: notarySHA},
 //	})
 //
-// docs/deployment/aws.md is the guide: the shape, every input and output, the
+// docs/reference/aws-pulumi-library.md is the guide: the shape, every input and output, the
 // switch from GOVERNANCE to COMPLIANCE, the role names and how alarms reach
 // alert-ingress.
 package auditpulumi

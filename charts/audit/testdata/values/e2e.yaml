@@ -47,7 +47,7 @@ x-stream: &stream
 # partial — so this tier writes with no lock at all. `security` (composed
 # above) is one of the presets whose framework does not demand one
 # (presets/security.yaml: integrity.object_lock_mode: none); a profile that
-# demanded compliance or governance could not run here, and docs/guides/testing.md
+# demanded compliance or governance could not run here, and docs/how-to/test-the-kind-tier.md
 # says so.
 x-bucket: &bucket
   name: audit-e2e-archive

@@ -269,7 +269,7 @@ sdk-require:
         echo "sdk-require: sdk/ has changed since sdk/$last, but go.mod still requires $want." >&2
         echo "sdk-require: bump the root's require to the version this release will carry:" >&2
         echo "    go mod edit -require=github.com/truvity/audit/sdk@vX.Y.Z   (and go mod tidy with GOWORK=off)" >&2
-        echo "    The release job tags sdk/vX.Y.Z at the same commit. See docs/development/layout.md." >&2
+        echo "    The release job tags sdk/vX.Y.Z at the same commit. See docs/reference/repository-layout.md." >&2
         exit 1
     fi
     echo "sdk-require: sdk/ changed since sdk/$last; the root requires $want, newer"
@@ -471,7 +471,7 @@ vuln:
 
 # The kind tier: this repository owns no cluster of its own — it installs
 # onto truvity/policy's box (see that repository's hack/kind/), the second
-# public repository to (docs/guides/testing.md has the full case). In CI the
+# public repository to (docs/how-to/test-the-kind-tier.md has the full case). In CI the
 # shared integration workflow stands the box up itself, via truvity/ci-actions'
 # `cluster` action; on a laptop, stand truvity/policy's own box up first
 # (`just cluster` there) and point KCTX/E2E_KCTX at it if it is not

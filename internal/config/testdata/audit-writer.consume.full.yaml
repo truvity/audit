@@ -1,4 +1,4 @@
-apiVersion: audit.truvity.com/writer/v1
+apiVersion: truvity.github.io/audit-writer/v1
 # The writer's longhand consumer, every key set: an SQS queue, with the
 # credentials the SDK finds, so none are here.
 mode: writer

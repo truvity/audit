@@ -173,10 +173,10 @@
   "description": "The configuration of `audit-notary --config`, which seals the hours of the archive: one signed seal per profile, tenant and hour, chained through `prev`. Secrets are never in this file: a field named ...Env holds the NAME of the environment variable that holds the secret. Telemetry is the OTEL_* environment, not configuration.",
   "properties": {
     "apiVersion": {
-      "default": "audit.truvity.com/notary/v1",
-      "description": "The version of this document's shape, `audit.truvity.com/notary/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "default": "truvity.github.io/audit-notary/v1",
+      "description": "The version of this document's shape, `truvity.github.io/audit-notary/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
       "enum": [
-        "audit.truvity.com/notary/v1"
+        "truvity.github.io/audit-notary/v1"
       ]
     },
     "archive": {

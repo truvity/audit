@@ -534,22 +534,22 @@ func TestTheLambdaWriterTakesADynamoDBAndRefusesWhatItCannotRun(t *testing.T) {
 // the typed decode could read it as something it is not.
 func TestTheAPIVersionIsV1OrAbsent(t *testing.T) {
 	for name, body := range map[string]string{
-		"absent": minimalWriter, "v1": "apiVersion: audit.truvity.com/writer/v1\n" + minimalWriter,
+		"absent": minimalWriter, "v1": "apiVersion: truvity.github.io/audit-writer/v1\n" + minimalWriter,
 	} {
 		w, err := config.LoadWriter(write(t, body))
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if w.APIVersion != "" && w.APIVersion != "audit.truvity.com/writer/v1" {
+		if w.APIVersion != "" && w.APIVersion != "truvity.github.io/audit-writer/v1" {
 			t.Errorf("%s: apiVersion = %q", name, w.APIVersion)
 		}
 	}
-	_, err := config.LoadWriter(write(t, "apiVersion: audit.truvity.com/writer/v2\n"+minimalWriter))
+	_, err := config.LoadWriter(write(t, "apiVersion: truvity.github.io/audit-writer/v2\n"+minimalWriter))
 	if err == nil || !strings.Contains(err.Error(), "apiVersion") {
 		t.Fatalf("a file of a version this build does not read was accepted or the refusal does not name the key: %v", err)
 	}
 	// Another kind of document is refused by name, not read as this one.
-	_, err = config.LoadWriter(write(t, "apiVersion: audit.truvity.com/query/v1\n"+minimalWriter))
+	_, err = config.LoadWriter(write(t, "apiVersion: truvity.github.io/audit-query/v1\n"+minimalWriter))
 	if err == nil || !strings.Contains(err.Error(), "apiVersion") {
 		t.Fatalf("a query file was read as a writer's: %v", err)
 	}
@@ -611,8 +611,8 @@ func TestTheDocumentSchemasAcceptWhatTheCodeAcceptsAndRefuseWhatItWouldNot(t *te
 		ok        bool
 	}{
 		{"audit-deployment", "profiles:\n  security: {presets: [iso27001]}\n", true},
-		{"audit-deployment", "apiVersion: audit.truvity.com/deployment/v1\nprofiles:\n  security: {presets: [iso27001]}\n", true},
-		{"audit-deployment", "apiVersion: audit.truvity.com/deployment/v2\nprofiles:\n  security: {presets: [iso27001]}\n", false},
+		{"audit-deployment", "apiVersion: truvity.github.io/audit-deployment/v1\nprofiles:\n  security: {presets: [iso27001]}\n", true},
+		{"audit-deployment", "apiVersion: truvity.github.io/audit-deployment/v2\nprofiles:\n  security: {presets: [iso27001]}\n", false},
 		{"audit-deployment", "profiles: {}\n", false},
 		{"audit-deployment", "profiles:\n  a/b: {presets: [iso27001]}\n", false},
 		{"audit-deployment", "profiles:\n  security: {presets: [iso27001], retention: 1}\n", false},

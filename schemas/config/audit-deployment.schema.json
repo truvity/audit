@@ -5,10 +5,10 @@
   "description": "The profile document a configuration names as `deployment`: which presets each profile is composed from. Every component that reads profiles reads this one, because retention is a property of the profile and every one of them has to agree about it.",
   "properties": {
     "apiVersion": {
-      "default": "audit.truvity.com/deployment/v1",
-      "description": "The version of this document's shape, `audit.truvity.com/deployment/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
+      "default": "truvity.github.io/audit-deployment/v1",
+      "description": "The version of this document's shape, `truvity.github.io/audit-deployment/v1`. Absent is the same; another value is refused, so that a later shape arrives by a version and not by a file that quietly means something else.",
       "enum": [
-        "audit.truvity.com/deployment/v1"
+        "truvity.github.io/audit-deployment/v1"
       ]
     },
     "external_identifiers_are_opaque": {

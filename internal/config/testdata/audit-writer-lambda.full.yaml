@@ -1,4 +1,4 @@
-apiVersion: audit.truvity.com/writer-lambda/v1
+apiVersion: truvity.github.io/audit-writer-lambda/v1
 deployment: /var/task/deployment.yaml
 catalogues: /var/task/catalogues
 archive:

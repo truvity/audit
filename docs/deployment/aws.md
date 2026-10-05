@@ -349,21 +349,36 @@ managed by the stack) must not be removed yet. Sequence it:
 
 The writer function has no registry: it registers the common catalogue and the
 files in `catalogues/` of its package, and nothing else, so an application's
-catalogue reaches it only through the Pulumi program that deploys it. The
-application (sluis, whose source name is `roster`) hands over its catalogue
-document, from the file its release ships or from a string:
+catalogue reaches it only through the Pulumi program that deploys it. A catalogue
+is a document **and the data schemas it references** (an action's `data_schema`,
+a kind's `attributes_schema`, a meter's `dimensions_schema`, a context area): the
+writer reads each document together with the `.json` files beside it, as
+`sdk/catalogue.LoadFS` does, and refuses to start when a referenced schema is not
+there or a schema there is referenced by nothing. In Kubernetes the application
+sends both over `RegisterCatalogue`; here the Pulumi program hands both over. The
+application (sluis, whose source name is `roster`) gives the directory it embeds,
+the document and its schemas, or the document alone when it references none:
 
 ```go
 Writer: auditpulumi.WriterArgs{
 	// ...
-	CataloguePaths: []string{"catalogue/catalogue-roster.yaml"},
-	// or Catalogues: map[string]string{"catalogue-roster.yaml": roster},
+	CatalogueDirs: []string{"catalogue/roster"}, // catalogue-roster.yaml and its *.json
+	// or CataloguePaths: []string{"catalogue/catalogue-roster.yaml"} for a catalogue with no schemas,
+	// or Catalogues: map[string]string{"catalogue-roster.yaml": roster}
+	//    with CatalogueSchemas: map[string]map[string]string{"catalogue-roster.yaml": {"member-changed.json": ...}},
 },
 ```
 
-File names are `catalogue.yaml` or `catalogue-<name>.yaml`; a name given both ways
-with different content, an unreadable path and an empty file are refused before
-anything is created. The files go into the configuration layer beside `audit.yaml`,
+File names are `catalogue.yaml` or `catalogue-<name>.yaml`, and `<name>.json` for a
+schema; a directory holds one catalogue. A name given two ways with different
+content, an unreadable path and an empty file are refused before anything is
+created, and so is **a catalogue the writer would refuse at start-up**: a schema it
+references that is not given, a schema given that it does not reference, a schema
+with no `$id` or two claiming one. A writer that cannot start does not fail the
+deploy; the event source mapping drains the ingest queue into the dead-letter
+queue. A catalogue with schemas goes into a directory of its own in the layer,
+`catalogues/<file without .yaml>/`, so that no other catalogue is handed them; one
+without stays `catalogues/<file>`. The files go into the configuration layer beside `audit.yaml`,
 so **a change to a catalogue is a new layer version, and `pulumi up` points the
 writer at it**. Nothing reaches the writer between deploys, which is the point:
 a release of an application that changed its catalogue under an unchanged version
@@ -457,6 +472,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Writer.DeploymentYAML` | **required** unless `Ingest.Disabled` | the profile configuration, the document the chart renders |
 | `Writer.Catalogues` | none | application catalogues by file name (`catalogue.yaml`, `catalogue-<name>.yaml`) and content; see [the application's catalogue](#the-applications-catalogue) |
 | `Writer.CataloguePaths` | none | the same, read from files on disk under their base names; merged with `Catalogues` |
+| `Writer.CatalogueSchemas` | none | the data schemas each catalogue references, by the catalogue's file name, then `<name>.json` and content; a referenced schema missing or a schema unreferenced is refused |
+| `Writer.CatalogueDirs` | none | directories each holding one catalogue document and its `.json` schemas; merged into `Catalogues` and `CatalogueSchemas` |
 | `Writer.Keys`, `.ForgetIdentities` | none | the `keys` block and `forgetIdentities` of the file |
 | `Writer.DedupeWindow` | the profiles' widest | a Go duration |
 | `Writer.MemoryMB`, `.TimeoutSeconds` | 512, 120 | |

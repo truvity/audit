@@ -9,10 +9,10 @@ One thing that happened, as seen by one source. Described in
 `capture`, `previous_attributes`, `data`, `meter`, `attributes`, `unmapped`.
 
 Which fields a copy carries is decided by the profile it is written under.
-For **core fields**, presets name what must, may and may never be kept, and a
-field no preset names is dropped. For **extension properties**, the schema
+For **core fields**, framework profiles name what must, may and may never be kept, and a
+field no framework profile names is dropped. For **extension properties**, the schema
 annotates each with a **class** (shared, audit, metering, history or
-evidence) and a PII level, and a profile keeps the classes its presets keep.
+evidence) and a PII level, and a profile keeps the classes its framework profiles keep.
 The record itself does not say which copies carry a core field;
 `audit profile explain <name>` prints what a profile keeps.
 
@@ -22,7 +22,7 @@ e-mail addresses are resolved at read time by whoever may see them.
 ## Action and operation
 
 `action` is fine-grained and namespaced by source: `wallet.credential.issued`,
-`roster.session.revoked`. `operation` is one of seven coarse values:
+`roster.session.revoked` (`roster` is the source name sluis keeps). `operation` is one of seven coarse values:
 create, access, modify, remove, authentication, transfer, restore. Both
 appear on every record so a reader can filter broadly or precisely.
 
@@ -56,16 +56,16 @@ class and PII level. See [extension points](../reference/extension-points.md).
 
 An actor kind is registered with a **category**: internal (staff),
 external (end users, customers' people), machine (services, API keys, the
-system). Presets decide the identity treatment per category: clear,
+system). Framework profiles decide the identity treatment per category: clear,
 pseudonym, scoped or omit. Tenant identifiers are legal entities and stay
 in clear everywhere. Internal actors stay in clear for the security
 retention because accountability is a legal obligation.
 
-What a preset asks for is not always what a copy gets. A deployment that
+What a framework profile asks for is not always what a copy gets. A deployment that
 runs no key provider — the default since
 [0013](../decisions/0013-no-pseudonymisation-keys-by-default.md) — declares
 that the identifiers it receives for external people are already opaque,
-and a preset's `pseudonym` is then treated as `clear`: the identifier
+and a framework profile's `pseudonym` is then treated as `clear`: the identifier
 written is the one the application minted, which identifies nobody without
 the application's own database. A deployment that must be able to
 crypto-shred chooses a key provider instead, and then external actors and
@@ -73,12 +73,12 @@ subjects become a keyed pseudonym per tenant and purpose, so copies cannot
 be joined on a person and erasure is key destruction.
 `audit profile explain <name>` prints the effective treatment either way.
 
-## Profiles and presets
+## Profiles and framework profiles
 
-A **preset** is what one framework requires: fields, categories, identity
+A **framework profile** is what one framework requires: fields, categories, identity
 treatment, retention, integrity, review, with citations. A **profile** is a
-deployment's composition of presets plus a destination. The split writer
-produces one copy per profile. See [presets](../../presets/README.md).
+deployment's composition of framework profiles plus a destination. The split writer
+produces one copy per profile. See [framework profiles](../../presets/README.md).
 
 ## Prefixes
 

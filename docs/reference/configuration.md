@@ -52,20 +52,16 @@ or command, and ship in the release:
 Every file carries `apiVersion: audit.truvity.github.io/<kind>/v2` (`<kind>` is
 the schema's name: `audit-writer`, `audit-query`, `audit-writer-lambda`, and so
 on). The group is `<product>.truvity.github.io`. A binary reads version N and
-N-1 (ADR 0025): **version 1**, `apiVersion: truvity.github.io/<kind>/v1` or no
-`apiVersion` at all, is **deprecated**, is converted on load (see
-[Secrets](#secrets) for what changed) and logs a warning, and is read for one
-more minor. Another version or another kind's is refused, so that a later shape
+N-1 (ADR 0025): **version 1** is deprecated, is converted on load and logs a
+warning, and is read for one more minor; how to move off it is in
+[the v0.13 upgrade](../how-to/upgrade/v0.13.md). Another version or another kind's is refused, so that a later shape
 arrives by a version and not by a file that quietly means something else. The
 version-2 schemas are `schemas/config/<kind>.schema.json`
 (`$id` `https://truvity.github.io/audit/schemas/v2/config/<kind>.schema.json`);
 version 1's are kept, frozen, in `schemas/config/v1/`. The `audit-deployment`
 document moved to the new group and nothing else.
 
-The rest of this page, and the chart's examples, are written in version 2.
-Version 1 differs only in the secret fields below (`...Env` for `...Secret`, no
-`secrets` block); a page or example that still shows `passwordEnv`,
-`credentialsEnv`, `tokenEnv` or `secretEnv` is a version-1 file, which still works.
+Everything on these pages, and the chart's examples, is version 2.
 
 An unknown key, a missing required key or a value of the wrong type is a
 start-up error that names the path to it. A few rules a schema cannot say run
@@ -105,15 +101,11 @@ secrets:
 A name for `file` and `ssm` is relative and cannot leave the root: segments of
 letters, digits, `.`, `_` and `-`, no `..`. **On AWS Lambda use `ssm`: the
 function's environment is not a place for a secret, so `source: env` is refused there
-(when `AWS_LAMBDA_FUNCTION_NAME` is set), which includes a version-1 `...Env` converted
+(when `AWS_LAMBDA_FUNCTION_NAME` is set), which includes a version-1 `...Env` that the loader converted
 to it.** A `root` has no empty, `.` or `..` segment. The Pulumi library renders
 the block and grants the function `ssm:GetParameter(s)` on its root and nothing
 else of SSM ([AWS](../how-to/aws-store-secrets-in-ssm.md)). On Kubernetes use `file`: the
 chart's `secretFiles` projects each Secret key as the file the name stands for.
-
-Version 1's `passwordEnv`, `credentialsEnv` and `tokenEnv` (the name of an
-environment variable) are **deprecated**: the loader reads them as the
-`...Secret` field of the same name with `secrets: {source: env}`.
 
 A password inside a database URL is refused. Token, key and root **files** are
 referenced by path, not by name: `tokenFile`, `jwtFile`, `rootFile`,
@@ -168,9 +160,9 @@ that reads them validates against it and then decodes strictly:
 
 | key | document | in the chart |
 |---|---|---|
-| `deployment` | the profile configuration: which presets each profile is composed from, and `externalIdentifiersAreOpaque` | `/etc/audit/deployment.yaml`, from `profiles` and `externalIdentifiersAreOpaque` |
+| `deployment` | the profile configuration: which framework profiles each profile is composed from, and `externalIdentifiersAreOpaque` | `/etc/audit/deployment.yaml`, from `profiles` and `externalIdentifiersAreOpaque` |
 | `workloads` | the issuers trusted to name a workload, and which service account speaks for which source ([Workload identity](configuration-writer.md#workload-identity)) | `/etc/audit/workloads.yaml`, from `workloadIdentity` |
-| `grants` | the query service's issuers, presets and rules ([Query service](configuration-observe-query.md#query-service)) | `/etc/audit/grants.yaml`, from `query.grants` |
+| `grants` | the query service's issuers, framework profiles and rules ([Query service](configuration-observe-query.md#query-service)) | `/etc/audit/grants.yaml`, from `query.grants` |
 | `catalogues` | a directory of catalogue documents registered at start-up | `/etc/audit/catalogues`, from `catalogues` |
 
 ## Shared blocks
@@ -184,7 +176,7 @@ component contract (`postgres.json`, `bucket.json`, `listen.json`,
 | key | type | default | meaning |
 |---|---|---|---|
 | `url` | string, required | | a `postgres://` or `postgresql://` URL without a password. A URL with one is refused, and one that does not parse is refused |
-| `passwordSecret` | string | none: the connection needs no password | secret by reference: the name of the secret holding the password (`passwordEnv` in version 1) |
+| `passwordSecret` | string | none: the connection needs no password | secret by reference: the name of the secret holding the password |
 | `maxConnections` | integer, at least 1 | 10 | the pool size of this process. Size it against the server's limit divided by the number of processes |
 
 **`bucket`** (an object store addressed by the S3 API)
@@ -196,7 +188,7 @@ component contract (`postgres.json`, `bucket.json`, `listen.json`,
 | `endpoint` | URI | the SDK's own resolution for the region | override the API endpoint, for a store that is not AWS |
 | `ca` | path | the system trust store | a CA bundle trusted for that endpoint, mounted by the platform |
 | `pathStyle` | boolean | false | address the bucket as a path rather than a host, for a certificate that does not cover a bucket subdomain |
-| `credentialsSecret.accessKeyID`, `.secretAccessKey` | strings, both required if the block is present | none: the SDK's ambient credentials, which is what a workload identity provides | secret by reference: the names of the secrets holding static credentials (`credentialsEnv` in version 1) |
+| `credentialsSecret.accessKeyID`, `.secretAccessKey` | strings, both required if the block is present | none: the SDK's ambient credentials, which is what a workload identity provides | secret by reference: the names of the secrets holding static credentials |
 
 **`archive`** (where the archive is, and how it is written)
 
@@ -229,7 +221,7 @@ block is present). Both servers default it to `:8080`.
 | `caFile` | path | the system roots | a PEM bundle trusted beside them |
 | `login.mount`, `.role`, `.jwtFile` | strings, all required | | sign in with a JWT: the auth mount, the role on it, and the file holding the pod's projected token, read at every login. Nothing is stored |
 | `tokenFile` | path | | sign in with a token read from a file on every call |
-| `tokenSecret` | string | | secret by reference: the name of the secret holding a token (`tokenEnv` in version 1) |
+| `tokenSecret` | string | | secret by reference: the name of the secret holding a token |
 
 Exactly one of `login`, `tokenFile` and `tokenSecret`.
 

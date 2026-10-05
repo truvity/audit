@@ -21,7 +21,7 @@ reason: a workspace's module graph is one graph. Run its tests with
 proto/audit/v1/       the contracts: record, sink, registry, query, seal (seals, delegations, revocations)
 gen/jsonschema/       the record's JSON Schema, generated, committed
 schemas/config/       each binary's configuration file schema
-presets/              the framework presets
+presets/              the framework profiles (the directory keeps its old name)
 
 sdk/                  MODULE github.com/truvity/audit/sdk, tagged sdk/vX.Y.Z
   gen/                generated Go (ts/src/gen is the generated TypeScript), committed
@@ -39,7 +39,7 @@ sdk/                  MODULE github.com/truvity/audit/sdk, tagged sdk/vX.Y.Z
   metaschema/         validation against the meta-schemas
   embed.go            the meta-schemas and the common catalogue, embedded
 
-authn/                the JWT authenticator and the access-roster grants preset
+authn/                the JWT authenticator and the `access-roster` grants preset (sluis's group grammar)
 sinkserver/           the SinkService handler and the Receiver (what the writer mounts)
 sink/natssink/        the NATS JetStream publisher
 sink/sqssink/         the SQS publisher
@@ -118,7 +118,7 @@ An application that reports what it does needs the record, the generated
 types, the emitter, the sink client and the catalogue. It does not need the
 writer's dependencies, and before the split it paid for them: importing
 `emit` resolved a module that required pgx, a NATS server, the AWS SDK, the
-OpenTelemetry SDK and exporters, a JWT library and the access-roster client.
+OpenTelemetry SDK and exporters, a JWT library and a product's client.
 Now it resolves `sdk/`, whose non-test dependencies are Connect, protobuf,
 the OpenTelemetry API and the Connect interceptor, a JSON Schema validator
 and a YAML reader.
@@ -173,8 +173,8 @@ Where each piece went, and why:
   imports the root module for those two packages, and says so.
 - **`auth` is split.** The types an authorizer and an emitter's HTTP client
   share (`Principal`, `Grant`, `Rule`, `TokenFile`, `Middleware`) are in the
-  SDK; the JWT authenticator and the access-roster preset, which need the JWT
-  library and access-roster, are `authn/` in the root.
+  SDK; the JWT authenticator and the `access-roster` grants preset, which need the JWT
+  library and sluis's group grammar, are `authn/` in the root.
 - **`catalogue` needed `Category` and `Class`,** which were in `preset`, and
   the meta-schemas, which were embedded from the root. The two types are now
   defined in `catalogue` and re-exported by `preset`; the three meta-schemas

@@ -101,16 +101,19 @@ and on nothing else.
 ## Authorizers
 
 - **declarative** (default, built): configuration mapping claim values to
-  grants, plus presets. An authorizer answers with every grant the caller
+  grants, plus grant presets (named bundles of rules). An authorizer answers with every grant the caller
   holds, and `auth.Effective` picks per request the ones covering the profile
   and operation asked for: tenants union within that profile and never
   across profiles, a time window never unions. The sketch had the first
   matching rule win; that made a later rule a grant the file says exists and
   the service ignores.
-- **access-roster preset** (built): reads `<scope>:audit:<role>` from the
-  groups claim — the estate's grant grammar, split by the roster's own
-  `policy.SplitGroup`, so there is one parser. Roles bind to the presets a
-  profile is composed from, not to profile names; `viewer` must be
+- **the `access-roster` grants preset** (built): reads `<scope>:audit:<role>`
+  from the groups claim — the estate's grant grammar, which sluis defines and
+  every relying party reads, split by `authn.SplitGroup` (a copy of sluis's
+  parser, held to the same table of cases by a test), so there is one grammar.
+  `access-roster` is the identifier the code and the configuration give this
+  preset, from sluis's former name, and stays until a code change renames it.
+  Roles bind to the framework profiles a profile is composed from, not to profile names; `viewer` must be
   tenant-scoped; `resolve` and time-boxed grants are explicit rules only.
   The reference lists the role table.
 - **policy-engine adapter** (optional): for an engine whose query plan

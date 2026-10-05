@@ -1,4 +1,22 @@
-# Emitting records
+# Emit records from Go
+
+## Purpose
+
+Record an application's actions from its own process with the emit library: describe the actions, register the catalogue at start-up, create the emitter and record.
+
+## Preconditions
+
+- A catalogue, or the intention to write one ([connect an application](connect-an-application.md)).
+- A receiver in the application's namespace and the application's projected service-account token.
+- The working code is [`examples/emit`](../../examples/emit/main.go), compiled and tested on every run of the gate.
+
+## Before you start
+
+- **The emitter is a library in the application's own process**, in a Go module of its own (`go get github.com/truvity/audit/sdk`): it brings in Connect, protobuf and the OpenTelemetry API, not the writer's database driver or object-store client ([layout](../reference/repository-layout.md#the-sdk-module)).
+- **A `block` action fails when the receiver is down; an `async` one queues** and is dropped only if the queue overflows ([recover from an outage](recover-from-an-outage.md)).
+- **Registration is refused, not retried, for a malformed catalogue** (`emit.ErrCatalogueRefused`); a receiver that is merely unreachable may be retried.
+
+## Steps
 
 How an application records what it does. The working code is
 [`examples/emit`](../../examples/emit/main.go), compiled and tested on every
@@ -30,7 +48,7 @@ sequenceDiagram
   Note over App: only now does the request complete
 ```
 
-## 1. Describe your actions: the catalogue
+### 1. Describe your actions: the catalogue
 
 A catalogue lists every action your application records: what it is, which
 profiles keep it, how it is delivered, and how it reads as a sentence. It
@@ -91,7 +109,7 @@ not in the catalogue, or if the catalogue declares one nothing emits. Put each
 action name in code exactly once — a constructor per action
 ([integrating](connect-an-application.md#one-constructor-per-action)) — so it can see them.
 
-### The two deliveries
+#### The two deliveries
 
 | delivery | the call returns | if the receiver is down | for |
 |---|---|---|---|
@@ -116,7 +134,7 @@ volume on the emitting pod and no `AUDIT_OUTBOX_DIR`: an action either matters
 enough to keep, in which case `async` retries until it is kept, or it does not
 belong in the catalogue.
 
-## 2. Register it at start-up
+### 2. Register it at start-up
 
 ```go
 err := emit.Register(ctx, emit.Registration{
@@ -157,7 +175,7 @@ request, because the kubelet replaces it before it expires. A profile's
 required categories are the deployment's to cover, not one catalogue's: a gap
 is reported, not held against you.
 
-## 3. Create the emitter
+### 3. Create the emitter
 
 ```go
 emitter, err := emit.New(emit.Options{
@@ -205,7 +223,7 @@ Every dropped record is written to the application's log by the emitter
 (`Options.Logger`, or the default logger), so the loss is
 visible where its other evidence is.
 
-## 4. Record
+### 4. Record
 
 ```go
 err := emitter.Record(r.Context(), &record.Record{
@@ -241,7 +259,7 @@ while serving the request carries the client address, user agent, request id
 and trace id. `trustedHops` is how many proxies of your own sit in front: get
 it wrong and the trail records your load balancer as every actor's address.
 
-## TypeScript
+### TypeScript
 
 There is **no TypeScript emitter yet**. What exists today is the generated
 contract in [`ts/src/gen`](../../ts/src/gen): protobuf-es v2 message types and
@@ -269,3 +287,8 @@ Without the emitter, nothing checks the record against its catalogue before it
 leaves: the receiver still does, and dead-letters what does not match, but the
 caller learns late. Fill `id` (a UUIDv7), `occurred_at`, `schema_version`,
 `catalogue_version` and `source` yourself.
+
+## Afterwards
+
+- Alert on `audit.emit.records.dropped` and watch `audit.emit.queue.pending` ([emitter library](../reference/emitter-library.md)).
+- Read the records back with [read the trail](read-the-trail.md).

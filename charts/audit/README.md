@@ -48,7 +48,7 @@ the application. The deployment pages show the values each shape takes:
   seals too), `audit purge` daily,
   `audit clock-sync` daily. Each runs `--config` against its own file and
   records what it did through the writer's own sink. `clock-sync` needs at
-  least one reference clock (`jobs.clockSync.config.ntp`): every preset with a
+  least one reference clock (`jobs.clockSync.config.ntp`): every framework profile with a
   compliance obligation asks for a daily record of the offset, and its
   configuration is refused without one.
 
@@ -98,9 +98,9 @@ three of those:
   each name the config holds in a `...Secret` field (`passwordSecret`,
   `credentialsSecret`, `tokenSecret`); the config says
   `secrets: {source: file, root: /etc/audit/secrets}`, which the chart checks.
-  `secretEnv` is the deprecated version-1 form: environment variables from a
-  Secret's keys, which a version-1 config names (`passwordEnv`,
-  `credentialsEnv`, `tokenEnv`). A secret is never in `config:`;
+  A secret is never in `config:`. `secretEnv` (environment variables from a
+  Secret's keys) is deprecated and belongs to version-1 configs, see the
+  [v0.13 upgrade](../../docs/how-to/upgrade/v0.13.md);
 - `secretMounts`: a Secret mounted as a directory, for a key or a root a
   config names by path;
 - `tokens`: a projected service-account token of an audience, a file `token`

@@ -49,11 +49,11 @@ the grants. Every read it serves is recorded through the writer.
 | `grants` | path, required | | the grants file, below |
 | `sink` | `sink`, required | | the writer every read is recorded through: its `url`, or the ingest `sqs` queue of a writer that runs elsewhere ([AWS](../how-to/aws-run-readers-in-kubernetes.md)) |
 | `require` | `logged`, `queued` or `archived` | none: checks nothing | the weakest durability the writer's acknowledgements may carry. Needs `sink.expect` at least as strong ([durability](configuration-writer.md#durability-require-forward-consume)) |
-| `deployment` | path | none | the profile configuration. A grant preset needs it, because a preset turns roles into the deployment's own profiles |
+| `deployment` | path | none | the profile configuration. A grants preset needs it, because it turns roles into the deployment's own profiles |
 | `searcher` | `postgres` or `s3scan` | `postgres` | `postgres` is the index; `s3scan` is the archive, within a budget, for a deployment with no database. The scan orders by `occurred_at` only and refuses `recorded_at`, so a deployment on it can search the trail but cannot follow it: there is no live tail ([search](../explanation/search.md#tail)) |
 | `database` | `database` | | the index, as the query service's **own** role (`audit migrate --reader`): `usage` on the schema, `select` on the index's tables, not the owner. Tenant row-level security binds only a non-owner. Required unless `searcher` is `s3scan` |
 | `archive.bucket`, `archive.prefix` | `bucket`, string | | what `s3scan` reads, and where Get finds a record's object. Required with `s3scan`. Without it Get still answers, with where the copy is and nothing about whether it has been verified (nothing yet sets that: it is for seals). The service's region is `archive.bucket.region` |
-| `exports.bucket` | `bucket`, required with `exports` | | a separate bucket with no Object Lock, which clears it. Without `exports` the export operation is refused. It inherits nothing from the archive: name its endpoint, path style and `credentialsEnv` here |
+| `exports.bucket` | `bucket`, required with `exports` | | a separate bucket with no Object Lock, which clears it. Without `exports` the export operation is refused. It inherits nothing from the archive: name its endpoint, path style and `credentialsSecret` here |
 | `exports.expiry` | duration | `168h` | how long an export is kept before the bucket clears it |
 | `exports.linkValid` | duration | `1h` | how long a download link works |
 | `keys` | `keys` | none | the writer's key provider, which turns resolve on. With provider `none`, or no `keys`, there is nothing to resolve and the RPC is `unimplemented`. `local` reads the writer's key directory, which must be shared; `transit` signs in as the query service's own identity, never the writer's |
@@ -102,7 +102,7 @@ rules:                                 # first match wins
 ```
 
 Instead of a rule per group, an installation whose groups already say who
-may read what names a **preset**:
+may read what names a **grants preset** (a named bundle of grant rules, not a framework profile):
 
 ```yaml
 presets:
@@ -111,19 +111,20 @@ presets:
     claim: groups                        # the default
 ```
 
-The access-roster preset reads groups named `<scope>:audit:<role>`, the
-estate's grant grammar. The scope is `all` or an audit tenant id, byte for
+The `access-roster` preset reads groups named `<scope>:audit:<role>`, the
+estate's grant grammar from sluis (`access-roster` is the identifier the code gives it,
+from sluis's former name, and stays until a code change renames it). The scope is `all` or an audit tenant id, byte for
 byte; an environment is never in the name, because each deployment's query
 service requires its own token audience and the issuer decides who may hold
-which. A role grants operations over the profiles built from certain presets,
-so the deployment's own profile names need no mention — which is why a preset
+which. A role grants operations over the profiles built from certain framework profiles,
+so the deployment's own profile names need no mention — which is why a grants preset
 needs `deployment` in the query service's configuration:
 
 | role | profiles built from | operations | `all` allowed |
 |---|---|---|---|
 | `viewer` | `history` | search, facets, get | no: `all:audit:viewer` grants nothing |
 | `security` | `security`, `dora`, `pci-dss`, `nen-7513` | search, facets, get, tail, export | yes |
-| `auditor` | every profile built from no `billing-*` preset | search, facets, get, export | yes |
+| `auditor` | every profile built from no `billing-*` framework profile | search, facets, get, export | yes |
 | `billing` | `billing-*` | search, facets, get, export | yes |
 | `evidence` | `evidence-etsi` | search, get, export | yes |
 
@@ -150,7 +151,7 @@ It refuses to start when:
   whoever administers the least-trusted issuer;
 - a rule names an issuer that is not listed, or an operation that does not
   exist;
-- a preset is named and the configuration has no `deployment`, or a preset that does not exist.
+- a grants preset is named and the configuration has no `deployment`, or one that does not exist.
 
 A bearer token in `Authorization` is accepted, and so is the access token the
 fleet gateway forwards. Verification is

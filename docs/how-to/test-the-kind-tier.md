@@ -51,11 +51,11 @@ integration workflow stands the box up itself for every pull request: see
 - **That the archive is verified or sealed.** The check of the v1 bucket
   contract lives in `internal/bucketcontract`, which is also the conformance
   suite: it runs against the memory store and against LocalStack S3 (the CI
-  `s3` job, `just test-s3`), with no cluster at all. Seals are not built yet.
+  `s3` job, `just test-s3`), with no cluster at all; the seals' own suite is `internal/bucketcontract/seals_test.go`.
 - **That the archive is tamper-evident under Object Lock.** This tier
   installs with `lockMode: none`: LocalStack Community's Object Lock
   support is partial, and the `security` profile this tier composes is one
-  of the presets whose framework does not demand a lock
+  of the framework profiles whose framework does not demand a lock
   (`presets/security.yaml`: `integrity.object_lock_mode: none`). A
   deployment composing a profile that DOES demand one (`pci-dss`,
   `nen-7513`, `dora`, `evidence-etsi`) is proved on a real bucket with

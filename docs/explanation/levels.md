@@ -14,7 +14,8 @@ keeps the lines. Moving up changes configuration, not records.
 
 ## Presets
 
-The decision-tree presets, and the level each normally gives. The names are
+The decision-tree presets (named bundles of deployment choices, not compliance bundles: those are
+[profiles](../reference/profiles.md)), and the level each normally gives. The names are
 vocabulary for choosing a deployment, not chart or library options.
 
 | preset | what it is | level | built from |

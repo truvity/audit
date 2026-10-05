@@ -1,92 +1,74 @@
-# Billing
+# Enable usage billing
 
-Usage billing is a projection of records the installation already keeps. A
-billable action is an audit record that happens to carry a quantity, so the
-same completeness, the same deduplication and the same lock that make the
-trail evidence make the invoice defensible.
+## Purpose
 
-Nothing here is in the request path.
+Keep a metering copy of each billable record, so that rollups and a monthly statement can be
+computed from the same records that make the trail evidence. How it works and why:
+[billing](../explanation/billing.md).
 
-## The five slots
+## Preconditions
 
-| # | slot | what the application adds | state |
-|---|---|---|---|
-| 1 | **catalogue** | on each billable action: `meter: {name, quantity_path, outcomes: [success]}` and `profiles: [security, billing]` | built |
-| 2 | **emit** | nothing — the record carries `meter{name, quantity, unit}` | built |
-| 3 | **writer** | nothing — it splits a `billing` copy (tenant and meter, no actor, the metering profile's retention), and the dedupe table makes it exactly-once; the indexer then reads the meter fields from the object | built |
-| 4 | **rollups and statement** | a rollup row per tenant, meter and hour, filled at index time; a monthly CronJob writes an immutable statement object naming the seal of the archive it was computed from (once seals exist) | rollups partly built; the statement not built |
-| 5 | **export** | push the statement's totals to a billing system, or invoice from the statement object | the application's |
+- A metering framework profile composed into a profile of the installation
+  (`billing-nl` ships; see [which profiles to compose](../explanation/which-profiles-to-compose.md)).
+- The installation keeps seals (the notary runs), because the statement names the seal of the
+  archive it was computed from.
 
-## The rules that make it defensible
+## Before you start
 
-- **A billable action is `block`.** If the record cannot be kept, the
-  operation does not happen. An invoice line that exists without a record,
-  or a record that exists without the operation, is the failure mode worth
-  paying a round trip to avoid.
-- **The meter counts only the outcomes it declares.** A refused call is not
-  billable, and that is a property of the catalogue, not of a query someone
-  wrote later.
-- **Exactly once.** The dedupe table absorbs a redelivery, so a writer
-  restart or a stream redelivery cannot double a customer's bill.
-- **The statement is immutable and self-describing.** It names the period,
-  the rollups it summed and the seal of the archive it was computed from,
-  and it is written into the archive under the metering profile's lock. A
-  dispute six years later is answered by re-reading it, and by verifying the
-  seal it names.
-- **The billing copy holds no people.** The metering profile omits actor and
-  subject: quantities per tenant and meter, which is what finance, a
-  customer in a dispute and a tax inspector are entitled to see. Who did it
-  is in the security copy, under the security profile's retention.
+- **The values toggle renders nothing yet.** `extensions.billing.enabled` is accepted and checked,
+  but the statement job is designed, not built, and the rollups are partly built. The key takes
+  `enabled` only: any other key under `extensions.billing` fails the values schema.
+- **The chart refuses `extensions.billing.enabled` when no profile composes a metering profile**,
+  because the copy the statement is computed from would not exist.
+- **Retention cannot be shortened later.** The metering copy keeps seven years under `billing-nl`
+  (the Dutch tax administration's retention duty); under Object Lock compliance an object written
+  now is there that long.
+- **A billable action must be `block`.** If the record cannot be kept, the operation does not
+  happen.
+- **A meter renamed is a new meter.** The old name keeps its history; the rollups do not migrate.
 
-## Turning it on
+## Steps
 
-Compose a metering profile and enable the extension:
+1. **Compose a metering profile and enable the extension.**
 
-```yaml
-audit:
-  profiles:
-    security:
-      presets: [security]
-    billing:
-      presets: [billing-nl]
-  extensions:
-    billing:
-      enabled: true               # renders nothing yet: the statement job is designed, not built
-```
+   ```yaml
+   audit:
+     profiles:
+       security:
+         presets: [security]
+       billing:
+         presets: [billing-nl]
+     extensions:
+       billing:
+         enabled: true
+   ```
 
-The chart refuses `extensions.billing.enabled` when no profile composes a
-metering preset, because the copy the statement is computed from would not
-exist.
+   Verify: `helm template` renders; without the `billing` profile it refuses. Roll back: set
+   `enabled: false`; the profile's copies already written stay.
 
-Then, in the application's catalogue:
+2. **Declare the meter in the application's catalogue** and deploy the writer before the emitter
+   ([change what a source records](change-what-a-source-records.md)).
 
-```yaml
-actions:
-  app.credential.verified:
-    summary: A credential was verified for a tenant.
-    operation: execute
-    categories: [data_access]
-    profiles: [security, billing]
-    delivery: block
-    meter:
-      name: verifications
-      outcomes: [success]
-```
+   ```yaml
+   actions:
+     app.credential.verified:
+       summary: A credential was verified for a tenant.
+       operation: execute
+       categories: [data_access]
+       profiles: [security, billing]
+       delivery: block
+       meter:
+         name: verifications
+         outcomes: [success]
+   ```
 
-## What to watch
+   Verify: a record of the action lands under `records/billing/<tenant>/` as well as
+   `records/security/`.
 
-- **The rollup lag**: rollups are written at index time, by the indexer
-  (`audit-observe`), a settle window after the object is put, so an indexer
-  that is behind or cannot index is a count that is not counting. The runbook's
-  `audit.observe.index.deferred` counter and the `audit.observe.index.lag`
-  histogram are the ones to alert on.
-- **The monthly close**: a statement is written after the period ends and
-  after the last hour of it is sealed
-  ([0019](../decisions/0019-seals.md)). Running it earlier produces a
-  statement that names a seal that does not cover the period.
-- **A meter renamed** is a new meter. The old name keeps its history; the
-  rollups do not migrate.
+## Afterwards
 
-Retention for the metering copy is the metering preset's — seven years under
-`billing-nl`, for the Dutch tax administration's retention duty. See
-[which presets a deployment composes](../explanation/which-profiles-to-compose.md).
+- Watch the rollup lag: rollups are written at index time by `audit-observe`, so an indexer that
+  is behind is a count that is not counting (`audit.observe.index.deferred`,
+  `audit.observe.index.lag`; [repair or rebuild the index](rebuild-the-index.md)).
+- A statement is written after the period ends and after the last hour of it is sealed; running
+  it earlier names a seal that does not cover the period.

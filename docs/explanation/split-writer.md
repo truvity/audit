@@ -27,7 +27,7 @@ second replica while the first is still writing them.
 ## Per record
 
 1. **Ask** the deduplication table whether the `id` has been written, within a
-   configurable window (preset `pipeline.dedupe_window_days`). Asking marks
+   configurable window (framework profile `pipeline.dedupe_window_days`). Asking marks
    nothing; see below.
 2. **Resolve** the catalogue by `source` and `catalogue_version`. Unknown
    version: dead-letter, alert, never drop.
@@ -95,7 +95,7 @@ own account within the batch, and the second copy is absorbed there.
 
 An earlier design stored a body above a threshold once under `payload/sha256=…`
 and referenced it from each copy, so that several copies would not each carry
-it. With the presets this repository ships there is nothing to duplicate:
+it. With the framework profiles this repository ships there is nothing to duplicate:
 `capture` is kept by the security profile alone, and billing and history forbid
 it. The emitter already drops a body over its bound and caps the whole record,
 so object size is bounded without a payload prefix.

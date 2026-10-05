@@ -20,7 +20,7 @@ one that links back.
 - `docs/why.md` and `docs/concepts.md` are the entry points and must stay
   readable by someone who has never seen the code.
 - The CHANGELOG describes the state of the repository, not the journey.
-- Presets cite the clause they implement and carry the disclaimer that they
+- Framework profiles cite the clause they implement and carry the disclaimer that they
   are an engineering reading, not legal advice.
 - Mermaid diagrams: a `;` inside a sequence diagram message splits it.
 

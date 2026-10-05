@@ -1,4 +1,23 @@
-# Integrating an application
+# Connect an application to its trail
+
+## Purpose
+
+Give an application what it needs to record what it does into an installation, and to show the trail to its users: a catalogue, one constructor per action, the emit library, a CI check and the Audit page.
+
+## Preconditions
+
+- An installation running beside the application ([Kubernetes](../getting-started/kubernetes.md), or [AWS Lambda](../getting-started/aws-lambda.md)). An installation belongs to **one application**, in that application's namespace ([0011](../decisions/0011-one-installation-per-service-or-product.md)); there is no central installation to connect to.
+- The application's workload identity: a ServiceAccount whose projected token the installation's `workloadIdentity` maps to the application's source.
+- For a product that already ships a catalogue (sluis), see [a sluis-connected install](../getting-started/sluis.md).
+
+## Before you start
+
+- **A catalogue is a document plus its JSON schemas.** Each action that carries data has a schema, and the writer refuses to start without the ones the document references.
+- **A new version for any change to what a record carries.** A changed document under an unchanged version is refused, and stops the application at start. Roll the writer's catalogue before the emitter ([change what a source records](change-what-a-source-records.md)).
+- **The application holds no credentials for the bucket, the index or the stream:** only the address of a Service in its own namespace, and its projected token. Nothing it runs can read a record back out; the query service is the only way in, and it records every read.
+- **Do not start if registration is refused** (`emit.ErrCatalogueRefused`); trying again will not change a fact about the document.
+
+## Steps
 
 An installation belongs to **one application**. It runs in that application's
 namespace, rendered by the application's own chart with this repository's
@@ -11,7 +30,7 @@ This page is what the application itself ends up with. Running the
 installation beside it is [deploying](../getting-started/kubernetes.md), and the shape it runs in is
 [direct](../explanation/direct-mode.md) or [stream](../explanation/stream-mode.md).
 
-## What the application ends up with
+### What the application ends up with
 
 | piece | where | what it takes |
 |---|---|---|
@@ -26,7 +45,7 @@ only the address of a Service in its own namespace. Nothing it runs can read a
 record back out either — the query service is the only way in, and it records
 every read.
 
-## The catalogue
+### The catalogue
 
 The catalogue is the contract between the application and its trail. It names
 every action the application records and, for each one, what kind of operation
@@ -90,7 +109,7 @@ no `audit-registry` binary, because an installation has one application to
 hear a catalogue from
 ([0011](../decisions/0011-one-installation-per-service-or-product.md)).
 
-### Delivery
+#### Delivery
 
 Delivery is chosen per action in the catalogue, not per installation, so the
 same catalogue behaves the same way in either shape. There are two.
@@ -108,7 +127,7 @@ mode, the stream's replicated publish acknowledgement in stream mode.
 loader refuses both, naming the replacement. There is no file outbox, no
 volume on the emitting pod and no `AUDIT_OUTBOX_DIR` to configure.
 
-## One constructor per action
+### One constructor per action
 
 Spell each action name once, in a function that builds its record. It is what
 lets `check-emitters` hold the code to the catalogue, and it keeps the shape
@@ -139,7 +158,7 @@ func OrderPlaced(tenant, customerID, orderID string) *record.Record {
 Do not build an action name at run time. `check-emitters` cannot see a name
 that is assembled from pieces, and the catalogue stops describing the code.
 
-## The emit library
+### The emit library
 
 ```go
 // At start-up: the catalogue reaches the receiver, or the application stops.
@@ -181,7 +200,7 @@ err = emitter.Record(ctx, shopaudit.OrderPlaced(tenant, customerID, orderID))
 [`examples/emit`](../../examples/emit/main.go) is the working code, compiled
 on every run of the gate.
 
-## The CI check
+### The CI check
 
 ```sh
 audit validate catalogue/shop.yaml
@@ -198,7 +217,7 @@ Run both in the application's pipeline. A catalogue is worth being wrong in a
 pull request, because it cannot be wrong later in an archive nobody can
 rewrite.
 
-## The Audit page
+### The Audit page
 
 The page lives in the **application's own console**, and normally calls the
 query service **directly** with the token the person's session already has.
@@ -250,7 +269,7 @@ const audit = createQueryClient(createConnectTransport({
 What the view does with a record, and where a console draws its own instead,
 is [the Audit page's design](../explanation/audit-page.md).
 
-### A console with a session of its own
+#### A console with a session of its own
 
 Some consoles do not have a gateway token to pass on: the session is a cookie
 of the console's own, and the browser has nothing the query service would
@@ -271,7 +290,7 @@ It is one more thing to hold correct: a mistake in the proxy is a mistake
 about who is asking. Prefer the direct call wherever the console's session is
 already a token the query service can verify.
 
-## Checking the integration
+### Checking the integration
 
 - **The catalogue and the code agree**: `audit validate` and
   `audit check-emitters` in CI, on every commit.
@@ -285,7 +304,7 @@ already a token the query service can verify.
   the application must refuse the operation. Perform an `async` action: it
   must succeed, and appear once the receiver is back.
 
-## What not to do
+### What not to do
 
 - **Do not pseudonymise or hash identifiers in the application.** The writer
   treats each identity by its category, per profile, with keys the application
@@ -299,3 +318,9 @@ already a token the query service can verify.
   the application's pods and every fix in its release.
 - **Do not read the archive bucket from the application.** Read through the
   query service, which applies the grants and records the read.
+
+## Afterwards
+
+- Run [`audit validate` and `audit check-emitters`](#the-ci-check) in the pipeline so a catalogue and its emitters cannot drift.
+- Check the integration end to end in [Checking the integration](#checking-the-integration).
+- To change the catalogue later: [change what a source records](change-what-a-source-records.md).

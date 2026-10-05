@@ -1,4 +1,22 @@
-# Pseudonymisation keys in OpenBAO
+# Configure pseudonymisation keys in OpenBAO
+
+## Purpose
+
+Set up an OpenBAO (or Vault) transit engine, the JWT roles and the policies so that the `transit` key provider can pseudonymise and crypto-shred, and so that no replica can mint a key another cannot see.
+
+## Preconditions
+
+- A deployment that **must be able to crypto-shred** and has chosen `transit` for it. Pseudonymisation keys are off by default (`keys.provider: none`) and nothing here applies otherwise ([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md), [key custody](../explanation/key-custody.md)).
+- An OpenBAO namespace (or Vault) you administer, and the cluster's service-account issuer reachable by it.
+
+## Before you start
+
+- **A transit key that will sign seals is a different key** and not on this page ([signing key](../explanation/key-custody.md#signing-key)).
+- **Keys are never rotated**, and every call is pinned to the key's first version, so a rotation by somebody else changes nothing ([never rotated](../explanation/key-custody.md#never-rotated)).
+- **Give each component a role of its own.** Each is a separate privilege, and one identity holding two is what the separation exists to prevent.
+- **The writer creates a key the first time it sees a tenant for a purpose.** Creating is idempotent in the engine. A purpose is a profile's name and, under this provider, holds letters, digits, `_` and `-`, no dot.
+
+## Steps
 
 Pseudonymisation keys are off by default: `keys.provider: none`, and nothing
 on this page applies
@@ -23,7 +41,7 @@ than one writer:
 
 The cost is one round trip to the engine for each pseudonym.
 
-## Keys
+### Keys
 
 One transit key per purpose and tenant, named `<prefix>.<purpose>.<tenant>`
 (`audit.security.acme` with the default prefix). The writer creates a key the
@@ -38,7 +56,7 @@ Every call is pinned to the key's **first version**. Keys are never rotated
 (rotating would break linkability for one person across time), and pinning
 means a rotation by somebody else changes nothing.
 
-## What the engine needs
+### What the engine needs
 
 In the namespace the keys live in (in an estate with a namespace per
 environment, the environment's):
@@ -59,7 +77,7 @@ Give each component a role of its own. Each is a
 separate privilege, and one identity holding two of them is the thing the
 separation exists to prevent.
 
-## Signing in
+### Signing in
 
 Each component signs in with its **projected service-account token**. The
 component's `tokens` entry mounts one with the audience the JWT role expects
@@ -88,7 +106,7 @@ No token is stored anywhere, so there is nothing to leak and nothing to rotate.
 
 A token file (`tokenFile`) or a token named by `tokenSecret` (the name of a
 secret that the file's `secrets` block says how to find: an environment variable,
-a file or an SSM parameter; `tokenEnv` in a version-1 file) is accepted instead, for an engine that is not
+a file or an SSM parameter) is accepted instead, for an engine that is not
 set up for JWT logins; exactly one of the three. `audit key destroy`, run from
 an operator's shell, takes `BAO_ADDR`, `BAO_NAMESPACE`, `BAO_CACERT` and
 `BAO_TOKEN`, or the `VAULT_` names.
@@ -98,7 +116,7 @@ chain's bundle as `trust.configMap` and name the file in `openbao.caFile`
 (`/etc/audit/trust/<key>`). trust-manager's ConfigMap is the usual source.
 Every pod mounts it.
 
-## Policies
+### Policies
 
 Written here as HCL to show their shape. Where policies are generated from
 configuration, as they should be, these are what the generator must produce,
@@ -154,7 +172,7 @@ with `deletion_allowed`. A deleted key would be created afresh the next time
 the tenant appears. The same person would then get a second identity, and
 nothing would say so.
 
-## Destroying a key
+### Destroying a key
 
 ```
 audit key destroy --tenant <id> --purpose <p> --by <who> --reason <why> \
@@ -179,7 +197,7 @@ snapshot taken before still holds it, and restoring that snapshot brings the
 key back. Erasure is complete once the last such snapshot has aged out.
 Publish that period with the retention terms.
 
-## Testing
+### Testing
 
 The provider's tests run against a real dev server and skip without one:
 
@@ -203,3 +221,8 @@ They cover:
   opens and does nothing else, and the eraser destroys but cannot delete.
 
 The private-chain handshake is tested without a server, in the ordinary suite.
+
+## Afterwards
+
+- Test the setup as described under *Testing* below, then `audit key destroy` (see [erase a tenant's keys](erase-a-tenants-keys.md)) on a test tenant.
+- Record the engine, namespace and role names in the deployment's own decision log.

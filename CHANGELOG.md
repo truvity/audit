@@ -4,7 +4,9 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.12.0
+
+The Pulumi library ships a catalogue's data schemas with it in the writer's configuration layer, and refuses at preview a catalogue the writer would refuse.
 
 - **The Pulumi library ships a catalogue's data schemas with it, and refuses a catalogue the writer would refuse.** New `Writer.CatalogueSchemas` (by the catalogue's file name, then `<name>.json` and content) and `Writer.CatalogueDirs` (directories each holding one catalogue document and the `.json` schemas it references, the layout `sdk/catalogue.LoadFS` reads and an application embeds; merged like `CataloguePaths`). The writer reads a catalogue with the `.json` files beside it and refuses to start when a referenced schema is missing, and until now the library could only ship the document: a catalogue with a `data_schema` deployed a writer that failed every start while `pulumi up` succeeded, and the ingest queue drained into the dead-letter queue (seen in production on 2026-10-04). Now every catalogue is held, before anything is created, to the writer's own check: each schema it references (`data_schema`, `attributes_schema`, `dimensions_schema`, `context_areas`, legacy ids matched as the writer matches them) is given, each schema given is referenced, each has a `$id` and no two claim one. **A deployment that passed such a catalogue without its schemas is now refused in the preview**, where it was a writer that never started. A catalogue with schemas goes into the layer as `catalogues/<file without .yaml>/` with exactly its schemas; one without stays `catalogues/<file>`, so an existing layer is unchanged. The writer binary is unchanged: it already walks `catalogues/`. See [deployment/aws.md](docs/deployment/aws.md#the-applications-catalogue).
 

@@ -274,8 +274,8 @@ func TestTheFunctionsRunOutsideAVPCOnArm64WithTheExtensionLayer(t *testing.T) {
 		}
 		// The configuration layer is the library's own and the extension the second:
 		// two of the five a function may have.
-		if l := prop(f, "layers").ArrayValue(); len(l) != 2 || !strings.Contains(l[0].StringValue(), name+"-config") ||
-			!strings.Contains(l[1].StringValue(), "access-roster-otlp") {
+		if l := prop(f, "layers").ArrayValue(); len(l) != 2 || !strings.Contains(l[1].StringValue(), name+"-config") ||
+			!strings.Contains(l[0].StringValue(), "access-roster-otlp") {
 			t.Errorf("%s layers: %v", name, l)
 		}
 		env := prop(f, "environment").ObjectValue()["variables"].ObjectValue()

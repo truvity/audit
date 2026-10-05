@@ -7,3 +7,7 @@ func SetLibraryVersion(v string) func() {
 	libraryVersion = func() string { return v }
 	return func() { libraryVersion = was }
 }
+
+// Absent and Denied expose the guard's reading of an error to the tests.
+func Absent(err error) bool { return absent(err) }
+func Denied(err error) bool { return denied(err) }

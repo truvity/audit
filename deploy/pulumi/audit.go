@@ -639,10 +639,13 @@ func newFunction(ctx *pulumi.Context, s functionSpec, a *Args, tags pulumi.Strin
 	if err != nil {
 		return nil, nil, err
 	}
-	layers := pulumi.StringArray{config.Arn}
+	// The configuration layer is last: layers extract in order and a later one
+	// wins a path, so nothing after it can shadow /opt/audit/*.
+	layers := pulumi.StringArray{}
 	if a.Telemetry != nil {
 		layers = append(layers, a.Telemetry.ExtensionLayerArn)
 	}
+	layers = append(layers, config.Arn)
 	args := &lambda.FunctionArgs{
 		Name:          pulumi.String(s.Name),
 		Role:          s.Role.Arn,

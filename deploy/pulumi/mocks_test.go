@@ -108,7 +108,7 @@ func (r *recorder) Call(a pulumi.MockCallArgs) (resource.PropertyMap, error) {
 		key := a.Args["key"].StringValue()
 		sha, ok := r.archived[key]
 		if !ok {
-			return nil, errors.New("reading S3 Object (" + key + "): operation error S3: HeadObject, https response error StatusCode: 404, NotFound")
+			return nil, errors.New("reading S3 Bucket (acme-audit) Object (" + key + "): couldn't find resource")
 		}
 		return resource.PropertyMap{
 			"bucket": a.Args["bucket"], "key": a.Args["key"], "id": resource.NewStringProperty(key),

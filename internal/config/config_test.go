@@ -611,7 +611,7 @@ func TestTheDocumentSchemasAcceptWhatTheCodeAcceptsAndRefuseWhatItWouldNot(t *te
 		ok        bool
 	}{
 		{"audit-deployment", "profiles:\n  security: {presets: [iso27001]}\n", true},
-		{"audit-deployment", "apiVersion: audit.truvity.com/deployment/v1\nexternal_identifiers_are_opaque: true\nprofiles:\n  security: {presets: [iso27001]}\n", true},
+		{"audit-deployment", "apiVersion: audit.truvity.com/deployment/v1\nprofiles:\n  security: {presets: [iso27001]}\n", true},
 		{"audit-deployment", "apiVersion: audit.truvity.com/deployment/v2\nprofiles:\n  security: {presets: [iso27001]}\n", false},
 		{"audit-deployment", "profiles: {}\n", false},
 		{"audit-deployment", "profiles:\n  a/b: {presets: [iso27001]}\n", false},

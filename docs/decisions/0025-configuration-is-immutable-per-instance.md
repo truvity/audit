@@ -26,8 +26,11 @@ schemas are authored with tests binding the Go structs.
 1. **Configuration is immutable per instance; a change is a new set of
    instances.**
    - Kubernetes: `checksum/*` annotations on the pod template roll the
-     Deployment when a document changes. ConfigMaps are mounted as
-     directories, never through `subPath`.
+     Deployment when a document changes. A file a process reads once at start
+     may be mounted with `subPath`: the `checksum/*` annotation replaces the
+     pod on any change, so an in-place update would never be read. Mount a
+     directory only where a file is meant to change in place (secret files read
+     per call, signing keys).
    - AWS Lambda: the documents ship as an immutable **Lambda layer** at
      `/opt/audit/`. The function code is the **released zip, byte-identical and
      sha256-verified**. A change is a new layer version, then a function update;

@@ -4,6 +4,8 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
 ## v0.11.0
 
 The configuration is a file named by `AUDIT_CONFIG` and versioned by `apiVersion`, the writer says which one it ran under, and the Pulumi library deploys the release's zip as released with the configuration as a layer.

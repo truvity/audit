@@ -48,7 +48,7 @@ carries `OTEL_EXPORTER_OTLP_ENDPOINT`, which has a value of its own, and an
 endpoint that is not an http(s) URL.
 
 On AWS, a function's telemetry goes through the Lambda extension rather than a
-gateway address: [AWS, telemetry](aws-pulumi-library.md#telemetry).
+gateway address: [AWS, telemetry](../how-to/aws-send-lambda-telemetry.md).
 
 The gateway turns delta temporality into cumulative and keeps only the cluster,
 namespace and tier from the resource as labels
@@ -221,7 +221,7 @@ The indexer could not index objects the archive holds. Its log line
 database, a catalogue missing from the archive) is fixed, and `unreadable` is an
 object that does not decode and has been skipped, which is the thing to
 investigate. `audit reindex --profile <name> --from <day> --to <day>` reads a
-range again ([runbook](../how-to/rebuild-the-index.md#the-index-is-behind)).
+range again ([runbook](../how-to/rebuild-the-index.md)).
 
 #### AuditWriterRejectingRecords
 

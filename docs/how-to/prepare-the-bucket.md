@@ -1,32 +1,67 @@
-# S3 guide
+# Prepare the bucket
 
-What the bucket must look like for the record to be a record. The writer
-sets per-object retention; the bucket must allow and protect it.
+## Purpose
+
+Have a bucket, on the right tier, with a prefix for this installation, that the
+writer, the indexer, the query service and the verify job can use.
+
+## Preconditions
+
+- Which tier the profiles need ([which profiles to compose](../explanation/which-profiles-to-compose.md)).
+- An environment that owns the bucket: one bucket per environment, with Object
+  Lock, versioning, replication and a deny-delete policy configured once, and one
+  prefix per application, `audit/<application>/`
+  ([0011](../decisions/0011-one-installation-per-service-or-product.md)).
+
+## Before you start
+
+- **Object Lock can only be turned on when a bucket is created** (or later, one
+  way, on a versioned bucket on AWS). A bucket made without it cannot be a
+  `record` tier bucket by editing; see [AWS turn on the lock](aws-turn-on-object-lock.md).
+- **The writer refuses to start when a composed profile demands a stricter lock
+  than the deployment writes with**, naming the profile and both modes. The first
+  rollout is where that shows.
+- **`prefix: ""` puts an installation at the bucket's root.** That is for a bucket
+  with exactly one installation in it and nothing else, and it forecloses a second.
+  A prefix is chosen when an installation is created and not changed afterwards:
+  moving it moves every key.
+- **`schema/` is easy to miss.** The writer reads it back on every start; a policy
+  that lets it put and not get produces a writer that writes one object, takes a
+  403 and dies in a loop, which reads as a broken archive rather than a missing verb.
+- **Static S3 credentials are a secret**, named by `credentialsSecret` and found
+  through the `secrets` block; they are never an environment variable the config
+  names in version 2 ([configuration](../reference/configuration.md#secrets)).
+- **Do not set a default retention longer than the shortest profile.** The writer
+  sets each object's own.
+
+## Steps
+
+### Choose the tier
 
 The bucket is on one of two tiers
-([0014](../decisions/0014-lock-modes-and-store-tiers.md)), and which one is
-the profiles' decision, not the operator's:
+([0014](../decisions/0014-lock-modes-and-store-tiers.md)), and which one is the
+profiles' decision, not the operator's:
 
 | tier | `archive.lockMode` | the store must answer | enough for |
 |---|---|---|---|
 | **record** | `compliance` (the default; `governance` for a non-production bucket) | `PutObject` with the Object Lock headers, `PutObjectRetention`, `PutObjectLegalHold`, `GetObject`, `HeadObject`, `ListObjectsV2`, presigned `GetObject` | every profile |
-| **attested** | `none` | `PutObject`, `GetObject`, `HeadObject`, `ListObjectsV2`, presigned `GetObject` | profiles composed only from presets that demand no lock: `security`, `history`, `billing-nl` |
+| **attested** | `none` | `PutObject`, `GetObject`, `HeadObject`, `ListObjectsV2`, presigned `GetObject` | profiles composed only from framework profiles that demand no lock: `security`, `history`, `billing-nl` |
 
-The writer refuses to start when a
-composed profile demands a stricter lock than the deployment writes with,
-naming the profile and both modes. Everything below describes the record
-tier unless it says otherwise; [the attested tier](#the-attested-tier) says
-what changes.
+### Create the bucket
 
-**The environment owns the bucket; an installation owns a prefix in it.** One
-bucket per environment, with Object Lock, versioning, replication and a
-deny-delete policy configured once, and one prefix per application —
-`audit/<application>/` — with each installation's IAM scoped under its own.
-That is the normal arrangement, not a variation on one bucket per
-installation
-([0011](../decisions/0011-one-installation-per-service-or-product.md)).
+On the record tier:
 
-## Bucket
+```sh
+aws s3api create-bucket --bucket example-audit \
+  --create-bucket-configuration LocationConstraint=eu-example-1 \
+  --object-lock-enabled-for-bucket
+```
+
+On the attested tier, the same without `--object-lock-enabled-for-bucket`, and
+`archive.lockMode: none` in the writer's configuration.
+
+The bucket needs:
+
 
 - Versioning enabled. Object Lock enabled at creation with a **default
   retention in compliance mode** equal to the shortest profile's
@@ -44,88 +79,38 @@ installation
   Object Lock, with replication of retention metadata.
 
 None of that is per installation. An application arriving in the environment
-gets a prefix and three roles, and changes nothing about the bucket.
+gets a prefix and its own roles, and changes nothing about the bucket.
 
-## Sharing a bucket
+Expected: `aws s3api get-object-lock-configuration` (record tier) shows `Enabled`.
+Verify: a put of a test object under `audit/<application>/` succeeds and a delete
+is refused. Roll back: an empty bucket can be deleted; one with versions under
+compliance retention cannot.
 
-Each installation is given a prefix of its own and told about it once, as the
-chart's `prefix`:
+### Give the installation a prefix
+
+Each installation is told its prefix once, as `archive.prefix` of its components'
+configuration:
 
 ```yaml
-audit:
-  bucket: audit-eu-example-1
+archive:
+  bucket: {name: audit-eu-example-1, region: eu-example-1}
   prefix: audit/<application>
 ```
 
-Under that prefix the layout is the same for every installation, which is
-what lets two applications on different versions of this component share one
-bucket: the archive's layout is the contract between them, not the code.
+Under that prefix the layout is the same for every installation, which is what
+lets two applications on different versions of this component share one bucket:
+the archive's layout is the contract between them, not the code. Lifecycle rules
+filter on `<prefix>/records/<profile>/`, one rule per profile per application: a
+bucket-wide rule would apply the shortest profile's transition to every
+application in it.
 
-| what | where | who may see it |
-|---|---|---|
-| one application's records and catalogues | `audit/<application>/…` | that installation's three roles, and an auditor's read-only role |
-| another application's | `audit/<other>/…` | its own, and nobody from the first |
+Then scope each role's IAM under the prefix
+([archive prefixes and IAM](../reference/archive-prefixes-and-iam.md)). Verify:
+the writer starts and `audit verify` over the first hour reports the objects.
+Roll back: remove the prefix's roles; the prefix itself stays (the archive is
+append-only).
 
-Lifecycle rules filter on `<prefix>/records/<profile>/`, one rule per profile
-per application. A bucket-wide rule would apply the shortest profile's
-transition to every application in it, which is why the filter names the
-prefix as well.
-
-`prefix: ""` puts an installation at the bucket's root. That is for a bucket
-with exactly one installation in it and nothing else, and it forecloses ever
-adding a second.
-
-## Prefixes and retention
-
-Everything one installation writes, beneath its `prefix`:
-
-| prefix | written by | what | retention |
-|---|---|---|---|
-| `records/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>/<ULID>` | writer | one object per ingest batch, by the hour of ingest ([the contract](../reference/bucket-contract.md)) | the profile's, per object at PUT (years after expiry for an `after_expiry` profile) |
-| `catalogue/<app>/<version>` | writer | the application's catalogue at that version, written once | the longest profile |
-| `seals/<profile>/<tenant>/<yyyy>/<mm>/<dd>/<hh>.jws` | notary | one signed seal per profile, tenant and hour, empty hours too, chained through `prev` | that of the records it covers, per object at PUT |
-| `keys/roots.jwks` | the notary, once, if absent; otherwise the operator | the root public keys, as a JWK Set: distribution, not trust | none; the bucket versions it |
-| `keys/delegations/<thumbprint>/<ULID>.jws`, `keys/revocations/<ULID>.jws` | a root | statements about keys a verifier checks | none |
-| `schema/…` | writer | extension schemas and the record schema the records were written under | the longest profile |
-| `dlq/year=/month=/day=/…` | writer | records the writer could not take | the longest profile |
-| `holds/<id>/…` | `audit hold` | legal holds placed and released | the longest profile |
-| `identity/tenant=<t>/purpose=<p>/<pseudonym>` | writer | the sealed identity behind a pseudonym, for resolve | the longest profile |
-
-The notary is a fourth identity beside the writer, the verifier and the query
-service: it may get and list under the prefix, put under `seals/` and the one
-object `keys/roots.jwks`, decrypt, and use the seal key, and it may not put under
-`records/`, which is the writer's. The writer may not put under `seals/` or
-`keys/`: whoever writes the archive and can also seal it can choose what to seal.
-The lifecycle rules for seals are those of the records they cover.
-
-A record's own date does not decide where it lives: a reader finds it by the
-hour it was ingested. A profile's name is a key component, so it must not
-contain `/`, and a record whose tenant id contains `/` is dead-lettered.
-
-A catalogue object is written once. The same bytes again are a success; other
-bytes under the same version make the writer refuse to start, which it checks
-at start-up for the catalogues it runs with and at the first record of any
-other.
-
-The archive written before the v1 layout (`profile=<p>/tenant=<t>/year=…`,
-with `digest/` and `verified/`) is read by nothing in v1. It stays readable
-with the previous release's CLI (v0.6.x), and a bucket that holds both needs
-the lifecycle rules of both until the old objects expire.
-
-The `identity/` prefix exists only where the deployment configured a key provider.
-`keys.provider: none` is the default (no `keys` block), and an installation running without
-keys writes no `identity/` prefix at all
-([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md)).
-
-Exports go to a **separate bucket with no Object Lock** and a lifecycle rule
-that expires `export/`: an export is a copy meant to be collected and cleared,
-and the archive's policy denies every delete. It may be on a store of its
-own: `exports.bucket` of the query service's configuration takes the same
-`endpoint`, `pathStyle` and `credentialsEnv` as the archive's bucket. It
-inherits none of them from the archive: name each explicitly, and the exports
-bucket has credentials of its own.
-
-## The attested tier
+### The attested tier
 
 The same archive, the same keys under the same prefix — on a store that holds no lock. Either the store has no Object Lock API,
 which is most S3-compatible stores, or the deployment composes only profiles
@@ -139,9 +124,9 @@ What the deployment supplies in place of the lock:
 
 - **Seals under a managed key.** Without the lock, only a seal made with a key
   the operator cannot re-sign with proves the operator did not choose what the
-  archive holds. Seals ([0019](../decisions/0019-seals.md)) are not built yet,
-  so on this tier the per-object `sha256` and per-record hashes that
-  `audit verify` checks are what there is today.
+  archive holds. The notary writes them ([0019](../decisions/0019-seals.md)); run
+  it on this tier. The per-object `sha256` and per-record hashes that
+  `audit verify` checks are the lower layer.
 - **No delete permission on any component**, exactly as on the record tier,
   and versioning on where the store offers it.
 - **A bucket-level no-delete rule where the store has one.** Several stores
@@ -157,25 +142,27 @@ What the deployment supplies in place of the lock:
 rather than pretending to have checked a lock; under a profile that demands
 one, an object with no lock is `INVALID`.
 
-## S3-compatible stores
+
+### S3-compatible stores
 
 Any store that speaks the S3 API takes the archive on the attested tier, and
 on the record tier if it implements Object Lock. Three things differ from
 AWS, and every component that touches the archive takes all three from the
 `bucket` block of its configuration (`endpoint`, `pathStyle`,
-`credentialsEnv`; the interactive commands take `--endpoint` and
+`credentialsSecret`; the interactive commands take `--endpoint` and
 `--path-style`, with credentials from the environment):
 
 ```yaml
+secrets: {source: file, root: /etc/audit/secrets}
 archive:
   bucket:
     name: audit-example
     region: auto
     endpoint: https://s3.example.test
     pathStyle: true
-    credentialsEnv:
-      accessKeyID: AUDIT_S3_ACCESS_KEY_ID
-      secretAccessKey: AUDIT_S3_SECRET_ACCESS_KEY
+    credentialsSecret:
+      accessKeyID: s3-access-key-id          # the names of the secrets, not values
+      secretAccessKey: s3-secret-access-key
 ```
 
 - **The endpoint.** `bucket.endpoint`. Unset is the SDK's own resolution for
@@ -184,10 +171,10 @@ archive:
   bucket subdomain: `bucket.pathStyle` sends `endpoint/bucket/key` rather than
   `bucket.endpoint/key`.
 - **Static credentials**, when the store has no pod identity:
-  `bucket.credentialsEnv` names the two environment variables that hold the
-  access key id and the secret, and the component's `secretEnv` puts a
-  Secret's keys there. Unset, the SDK's ambient credentials are used, which is
-  what a workload identity provides.
+  `bucket.credentialsSecret` names the two secrets that hold the access key id
+  and the secret, found through the file's `secrets` block (on Kubernetes, the
+  component's `secretFiles` puts a Secret's keys there). Unset, the SDK's
+  ambient credentials are used, which is what a workload identity provides.
 - **A private CA.** `bucket.ca` is the path to a bundle trusted for the
   endpoint, mounted by the platform (the chart's `trust` puts one at
   `/etc/audit/trust/<key>`).
@@ -207,129 +194,12 @@ Where the store's documentation names an S3 feature it does not implement
 with a customer key — check before choosing it: the writer relies on the
 first two, and `archive.kmsKey` on the third.
 
-## IAM per component
 
-Four roles per installation, each bound to its own service account (Pod
-Identity or IRSA); the chart has a `serviceAccount` per component for it.
-The receiver (stream mode) and the clock-sync job get a service account too, and
-no role: they hold no S3 rights. The purge job works on the index database only
-and needs no S3 rights.
-Every one of them is scoped **under that installation's prefix** — write
-`arn:aws:s3:::<bucket>/<prefix>/*` in the resource, and condition
-`s3:ListBucket` on `s3:prefix` being `<prefix>/*` — so that an application
-cannot read or write another application's records even though the bucket is
-one.
+## Afterwards
 
-| role | on the archive, under its prefix | elsewhere |
-|---|---|---|
-| **writer** | `s3:PutObject`, `s3:PutObjectRetention`, `s3:GetObjectRetention`, `s3:PutObjectLegalHold` under `records/`, `catalogue/`, `schema/`, `dlq/`, `holds/` and `identity/` (where there are keys); `s3:GetObject` and `s3:ListBucket` on `records/`, `catalogue/`, `holds/`, `schema/`, and `identity/` where there are keys | `kms:GenerateDataKey`, `kms:Encrypt` on the bucket's key |
-| **verify job** | `s3:GetObject`, `s3:ListBucket`; nothing is put | `kms:Decrypt` on the bucket's key |
-| **indexer** (`audit-observe`) | `s3:GetObject`, `s3:ListBucket` on `records/`, `catalogue/` and `schema/`; nothing is put | `kms:Decrypt` on the bucket's key |
-| **query service** | `s3:GetObject`, `s3:ListBucket` | `s3:PutObject`, `s3:GetObject` on the exports bucket; `kms:Decrypt` |
-
-Only the **writer** holds `s3:PutObjectLegalHold`, and only because it places
-holds. A put carries the legal-hold header solely when it is placing one, so
-no other component needs it. If
-a component that places no holds is refused `s3:PutObjectLegalHold` on a plain
-put, it is running a version that sent the header as OFF on every put; upgrade
-it rather than granting the right.
-
-`schema/` is easy to miss and the writer does not start without it. It records
-each profile's composition there, and reads the last one back on **every
-start** to decide whether the profile has changed since it last wrote. A policy
-that lets it put that object and not get it produces a writer that writes one
-object, takes a 403 and dies, on a loop -- which reads as a broken archive
-rather than a missing verb.
-
-The separations inside that table are the point of it. The writer may put
-objects and may lengthen a lock; the verify job, the indexer and the query service may read
-and may write nothing into the archive at all. And **nobody, including the writer, gets
-`s3:DeleteObject`, `s3:DeleteObjectVersion` or
-`s3:BypassGovernanceRetention`** — not on its own prefix, and not on anyone
-else's.
-
-Two roles belong to people rather than to components, and the purge job
-needs nothing here at all:
-
-| role | on the archive, under the installation's prefix |
-|---|---|
-| purge job | none — it works on the index database |
-| an operator running `audit hold` | `s3:PutObjectLegalHold` (placing), `s3:GetObjectLegalHold`, `s3:ListBucket`, `s3:PutObject` on `holds/` |
-| break-glass | `s3:PutObjectLegalHold` with `s3:object-lock-legal-hold` = `OFF` (releasing) |
-
-Lifecycle ([0023](../decisions/0023-archive-retention-and-lifecycle.md)).
-The chart creates no buckets, so these are rules the environment's bucket
-carries: Glacier Instant Retrieval at 30 days and Deep Archive at 1 year, one
-rule per profile, filtered on `<prefix>/records/<profile>/`. Expiration only
-after lock expiry, which S3 enforces anyway. This is why the profile is the
-leading component of `records/`: a lifecycle filter matches a literal prefix
-and takes no wildcards, so a rule per profile is possible only in that order.
-
-Per-tenant credentials follow from the tenant being the next component: a
-role scoped to one customer names
-`arn:aws:s3:::<bucket>/<prefix>/records/<profile>/<tenant>/*` as its resource.
-
-## Legal hold
-
-```
-audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b> --sink <writer>
-audit hold list [--profile <p>] --bucket <b>
-audit hold release --id <id> --by <who> --bucket <b> --sink <writer>
-```
-
-A hold keeps objects undeletable for as long as it is on, whatever their
-retention says, and it has no expiry of its own. Placing one is an operator
-action recorded as `audit.hold.placed`; releasing one requires the break-glass
-role, which the archive's own policy enforces, and is recorded as
-`audit.hold.released` — including when the archive refuses it, so that nobody
-holding the role can try quietly. Presets say whether holds are recommended.
-
-A hold is placed within one installation's prefix and affects that
-installation only.
-
-Both events are declared `block`, so `place` and `release` refuse to run
-without `--sink`, and wait for the writer to confirm the record. The record is
-made after the hold changes, not before, so the trail never claims a hold that
-then failed; if the writer cannot take it, the command fails with an error
-saying the hold **is** placed (or released) and must be recorded by hand. The
-hold's own record under `holds/` in the archive is there either way.
-
-A hold is placed on a prefix and the archive holds objects, so it has two
-halves. `place` sweeps what is already there. The writer sets the hold on
-objects it writes afterwards, re-reading the active holds every minute: an
-object held only by a later sweep was deletable in between, and that window is
-the whole thing a hold is for. The writer reads the holds once before it writes
-anything and refuses to start if it cannot; after that, a refresh that fails
-keeps the last answer, because forgetting a hold is worse than acting on a list
-a minute old. The writer's role therefore needs `s3:PutObjectLegalHold` — to
-set a hold on, never off — and read access to `holds/`.
-
-The record of a hold lives in the archive under the same lock as everything
-else, and is append-only like everything else: `holds/<id>/placed.json`, and
-`holds/<id>/released.json` when it comes off. A reason is required — a hold
-nobody can account for cannot be safely released, because whoever finds it
-later has no way to know whether the matter is over.
-
-**Before erasing a tenant's keys, list the holds.** Crypto-shredding a tenant
-whose copies are under legal hold destroys evidence that may not be destroyed.
-This applies only where the deployment runs pseudonymisation keys at all; see
-[key custody](../explanation/key-custody.md).
-
-## What breaks verification
-
-Moving or renaming objects: the key carries the profile, tenant and ingest
-hour, and a reader finds a record by it. Changing the KMS key without keeping
-the old one decryptable. Re-uploading an object under the same key (a new
-version) is refused by the writer's conditional put, and a changed object is
-reported by `audit verify`, whose check of the stored bytes no longer matches
-the object's `sha256`.
-
-Moving one installation to a different prefix moves every key with it. A
-prefix is chosen when an installation is created and not changed afterwards.
-
-## Break-glass reads
-
-Auditors get a read-only role scoped to one installation's prefix — its
-`records/` and `catalogue/` prefixes. Their reads appear in the bucket's
-access log and, when made through the query service, as `audit.get` and
-`audit.search` records.
+- Break-glass reads: auditors get a read-only role scoped to one installation's
+  `records/` and `catalogue/`; their reads appear in the bucket's access log and,
+  through the query service, as `audit.get` and `audit.search` records.
+- Keep the exports in a **separate bucket with no Object Lock** and a lifecycle
+  rule that expires `export/`: an export is a copy meant to be collected and
+  cleared, and the archive's policy denies every delete.

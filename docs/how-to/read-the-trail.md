@@ -71,7 +71,7 @@ caller holding several groups gets their union on each profile, never across
 profiles. The service refuses to start if the grants name no issuer, an issuer
 has no audience, or a rule could be satisfied by more than one issuer. The
 full rules are in
-[the configuration reference](../reference/configuration.md#query-service).
+[the configuration reference](../reference/configuration-observe-query.md#query-service).
 
 Every read — search, facets, get, export, resolve — is itself recorded in the
 trail, naming the caller and the rule that allowed it.

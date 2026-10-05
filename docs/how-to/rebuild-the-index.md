@@ -1,472 +1,127 @@
-# Runbook
+# Repair or rebuild the index
 
-One installation belongs to one application and runs in that application's
-namespace
-([0011](../decisions/0011-one-installation-per-service-or-product.md)). What
-is actually running depends on the mode, and most of what follows differs
-between the two:
+## Purpose
 
-| | [direct](../explanation/direct-mode.md) | [stream](../explanation/stream-mode.md) |
-|---|---|---|
-| receiver | is the writer: one process validates and puts the object | publishes to the stream and acknowledges when it is replicated |
-| writer | the receiver's own pods | `audit-writer` in consumer mode, N pods, scaled apart |
-| "behind" looks like | `audit.emit.queue.pending` climbing in the application | the stream consumer's pending count |
-| a writer rollout is | a pause | a backlog |
+Bring the search index back in step with the archive when `audit-observe` is
+behind, wrong or gone, and keep the index and the deduplication table bounded.
 
-## The receiver is down
+## Preconditions
 
-An action declared `block` fails, and the application's request fails with
-it: that is what `block` is for. An action declared `async` waits in the
-emitter's bounded in-memory queue and is retried with backoff until the
-receiver acknowledges it. It is dropped only if that queue overflows, and
-every drop is written to the application's log by the emitter as well as counted.
+- The archive is intact (`audit verify` passes); the index is only a projection.
+- The owner's database URL (`$OWNER_URL`) for `audit migrate`, and the roles for
+  the writer, the indexer, the query service and the purge job.
 
-Restore the receiver. Nothing it acknowledged was lost, because it
-acknowledges nothing it has not stored
-([0012](../decisions/0012-two-deliveries-and-a-durable-ack.md)).
+## Before you start
 
-There is no file outbox and no volume on the emitting pod. What a pod holds
-is the queue, and the queue dies with the pod: one flush interval of `async`
-records plus the batch in flight. A `block` record is never lost, because the
-application had no acknowledgement to act on.
+- **The index is not backed up, on purpose.** Everything in it is derived from the
+  archive, which is what is under the lock. Losing it costs search, facets and tail
+  until the rebuild finishes, and the deduplication table, so a redelivery that
+  arrives during the gap is written a second time: that costs an object, the index
+  keeps one row per identifier, and a reader sees the record once. No record is lost.
+- **An index is always at least the settle window behind** (`settle`, default two
+  minutes), by design ([0020](../decisions/0020-observe-follows-the-bucket.md)). A
+  put the indexer has not reached yet is not a fault; a lag far above the window is.
+- **A writer whose database is at another schema version refuses to start**, and the
+  writer and indexer never migrate themselves: several replicas would race. Run
+  `audit migrate` before starting them against a new database.
+- **A record's catalogue is read from the archive's `catalogue/<app>/<version>`**
+  unless a file is given; one that cannot be found is an error, because a rebuild
+  without it would omit the data columns.
+- **Every repair is safe at any time and over a range already indexed:** a record is
+  counted once however many times it is read.
 
-## The emitter's queue is filling
+## Steps
 
-Two numbers say it, both from the application's own process:
+### 1. Tell whether the index is behind
 
-| metric | what it means |
-|---|---|
-| `audit.emit.queue.pending` | records waiting to be delivered. Rising means the receiver is slow or down |
-| `audit.emit.records.dropped` | records the queue gave up on. This is the incident |
+The indexer says so two ways, when a collector is named
+(`OTEL_EXPORTER_OTLP_ENDPOINT`, set on the pod by the platform):
 
-Alert on the second and watch the first: a queue that is filling is the
-warning, a drop is the loss. With the usual OTLP-to-Prometheus naming:
+- `audit.observe.index.lag`, a histogram by profile: seconds from an object's put to
+  its rows being in the index. `AuditIndexLagHigh` is its p99 above ten minutes.
+- `audit.observe.index.deferred`, a counter by profile and `reason`. Alert on any
+  increase:
 
-```
-increase(audit_emit_records_dropped_total[15m]) > 0
-```
+  ```
+  increase(audit_observe_index_deferred_total[15m]) > 0
+  ```
 
-The emitter's other counters are `audit.emit.records.written` (what a sink
-accepted, by delivery), `audit.emit.records.refused` (records that do not
-satisfy their catalogue — a bug in the emitting code, not an outage) and
-`audit.emit.batches.failed`.
+Look first at whether `audit-observe` is running and at its log. It logs `an indexing
+pass failed; the next one resumes from the cursors` and retries tenant by tenant:
 
-## The writer is down, or is being rolled
+- `reason=retry`: the archive could not be read, the database refused a write, or a
+  record names a catalogue that is not in the archive. The tenant's cursor stays
+  where it was; fix the cause (the bucket's permissions, the database, or the
+  missing `catalogue/<app>/<version>`) and the next pass resumes.
+- `reason=unreadable`: an object that does not decode. It is skipped, because it will
+  not read later either, and it is the thing to look at: an object in the archive
+  that nothing can read is a finding. The log names its key.
 
-**Direct mode: a rollout is a pause.** The receiver is the writer, so while
-no replica is ready, `block` calls fail and `async` records accumulate in
-the applications' queues. Two replicas and a rolling update make the pause
-the time one pod takes to become ready. Two replicas are safe because the
-deduplication table is in Postgres and not in a pod.
+Notifications only shorten the wait (`wake`), so an installation without them is not
+behind by more than `interval`. Verify: `/readyz` on the indexer answers. Roll back: none.
 
-**Stream mode: a rollout is a backlog.** The receiver keeps publishing and
-acknowledging, the application notices nothing, and the stream's consumer
-pending count rises and then falls again. The alert is a pending count that
-rises and does not come back down: the writers cannot keep up, or cannot
-write. Restore them; a writer resumes from its consumer position and the
-dedupe table absorbs the redeliveries of whatever batch was in flight.
-
-If the stream's horizon was exceeded, its discard-new policy refused
-publishes rather than dropping, so nothing that was accepted was lost — the
-refusals appear at the receiver, and from there as failed `block` calls and
-a filling queue.
-
-## Object storage is unreachable
-
-In direct mode the receiver cannot make anything durable, so it acknowledges
-nothing: `block` fails and `async` queues, exactly as when the receiver is
-down. In stream mode the writers stop acknowledging batches and the stream
-holds them up to its horizon; the application is unaffected until that
-horizon is reached.
-
-Nothing is dropped in either case. After recovery, objects are written with
-their original `occurred_at`; `recorded_at` shows the delay.
-
-## A record was dead-lettered
-
-`audit.writer.dead_lettered` names the reason: unknown catalogue version,
-schema violation, oversized. Read what is waiting first, which sends nothing
-and groups the reasons:
-
-```
-audit replay --dlq --bucket <b> --from 2026-09-17 --to 2026-09-17
-```
-
-Fix the cause: register the catalogue version, configure the missing profile,
-correct the emitter and deploy it. Then replay the one cause you fixed, not
-the rest:
-
-```
-audit replay --dlq --bucket <b> --from 2026-09-17 --to 2026-09-17 \
-  --reason "no catalogue" --sink https://audit-writer:8080
-```
-
-The records keep their identifiers, so a replay of something that did get
-through is deduplicated and costs nothing. The command reports what came back
-under `dlq/` and exits non-zero if anything did. A record refused for not
-satisfying its schema will be refused again, and should be: the archive is not
-where an emitter's mistakes are corrected.
-
-## Redriving the ingest queue's dead-letter queue (AWS)
-
-A message that reached the ingest queue's DLQ is moved back with SQS's message
-move task (`aws sqs start-message-move-task --source-arn <DlqArn>
---destination-arn <QueueArn>`, or the console's "Start DLQ redrive"). The task
-sends to the ingest queue **as the caller**, so the caller needs `sqs:SendMessage`
-on `QueueArn` in its identity policy and has to be in the queue policy, which
-denies `sqs:SendMessage` to every principal that is not a sender. Name the
-operator's role in **`Ingest.Redrivers`** (a break-glass role; it is allowed and
-excepted from the deny, and is not a sender the trail relies on), and
-`sqs:StartMessageMoveTask` on the DLQ and `sqs:ReceiveMessage`/`DeleteMessage` on
-it in its identity policy. Fix the cause first (the catalogue, the writer's
-release): a message moved back with its cause in place goes round again and
-returns to the DLQ after `MaxReceiveCount` deliveries.
-
-`Ingest.Senders` and `Ingest.Redrivers` take **the ARN of an IAM role or user**,
-`arn:aws:iam::<account>:role/<path>/<name>`, which is what `aws:PrincipalArn` carries
-for a role session. Not an assumed-role session ARN
-(`arn:aws:sts::<account>:assumed-role/<name>/<session>`), not a bare account id
-and no wildcard: the library refuses those at preview, on the resolved values.
-
-## Verification failed
-
-Treat as an incident. The report names each object that failed and why, one
-line each (`--json` for the same as data):
-
-| the report says (rule: finding) | look for |
-|---|---|
-| `object.sha256`: the object's bytes do not match its `sha256` | an object changed since it was written: a new version under the same key (only possible if Object Lock was off or in governance mode when it was written; compare versions with `aws s3api list-object-versions`), or damage in storage or transit |
-| `record.hash`: a record's hash does not match its record | a line altered inside an object, or an object not written by the writer |
-| `key.grammar`, `object.metadata`, `record.placement` or `object.body`: the key, the metadata or a line is malformed, or a record is under another profile or tenant | an object put by something other than the writer, or a copy that lost its user metadata (`format`, `sha256`, `count`) |
-| `object.count`: the object has a different number of records than its `count` | the same: the writer sets both |
-| the lock ends sooner than the profile requires | an object written with a shorter retention than its profile asks: check the writer's version and the profile at that time (`schema/profile/<name>/`) |
-
-Nothing in the archive can be repaired: that is its point. Record what was
-found and when, place a legal hold on the affected prefix if it may be needed
-as evidence, and fix what let it happen.
-
-`audit verify` checks, by itself, what is in a range of ingest time: it does not
-find an object that was removed or one added beside the others. Seals are what
-does ([0019](../decisions/0019-seals.md)): with `--root` (or `seals.roots` in the
-job's file) it checks them too, and a `seal.root` finding is exactly an object
-added to, removed from or changed in an hour after it was sealed, with the seal's
-count and the hour's count side by side. A `seal.missing` finding is an hour with
-no seal when it should have one: look for the notary having stopped
-(`AuditSealStale`), and failing that for a seal removed (the bucket's access log
-and versioning say who). A `seal.signature` finding is a seal signed by a key
-the verifier does not pin or whose delegation has lapsed or was revoked: it is a
-failure to take seriously, because the only thing the bucket's writer cannot do
-is sign as a pinned root.
-
-The check covers one installation's prefix. An application whose records
-share a bucket with another application's is not affected by a problem under
-the other's prefix, and the two are verified separately.
-
-An archive written before the v1 layout is not checked by this command; use
-the previous release's CLI (v0.6.x), which also walks its digest chain.
-
-## The clock-sync job is failing
-
-```
-audit clock-sync --ntp <server> --ntp <server> --sink <url> [--max-offset 1s]
-```
-
-It compares this machine's clock with the references and records the reading as
-`audit.clock.synchronised`. A failure means either that the offset is larger
-than `--max-offset` or that no reference answered; the report says which. The
-reading is recorded either way when a reference did answer, because an hour
-whose timestamps are suspect is the hour an auditor most wants the measurement
-from. Nothing is recorded when no reference answered, because the clock was not
-checked and saying it was would be worse than a red job.
-
-The offset is the correction this clock needs: positive means it is behind.
-The job never sets the clock — whatever runs the machine does that.
-
-## A scheduled job is not running
-
-Every job here is a CronJob, and a CronJob that fails says nothing. Its pods
-are deleted with the Job, so by the time anybody looks there is no log left.
-The tell is `lastSuccessfulTime`:
-
-```
-kubectl -n <ns> get cronjobs -o custom-columns=\
-NAME:.metadata.name,LAST:.status.lastScheduleTime,SUCCESS:.status.lastSuccessfulTime
-```
-
-A `lastScheduleTime` with no `lastSuccessfulTime` is a job that has been
-failing on every run. To get the error back, run it again and keep the pod:
-
-```
-kubectl -n <ns> create job --from=cronjob/<name> <name>-probe
-kubectl -n <ns> logs job/<name>-probe
-```
-
-These jobs are configuration-shaped, so the causes are too: a bucket or a
-prefix the process never received, a role missing one verb, a signing key it
-may not use. Each says so in one line and then exits, which is why the
-re-run is worth more than any amount of staring at the Job's events. Delete
-the probe afterwards — it is not in anybody's git, and a sync will report it.
-
-Alert on the CronJob rather than on the archive: a verification that never ran
-leaves nothing in the archive to notice.
-
-## The index is behind
-
-The index is `audit-observe`'s, not the writer's: it follows the archive by
-listing from a cursor per profile and tenant
-([0020](../decisions/0020-observe-follows-the-bucket.md)), and the writer does
-not know whether it is there. A put that the indexer has not reached yet is not
-a fault. The indexer does not look at an object younger than its settle window
-(`settle`, default 2 minutes), so **an index is always at least that far
-behind**, by design.
-
-What is a fault is a lag far above the window, and the indexer says so in two
-ways, when a collector is named (`OTEL_EXPORTER_OTLP_ENDPOINT`, set on the pod
-by the platform; there is no setting for it in the file or the chart):
-
-- `audit.observe.index.lag`, a histogram by profile: seconds from an object's
-  put to its rows being in the index. `AuditIndexLagHigh` is its p99 above
-  ten minutes.
-- `audit.observe.index.deferred`, a counter by profile and `reason`: objects it
-  could not index. Alert on any increase: nothing else notices an index that
-  is quietly behind until it answers a search wrongly. With the usual
-  OTLP-to-Prometheus naming:
-
-```
-increase(audit_observe_index_deferred_total[15m]) > 0
-```
-
-Look first at whether `audit-observe` is running and at its log. It logs
-`an indexing pass failed; the next one resumes from the cursors` and goes on
-retrying, tenant by tenant, so one tenant's trouble does not hold back the
-others:
-
-- `reason=retry`: the archive could not be read, the database refused a write,
-  or a record names a catalogue that is not in the archive. The cursor of that
-  tenant stays at the last object it indexed, and the next pass resumes there
-  with nothing lost. Fix the cause: the bucket's permissions, the database, or
-  the missing `catalogue/<app>/<version>`.
-- `reason=unreadable`: an object that does not decode. It is skipped, because
-  it will not read later either, and it is the thing to look at: an object in
-  the archive that nothing can read is a finding. The log names its key.
-
-Notifications only shorten the wait (`wake`), so an installation without them,
-or with a lost one, is not behind by more than `interval`.
-
-The writer's counters: `audit.writer.objects.written`,
-`audit.writer.records.written`, `audit.writer.dead_lettered` (alert on this
-too: a fault upstream is otherwise silent), `audit.writer.meta.dropped`,
-`audit.writer.duplicates.likely` and `audit.writer.retention.not_extended`.
-
-The last is an addendum that could not lengthen the lock on an earlier
-record. The addendum is written; the earlier record keeps its old date. The
-`audit.retention.extended` record with outcome failure says which record,
-which object and why — typically the record was not found (the writer scans the
-archive for it, and it is older than the scan's horizon) or the role lacks `s3:PutObjectRetention`. Fix
-the cause and lengthen it by hand, which is safe to repeat:
-
-```
-aws s3api put-object-retention --bucket <b> --key <object> \
-    --retention Mode=COMPLIANCE,RetainUntilDate=<retain_until from the record>
-```
-
-Two repairs, and both are safe at any time and over a range already indexed,
-which is the usual case: a record is counted once however many times it is
-read. To make the indexer read a profile again from the start and catch up:
+### 2. Read a profile again from the start
 
 ```
 audit reindex --profile <p> [--tenant <t>] --reset-cursor --database <url>
 ```
 
-To read a range of ingest days directly, with the same code the indexer uses:
+### 3. Or read a range of ingest days directly
 
 ```
 audit reindex --profile <p> --from <day> --to <day> \
     --database <url> --bucket <b> [--catalogue <file>...]
 ```
 
-A record's catalogue is read from the archive's own `catalogue/<app>/<version>`
-unless a file is given for it; without a catalogue the rebuild would omit the
-data columns and a later run could not repair it, so one that cannot be found
-is an error. The tail cursor advances on recorded order, so pollers catch up on
-their own.
+Verify: the lag histogram falls and a search returns the range. The tail cursor
+advances on recorded order, so pollers catch up on their own.
 
-If the index is not merely behind but wrong — a bad migration, a partial
-restore — drop it, run `audit migrate`, and reindex the range. Nothing in the
-index is evidence, and the archive is unaffected.
+### 4. If the index is wrong, or gone
 
-## The index is gone
-
-A dropped database, a lost cluster, a restore that cannot be trusted. This
-is a documented incident with a documented recovery, because **the index is
-not backed up on purpose**: everything in it is derived from the archive, and
-the archive is what is under the lock.
-
-What is lost is search, facets and tail until the rebuild finishes, and the
-deduplication table — so a redelivery that arrives during the gap is written
-a second time. That costs an object: the index keeps one row per identifier,
-both objects are in the archive, and a reader sees the record
-once. Not one record is lost. `audit verify` reads the archive
-only, so the trail can still be checked while the index is being rebuilt.
-
-Recreate the schema and the roles, and let the indexer rebuild: with no cursors
-it reads every profile and tenant from the first key.
+A bad migration, a partial restore, a dropped database: drop what is left, recreate the
+schema and the roles, and start `audit-observe`.
 
 ```
 audit migrate --database "$OWNER_URL" --writer audit_writer \
     --observe audit_observe --reader audit_query --purge audit_purge
 ```
 
-That is the whole recovery: start `audit-observe`, and it catches up from the
-bucket alone, with no event history, oldest first. The catalogues are read from
-the archive, which keeps a copy of each version under
-`catalogue/<app>/<version>`. A rebuild is asserted to produce the same rows and
-the same counts as following the bucket does, which is why this is a rebuild
-and not a reconstruction. To rebuild a range sooner, or one profile first, use
-`audit reindex --from/--to`.
+With no cursors the indexer reads every profile and tenant from the first key,
+oldest first, from the bucket alone. A rebuild is asserted to produce the same rows
+and counts as following the bucket does. To rebuild a range sooner, or one profile
+first, use `audit reindex --from/--to`. Writers keep writing throughout and need only
+the deduplication table: start them against the new database once `audit migrate`
+has run. Roll back: none needed; the archive is unaffected.
 
-Writers keep writing the archive throughout, and need only the deduplication
-table. Start them against the new database once `audit migrate` has run — a
-writer whose database is at another schema version refuses to start.
+### 5. Keep it bounded
 
-## The index or the deduplication table is growing without end
-
-Neither is bounded by anything but this:
+Neither the index nor the deduplication table is bounded by anything but this:
 
 ```
 audit purge --deployment <file> --database <url> [--dry-run]
 ```
 
 It removes index rows past each profile's own retention and forgets written
-identifiers past the deduplication window. It never touches the archive: those
-objects are released by their object lock, which is what makes the retention a
-retention rather than a setting.
+identifiers past the deduplication window. It never touches the archive: those objects
+are released by their object lock. `--identifying-after <duration>` additionally
+clears who an event happened to while keeping what happened; it has no default on
+purpose, because none of the framework profiles states a separate, shorter life for
+the actor and subject columns.
 
-`--identifying-after <duration>` additionally clears who an event happened to
-while keeping what happened. It has no default on purpose: the presets cite
-retention for the record, and none of them states a separate, shorter life for
-the actor and subject columns, so the number is a deployment's own policy.
+## Afterwards
 
-## The application's catalogue changed
+- `audit verify` reads the archive only, so the trail can be checked while the index is
+  rebuilt ([verify the trail](verify-the-trail.md)).
+- Writer counters to watch: `audit.writer.objects.written`, `audit.writer.records.written`,
+  `audit.writer.dead_lettered` (a fault upstream is otherwise silent),
+  `audit.writer.meta.dropped`, `audit.writer.duplicates.likely`,
+  `audit.writer.retention.not_extended`.
+- The last one means an addendum could not lengthen the lock on an earlier record. The
+  `audit.retention.extended` record with outcome failure says which record and why
+  (typically the record is older than the scan's horizon, or the role lacks
+  `s3:PutObjectRetention`). Fix the cause and lengthen it by hand; repeating is safe:
 
-The application registers its catalogue with the receiver at start-up, over
-`RegisterCatalogue`. There is no registry service: an installation hears from
-one application, so the receiver serves that call and validates the
-catalogue's categories against the profiles the installation composes
-([0011](../decisions/0011-one-installation-per-service-or-product.md)).
-
-A malformed catalogue is refused and the application does not start. A
-receiver that is merely unreachable is retried. The first records under a new
-version copy its schemas into the archive, so a record written under it still
-reads correctly years later — which is also why a version the archive has
-never seen arrives as a dead letter rather than as a loss.
-
-## Reading from the replica
-
-When the primary bucket's region is unavailable, the replica — same Object
-Lock, retention replicated — is the archive. Point `audit verify` and the
-query service's `archive.bucket` at it (reads only; the writer keeps writing to the
-primary, and a writer that cannot reach it withholds acknowledgements until it
-can). Verification against the replica is as good as against the primary: the
-chain was replicated with the objects it covers.
-
-## A legal hold is needed
-
-```
-audit hold place --profile <p> [--tenant <t>] --reason <why> --by <who> --bucket <b> --sink <writer>
-audit hold list --bucket <b>
-audit hold release --id <id> --by <who> --bucket <b> --sink <writer>   # break-glass only
-```
-
-A hold is one prefix: `records/<profile>/` or, with `--tenant`,
-`records/<profile>/<tenant>/`. Placing sets an Object Lock legal hold on every
-existing object under it and writes the hold under `holds/`; the writer reads the holds every
-minute and puts new objects under a held prefix with the hold already on.
-Releasing needs the break-glass role: the bucket policy refuses
-`s3:PutObjectLegalHold` with `OFF` to everyone else, and the refused attempt
-is still recorded.
-
-## When the deployment runs pseudonymisation keys
-
-The three sections below apply only to an installation that configured a key
-provider. `keys.provider: none` (no `keys` block) is the default — most deployments run no
-pseudonymisation keys at all, there is no `identity/` prefix, and resolve is
-refused as unimplemented
-([0013](../decisions/0013-no-pseudonymisation-keys-by-default.md),
-[key custody](../explanation/key-custody.md)).
-
-### A tenant asks for erasure
-
-```
-audit key destroy --tenant <id> --purpose <p> --by <who> --reason <why> \
-    --bucket <b> --sink <writer> \
-    --key-provider transit                  # BAO_ADDR, BAO_NAMESPACE, BAO_TOKEN from your shell
-    # or: --key-root <file> --key-dir <dir> # the local provider
-```
-
-Run it as the person allowed to erase: under `transit` that is a human role
-whose policy reaches `transit/keys/<prefix>.*`; the writer's cannot.
-
-It checks the holds itself and refuses while one covers the tenant's copies,
-naming the hold and why it was placed: crypto-shredding a tenant under legal
-hold destroys evidence that may not be destroyed, and the operator should not
-be the check. `audit hold list` is still how you look before you start.
-
-The order inside the command is deliberate. The key is destroyed and then the
-erasure is recorded, because a record written first could claim an erasure that
-then failed — and a reader trusting the trail would believe a person's data
-unlinkable when it is not. A missing record is discoverable by comparing the
-keys that exist to the records of their destruction; a false one is not
-discoverable at all. If the record cannot be written the command says, loudly,
-that the key is already gone and must be accounted for by hand.
-
-Destroy the tenant's pseudonymisation keys for the purposes not under a legal
-duty; the security and history copies become unlinkable. Billing and evidence
-copies stay under Art. 17(3)(b). The record is automatic
-(`audit.key.destroyed`).
-
-Where there are no keys, erasure of an end user is the application's, in the
-application's own database. The archive keeps the opaque identifier it was
-given, and after the application's deletion that identifier resolves to
-nobody.
-
-### Keys are never rotated
-
-A pseudonymisation key is not rotated on a schedule, after staff leave, or
-after an incident with the writer: a rotation gives every person a second,
-unrelated pseudonym from that moment, and the security copy exists to link one
-person's actions across time. If a key may have leaked, what it exposes is the
-ability to compute pseudonyms of identifiers the attacker already knows; the
-answer is where the keys live and who may use them
-([key providers](../decisions/0010-key-providers.md)), not a new key. The
-signing key, which will sign seals, can be replaced as long as every public
-half ever used is kept.
-
-The signing key is a different key and a different job, and every
-installation has one: see [key custody](../explanation/key-custody.md).
-
-### The key directory changed
-
-A writer refuses to start with `this writer's key directory is not the
-deployment's` when the directory it mounts is not the one the deployment's
-writers registered (`audit_key_directory`). Two causes:
-
-- **The directory is not shared.** With the `local` key provider every replica
-  must mount the same directory (`ReadWriteMany`). Fix the mount; nothing else.
-- **The directory was lost and recreated.** The data keys were random and
-  existed only there, so every tenant is re-keyed: the same person now gets a
-  new pseudonym, and the trail before stops linking to the trail after. Restore
-  the directory from backup if there is one — the identity is a file in it, so
-  a restored directory is accepted as it was.
-
-The transit key provider has no directory, and so none of this; a deployment
-that has hit it is one to move to transit.
-
-If there is no backup and the new pseudonyms are accepted, register the new
-directory by removing the old binding, and record why in the trail by hand:
-
-```
-delete from audit_key_directory;
-```
-
-The next writer to start registers its directory, and the rest must share it.
+  ```
+  aws s3api put-object-retention --bucket <b> --key <object> \
+      --retention Mode=COMPLIANCE,RetainUntilDate=<retain_until from the record>
+  ```

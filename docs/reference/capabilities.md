@@ -41,7 +41,7 @@ only with the previous release's CLI (v0.6.x).
 | metrics over OTLP: acknowledgements by durability, write latency per transport, index lag, consumer failures | 🧪 | 🧪 | 🧪 |
 | queue metrics: the age of each message at receive (`audit.queue.message.age`, from `SentTimestamp`), and CloudWatch alarms on the DLQ and the oldest message | — | 🧪 | — |
 | chart value `telemetry.otlp` (`endpoint`, `protocol`, `extraEnv`): the OpenTelemetry environment on every pod | 🧪 | — | — |
-| telemetry from a Lambda with the function role's identity and no secret (the access-roster extension layer, [AWS](aws-pulumi-library.md#telemetry)) | — | 🧪 | — |
+| telemetry from a Lambda with the function role's identity and no secret (the access-roster extension layer, [AWS](../how-to/aws-send-lambda-telemetry.md)) | — | 🧪 | — |
 | traces over OTLP: server and client spans, `traceparent` across NATS headers and SQS attributes, no personal data on a span | 🧪 | 🧪 | 🧪 |
 | chart `renders: alerts`: seven alert rules as a `VMRule` or `PrometheusRule`, unit-tested on vmalert-tool | 🧪 | 🧪 | 🧪 |
 | chart `renders: dashboards`: the audit overview for Grafana's sidecar, held to the observability dashboard lint | 🧪 | 🧪 | 🧪 |

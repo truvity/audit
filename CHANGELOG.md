@@ -4,7 +4,7 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
-## Unreleased
+## v0.15.0
 
 - **Deployment rules a stack's own configuration can ask for.** `preset.CheckPresetsLock` holds a lock mode to the built-in presets a profile names (a stack no longer restates which presets demand no lock). `deploy/pulumi` exports `InstallationComponents` and `ComponentRoleName` (the workloads of a chart installation that hold a role and their ServiceAccounts), and the checks it applies to its arguments, so a configuration can be refused before a preview: `CheckName`, `CheckRolePath`, `CheckLockMode`, `CheckProfile`, `CheckBucketPrefix`, `ArchiveBucketName`, `CheckTelemetryURLs`, `CheckExtensionLayer`. No behaviour of `New` changes.
 

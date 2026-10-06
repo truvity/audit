@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -84,6 +85,14 @@ func render(t *testing.T, values string) []map[string]any {
 
 func dig(doc any, path ...string) (any, bool) {
 	for _, key := range path {
+		if list, isList := doc.([]any); isList {
+			i, err := strconv.Atoi(key)
+			if err != nil || i < 0 || i >= len(list) {
+				return nil, false
+			}
+			doc = list[i]
+			continue
+		}
 		m, ok := doc.(map[string]any)
 		if !ok {
 			return nil, false
@@ -451,11 +460,11 @@ func TestTheQueryRouteStripsItsPrefixAndWritesTheWeight(t *testing.T) {
 	}
 	rule, _ := dig(route, "spec", "rules")
 	r := rule.([]any)[0].(map[string]any)
-	if v, _ := dig(r, "matches"); v.([]any)[0].(map[string]any)["path"].(map[string]any)["value"] != "/myapp/audit.v1.QueryService" {
+	if v, _ := dig(r, "matches", "0", "path", "value"); v != "/myapp/audit.v1.QueryService" {
 		t.Errorf("match = %v", v)
 	}
-	if v, ok := dig(r, "filters"); !ok || v.([]any)[0].(map[string]any)["urlRewrite"].(map[string]any)["path"].(map[string]any)["replacePrefixMatch"] != "/audit.v1.QueryService" {
-		t.Errorf("filters = %v", v)
+	if v, _ := dig(r, "filters", "0", "urlRewrite", "path", "replacePrefixMatch"); v != "/audit.v1.QueryService" {
+		t.Errorf("rewrite = %v", v)
 	}
 	if w, _ := dig(r["backendRefs"].([]any)[0], "weight"); w != float64(1) {
 		t.Errorf("weight = %v, want 1 written out", w)
@@ -469,8 +478,8 @@ func TestTheQueryRouteStripsItsPrefixAndWritesTheWeight(t *testing.T) {
 	}
 
 	docs = overlay(t, stream, routeValues)
-	if v, _ := dig(kindOf(docs, "HTTPRoute"), "spec", "rules"); v.([]any)[0].(map[string]any)["matches"].([]any)[0].(map[string]any)["path"].(map[string]any)["value"] != "/audit.v1.QueryService" {
-		t.Errorf("an unprefixed route must match the service path only, not the health endpoints: %v", v)
+	if v, _ := dig(kindOf(docs, "HTTPRoute"), "spec", "rules", "0", "matches", "0", "path", "value"); v != "/audit.v1.QueryService" {
+		t.Errorf("an unprefixed route must match the service path only: %v", v)
 	}
 	r = kindOf(docs, "HTTPRoute")["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)
 	if _, has := r["filters"]; has {

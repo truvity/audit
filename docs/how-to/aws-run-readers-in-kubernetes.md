@@ -93,6 +93,70 @@ be projected with the audience, and the workload set `AWS_ROLE_ARN` and
 
 Output: `ArchiveWriterRoleArn`, empty without `ArchiveWriter`.
 
+### 1b. Or use EKS Pod Identity (EKS)
+
+On EKS the cluster needs no OIDC provider of its own: the EKS Pod Identity Agent
+add-on hands a pod the role its ServiceAccount is **associated** with. The library
+creates the role, its trust and the association for observe and for query, each
+for **one** ServiceAccount:
+
+```go
+Observe: &auditpulumi.ObserveArgs{
+	PodIdentity: &auditpulumi.PodIdentityArgs{
+		ClusterName:    pulumi.String("acme"),
+		ClusterArn:     cluster.Arn, // arn:aws:eks:<region>:<account>:cluster/acme
+		Namespace:      "audit",
+		ServiceAccount: "audit-observe",
+		// PermissionsBoundaryArn: "arn:aws:iam::<account>:policy/<boundary>",
+	},
+},
+Query: &auditpulumi.QueryArgs{
+	PodIdentity: auditpulumi.PodIdentityArgs{ /* the same four fields, audit-query's ServiceAccount */ },
+	RecordReads: true, // sqs:SendMessage on the ingest queue, for the chart's query sink.sqs
+},
+```
+
+The trust policy of each role is
+
+```json
+{
+  "Effect": "Allow",
+  "Principal": { "Service": "pods.eks.amazonaws.com" },
+  "Action": ["sts:AssumeRole", "sts:TagSession"],
+  "Condition": {
+    "StringEquals": {
+      "aws:SourceAccount": "<the cluster's account>",
+      "aws:RequestTag/kubernetes-namespace": "<Namespace>",
+      "aws:RequestTag/kubernetes-service-account": "<ServiceAccount>"
+    },
+    "ArnEquals": { "aws:SourceArn": "<ClusterArn>" }
+  }
+}
+```
+
+The account is read from `ClusterArn`, which the library refuses unless it is an
+EKS cluster ARN. All the pins matter: without them another cluster, or another
+ServiceAccount of this one, could assume the role. The library refuses an empty
+namespace or ServiceAccount and a name with a wildcard in it.
+
+- **`Observe.PodIdentity`** adds this trust to `<name>-observe-reader` (with
+  `TrustedPrincipalArn` it holds both statements) and creates the association
+  `<name>-observe-pia`. It is refused together with `Observe.IRSA`: a ServiceAccount gets
+  its credentials from one mechanism. The rights are those of step 3.
+- **`Query`** creates `<name>-query` and `<name>-query-pia`. Its rights are the
+  observe reader's (`GetObject` on `records/`, `catalogue/`, `schema/`, `seals/` and `keys/`,
+  `ListBucket` under those prefixes, `kms:Decrypt` on the archive key when there is one) and, with
+  `RecordReads`, `sqs:SendMessage` on `QueueArn` and nothing else of SQS. It writes
+  nothing to the archive. The index is in Postgres, which IAM does not govern; an
+  exports bucket is the deployer's, and its grant is added to the role by the
+  deployer.
+- **`PermissionsBoundaryArn`** sets the role's permissions boundary.
+- A ServiceAccount takes **one** association, so each component keeps its own
+  ServiceAccount (the chart's `serviceAccount.name`). Leave the chart's
+  `eks.amazonaws.com/role-arn` annotation off: it is for IRSA.
+
+Outputs: `ObserveReaderRoleArn` and `QueryRoleArn` (empty without `Observe` and `Query`).
+
 ### 2. Point the chart's components at the queue
 
 An installation can keep the write path here and everything that reads in a
@@ -153,7 +217,7 @@ jobs:
 ```
 
 **IAM, per ServiceAccount** (EKS Pod Identity is an association made outside the
-chart; IRSA is the annotation above; each component has its own account, so each
+chart, which the library makes for observe and query, step 1b; IRSA is the annotation above; each component has its own account, so each
 role holds only its own rights):
 
 | component | rights |

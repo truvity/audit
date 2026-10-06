@@ -28,6 +28,7 @@ import (
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/cloudwatch"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/dynamodb"
+	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/eks"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/iam"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/kms"
 	"github.com/pulumi/pulumi-aws/sdk/v7/go/aws/lambda"
@@ -75,6 +76,8 @@ type Audit struct {
 	ObserveReaderRoleArn pulumi.StringOutput
 	// ArchiveWriterRoleArn is the IRSA write role, empty without Args.ArchiveWriter.
 	ArchiveWriterRoleArn pulumi.StringOutput
+	// QueryRoleArn is the Pod Identity role of audit-query, empty without Args.Query.
+	QueryRoleArn pulumi.StringOutput
 	// SecretsRoot is the SSM parameter path the writer reads the secrets its
 	// configuration names from: create the SecureStrings under it. Empty when the
 	// configuration names none (see WriterArgs.Secrets).
@@ -345,6 +348,18 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		}
 		observeArn = role.Arn
 	}
+	queryArn := empty
+	if a.Query != nil {
+		qa := empty
+		if ingest {
+			qa = queue.Arn
+		}
+		role, err := newQuery(ctx, name, a, bucket, archiveKeyArn, qa, tags, child)
+		if err != nil {
+			return nil, err
+		}
+		queryArn = role.Arn
+	}
 	if a.ArchiveWriter != nil {
 		role, err := newArchiveWriter(ctx, name, a, bucket, archiveKeyArn, tags, child)
 		if err != nil {
@@ -373,7 +388,7 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 	out.NotaryFunctionArn = pick(notary, func() pulumi.StringOutput { return notaryFn.Arn })
 	out.WriterRoleArn = pick(ingest, func() pulumi.StringOutput { return writerRole.Arn })
 	out.NotaryRoleArn = pick(notary, func() pulumi.StringOutput { return notaryRole.Arn })
-	out.ObserveReaderRoleArn, out.ArchiveWriterRoleArn = observeArn, archiveWriterArn
+	out.ObserveReaderRoleArn, out.ArchiveWriterRoleArn, out.QueryRoleArn = observeArn, archiveWriterArn, queryArn
 	out.SecretsRoot = pulumi.String("").ToStringOutput()
 	if grant != nil {
 		out.SecretsRoot = pulumi.String(grant.Root).ToStringOutput()
@@ -387,9 +402,9 @@ func New(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.ResourceOp
 		"dedupeTableName":   out.DedupeTableName,
 		"writerFunctionArn": out.WriterFunctionArn, "notaryFunctionArn": out.NotaryFunctionArn,
 		"writerRoleArn": out.WriterRoleArn, "notaryRoleArn": out.NotaryRoleArn, "observeReaderRoleArn": out.ObserveReaderRoleArn,
-		"archiveWriterRoleArn": out.ArchiveWriterRoleArn,
-		"secretsRoot":          out.SecretsRoot,
-		"alarmTopicArn":        out.AlarmTopicArn, "scheduleArn": out.ScheduleArn,
+		"archiveWriterRoleArn": out.ArchiveWriterRoleArn, "queryRoleArn": out.QueryRoleArn,
+		"secretsRoot":   out.SecretsRoot,
+		"alarmTopicArn": out.AlarmTopicArn, "scheduleArn": out.ScheduleArn,
 	}); err != nil {
 		return nil, err
 	}
@@ -779,7 +794,8 @@ func newSchedule(ctx *pulumi.Context, name string, a *Args, fn *lambda.Function,
 }
 
 // newObserveReader is the role audit-observe assumes to follow the archive: from
-// another account (a principal), from a Kubernetes workload (IRSA), or either.
+// another account (a principal), from a Kubernetes workload (IRSA or EKS Pod
+// Identity), or any of them that are given.
 func newObserveReader(ctx *pulumi.Context, name string, a *Args, bucket *s3.Bucket, archiveKeyArn pulumi.StringOutput, tags pulumi.StringMap,
 	opts ...pulumi.ResourceOption) (*iam.Role, error) {
 	o := a.Observe
@@ -791,10 +807,23 @@ func newObserveReader(ctx *pulumi.Context, name string, a *Args, bucket *s3.Buck
 	if o.IRSA != nil {
 		provider = o.IRSA.OIDCProviderArn.ToStringOutput()
 	}
+	cluster := pulumi.String("").ToStringOutput()
+	if o.PodIdentity != nil {
+		cluster = o.PodIdentity.ClusterArn.ToStringOutput()
+	}
 	role, err := iam.NewRole(ctx, name+"-observe-reader", &iam.RoleArgs{
 		Name: pulumi.String(name + "-observe-reader"), Path: pulumi.String(a.RolePath), Tags: tags,
-		AssumeRolePolicy: pulumi.All(principal, provider).ApplyT(func(v []any) string {
-			return trustPolicy(v[0].(string), o.ExternalID, o.IRSA, v[1].(string))
+		PermissionsBoundary: boundary(o.PodIdentity),
+		AssumeRolePolicy: pulumi.All(principal, provider, cluster).ApplyT(func(v []any) (string, error) {
+			var extra []statement
+			if o.PodIdentity != nil {
+				s, err := podIdentityTrustStatement(v[2].(string), o.PodIdentity.Namespace, o.PodIdentity.ServiceAccount)
+				if err != nil {
+					return "", err
+				}
+				extra = append(extra, s)
+			}
+			return trustPolicy(v[0].(string), o.ExternalID, o.IRSA, v[1].(string), extra...), nil
 		}).(pulumi.StringOutput),
 	}, opts...)
 	if err != nil {
@@ -808,7 +837,71 @@ func newObserveReader(ctx *pulumi.Context, name string, a *Args, bucket *s3.Buck
 	}, opts...); err != nil {
 		return nil, err
 	}
+	if o.PodIdentity != nil {
+		if err := newPodIdentityAssociation(ctx, name+"-observe", o.PodIdentity, role, opts...); err != nil {
+			return nil, err
+		}
+	}
 	return role, nil
+}
+
+// newQuery is the role audit-query runs as on EKS, `<name>-query`: the observe
+// reader's rights, plus the queue when RecordReads, bound to its ServiceAccount
+// by a Pod Identity association.
+func newQuery(ctx *pulumi.Context, name string, a *Args, bucket *s3.Bucket, archiveKeyArn pulumi.StringOutput, queueArn pulumi.StringOutput,
+	tags pulumi.StringMap, opts ...pulumi.ResourceOption) (*iam.Role, error) {
+	q := a.Query
+	role, err := iam.NewRole(ctx, name+"-query", &iam.RoleArgs{
+		Name: pulumi.String(name + "-query"), Path: pulumi.String(a.RolePath), Tags: tags,
+		PermissionsBoundary: boundary(&q.PodIdentity),
+		AssumeRolePolicy: q.PodIdentity.ClusterArn.ToStringOutput().ApplyT(func(arn string) (string, error) {
+			s, err := podIdentityTrustStatement(arn, q.PodIdentity.Namespace, q.PodIdentity.ServiceAccount)
+			if err != nil {
+				return "", err
+			}
+			return policyJSON(s), nil
+		}).(pulumi.StringOutput),
+	}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := iam.NewRolePolicy(ctx, name+"-query", &iam.RolePolicyArgs{
+		Role: role.Name,
+		Policy: pulumi.All(bucket.Arn, archiveKeyArn, queueArn).ApplyT(func(v []any) string {
+			qa := ""
+			if q.RecordReads {
+				qa = v[2].(string)
+			}
+			return queryPolicy(v[0].(string), v[1].(string), qa)
+		}).(pulumi.StringOutput),
+	}, opts...); err != nil {
+		return nil, err
+	}
+	if err := newPodIdentityAssociation(ctx, name+"-query", &q.PodIdentity, role, opts...); err != nil {
+		return nil, err
+	}
+	return role, nil
+}
+
+func boundary(p *PodIdentityArgs) pulumi.StringPtrInput {
+	if p == nil || p.PermissionsBoundaryArn == "" {
+		return nil
+	}
+	return pulumi.String(p.PermissionsBoundaryArn)
+}
+
+// newPodIdentityAssociation binds the role to the ServiceAccount: `<prefix>-pia`.
+// A ServiceAccount takes one association.
+func newPodIdentityAssociation(ctx *pulumi.Context, prefix string, p *PodIdentityArgs, role *iam.Role, opts ...pulumi.ResourceOption) error {
+	args := &eks.PodIdentityAssociationArgs{
+		ClusterName: p.ClusterName, Namespace: pulumi.String(p.Namespace),
+		ServiceAccount: pulumi.String(p.ServiceAccount), RoleArn: role.Arn,
+	}
+	if p.Region != "" {
+		args.Region = pulumi.String(p.Region)
+	}
+	_, err := eks.NewPodIdentityAssociation(ctx, prefix+"-pia", args, opts...)
+	return err
 }
 
 // newArchiveWriter is the role a workload outside AWS assumes (IRSA) to write the

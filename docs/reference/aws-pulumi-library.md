@@ -151,9 +151,11 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Alerts.EndpointURL` | none | the HTTPS endpoint of alert-ingress; none creates the topic and the alarms and no subscription |
 | `Alerts.OldestMessageAgeSeconds` | 900 | |
 | `Alerts.NotarySilenceHours` | 3 | |
-| `Observe.TrustedPrincipalArn` | one of this and `IRSA` is **required** with `Observe` | the principal that may assume the read role |
+| `Observe.TrustedPrincipalArn` | one of this, `IRSA` and `PodIdentity` is **required** with `Observe` | the principal that may assume the read role |
 | `Observe.ExternalID` | none | required of the assuming principal when set; does not apply to IRSA |
 | `Observe.IRSA` | none | a ServiceAccount that may assume the read role by web identity, see [IRSA](../how-to/aws-run-readers-in-kubernetes.md) |
+| `Observe.PodIdentity` | none | `ClusterName`, `ClusterArn`, `Namespace`, `ServiceAccount` (all **required**), `Region`, `PermissionsBoundaryArn`: the role also trusts EKS Pod Identity (`pods.eks.amazonaws.com`, pinned to the cluster, its account and the ServiceAccount) and the library creates the `aws.eks.PodIdentityAssociation`. Refused together with `IRSA`; may be given with `TrustedPrincipalArn` |
+| `Query` | nil | `PodIdentity` (the same block, **required**) and `RecordReads` (false): a role for audit-query on EKS, `<name>-query`, with the observe reader's read rights, plus `sqs:SendMessage` on the ingest queue with `RecordReads` (refused with `Ingest.Disabled`) |
 | `ArchiveWriter` | nil | `IRSA` (the same block) and `Prefixes` (default `seals/`, `keys/`): a write role for a workload outside AWS |
 <!-- /generated -->
 
@@ -171,6 +173,7 @@ Required inputs are marked. Anything not listed has the default stated.
 | `WriterFunctionArn`, `NotaryFunctionArn` | the functions |
 | `WriterRoleArn`, `NotaryRoleArn`, `ObserveReaderRoleArn` | the roles, see below; `ObserveReaderRoleArn` is empty without `Observe`; the outputs of a part that is turned off are empty too |
 | `ArchiveWriterRoleArn` | the IRSA write role, empty without `ArchiveWriter` |
+| `QueryRoleArn` | the Pod Identity role of audit-query, empty without `Query` |
 | `SecretsRoot` | the SSM parameter path the writer reads secrets from, empty when its configuration names none |
 | `AlarmTopicArn` | the SNS topic every alarm publishes to |
 | `ScheduleArn` | the notary's schedule |
@@ -205,7 +208,8 @@ issuer's group matcher name, are
 |---|---|---|
 | writer | `arn:aws:iam::<account>:role/audit/audit-writer` | the writer function; the identity the OTLP door sees |
 | notary | `arn:aws:iam::<account>:role/audit/audit-notary` | the notary function; the identity the OTLP door sees |
-| observe reader | `arn:aws:iam::<account>:role/audit/audit-observe-reader` | assumed by observe in another account or by a Kubernetes ServiceAccount (only with `Observe`) |
+| observe reader | `arn:aws:iam::<account>:role/audit/audit-observe-reader` | assumed by observe in another account or by a Kubernetes ServiceAccount, by IRSA or Pod Identity (only with `Observe`) |
+| query | `arn:aws:iam::<account>:role/audit/audit-query` | audit-query on EKS, by Pod Identity (only with `Query`) |
 | archive writer | `arn:aws:iam::<account>:role/audit/audit-archive-writer` | a Kubernetes ServiceAccount, by IRSA (only with `ArchiveWriter`) |
 | scheduler | `arn:aws:iam::<account>:role/audit/audit-scheduler` | EventBridge Scheduler, to invoke the notary and nothing else |
 

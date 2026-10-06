@@ -2,6 +2,8 @@ package auditpulumi
 
 import (
 	"encoding/json"
+	"fmt"
+	"regexp"
 )
 
 // A policy document is built from ARNs that exist only once the resources do, so
@@ -141,6 +143,21 @@ func notaryPolicy(bucketArn, archiveKeyArn, sealKeyArn, logGroupArn string, audi
 // seals/ and keys/, and decrypt under the archive key when there is one. It
 // writes nothing, which is what ADR 0020 means by observe following the bucket.
 func observeReaderPolicy(bucketArn, archiveKeyArn string) string {
+	return policyJSON(readStatements(bucketArn, archiveKeyArn)...)
+}
+
+// queryPolicy is what audit-query may do: the read of observeReaderPolicy, and,
+// when queueArn is not empty, sqs:SendMessage on it and nothing else of SQS (the
+// service records every read of the trail through the ingest queue).
+func queryPolicy(bucketArn, archiveKeyArn, queueArn string) string {
+	st := readStatements(bucketArn, archiveKeyArn)
+	if queueArn != "" {
+		st = append(st, allow([]string{"sqs:SendMessage"}, []string{queueArn}, nil))
+	}
+	return policyJSON(st...)
+}
+
+func readStatements(bucketArn, archiveKeyArn string) []statement {
 	prefixes := []string{"records/", "catalogue/", "schema/", "seals/", "keys/"}
 	lists := make([]string, len(prefixes))
 	for i, p := range prefixes {
@@ -152,8 +169,7 @@ func observeReaderPolicy(bucketArn, archiveKeyArn string) string {
 			"StringLike": map[string]any{"s3:prefix": lists},
 		}),
 	}
-	st = append(st, archiveKeyStatements(archiveKeyArn, "kms:Decrypt")...)
-	return policyJSON(st...)
+	return append(st, archiveKeyStatements(archiveKeyArn, "kms:Decrypt")...)
 }
 
 // archiveWriterPolicy is what a workload outside AWS that writes part of the
@@ -191,7 +207,7 @@ func dedupe(in []string) []string {
 // trustPolicy lets the given principal (when there is one) assume a role, with an
 // external id when there is one, and the one ServiceAccount of irsa (when there
 // is one) assume it by web identity.
-func trustPolicy(principalArn, externalID string, irsa *IRSAArgs, providerArn string) string {
+func trustPolicy(principalArn, externalID string, irsa *IRSAArgs, providerArn string, extra ...statement) string {
 	var st []statement
 	if principalArn != "" {
 		s := statement{"Effect": "Allow", "Principal": map[string]any{"AWS": principalArn}, "Action": "sts:AssumeRole"}
@@ -203,6 +219,7 @@ func trustPolicy(principalArn, externalID string, irsa *IRSAArgs, providerArn st
 	if irsa != nil {
 		st = append(st, irsaTrustStatement(*irsa, providerArn))
 	}
+	st = append(st, extra...)
 	return policyJSON(st...)
 }
 
@@ -218,6 +235,32 @@ func irsaTrustStatement(i IRSAArgs, providerArn string) statement {
 			i.IssuerHost + ":sub": "system:serviceaccount:" + i.Namespace + ":" + i.ServiceAccount,
 		}},
 	}
+}
+
+var clusterArnRE = regexp.MustCompile(`^arn:[a-z-]+:eks:[a-z0-9-]+:([0-9]{12}):cluster/[A-Za-z0-9][A-Za-z0-9_-]*$`)
+
+// podIdentityTrustStatement is the EKS Pod Identity trust of one ServiceAccount.
+// EKS assumes the role as pods.eks.amazonaws.com and stamps the cluster's ARN, its
+// account and the pod's namespace and ServiceAccount on the request: every one of
+// them is pinned, so that neither another cluster nor another ServiceAccount of
+// this one can assume the role. The account is read from the cluster's ARN.
+func podIdentityTrustStatement(clusterArn, namespace, serviceAccount string) (statement, error) {
+	m := clusterArnRE.FindStringSubmatch(clusterArn)
+	if m == nil {
+		return nil, fmt.Errorf("auditpulumi: PodIdentity.ClusterArn %q is not the ARN of an EKS cluster (arn:aws:eks:<region>:<account>:cluster/<name>)", clusterArn)
+	}
+	return statement{
+		"Effect": "Allow", "Principal": map[string]any{"Service": "pods.eks.amazonaws.com"},
+		"Action": []string{"sts:AssumeRole", "sts:TagSession"},
+		"Condition": map[string]any{
+			"StringEquals": map[string]any{
+				"aws:SourceAccount":                         m[1],
+				"aws:RequestTag/kubernetes-namespace":       namespace,
+				"aws:RequestTag/kubernetes-service-account": serviceAccount,
+			},
+			"ArnEquals": map[string]any{"aws:SourceArn": clusterArn},
+		},
+	}, nil
 }
 
 // invokePolicy is what the scheduler's role may do: invoke the notary.

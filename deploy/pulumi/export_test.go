@@ -11,3 +11,8 @@ func SetLibraryVersion(v string) func() {
 // Absent and Denied expose the guard's reading of an error to the tests.
 func Absent(err error) bool { return absent(err) }
 func Denied(err error) bool { return denied(err) }
+
+// PodIdentityTrust exposes the Pod Identity trust statement's refusals.
+func PodIdentityTrust(clusterArn, ns, sa string) (map[string]any, error) {
+	return podIdentityTrustStatement(clusterArn, ns, sa)
+}

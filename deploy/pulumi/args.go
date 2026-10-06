@@ -89,6 +89,10 @@ type Args struct {
 	// Observe, when given, creates the read role audit-observe assumes, from
 	// another AWS account or from a Kubernetes workload (IRSA). Nil creates none.
 	Observe *ObserveArgs
+	// Query, when given, creates the role the audit-query service runs as on EKS
+	// (Pod Identity): the read grants of Observe, plus, with RecordReads,
+	// sqs:SendMessage on the ingest queue. Nil creates none.
+	Query *QueryArgs
 	// ArchiveWriter, when given, creates a role for a workload outside AWS (a
 	// Talos pod) that writes part of the archive itself, by IRSA. Nil creates
 	// none.
@@ -385,6 +389,49 @@ type ObserveArgs struct {
 	// IRSA lets a Kubernetes ServiceAccount assume the role by web identity, for
 	// a cluster that is not EKS (Talos) and has an IAM OIDC provider of its own.
 	IRSA *IRSAArgs
+	// PodIdentity lets a Kubernetes ServiceAccount of an EKS cluster assume the
+	// role through EKS Pod Identity, and creates the association. It may be given
+	// with TrustedPrincipalArn, and is refused together with IRSA: a ServiceAccount
+	// gets its credentials from one mechanism.
+	PodIdentity *PodIdentityArgs
+}
+
+// PodIdentityArgs names the one ServiceAccount of an EKS cluster a role trusts
+// through EKS Pod Identity (principal pods.eks.amazonaws.com), and the
+// association that binds them. The trust policy allows sts:AssumeRole and
+// sts:TagSession, and pins the cluster (aws:SourceArn), its account
+// (aws:SourceAccount) and the ServiceAccount (the namespace and service account
+// request tags EKS stamps on every assume): without those pins any cluster in
+// any account that names the role could assume it.
+type PodIdentityArgs struct {
+	// ClusterName is the EKS cluster the association is made in. Required.
+	ClusterName pulumi.StringInput
+	// ClusterArn is that cluster's ARN, which the trust pins; the account is read
+	// from it. Required.
+	ClusterArn pulumi.StringInput
+	// Namespace and ServiceAccount of the workload. Required, names and not
+	// patterns.
+	Namespace, ServiceAccount string
+	// Region is set on the association when not empty; empty leaves the
+	// provider's region in force.
+	Region string
+	// PermissionsBoundaryArn is the permissions boundary of the role. Default
+	// none.
+	PermissionsBoundaryArn string
+}
+
+// QueryArgs is the role the audit-query service runs as on EKS. It reads the
+// archive like the observe role (the five prefixes, a list under them, and
+// kms:Decrypt on the archive key) and writes nothing to it. The index it answers
+// from is in Postgres, which IAM does not govern, and a query's own exports
+// bucket is the deployer's: neither is granted here.
+type QueryArgs struct {
+	// PodIdentity binds the role to the query ServiceAccount. Required.
+	PodIdentity PodIdentityArgs
+	// RecordReads adds sqs:SendMessage on the ingest queue, for the query
+	// service's record of every read of the trail (`sink.sqs`). Refused with
+	// Ingest.Disabled, where there is no queue.
+	RecordReads bool
 }
 
 // IRSAArgs names the one ServiceAccount a role trusts through an IAM OIDC
@@ -649,8 +696,17 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 		return nil, errors.New("auditpulumi: Alerts.NotarySilenceHours is at most 24")
 	}
 	if o := c.Observe; o != nil {
-		if o.TrustedPrincipalArn == nil && o.IRSA == nil {
-			return nil, errors.New("auditpulumi: Observe needs Observe.TrustedPrincipalArn or Observe.IRSA")
+		if o.TrustedPrincipalArn == nil && o.IRSA == nil && o.PodIdentity == nil {
+			return nil, errors.New("auditpulumi: Observe needs Observe.TrustedPrincipalArn or Observe.IRSA (or Observe.PodIdentity)")
+		}
+		if o.IRSA != nil && o.PodIdentity != nil {
+			return nil, errors.New("auditpulumi: Observe.IRSA and Observe.PodIdentity are alternatives: " +
+				"a ServiceAccount gets its credentials from one of them")
+		}
+		if o.PodIdentity != nil {
+			if err := o.PodIdentity.check("Observe.PodIdentity"); err != nil {
+				return nil, err
+			}
 		}
 		if o.IRSA != nil {
 			irsa, err := o.IRSA.withDefaults("Observe.IRSA")
@@ -660,6 +716,14 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 			oc := *o
 			oc.IRSA = irsa
 			c.Observe = &oc
+		}
+	}
+	if q := c.Query; q != nil {
+		if err := q.PodIdentity.check("Query.PodIdentity"); err != nil {
+			return nil, err
+		}
+		if q.RecordReads && c.Ingest.Disabled {
+			return nil, errors.New("auditpulumi: Query.RecordReads needs the ingest queue: Ingest.Disabled is set")
 		}
 	}
 	if w := c.ArchiveWriter; w != nil {
@@ -710,6 +774,23 @@ func (i IRSAArgs) withDefaults(field string) (*IRSAArgs, error) {
 		i.Audience = "sts.amazonaws.com"
 	}
 	return &i, nil
+}
+
+// check refuses a Pod Identity block that cannot work or would trust too much;
+// field names the block in the refusal.
+func (p PodIdentityArgs) check(field string) error {
+	switch {
+	case p.ClusterName == nil:
+		return fmt.Errorf("auditpulumi: %s.ClusterName is required", field)
+	case p.ClusterArn == nil:
+		return fmt.Errorf("auditpulumi: %s.ClusterArn is required: the trust pins the cluster", field)
+	case p.Namespace == "" || p.ServiceAccount == "":
+		return fmt.Errorf("auditpulumi: %s.Namespace and %s.ServiceAccount are required: "+
+			"a trust that names no ServiceAccount would be every one in the cluster", field, field)
+	case strings.ContainsAny(p.Namespace+p.ServiceAccount, "*?: "):
+		return fmt.Errorf("auditpulumi: %s.Namespace and .ServiceAccount are names, not patterns", field)
+	}
+	return nil
 }
 
 func setInt(p *int, def int) {

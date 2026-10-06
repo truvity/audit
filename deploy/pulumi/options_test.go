@@ -358,7 +358,7 @@ func TestTheArchiveWriterRoleTrustsOneServiceAccountAndWritesSealsAndKeysOnly(t 
 
 func TestTheArchiveWriterPrefixesAreAParameterAndNoLockMeansNoRetention(t *testing.T) {
 	rec, _, err := build(t, func(a *auditpulumi.Args) {
-		a.Archive.ObjectLockMode = auditpulumi.None
+		a.Archive.ObjectLockMode, a.Archive.DefaultRetentionDays = auditpulumi.None, 0
 		a.ArchiveWriter = &auditpulumi.ArchiveWriterArgs{IRSA: *irsa("audit", "digest"), Prefixes: []string{"records/", "dlq/"}}
 	})
 	if err != nil {
@@ -585,9 +585,10 @@ func TestOptionsThatCannotWorkAreRefusedBeforeAnythingIsCreated(t *testing.T) {
 		edit func(*auditpulumi.Args)
 		says string
 	}{
-		"an encryption":     {func(a *auditpulumi.Args) { a.Archive.Encryption = "aes" }, "Archive.Encryption"},
-		"an account":        {func(a *auditpulumi.Args) { a.AccountID = "123" }, "AccountID"},
-		"observe, no trust": {func(a *auditpulumi.Args) { a.Observe = &auditpulumi.ObserveArgs{} }, "Observe.TrustedPrincipalArn or Observe.IRSA"},
+		"an encryption":      {func(a *auditpulumi.Args) { a.Archive.Encryption = "aes" }, "Archive.Encryption"},
+		"a lock, no default": {func(a *auditpulumi.Args) { a.Archive.DefaultRetentionDays = 0 }, "DefaultRetentionDays is required"},
+		"an account":         {func(a *auditpulumi.Args) { a.AccountID = "123" }, "AccountID"},
+		"observe, no trust":  {func(a *auditpulumi.Args) { a.Observe = &auditpulumi.ObserveArgs{} }, "Observe.TrustedPrincipalArn or Observe.IRSA"},
 		"no provider": {func(a *auditpulumi.Args) {
 			a.Observe.IRSA = bad(func(i *auditpulumi.IRSAArgs) { i.OIDCProviderArn = nil })
 		}, "OIDCProviderArn"},
@@ -661,7 +662,7 @@ func TestTheTruvityShapeIsExpressible(t *testing.T) {
 // and no schedule, and a role for the pod to put seals/ and keys/.
 func TestTheHiveShapeIsExpressible(t *testing.T) {
 	rec, out, err := build(t, func(a *auditpulumi.Args) {
-		a.Archive.ObjectLockMode, a.Archive.Encryption = auditpulumi.None, auditpulumi.EncryptionS3
+		a.Archive.ObjectLockMode, a.Archive.DefaultRetentionDays, a.Archive.Encryption = auditpulumi.None, 0, auditpulumi.EncryptionS3
 		a.Notary = auditpulumi.NotaryArgs{Disabled: true}
 		a.Telemetry = nil
 		a.Observe = &auditpulumi.ObserveArgs{IRSA: irsa("audit", "audit-observe")}

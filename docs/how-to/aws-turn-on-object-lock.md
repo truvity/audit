@@ -42,7 +42,7 @@ Object Lock is a separate resource, so the switch is one edit and the bucket is
 not replaced.
 
 1. Change `ObjectLockMode` from `auditpulumi.None` to `auditpulumi.Governance`
-   (and set `DefaultRetentionDays` if there is to be a floor).
+   (and set `DefaultRetentionDays`, which is required with a lock, as the floor).
 2. `pulumi preview`. It should show: one resource created, the Object Lock
    configuration (`aws:s3/bucketObjectLockConfiguration`); the two functions
    updated in place (their `archive.lockMode` is now `governance`); the two role

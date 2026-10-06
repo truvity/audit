@@ -1,0 +1,8 @@
+# refuse: query.route.enabled needs query.enabled
+# base: stream
+query:
+  enabled: false
+  route:
+    enabled: true
+    parentRefs: [{name: public}]
+    hostnames: [audit.example.com]

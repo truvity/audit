@@ -233,6 +233,18 @@ flowchart LR
   Q -- "grants decide what comes back" --> PG[("index")]
 ```
 
+Whether the query service needs a public name follows from where the console
+runs. **An installation needs one only when the console that calls its query
+service runs outside the cluster.** A console in the cluster keeps the query
+service in-cluster too: it reaches the Service `<fullname>-query` and proxies
+the calls server-side, so nothing about the trail is exposed. If the console
+is on one host, publishing the query service as `<app host>/audit` keeps one
+name. When it must be public, set `query.route` and the chart renders the
+HTTPRoute (`<host>/<path>` with the installation as the path, or
+`<app host>/audit`), and optionally the SecurityPolicy a gateway may require;
+list the gateway's namespace in `networkPolicy.queryIngressFrom`
+([the chart README](../../charts/audit/README.md#publishing-the-query-service)).
+
 The page holds no credentials of its own: it asks through a transport the
 console gives it.
 

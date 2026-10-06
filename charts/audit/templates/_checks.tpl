@@ -38,6 +38,24 @@ outlast both has the kubelet kill the process mid-write. */ -}}
 {{- fail (printf "audit: terminationGracePeriodSeconds (%d) must be longer than the writer's 30s shutdown budget plus preStopSleepSeconds (%d): the kubelet would kill it while it writes what it holds." (int .Values.terminationGracePeriodSeconds) (int .Values.preStopSleepSeconds)) -}}
 {{- end -}}
 
+{{- /* query.route publishes the Service; without a parent or a host it is a
+route nothing can reach, and without the query service it has no backend. */ -}}
+{{- $route := (.Values.query).route | default dict -}}
+{{- if $route.enabled -}}
+{{- if not .Values.query.enabled -}}
+{{- fail "audit: query.route.enabled needs query.enabled: the route's backend is the query service." -}}
+{{- end -}}
+{{- if not $route.parentRefs -}}
+{{- fail "audit: query.route.enabled needs query.route.parentRefs: the Gateway or ListenerSet the route attaches to." -}}
+{{- end -}}
+{{- if not $route.hostnames -}}
+{{- fail "audit: query.route.enabled needs query.route.hostnames: the names the route answers for." -}}
+{{- end -}}
+{{- if hasKey ($route.securityPolicy | default dict) "targetRefs" -}}
+{{- fail "audit: query.route.securityPolicy must not set targetRefs: the chart targets the route it renders." -}}
+{{- end -}}
+{{- end -}}
+
 {{- if not (has .Values.mode (list "direct" "stream")) -}}
 {{- fail (printf "audit: `mode` is `direct` or `stream`, not %q." .Values.mode) -}}
 {{- end -}}

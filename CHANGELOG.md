@@ -4,6 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
+- **Chart: `query.route` publishes the query service through Gateway API.** With `query.route.enabled` the chart renders an HTTPRoute to the query Service: `parentRefs` (Gateways or ListenerSets, passed through) and `hostnames` are required, and `pathPrefix` publishes the installation under a path (`audit.example.com/myapp`, or `<app host>/audit`), which the route strips with a `URLRewrite` (`ReplacePrefixMatch: /`) before the service sees the request. The backend's `weight: 1` is written out so that a GitOps tool has no defaulted field to diff. `securityPolicy`, when set, renders an Envoy Gateway `SecurityPolicy` (`gateway.envoyproxy.io/v1alpha1`) whose spec is the value given and whose `targetRefs` the chart sets to the route. Off by default, so no render changes. The chart refuses a route without `query.enabled`, `parentRefs` or `hostnames`, and a `securityPolicy` that sets `targetRefs`. With `networkPolicy.enabled` the gateway's namespace must be in `networkPolicy.queryIngressFrom`. An installation needs a public name only when the console that calls its query service runs outside the cluster; see [the chart README](charts/audit/README.md#publishing-the-query-service).
+
 ## v0.15.0
 
 - **Deployment rules a stack's own configuration can ask for.** `preset.CheckPresetsLock` holds a lock mode to the built-in presets a profile names (a stack no longer restates which presets demand no lock). `deploy/pulumi` exports `InstallationComponents` and `ComponentRoleName` (the workloads of a chart installation that hold a role and their ServiceAccounts), and the checks it applies to its arguments, so a configuration can be refused before a preview: `CheckName`, `CheckRolePath`, `CheckLockMode`, `CheckProfile`, `CheckBucketPrefix`, `ArchiveBucketName`, `CheckTelemetryURLs`, `CheckExtensionLayer`. No behaviour of `New` changes.

@@ -118,6 +118,55 @@ rendered from the chart's own values: `profiles` into
 `/etc/audit/trust/<key>` and `keysVolume` the local key directory at
 `/var/lib/audit/keys`.
 
+## Publishing the query service
+
+An installation needs a public name only when the application console that
+calls its query service runs **outside the cluster** (the person's browser
+reaches it, or the console is hosted elsewhere). When the console runs in
+the cluster, leave `query.route` off: the console reaches the Service
+`<fullname>-query` in-cluster and proxies the calls server-side. Where one
+host fronts the application, `<app host>/audit` is the form to prefer;
+`audit.example.com/<installation>` serves several installations from one name.
+
+With `query.route.enabled` the chart renders an HTTPRoute to the query
+Service, so that the deployer does not write one by hand:
+
+```yaml
+query:
+  route:
+    enabled: true
+    parentRefs:                       # a Gateway or a ListenerSet, passed through
+      - group: gateway.networking.k8s.io
+        kind: Gateway
+        name: public
+        namespace: gateway
+        sectionName: https
+    hostnames: [audit.example.com]
+    pathPrefix: /myapp                # optional: the path is the installation
+    annotations: {}
+    securityPolicy: {}                # optional, see below
+```
+
+- `parentRefs` and `hostnames` are required, and so is `query.enabled`: the
+  chart refuses to render without them. Write each parent's `group`, `kind`,
+  `name`, `namespace` and `sectionName` out in full; the API server fills in
+  what is left out, and a GitOps tool then shows a diff for ever. For the same
+  reason the backend's `weight: 1` is written by the chart.
+- With `pathPrefix` the route matches `PathPrefix /<prefix>` and rewrites it
+  to `/` (`URLRewrite`, `ReplacePrefixMatch`), because the query service knows
+  nothing of a prefix. Without one the route matches `/` and rewrites nothing.
+- `securityPolicy`, when set, renders an Envoy Gateway `SecurityPolicy`
+  (`gateway.envoyproxy.io/v1alpha1`) whose `spec` is the value you give, with
+  `targetRefs` set by the chart to this HTTPRoute (give none yourself). It is
+  for a gateway that requires every route to carry one. Needs the Envoy
+  Gateway CRDs; the chart does not check for them.
+- `networkPolicy.queryIngressFrom` decides what may reach the query pods when
+  `networkPolicy.enabled` is on, and the gateway's own pods are such a caller:
+  **list the gateway's namespace there** (a `namespaceSelector` on
+  `kubernetes.io/metadata.name`), or the route will answer 503 while the pods
+  are healthy. The chart does not add it for you, because it cannot know where
+  the gateway runs.
+
 ## What the deployment brings
 
 The chart takes references; it creates none of these.
@@ -227,6 +276,9 @@ password in a database URL, a value from before the file such as a top-level
   is trusted;
 - the query service enabled with no `query.grants.issuers`, or with the
   writer's `database.url`: an owner bypasses the tenant policies;
+- `query.route.enabled` without `query.enabled`, without `parentRefs` or
+  without `hostnames`, and a `query.route.securityPolicy` that sets
+  `targetRefs`;
 - an extension enabled with no profile it can read: `extensions.billing`
   without a metering profile, `extensions.quotas` without `mode: stream`.
 

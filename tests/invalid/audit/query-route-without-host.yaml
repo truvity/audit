@@ -1,0 +1,7 @@
+# refuse: query.route.hostnames
+# base: stream
+query:
+  enabled: true
+  route:
+    enabled: true
+    parentRefs: [{name: public}]

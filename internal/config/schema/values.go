@@ -142,6 +142,14 @@ func Values() []byte {
 			"grants":         m{"type": "object", "description": "The grants file a config names as `grants`: issuers, presets and rules. See docs/how-to/read-the-trail.md#access."},
 			"keysVolume":     boolean("Mount the writer's key directory read-only, for resolve with the local key provider."),
 			"serviceAccount": def("serviceAccount"),
+			"route": obj("Publish the query service through Gateway API: an HTTPRoute to the Service, and with `securityPolicy` an Envoy Gateway SecurityPolicy on it. Needs `enabled` and, for the route, `parentRefs` and `hostnames`.", m{
+				"enabled":        boolean("Render the HTTPRoute."),
+				"parentRefs":     m{"type": "array", "description": "The Gateways or ListenerSets the route attaches to, passed through as they are written. Write group, kind, name, namespace and sectionName out in full: the API server defaults what is omitted and a GitOps tool then shows a diff forever.", "items": m{"type": "object"}},
+				"hostnames":      m{"type": "array", "description": "The host names the route answers for.", "items": m{"type": "string", "minLength": 1}},
+				"pathPrefix":     m{"type": "string", "pattern": "^(/[^/\\s]+)*$", "description": "A path the installation is published under, such as `/myapp`. The route rewrites it to `/` before the service sees it. Empty matches `/` with no rewrite."},
+				"annotations":    m{"type": "object", "additionalProperties": m{"type": "string"}, "description": "Annotations of the HTTPRoute."},
+				"securityPolicy": m{"type": "object", "not": m{"required": []string{"targetRefs"}}, "description": "When set, an Envoy Gateway SecurityPolicy (gateway.envoyproxy.io/v1alpha1) is rendered with this as its spec, plus a `targetRefs` the chart sets to this HTTPRoute. `targetRefs` itself must not be given."},
+			}),
 		})),
 		"observe": obj("The indexer: follows the archive by cursor and writes the index the query service reads.", with(platform("audit-observe", true, true), m{
 			"enabled":        boolean("Run it."),

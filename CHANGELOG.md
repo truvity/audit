@@ -4,6 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## deploy/pulumi v0.8.1
+
+A patch of the v0.8 line of `deploy/pulumi` only, for a caller that is not yet on the v0.9 to v0.15 arguments (`Package` and `PackageSHA256` for `BinaryPath`). It adds what v0.15.0 added, and nothing else: `InstallationComponents`, `ComponentRoleName` and the checks a stack's own configuration can ask for (`CheckName`, `CheckRolePath`, `CheckLockMode`, `CheckProfile`, `CheckBucketPrefix`, `ArchiveBucketName`, `CheckTelemetryURLs`, `CheckExtensionLayer`). No behaviour of `New` changes.
+
 ## v0.8.0
 
 The Pulumi library gains optional deployment parts and Object Lock can be enabled later without replacement.

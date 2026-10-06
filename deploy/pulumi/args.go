@@ -315,6 +315,8 @@ var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 // keyComponent is what the store's keys allow of a profile name.
 var keyComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
+var bucketPrefixRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,40}$`)
+
 // withDefaults fills what the arguments leave unset, and refuses what cannot
 // work. Every refusal names the field.
 func (a *Args) withDefaults(name string) (*Args, error) {

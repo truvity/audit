@@ -66,8 +66,8 @@ func checkAssociation(t *testing.T, rec *recorder, name, ns, sa, roleArn string)
 		prop(d, "serviceAccount").StringValue() != sa {
 		t.Errorf("association %s: %+v", name, d.Inputs)
 	}
-	if prop(d, "roleArn").StringValue() == "" || !strings.HasSuffix(roleArn, "/"+prop(d, "roleArn").StringValue()[strings.LastIndex(prop(d, "roleArn").StringValue(), "/")+1:]) {
-		t.Errorf("association %s role = %v, want %s", name, prop(d, "roleArn"), roleArn)
+	if got := prop(d, "roleArn").StringValue(); got == "" || !strings.HasSuffix(roleArn, got[strings.LastIndex(got, "/")+1:]) {
+		t.Errorf("association %s role = %q, want %s", name, got, roleArn)
 	}
 }
 

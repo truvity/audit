@@ -110,8 +110,8 @@ func CheckBucketPrefix(prefix string) error {
 		return fmt.Errorf("auditpulumi: bucket prefix %q is not a bucket name prefix", prefix)
 	}
 
-	// A 12-digit account id and the longest region fit well inside the 63.
-	if n := len(ArchiveBucketName(prefix, "000000000000", "eu-central-1")); n > 63 {
+	// A 12-digit account id and a long region name fit well inside the 63.
+	if n := len(ArchiveBucketName(prefix, strings.Repeat("0", 12), "eu-central-1")); n > 63 {
 		return fmt.Errorf("auditpulumi: bucket prefix %q makes a bucket name of %d characters (63 at most)", prefix, n)
 	}
 
@@ -139,7 +139,8 @@ func CheckExtensionLayer(architectures, runtimes []string) error {
 	var errs []error
 
 	if !slices.Contains(architectures, LambdaArchitecture) {
-		errs = append(errs, fmt.Errorf("auditpulumi: the layer's architectures %v must include %s, the architecture of the functions", architectures, LambdaArchitecture))
+		errs = append(errs, fmt.Errorf("auditpulumi: the layer's architectures %v must include %s, the functions' architecture",
+			architectures, LambdaArchitecture))
 	}
 
 	for _, a := range architectures {

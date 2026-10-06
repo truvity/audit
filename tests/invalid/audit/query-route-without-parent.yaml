@@ -1,0 +1,7 @@
+# refuse: query.route.parentRefs
+# base: stream
+query:
+  enabled: true
+  route:
+    enabled: true
+    hostnames: [audit.example.com]

@@ -7668,6 +7668,53 @@
           "minimum": 0,
           "type": "integer"
         },
+        "route": {
+          "additionalProperties": false,
+          "description": "Publish the query service through Gateway API: an HTTPRoute to the Service, and with `securityPolicy` an Envoy Gateway SecurityPolicy on it. Needs `enabled` and, for the route, `parentRefs` and `hostnames`.",
+          "properties": {
+            "annotations": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "Annotations of the HTTPRoute.",
+              "type": "object"
+            },
+            "enabled": {
+              "description": "Render the HTTPRoute.",
+              "type": "boolean"
+            },
+            "hostnames": {
+              "description": "The host names the route answers for.",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "parentRefs": {
+              "description": "The Gateways or ListenerSets the route attaches to, passed through as they are written. Write group, kind, name, namespace and sectionName out in full: the API server defaults what is omitted and a GitOps tool then shows a diff forever.",
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "pathPrefix": {
+              "description": "A path the installation is published under, such as `/myapp`. The route rewrites it to `/` before the service sees it. Empty matches `/` with no rewrite.",
+              "pattern": "^(/[^/\\s]+)*$",
+              "type": "string"
+            },
+            "securityPolicy": {
+              "description": "When set, an Envoy Gateway SecurityPolicy (gateway.envoyproxy.io/v1alpha1) is rendered with this as its spec, plus a `targetRefs` the chart sets to this HTTPRoute. `targetRefs` itself must not be given.",
+              "not": {
+                "required": [
+                  "targetRefs"
+                ]
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
         "secretEnv": {
           "$ref": "#/$defs/secretEnv"
         },

@@ -44,6 +44,14 @@ this costs a signing key, a mint path and a proxy route, and where a
 gateway-issued token is preferred if there is one. Either way the grants are
 the query service's, not the console's.
 
+**Where the query service lives.** The page's calls go to the query service
+by whichever address the console can reach. A console that runs in the
+cluster keeps that address in-cluster (or proxies, as above), and the
+installation gets no public name. A public name, `<host>/<installation>` or
+`<app host>/audit`, is needed only when the console calling the query service
+runs outside the cluster; the chart publishes it through Gateway API
+(`query.route`, see the [chart README](../../charts/audit/README.md#publishing-the-query-service)).
+
 Both are described from the application's side in
 [integrating](../how-to/connect-an-application.md#the-audit-page), and the cookie case in
 [a console with a session of its own](../how-to/connect-an-application.md#a-console-with-a-session-of-its-own).

@@ -355,6 +355,36 @@ query:
     create: true
     name: ""
     annotations: {}
+  # Publish the query service through Gateway API. An installation needs a
+  # public name only when the application console that calls its query service
+  # runs outside the cluster; otherwise leave this off and let the console reach
+  # the Service in-cluster. Needs `query.enabled`, `parentRefs` and `hostnames`.
+  # The gateway's namespace must be allowed by `networkPolicy.queryIngressFrom`
+  # when that policy is on.
+  route:
+    enabled: false
+    # Gateways or ListenerSets, passed through. Write group, kind, name,
+    # namespace and sectionName out in full: the API server defaults what is
+    # left out and a GitOps tool then shows a diff for ever.
+    parentRefs: []
+    #  - group: gateway.networking.k8s.io
+    #    kind: Gateway
+    #    name: public
+    #    namespace: gateway
+    #    sectionName: https
+    hostnames: []
+    #  - audit.example.com
+    # Publish under a path (`/myapp`: `audit.example.com/myapp`, or
+    # `app.example.com/audit`). The route strips it before the service sees the
+    # request. Empty matches `/`, with no rewrite.
+    pathPrefix: ""
+    annotations: {}
+    # When set, an Envoy Gateway SecurityPolicy is rendered with this as its
+    # `spec` and `targetRefs` set to the HTTPRoute, for a gateway that requires
+    # every route to carry one. `targetRefs` itself is the chart's.
+    securityPolicy: {}
+    #  jwt:
+    #    providers: [...]
 
 # The indexer: follows the archive by listing, keeps a cursor per profile and
 # tenant in Postgres, and writes the index the query service reads

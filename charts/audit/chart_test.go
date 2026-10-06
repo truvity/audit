@@ -412,3 +412,68 @@ func TestSecretFilesAreProjectedWithMode0440(t *testing.T) {
 		t.Fatal("no secret-files volume was rendered by examples/direct.yaml")
 	}
 }
+
+const routeValues = `
+query:
+  route:
+    enabled: true
+    parentRefs:
+      - group: gateway.networking.k8s.io
+        kind: Gateway
+        name: public
+        namespace: gateway
+        sectionName: https
+    hostnames: [audit.example.com]
+`
+
+func kindOf(docs []map[string]any, kind string) map[string]any {
+	for _, d := range docs {
+		if d["kind"] == kind {
+			return d
+		}
+	}
+	return nil
+}
+
+// The query service is published only when asked: under a path prefix the
+// route strips it, and the backend's weight is written out so that a GitOps
+// tool has nothing to diff against the defaulted object.
+func TestTheQueryRouteStripsItsPrefixAndWritesTheWeight(t *testing.T) {
+	const stream = "testdata/values/stream.yaml"
+	if kindOf(render(t, stream), "HTTPRoute") != nil {
+		t.Fatal("an HTTPRoute is rendered by default")
+	}
+
+	docs := overlay(t, stream, routeValues+"    pathPrefix: /myapp\n    securityPolicy:\n      jwt:\n        providers: []\n")
+	route := kindOf(docs, "HTTPRoute")
+	if route == nil {
+		t.Fatal("no HTTPRoute")
+	}
+	rule, _ := dig(route, "spec", "rules")
+	r := rule.([]any)[0].(map[string]any)
+	if v, _ := dig(r, "matches"); v.([]any)[0].(map[string]any)["path"].(map[string]any)["value"] != "/myapp" {
+		t.Errorf("match = %v", v)
+	}
+	if v, ok := dig(r, "filters"); !ok || v.([]any)[0].(map[string]any)["urlRewrite"].(map[string]any)["path"].(map[string]any)["replacePrefixMatch"] != "/" {
+		t.Errorf("filters = %v", v)
+	}
+	if w, _ := dig(r["backendRefs"].([]any)[0], "weight"); w != float64(1) {
+		t.Errorf("weight = %v, want 1 written out", w)
+	}
+	sp := kindOf(docs, "SecurityPolicy")
+	if sp == nil {
+		t.Fatal("no SecurityPolicy")
+	}
+	if n, _ := dig(sp, "spec", "targetRefs"); n.([]any)[0].(map[string]any)["name"] != route["metadata"].(map[string]any)["name"] {
+		t.Errorf("targetRefs = %v", n)
+	}
+
+	docs = overlay(t, stream, routeValues)
+	r = kindOf(docs, "HTTPRoute")["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)
+	if _, has := r["filters"]; has {
+		t.Error("a route without a prefix rewrites")
+	}
+	if kindOf(docs, "SecurityPolicy") != nil {
+		t.Error("a SecurityPolicy without being asked")
+	}
+}

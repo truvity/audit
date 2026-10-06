@@ -125,4 +125,62 @@ spec:
     - name: http
       port: {{ .Values.query.service.port }}
       targetPort: http
+{{- with .Values.query.route }}
+{{- if .enabled }}
+{{- $prefix := .pathPrefix | default "" }}
+---
+# The query service on a public name. The service knows nothing of a path
+# prefix, so the route strips it. backendRefs carries its weight: the API server
+# defaults it, and a manifest without it differs from the live object for ever.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "audit.fullname" $ }}-query
+  labels:
+    {{- include "audit.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: query
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  parentRefs:
+    {{- toYaml .parentRefs | nindent 4 }}
+  hostnames:
+    {{- toYaml .hostnames | nindent 4 }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: {{ default "/" $prefix | quote }}
+      {{- if $prefix }}
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplacePrefixMatch
+              replacePrefixMatch: /
+      {{- end }}
+      backendRefs:
+        - name: {{ include "audit.fullname" $ }}-query
+          port: {{ $.Values.query.service.port }}
+          weight: 1
+{{- if .securityPolicy }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: {{ include "audit.fullname" $ }}-query
+  labels:
+    {{- include "audit.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: query
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      name: {{ include "audit.fullname" $ }}-query
+  {{- toYaml .securityPolicy | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end }}{{ end }}

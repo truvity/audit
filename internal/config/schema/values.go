@@ -148,7 +148,7 @@ func Values() []byte {
 				"hostnames":      m{"type": "array", "description": "The host names the route answers for.", "items": m{"type": "string", "minLength": 1}},
 				"pathPrefix":     m{"type": "string", "pattern": "^(/[^/\\s]+)*$", "description": "A path the installation is published under, such as `/myapp`. The route rewrites it to `/` before the service sees it. Empty matches `/` with no rewrite."},
 				"annotations":    m{"type": "object", "additionalProperties": m{"type": "string"}, "description": "Annotations of the HTTPRoute."},
-				"securityPolicy": m{"type": "object", "not": m{"required": []string{"targetRefs"}}, "description": "When set, an Envoy Gateway SecurityPolicy (gateway.envoyproxy.io/v1alpha1) is rendered with this as its spec, plus a `targetRefs` the chart sets to this HTTPRoute. `targetRefs` itself must not be given."},
+				"securityPolicy": m{"type": "object", "not": m{"anyOf": []any{m{"required": []string{"targetRefs"}}, m{"required": []string{"targetRef"}}, m{"required": []string{"targetSelectors"}}}}, "description": "When set, an Envoy Gateway SecurityPolicy (gateway.envoyproxy.io/v1alpha1) is rendered with this as its spec, plus a `targetRefs` the chart sets to this HTTPRoute. `targetRefs`, `targetRef` and `targetSelectors` must not be given: the policy attaches to this route and to nothing else."},
 			}),
 		})),
 		"observe": obj("The indexer: follows the archive by cursor and writes the index the query service reads.", with(platform("audit-observe", true, true), m{

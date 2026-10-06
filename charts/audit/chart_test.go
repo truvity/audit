@@ -451,10 +451,10 @@ func TestTheQueryRouteStripsItsPrefixAndWritesTheWeight(t *testing.T) {
 	}
 	rule, _ := dig(route, "spec", "rules")
 	r := rule.([]any)[0].(map[string]any)
-	if v, _ := dig(r, "matches"); v.([]any)[0].(map[string]any)["path"].(map[string]any)["value"] != "/myapp" {
+	if v, _ := dig(r, "matches"); v.([]any)[0].(map[string]any)["path"].(map[string]any)["value"] != "/myapp/audit.v1.QueryService" {
 		t.Errorf("match = %v", v)
 	}
-	if v, ok := dig(r, "filters"); !ok || v.([]any)[0].(map[string]any)["urlRewrite"].(map[string]any)["path"].(map[string]any)["replacePrefixMatch"] != "/" {
+	if v, ok := dig(r, "filters"); !ok || v.([]any)[0].(map[string]any)["urlRewrite"].(map[string]any)["path"].(map[string]any)["replacePrefixMatch"] != "/audit.v1.QueryService" {
 		t.Errorf("filters = %v", v)
 	}
 	if w, _ := dig(r["backendRefs"].([]any)[0], "weight"); w != float64(1) {
@@ -469,6 +469,9 @@ func TestTheQueryRouteStripsItsPrefixAndWritesTheWeight(t *testing.T) {
 	}
 
 	docs = overlay(t, stream, routeValues)
+	if v, _ := dig(kindOf(docs, "HTTPRoute"), "spec", "rules"); v.([]any)[0].(map[string]any)["matches"].([]any)[0].(map[string]any)["path"].(map[string]any)["value"] != "/audit.v1.QueryService" {
+		t.Errorf("an unprefixed route must match the service path only, not the health endpoints: %v", v)
+	}
 	r = kindOf(docs, "HTTPRoute")["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)
 	if _, has := r["filters"]; has {
 		t.Error("a route without a prefix rewrites")

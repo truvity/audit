@@ -1,0 +1,10 @@
+# refuse: query/route/securityPolicy
+# base: stream
+query:
+  enabled: true
+  route:
+    enabled: true
+    parentRefs: [{name: public}]
+    hostnames: [audit.example.com]
+    securityPolicy:
+      targetRef: {}

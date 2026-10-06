@@ -7704,10 +7704,24 @@
               "type": "string"
             },
             "securityPolicy": {
-              "description": "When set, an Envoy Gateway SecurityPolicy (gateway.envoyproxy.io/v1alpha1) is rendered with this as its spec, plus a `targetRefs` the chart sets to this HTTPRoute. `targetRefs` itself must not be given.",
+              "description": "When set, an Envoy Gateway SecurityPolicy (gateway.envoyproxy.io/v1alpha1) is rendered with this as its spec, plus a `targetRefs` the chart sets to this HTTPRoute. `targetRefs`, `targetRef` and `targetSelectors` must not be given: the policy attaches to this route and to nothing else.",
               "not": {
-                "required": [
-                  "targetRefs"
+                "anyOf": [
+                  {
+                    "required": [
+                      "targetRefs"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "targetRef"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "targetSelectors"
+                    ]
+                  }
                 ]
               },
               "type": "object"

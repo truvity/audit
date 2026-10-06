@@ -49,7 +49,7 @@ The values that are not configuration of a binary:
 | `keysVolume.enabled`, `.size`, `.storageClass`, `.accessModes`, `.existingClaim` | the volume for the `local` key provider, mounted at `/var/lib/audit/keys` on every pod that writes. The keys are random, not derived, so this is the only copy: back it up, and use ReadWriteMany for more than one replica. `query.keysVolume: true` mounts it read-only on the query service for resolve |
 | `trust.configMap`, `trust.key` | a CA bundle trusted beside the system roots, e.g. trust-manager's for a private chain, mounted at `/etc/audit/trust/<key>` on every pod, for the `ca` and `caFile` keys and a Postgres URL's `sslrootcert` to name |
 | `extensions.billing.enabled`, `extensions.quotas.enabled` | the two projections, both off. The toggles are here so that a deployment's values need not change when the work behind them lands; today each renders nothing |
-| `query.route.enabled`, `.parentRefs`, `.hostnames`, `.pathPrefix`, `.annotations`, `.securityPolicy` | an HTTPRoute (Gateway API) to the query Service, and with `securityPolicy` an Envoy Gateway SecurityPolicy on it. Off by default. `parentRefs` and `hostnames` are required; `pathPrefix` is stripped before the service sees the request; `securityPolicy` is the SecurityPolicy's `spec` without `targetRefs`. See the [chart README](../../charts/audit/README.md#publishing-the-query-service) |
+| `query.route.enabled`, `.parentRefs`, `.hostnames`, `.pathPrefix`, `.annotations`, `.securityPolicy` | an HTTPRoute (Gateway API) to the query Service, and with `securityPolicy` an Envoy Gateway SecurityPolicy on it. Off by default. `parentRefs` and `hostnames` are required; `pathPrefix` is stripped before the service sees the request; `securityPolicy` is the SecurityPolicy's `spec` without `targetRefs`, `targetRef` and `targetSelectors`. See the [chart README](../../charts/audit/README.md#publishing-the-query-service) |
 | `networkPolicy.enabled`, `.ingressFrom`, `.queryIngressFrom` | who may reach the writer's sink and the query service. Empty `queryIngressFrom` leaves the query service open in the cluster; once set, it must include the gateway's namespace when `query.route` is on |
 
 <!-- /generated -->
@@ -97,7 +97,7 @@ The chart checks what only the platform can see, in
   `database.url` equal to the writer's, because an owner bypasses the tenant
   policies;
 - `query.route.enabled` without `query.enabled`, `parentRefs` or `hostnames`, and
-  a `securityPolicy` that sets `targetRefs`;
+  a `securityPolicy` that sets `targetRefs`, `targetRef` or `targetSelectors`;
 - the indexer (`observe.enabled`) running as the writer's, the query service's
   or the receiver's ServiceAccount, or connecting to the database as the
   writer's, the query service's or the migration's role (an owner), and a

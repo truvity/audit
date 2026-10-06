@@ -244,6 +244,10 @@ HTTPRoute (`<host>/<path>` with the installation as the path, or
 `<app host>/audit`), and optionally the SecurityPolicy a gateway may require;
 list the gateway's namespace in `networkPolicy.queryIngressFrom`
 ([the chart README](../../charts/audit/README.md#publishing-the-query-service)).
+The route is transport only: the query service authenticates every call itself
+(the token's issuer and audience against its grants), and NetworkPolicy and
+SecurityPolicy are defence in depth, not the access control. Only the query
+service's Connect path is routed; its health endpoints are not.
 
 The page holds no credentials of its own: it asks through a transport the
 console gives it.

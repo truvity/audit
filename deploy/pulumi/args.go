@@ -423,19 +423,20 @@ var keyArn = regexp.MustCompile(`^arn:[a-z-]+:kms:[a-z0-9-]+:[0-9]+:key/[A-Za-z0
 
 var keyComponent = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
+var bucketPrefixRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{2,40}$`)
+
 // withDefaults fills what the arguments leave unset, and refuses what cannot
 // work. Every refusal names the field.
 func (a *Args) withDefaults(name string) (*Args, error) {
 	c := *a
-	if !nameRE.MatchString(name) {
-		return nil, fmt.Errorf("auditpulumi: the component name %q must be 1-32 characters of a-z, 0-9 and -, "+
-			"starting with a letter: it is in every role, queue and function name", name)
+	if err := CheckName(name); err != nil {
+		return nil, err
 	}
 	if c.RolePath == "" {
 		c.RolePath = "/audit/"
 	}
-	if !strings.HasPrefix(c.RolePath, "/") || !strings.HasSuffix(c.RolePath, "/") {
-		return nil, fmt.Errorf("auditpulumi: RolePath %q must start and end with /", c.RolePath)
+	if err := CheckRolePath(c.RolePath); err != nil {
+		return nil, err
 	}
 	setInt(&c.LogRetentionDays, 30)
 	if c.AccountID != "" && !accountRE.MatchString(c.AccountID) {
@@ -487,8 +488,8 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	}
 	seen := map[string]bool{}
 	for _, p := range ar.Profiles {
-		if !keyComponent.MatchString(p) {
-			return nil, fmt.Errorf("auditpulumi: Archive.Profiles has %q, which is not a key component (no /, no leading dot)", p)
+		if err := CheckProfile(p); err != nil {
+			return nil, err
 		}
 		if seen[p] {
 			return nil, fmt.Errorf("auditpulumi: Archive.Profiles names %q twice", p)

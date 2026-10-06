@@ -4,6 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## Unreleased
+
+- **Deployment rules a stack's own configuration can ask for.** `preset.CheckPresetsLock` holds a lock mode to the built-in presets a profile names (a stack no longer restates which presets demand no lock). `deploy/pulumi` exports `InstallationComponents` and `ComponentRoleName` (the workloads of a chart installation that hold a role and their ServiceAccounts), and the checks it applies to its arguments, so a configuration can be refused before a preview: `CheckName`, `CheckRolePath`, `CheckLockMode`, `CheckProfile`, `CheckBucketPrefix`, `ArchiveBucketName`, `CheckTelemetryURLs`, `CheckExtensionLayer`. No behaviour of `New` changes.
+
 ## v0.14.0
 
 - **`github.com/truvity/policy` v1.45.0** (the root module; `deploy/pulumi` moves from v1.37.0), whose release is breaking for its own consumers: the shared `postgres` and `bucket` fragments name a secret (`passwordSecret`, `credentialsSecret`) and the `…Env` fields are gone from them. Nothing a configuration file says changes. Version 2 `$ref`s the fragments and the shared `secrets` fragment directly (the code that derived the v2 shapes from the v1.44 fragments is deleted; `secrets.source` is still `env`, `file` or `ssm` in the schema). **Version 1 is read exactly as in v0.13**: its frozen schemas (`schemas/config/v1/`) now carry the v1.44 `postgres` and `bucket` shapes themselves, with `passwordEnv` and `credentialsEnv`, instead of referring to the fragments.

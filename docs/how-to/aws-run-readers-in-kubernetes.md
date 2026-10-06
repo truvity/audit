@@ -137,7 +137,9 @@ The trust policy of each role is
 The account is read from `ClusterArn`, which the library refuses unless it is an
 EKS cluster ARN. All the pins matter: without them another cluster, or another
 ServiceAccount of this one, could assume the role. The library refuses an empty
-namespace or ServiceAccount and a name with a wildcard in it.
+namespace or ServiceAccount, and a name that is not a Kubernetes name (DNS-1123: at most 63
+characters for the namespace, 253 for the ServiceAccount), which also keeps an IAM policy
+variable such as `${aws:username}` out of the condition values.
 
 - **`Observe.PodIdentity`** adds this trust to `<name>-observe-reader` (with
   `TrustedPrincipalArn` it holds both statements) and creates the association
@@ -146,12 +148,18 @@ namespace or ServiceAccount and a name with a wildcard in it.
 - **`Query`** creates `<name>-query` and `<name>-query-pia`. Its rights are the
   observe reader's (`GetObject` on `records/`, `catalogue/`, `schema/`, `seals/` and `keys/`,
   `ListBucket` under those prefixes, `kms:Decrypt` on the archive key when there is one) and, with
-  `RecordReads`, `sqs:SendMessage` on `QueueArn` and nothing else of SQS. It writes
+  `RecordReads`, `sqs:SendMessage` on `QueueArn` and nothing else of SQS (the queue uses SQS-managed
+  encryption, so no KMS grant is needed for it). It writes
   nothing to the archive. The index is in Postgres, which IAM does not govern; an
   exports bucket is the deployer's, and its grant is added to the role by the
   deployer.
-- **`PermissionsBoundaryArn`** sets the role's permissions boundary.
-- A ServiceAccount takes **one** association, so each component keeps its own
+- **`PermissionsBoundaryArn`** sets the role's permissions boundary. It is opt-in
+  per role: only `<name>-observe-reader` (through `Observe.PodIdentity`) and
+  `<name>-query` accept it, each from its own `PodIdentity` block. The other roles
+  (writer, notary, scheduler, archive writer) have none.
+- A ServiceAccount takes **one** association, so `Observe.PodIdentity` and
+  `Query.PodIdentity` must name different ServiceAccounts (the library refuses an
+  identical namespace and ServiceAccount pair). Each component keeps its own
   ServiceAccount (the chart's `serviceAccount.name`). Leave the chart's
   `eks.amazonaws.com/role-arn` annotation off: it is for IRSA.
 

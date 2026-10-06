@@ -109,7 +109,7 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Archive.BucketName` | **required** | the bucket; it is in the functions' configuration, so it has to be known before anything is created |
 | `Archive.ObjectLockMode` | **required** | `NONE`, `GOVERNANCE` or `COMPLIANCE`; there is no default, so every caller chooses. See [the lock modes](../explanation/aws-lambda.md#the-lock-modes) |
 | `Archive.AcknowledgeCompliance` | false | the deliberate step before `COMPLIANCE`; without it the library builds nothing |
-| `Archive.DefaultRetentionDays` | 0 | the bucket's default retention, a floor: the writer sets each object's own. 0 sets no default rule; refused with `NONE` |
+| `Archive.DefaultRetentionDays` | **required** (> 0) with `GOVERNANCE` and `COMPLIANCE` | the bucket's default retention, a floor: the writer sets each object's own. 0 is refused with a lock (a lock with no default rule is a trap), and any value with `NONE` |
 | `Archive.Encryption` | `kms` | `kms` (SSE-KMS under an archive key), `aws-managed` (SSE-KMS under `aws/s3`) or `s3` (SSE-S3); the last two create no key and grant no `kms` on one; see [encryption](#encryption) |
 | `Archive.KeyArn` | empty | an existing KMS key ARN for `Encryption: kms`: no key is created and the roles are granted it; refused with the other modes |
 | `Archive.Profiles` | **required** | one lifecycle rule per `records/<profile>/` prefix |
@@ -154,8 +154,8 @@ Required inputs are marked. Anything not listed has the default stated.
 | `Observe.TrustedPrincipalArn` | one of this, `IRSA` and `PodIdentity` is **required** with `Observe` | the principal that may assume the read role |
 | `Observe.ExternalID` | none | required of the assuming principal when set; does not apply to IRSA |
 | `Observe.IRSA` | none | a ServiceAccount that may assume the read role by web identity, see [IRSA](../how-to/aws-run-readers-in-kubernetes.md) |
-| `Observe.PodIdentity` | none | `ClusterName`, `ClusterArn`, `Namespace`, `ServiceAccount` (all **required**), `Region`, `PermissionsBoundaryArn`: the role also trusts EKS Pod Identity (`pods.eks.amazonaws.com`, pinned to the cluster, its account and the ServiceAccount) and the library creates the `aws.eks.PodIdentityAssociation`. Refused together with `IRSA`; may be given with `TrustedPrincipalArn` |
-| `Query` | nil | `PodIdentity` (the same block, **required**) and `RecordReads` (false): a role for audit-query on EKS, `<name>-query`, with the observe reader's read rights, plus `sqs:SendMessage` on the ingest queue with `RecordReads` (refused with `Ingest.Disabled`) |
+| `Observe.PodIdentity` | none | `ClusterName`, `ClusterArn`, `Namespace`, `ServiceAccount` (all **required**), `Region`, `PermissionsBoundaryArn`: `Namespace` and `ServiceAccount` are Kubernetes names (DNS-1123, at most 63 and 253 characters). The role also trusts EKS Pod Identity (`pods.eks.amazonaws.com`, pinned to the cluster, its account and the ServiceAccount) and the library creates the `aws.eks.PodIdentityAssociation`. Refused together with `IRSA`; may be given with `TrustedPrincipalArn` |
+| `Query` | nil | `PodIdentity` (the same block, **required**) and `RecordReads` (false): a role for audit-query on EKS (its ServiceAccount must differ from `Observe.PodIdentity`'s), `<name>-query`, with the observe reader's read rights, plus `sqs:SendMessage` on the ingest queue with `RecordReads` (refused with `Ingest.Disabled`) |
 | `ArchiveWriter` | nil | `IRSA` (the same block) and `Prefixes` (default `seals/`, `keys/`): a write role for a workload outside AWS |
 <!-- /generated -->
 

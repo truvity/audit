@@ -89,14 +89,14 @@ func TestTheArchiveIsLockedVersionedEncryptedAndClosed(t *testing.T) {
 	}
 }
 
-func TestNoDefaultRetentionRuleUnlessAskedFor(t *testing.T) {
-	rec, _, err := build(t, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lock := rec.one(t, "aws:s3/bucketObjectLockConfiguration:BucketObjectLockConfiguration", "audit-archive")
-	if prop(lock, "rule").IsObject() {
-		t.Errorf("a default retention was set that nobody asked for: %v", lock.Inputs)
+func TestALockWithoutADefaultRuleIsRefusedInEveryLockedMode(t *testing.T) {
+	for _, mode := range []string{auditpulumi.Governance, auditpulumi.Compliance} {
+		_, _, err := build(t, func(a *auditpulumi.Args) {
+			a.Archive.ObjectLockMode, a.Archive.AcknowledgeCompliance, a.Archive.DefaultRetentionDays = mode, true, 0
+		})
+		if err == nil || !strings.Contains(err.Error(), "DefaultRetentionDays is required") {
+			t.Errorf("%s: err = %v", mode, err)
+		}
 	}
 }
 
@@ -771,7 +771,12 @@ func keys(m map[string]string) []string {
 const lockType = "aws:s3/bucketObjectLockConfiguration:BucketObjectLockConfiguration"
 
 func withMode(mode string) func(*auditpulumi.Args) {
-	return func(a *auditpulumi.Args) { a.Archive.ObjectLockMode = mode }
+	return func(a *auditpulumi.Args) {
+		a.Archive.ObjectLockMode = mode
+		if mode == auditpulumi.None {
+			a.Archive.DefaultRetentionDays = 0
+		}
+	}
 }
 
 func TestNoneDeclaresNoLockButStaysVersioned(t *testing.T) {

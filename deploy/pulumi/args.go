@@ -137,8 +137,9 @@ type ArchiveArgs struct {
 	AcknowledgeCompliance bool
 	// DefaultRetentionDays is the bucket's default retention, which applies to an
 	// object put with none. The writer sets each object's retention itself, from
-	// its profile, so this is a floor and not the policy. Default 0: no default
-	// rule. Refused with NONE, where there is no lock for it to be a rule of.
+	// its profile, so this is a floor and not the policy. Required (> 0)
+	// with GOVERNANCE and COMPLIANCE: a lock with no default rule is refused.
+	// Refused with NONE, where there is no lock for it to be a rule of.
 	DefaultRetentionDays int
 
 	// Encryption is "kms" (the default: SSE-KMS under an archive key the library
@@ -510,6 +511,10 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 	if ar.DefaultRetentionDays < 0 {
 		return nil, errors.New("auditpulumi: Archive.DefaultRetentionDays is not negative")
 	}
+	if ar.ObjectLockMode != None && ar.DefaultRetentionDays == 0 {
+		return nil, fmt.Errorf("auditpulumi: Archive.DefaultRetentionDays is required with Archive.ObjectLockMode %s: "+
+			"a lock with no default rule leaves an object put without its own retention unprotected (set it, as the floor)", ar.ObjectLockMode)
+	}
 	if ar.ObjectLockMode == None && ar.DefaultRetentionDays > 0 {
 		return nil, errors.New("auditpulumi: Archive.DefaultRetentionDays needs a lock: Archive.ObjectLockMode is NONE")
 	}
@@ -722,6 +727,11 @@ func (a *Args) withDefaults(name string) (*Args, error) {
 		if err := q.PodIdentity.check("Query.PodIdentity"); err != nil {
 			return nil, err
 		}
+		if o := c.Observe; o != nil && o.PodIdentity != nil &&
+			o.PodIdentity.Namespace == q.PodIdentity.Namespace && o.PodIdentity.ServiceAccount == q.PodIdentity.ServiceAccount {
+			return nil, fmt.Errorf("auditpulumi: Observe.PodIdentity and Query.PodIdentity name the same ServiceAccount %s/%s: "+
+				"EKS allows one association per ServiceAccount, so each component needs its own", q.PodIdentity.Namespace, q.PodIdentity.ServiceAccount)
+		}
 		if q.RecordReads && c.Ingest.Disabled {
 			return nil, errors.New("auditpulumi: Query.RecordReads needs the ingest queue: Ingest.Disabled is set")
 		}
@@ -776,6 +786,13 @@ func (i IRSAArgs) withDefaults(field string) (*IRSAArgs, error) {
 	return &i, nil
 }
 
+// The names Kubernetes allows. They also keep an IAM policy variable such as
+// ${aws:username} out of the trust policy's condition values.
+var (
+	dns1123Label     = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	dns1123Subdomain = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$`)
+)
+
 // check refuses a Pod Identity block that cannot work or would trust too much;
 // field names the block in the refusal.
 func (p PodIdentityArgs) check(field string) error {
@@ -787,8 +804,11 @@ func (p PodIdentityArgs) check(field string) error {
 	case p.Namespace == "" || p.ServiceAccount == "":
 		return fmt.Errorf("auditpulumi: %s.Namespace and %s.ServiceAccount are required: "+
 			"a trust that names no ServiceAccount would be every one in the cluster", field, field)
-	case strings.ContainsAny(p.Namespace+p.ServiceAccount, "*?: "):
-		return fmt.Errorf("auditpulumi: %s.Namespace and .ServiceAccount are names, not patterns", field)
+	case len(p.Namespace) > 63 || !dns1123Label.MatchString(p.Namespace):
+		return fmt.Errorf("auditpulumi: %s.Namespace %q must be a Kubernetes namespace name (DNS-1123 label, at most 63 characters)", field, p.Namespace)
+	case len(p.ServiceAccount) > 253 || !dns1123Subdomain.MatchString(p.ServiceAccount):
+		return fmt.Errorf("auditpulumi: %s.ServiceAccount %q must be a Kubernetes ServiceAccount name (DNS-1123 subdomain, at most 253 characters)",
+			field, p.ServiceAccount)
 	}
 	return nil
 }

@@ -152,12 +152,19 @@ query:
   `name`, `namespace` and `sectionName` out in full; the API server fills in
   what is left out, and a GitOps tool then shows a diff for ever. For the same
   reason the backend's `weight: 1` is written by the chart.
-- With `pathPrefix` the route matches `PathPrefix /<prefix>` and rewrites it
-  to `/` (`URLRewrite`, `ReplacePrefixMatch`), because the query service knows
-  nothing of a prefix. Without one the route matches `/` and rewrites nothing.
+- With `pathPrefix` the route matches `PathPrefix /<prefix>/audit.v1.QueryService`
+  and rewrites that to `/audit.v1.QueryService` (`URLRewrite`,
+  `ReplacePrefixMatch`), because the query service knows nothing of a prefix.
+  Without one the route matches `/audit.v1.QueryService` and rewrites nothing.
+- Only the query service's Connect path (`/audit.v1.QueryService/...`) is
+  routed, under the prefix when there is one (the prefix is rewritten away).
+  `/healthz` and `/readyz`, which answer without a token, are not reachable
+  through the route.
 - `securityPolicy`, when set, renders an Envoy Gateway `SecurityPolicy`
   (`gateway.envoyproxy.io/v1alpha1`) whose `spec` is the value you give, with
-  `targetRefs` set by the chart to this HTTPRoute (give none yourself). It is
+  `targetRefs` set by the chart to this HTTPRoute. The chart refuses
+  `targetRefs`, `targetRef` and `targetSelectors` in it, so the policy cannot
+  attach to anything but this route. It is
   for a gateway that requires every route to carry one. Needs the Envoy
   Gateway CRDs; the chart does not check for them.
 - `networkPolicy.queryIngressFrom` decides what may reach the query pods when
@@ -166,6 +173,10 @@ query:
   `kubernetes.io/metadata.name`), or the route will answer 503 while the pods
   are healthy. The chart does not add it for you, because it cannot know where
   the gateway runs.
+
+The route is transport only. The query service authenticates every call
+itself, checking the token's issuer and audience against its grants;
+NetworkPolicy and SecurityPolicy are defence in depth, not the access control.
 
 ## What the deployment brings
 
@@ -278,7 +289,7 @@ password in a database URL, a value from before the file such as a top-level
   writer's `database.url`: an owner bypasses the tenant policies;
 - `query.route.enabled` without `query.enabled`, without `parentRefs` or
   without `hostnames`, and a `query.route.securityPolicy` that sets
-  `targetRefs`;
+  `targetRefs`, `targetRef` or `targetSelectors`;
 - an extension enabled with no profile it can read: `extensions.billing`
   without a metering profile, `extensions.quotas` without `mode: stream`.
 

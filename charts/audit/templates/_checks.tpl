@@ -51,8 +51,10 @@ route nothing can reach, and without the query service it has no backend. */ -}}
 {{- if not $route.hostnames -}}
 {{- fail "audit: query.route.enabled needs query.route.hostnames: the names the route answers for." -}}
 {{- end -}}
-{{- if hasKey ($route.securityPolicy | default dict) "targetRefs" -}}
-{{- fail "audit: query.route.securityPolicy must not set targetRefs: the chart targets the route it renders." -}}
+{{- range $k := list "targetRefs" "targetRef" "targetSelectors" -}}
+{{- if hasKey ($route.securityPolicy | default dict) $k -}}
+{{- fail (printf "audit: query.route.securityPolicy must not set %s: the chart targets the route it renders, and nothing else." $k) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

@@ -129,8 +129,10 @@ spec:
 {{- if .enabled }}
 {{- $prefix := .pathPrefix | default "" }}
 ---
-# The query service on a public name. The service knows nothing of a path
-# prefix, so the route strips it. backendRefs carries its weight: the API server
+# The query service on a public name. Only the Connect service's own path is
+# routed, so /healthz and /readyz, which answer without a token, are not
+# reachable through it. The service knows nothing of a path prefix, so the
+# route strips it. backendRefs carries its weight: the API server
 # defaults it, and a manifest without it differs from the live object for ever.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -152,14 +154,14 @@ spec:
     - matches:
         - path:
             type: PathPrefix
-            value: {{ default "/" $prefix | quote }}
+            value: {{ printf "%s/audit.v1.QueryService" $prefix | quote }}
       {{- if $prefix }}
       filters:
         - type: URLRewrite
           urlRewrite:
             path:
               type: ReplacePrefixMatch
-              replacePrefixMatch: /
+              replacePrefixMatch: /audit.v1.QueryService
       {{- end }}
       backendRefs:
         - name: {{ include "audit.fullname" $ }}-query

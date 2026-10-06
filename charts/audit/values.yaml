@@ -381,7 +381,8 @@ query:
     annotations: {}
     # When set, an Envoy Gateway SecurityPolicy is rendered with this as its
     # `spec` and `targetRefs` set to the HTTPRoute, for a gateway that requires
-    # every route to carry one. `targetRefs` itself is the chart's.
+    # every route to carry one. `targetRefs`, `targetRef` and `targetSelectors` are refused: the chart
+    # attaches the policy to this route and to nothing else.
     securityPolicy: {}
     #  jwt:
     #    providers: [...]

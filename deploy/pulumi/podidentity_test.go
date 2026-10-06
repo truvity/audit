@@ -183,11 +183,21 @@ func TestPodIdentityOptionsThatCannotWorkAreRefused(t *testing.T) {
 		edit func(*auditpulumi.Args)
 		says string
 	}{
-		"no cluster name": {q(func(p *auditpulumi.PodIdentityArgs) { p.ClusterName = nil }), "ClusterName"},
-		"no cluster arn":  {q(func(p *auditpulumi.PodIdentityArgs) { p.ClusterArn = nil }), "ClusterArn"},
-		"no namespace":    {q(func(p *auditpulumi.PodIdentityArgs) { p.Namespace = "" }), "Namespace"},
-		"no account":      {q(func(p *auditpulumi.PodIdentityArgs) { p.ServiceAccount = "" }), "ServiceAccount"},
-		"a wildcard":      {q(func(p *auditpulumi.PodIdentityArgs) { p.ServiceAccount = "audit-*" }), "not patterns"},
+		"no cluster name":         {q(func(p *auditpulumi.PodIdentityArgs) { p.ClusterName = nil }), "ClusterName"},
+		"no cluster arn":          {q(func(p *auditpulumi.PodIdentityArgs) { p.ClusterArn = nil }), "ClusterArn"},
+		"no namespace":            {q(func(p *auditpulumi.PodIdentityArgs) { p.Namespace = "" }), "Namespace"},
+		"no account":              {q(func(p *auditpulumi.PodIdentityArgs) { p.ServiceAccount = "" }), "ServiceAccount"},
+		"a wildcard":              {q(func(p *auditpulumi.PodIdentityArgs) { p.ServiceAccount = "audit-*" }), "DNS-1123"},
+		"a policy variable":       {q(func(p *auditpulumi.PodIdentityArgs) { p.ServiceAccount = "${aws:username}" }), "DNS-1123"},
+		"an upper-case namespace": {q(func(p *auditpulumi.PodIdentityArgs) { p.Namespace = "Audit" }), "Namespace"},
+		"a long namespace":        {q(func(p *auditpulumi.PodIdentityArgs) { p.Namespace = strings.Repeat("a", 64) }), "63"},
+		"a dotted namespace":      {q(func(p *auditpulumi.PodIdentityArgs) { p.Namespace = "a.b" }), "Namespace"},
+		"a long service account":  {q(func(p *auditpulumi.PodIdentityArgs) { p.ServiceAccount = strings.Repeat("a", 254) }), "253"},
+		"one service account twice": {func(a *auditpulumi.Args) {
+			pi := podIdentity("audit", "same")
+			a.Observe = &auditpulumi.ObserveArgs{PodIdentity: &pi}
+			a.Query = &auditpulumi.QueryArgs{PodIdentity: podIdentity("audit", "same")}
+		}, "one association per ServiceAccount"},
 		"record reads, no queue": {func(a *auditpulumi.Args) {
 			a.Ingest.Disabled = true
 			a.Query = &auditpulumi.QueryArgs{PodIdentity: podIdentity("audit", "q"), RecordReads: true}

@@ -186,7 +186,10 @@ func buildArchived(t *testing.T, archived map[string]string, edit func(*auditpul
 	writerZip, writerSHA := releaseZip(t, dir, "audit-writer-lambda", releaseVersion)
 	notaryZip, notarySHA := releaseZip(t, dir, "audit-notary-lambda", releaseVersion)
 	args := &auditpulumi.Args{
-		Archive: auditpulumi.ArchiveArgs{BucketName: "acme-audit", ObjectLockMode: auditpulumi.Governance, Profiles: []string{"security", "billing-nl"}},
+		Archive: auditpulumi.ArchiveArgs{
+			BucketName: "acme-audit", ObjectLockMode: auditpulumi.Governance, DefaultRetentionDays: 30,
+			Profiles: []string{"security", "billing-nl"},
+		},
 		Writer: auditpulumi.WriterArgs{
 			Package:        writerZip,
 			PackageSHA256:  writerSHA,

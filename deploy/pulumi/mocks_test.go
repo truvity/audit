@@ -225,7 +225,7 @@ func buildArchived(t *testing.T, archived map[string]string, edit func(*auditpul
 			"sealKeyAlias": a.SealKeyAlias, "queueUrl": a.QueueURL, "queueArn": a.QueueArn, "dlqUrl": a.DlqURL, "dlqArn": a.DlqArn,
 			"archiveWriterRole": a.ArchiveWriterRoleArn,
 			"dedupe":            a.DedupeTableName, "writerFn": a.WriterFunctionArn, "notaryFn": a.NotaryFunctionArn,
-			"writerRole": a.WriterRoleArn, "notaryRole": a.NotaryRoleArn, "observeRole": a.ObserveReaderRoleArn,
+			"writerRole": a.WriterRoleArn, "notaryRole": a.NotaryRoleArn, "observeRole": a.ObserveReaderRoleArn, "queryRole": a.QueryRoleArn,
 			"topic": a.AlarmTopicArn, "schedule": a.ScheduleArn,
 		} {
 			wg.Add(1)

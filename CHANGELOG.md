@@ -4,6 +4,10 @@ All notable changes to this project are documented here, one `## vX.Y.Z`
 heading per released tag, newest first. A section describes the state of the
 repository at that version, not the history of edits that got there.
 
+## v0.16.0
+
+- **Pulumi library: EKS Pod Identity for observe and query.** New `Observe.PodIdentity` and `Args.Query` (`QueryArgs{PodIdentity, RecordReads}`), with the shared `PodIdentityArgs` (`ClusterName`, `ClusterArn`, `Namespace`, `ServiceAccount`, `Region`, `PermissionsBoundaryArn`). Each creates the role's trust for `pods.eks.amazonaws.com` (`sts:AssumeRole` and `sts:TagSession`, pinned to the cluster ARN, its account and the one namespace and ServiceAccount) and an `aws.eks.PodIdentityAssociation`. `Query` creates `<name>-query`: the observe reader's read rights, plus `sqs:SendMessage` on the ingest queue with `RecordReads`. `Observe.PodIdentity` is refused together with `Observe.IRSA` (it may be given with `TrustedPrincipalArn`); `RecordReads` is refused with `Ingest.Disabled`. New output `QueryRoleArn`. Nothing changes for an installation that sets neither, and the Object Lock configuration (GOVERNANCE or COMPLIANCE, with `DefaultRetentionDays`, on a versioned bucket) is as it was. See [run observe and query in Kubernetes](docs/how-to/aws-run-readers-in-kubernetes.md).
+
 ## v0.15.0
 
 - **Deployment rules a stack's own configuration can ask for.** `preset.CheckPresetsLock` holds a lock mode to the built-in presets a profile names (a stack no longer restates which presets demand no lock). `deploy/pulumi` exports `InstallationComponents` and `ComponentRoleName` (the workloads of a chart installation that hold a role and their ServiceAccounts), and the checks it applies to its arguments, so a configuration can be refused before a preview: `CheckName`, `CheckRolePath`, `CheckLockMode`, `CheckProfile`, `CheckBucketPrefix`, `ArchiveBucketName`, `CheckTelemetryURLs`, `CheckExtensionLayer`. No behaviour of `New` changes.

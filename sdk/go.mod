@@ -1,6 +1,6 @@
 module github.com/truvity/audit/sdk
 
-go 1.27.2
+go 1.27.0
 
 require (
 	connectrpc.com/connect v1.20.0

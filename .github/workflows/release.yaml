@@ -37,7 +37,7 @@ jobs:
       charts: '["audit"]'
       # The CLI as a Nix flake, one release asset, so that another
       # repository's devbox can pin `audit verify` by hash the way it pins
-      # accessctl: an auditor's copy of the verifier should be the one they
+      # sluisctl: an auditor's copy of the verifier should be the one they
       # chose, not the one on the path.
       nix-flakes: '["audit"]'
       # Four images under one path, as the chart's values name them:

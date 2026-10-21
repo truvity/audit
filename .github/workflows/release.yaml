@@ -56,16 +56,37 @@ jobs:
   # the release commit. It refuses a tag that already exists at another
   # commit: a tag fetched once cannot be taken back, and the proxy remembers
   # the first.
+  #
+  # THE REFS ARE CREATED WITH AN APP TOKEN, NOT github.token. A tag ruleset
+  # reserves `sdk/v*` and `deploy/pulumi/v*` for the catalogue App
+  # truvity-ci-automation (slug truvity-ci-automation-roster) as its only
+  # bypass, so nobody else can create, move or delete them. The built-in
+  # GITHUB_TOKEN cannot be a ruleset bypass (GitHub answers 422 "Actor GitHub
+  # Actions integration must be part of the ruleset source or owner
+  # organization"), hence the App. The job exchanges its own GitHub identity
+  # token at the sluis issuer for an installation token narrowed to this
+  # repository and `contents: write`: no key, no secret, nothing to rotate.
+  # `id-token: write` is what the exchange needs, and the issuer's grant must
+  # name this workflow file (cfg/access.yaml in gitops). The action masks the
+  # token; it goes to the API calls only. The job checks nothing out, so it
+  # holds no other permission.
   sdk-tag:
     needs: release
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: write
+      id-token: write # the token exchange
     steps:
+      - uses: truvity/ci-actions/token-exchange@de28ab4e61adb8b217c0838886cc6e4b2c71b398 # v1.9.0
+        id: app
+        with:
+          issuer: ${{ vars.ACCESS_ROSTER_ISSUER }}
+          github-app: truvity-ci-automation
+          repositories: ${{ github.event.repository.name }}
+          permissions: contents:write
       - name: tag the SDK module and the Pulumi library at the release commit
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.github-token }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail

@@ -201,7 +201,17 @@ for the SDK, at the same commit and the same version
 **Releasing by hand: push the root tag only.** The root `vX.Y.Z` is the only
 tag a person pushes. The `sdk-tag` job of the Release workflow creates
 `sdk/vX.Y.Z` and `deploy/pulumi/vX.Y.Z` at the same commit; do not push them
-yourself. The job accepts a tag that already peels to the release commit
+yourself. The job creates them with an installation token of the catalogue App
+`truvity-ci-automation` (slug `truvity-ci-automation-roster`), which it gets by
+exchanging its GitHub identity token at the sluis issuer
+(`ci-actions/token-exchange`, `vars.ACCESS_ROSTER_ISSUER`): no key and no secret.
+A tag ruleset names that App as the only bypass for `sdk/v*` and
+`deploy/pulumi/v*`, so nobody else can write them. The built-in `GITHUB_TOKEN`
+cannot be a ruleset bypass (GitHub answers `422 Actor GitHub Actions integration
+must be part of the ruleset source or owner organization`), which is why it is
+an App. The issuer must grant this workflow file a token of the App for this
+repository (`cfg/access.yaml` in gitops); without that grant the job fails at
+the exchange, before any ref is written. The job accepts a tag that already peels to the release commit
 (skips it) and fails on one at another commit. goreleaser ignores `sdk/*` and
 `deploy/*` tags (`git.ignore_tags`), so the version only ever comes from a root
 tag.

@@ -15,7 +15,7 @@ the Go module paths:
 | Helm chart `oci://ghcr.io/truvity/charts/audit` | the same name, published by the truvity/sluis release |
 | CLI, Lambda zips and checksums | the truvity/sluis [releases](https://github.com/truvity/sluis/releases) |
 | `@truvity/audit`, `@truvity/audit-react` | GitHub Packages, from truvity/sluis |
-| Documentation | [`docs/audit/`](https://github.com/truvity/sluis/tree/master/docs/audit) in truvity/sluis |
+| Documentation | [`docs/guides/audit/`](https://github.com/truvity/sluis/tree/master/docs/guides/audit) and [`docs/concepts/audit/`](https://github.com/truvity/sluis/tree/master/docs/concepts/audit) in truvity/sluis |
 
 Releases up to v0.16.0 and their packages stay readable here. The full history
 of the component up to the move is in this repository.

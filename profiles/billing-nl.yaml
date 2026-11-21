@@ -1,0 +1,36 @@
+# Compliance profile: a floor, not a copy (decision 0010).
+# Carried over from the audit-v1 preset of version 2026.09. The clauses are not rechecked in the rewrite of 2026-11-21 and are rechecked before the first release.
+schema: 1
+id: billing-nl
+framework: "Dutch tax administration duty: Algemene wet inzake rijksbelastingen art. 52 (bewaarplicht) and the Belastingdienst brochure on automated administration"
+version: "2026.09"
+summary: "The usage-billing profile. What finance, a customer in a dispute and the tax inspector read. Quantities per customer and meter, never people."
+disclaimer: "This profile is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "AWR art. 52: books, records and other data carriers kept for 7 years, auditable within a reasonable time"
+    url: https://wetten.overheid.nl/BWBR0002320
+  - clause: "Belastingdienst, administratie bewaren: 7 years; basisgegevens cannot be shortened by agreement"
+    url: https://www.belastingdienst.nl/wps/wcm/connect/bldcontentnl/belastingdienst/zakelijk/btw/administratie_bijhouden/administratie_bewaren/
+  - clause: "Belastingdienst, Uw geautomatiseerde administratie en de fiscale bewaarplicht 2.3 and 3.1: detail data behind condensed figures must be kept 7 years; data must be demonstrably original, correct and unchanged"
+    url: https://download.belastingdienst.nl/belastingdienst/docs/geautomatiseerde_administratie_en_fiscale_bewaarplicht_al0401z6fd.pdf
+  - clause: "Hoge Raad 29 June 2021, ECLI:NL:HR:2021:987: detail data of orders and settlements are part of the administration and fall under art. 52"
+    url: https://uitspraken.rechtspraak.nl/details?id=ECLI:NL:HR:2021:987
+  - clause: "GDPR Art. 5(1)(c) data minimisation; Art. 17(3)(b) erasure does not apply to records kept under a legal obligation"
+    url: https://gdpr-info.eu/art-17-gdpr/
+floors:
+  usage:
+    retention_days_min: 2557
+    retention_note: "7 years from the moment the data lose their current value. The invoice period is the practical start. Immutable monthly statements naming their digest are the condensed figures. The usage log holds the detail behind them."
+    lock_min: none
+    lock_note: "AWR art. 52 asks for the authenticity and integrity of the administration over the retention period, which the signed checkpoints provide. It does not mandate WORM storage. A lock is optional."
+    witness_may_replace_lock: false
+    witness_required: false
+    identity: none
+    log_access_audited: true
+    record_classes: [billing]
+    review_cadence: monthly
+    clauses:
+      retention_days_min: "AWR art. 52: 7 years"
+      identity: "GDPR Art. 5(1)(c): a usage event carries no person"
+      review_cadence: "The month-close reconciliation: rollups recomputed from the usage log and compared with the statement"
+    checked: "2026-09"

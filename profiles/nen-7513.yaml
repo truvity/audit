@@ -1,0 +1,29 @@
+# Compliance profile: a floor, not a copy (decision 0010).
+# Carried over from the audit-v1 preset of version 2026.09. The clauses are not rechecked in the rewrite of 2026-11-21 and are rechecked before the first release.
+schema: 1
+id: nen-7513
+framework: "NEN 7513:2018 (logging of access to patient records) and the Dutch Besluit elektronische gegevensverwerking door zorgaanbieders"
+version: "2026.09"
+summary: "Add-on for healthcare deployments. Every access to a person's record is an event with actor, role, subject, on-behalf-of and reason, kept at least five years, and the person may request an overview."
+disclaimer: "This profile is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "NEN 7513: per event: who (user id and role), what (create, read, modify, delete, copy, print, export, search, break-glass), when, which object or patient, source system, on behalf of; changes to authorisations; enabling and disabling of logging; all access to the log itself"
+    url: https://www.nen.nl/nen-7513-2018-nl-247289
+  - clause: "Staatscourant 2019-38007: minimum retention of five years for access logs of medical records"
+    url: https://zoek.officielebekendmakingen.nl/stcrt-2019-38007.pdf
+floors:
+  audit:
+    retention_days_min: 1826
+    lock_min: compliance
+    witness_may_replace_lock: false
+    witness_required: false
+    identity: pseudonym
+    log_access_audited: true
+    clock_sync_check: daily
+    record_classes: [data_access, data_change, authorization_decision, log_access, logging_control]
+    review_cadence: monthly
+    clauses:
+      retention_days_min: "Staatscourant 2019-38007: five years"
+      lock_min: "NEN 7513: the integrity of access logs for the whole retention period, in front of a named assessor. A store nobody can delete from is the reading."
+      record_classes: "NEN 7513, per event and access to the log itself"
+    checked: "2026-09"

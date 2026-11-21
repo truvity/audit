@@ -1,0 +1,33 @@
+# Compliance profile: a floor, not a copy (decision 0010).
+# Carried over from the audit-v1 preset of version 2026.09. The clauses are not rechecked in the rewrite of 2026-11-21 and are rechecked before the first release.
+schema: 1
+id: dora
+framework: "DORA (Regulation (EU) 2022/2554) and Commission Delegated Regulation (EU) 2024/1774 Art. 12 (logging)"
+version: "2026.09"
+summary: "Add-on for suppliers to financial entities. Logging-failure detection and a reference time source, which flow down through contracts."
+disclaimer: "This profile is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "CDR (EU) 2024/1774 Art. 12(2)(a)-(c): identify events to log, retention period and measures to secure logs; level of detail sufficient to detect anomalies; log access control, identity management, capacity, change management, operations, network traffic"
+    url: https://eur-lex.europa.eu/eli/reg_del/2024/1774/oj/eng
+  - clause: "CDR (EU) 2024/1774 Art. 12(2)(d)-(f): protect logs against tampering, deletion and unauthorised access at rest, in transit and in use; detect failures of logging systems; synchronise clocks to a documented reliable reference"
+    url: https://eur-lex.europa.eu/eli/reg_del/2024/1774/oj/eng
+  - clause: "Regulation (EU) 2022/2554 Art. 30: contractual flow-down to ICT third-party service providers"
+    url: https://eur-lex.europa.eu/eli/reg/2022/2554/oj
+floors:
+  audit:
+    retention_days_min: 180
+    retention_days_suggested: 365
+    retention_note: "DORA leaves the period to the entity's ICT risk assessment. A financial-entity customer may contractually require more."
+    lock_min: compliance
+    witness_may_replace_lock: false
+    witness_required: false
+    identity: pseudonym
+    log_access_audited: true
+    clock_sync_check: daily
+    record_classes: [authentication, privileged_access, account_lifecycle, configuration_change, logging_control]
+    review_cadence: monthly
+    clauses:
+      lock_min: "Art. 12(2)(d): protect logs against tampering and deletion. A store nobody can delete from is the reading."
+      record_classes: "Art. 12(2)(a)-(c)"
+      clock_sync_check: "Art. 12(2)(f)"
+    checked: "2026-09"

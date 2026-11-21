@@ -1,0 +1,35 @@
+# Compliance profile: a floor, not a copy (decision 0010).
+# Carried over from the audit-v1 preset of version 2026.09. The clauses are not rechecked in the rewrite of 2026-11-21 and are rechecked before the first release.
+schema: 1
+id: pci-dss
+framework: "PCI DSS v4.0.1 Requirement 10"
+version: "2026.09"
+summary: "Add-on for deployments in cardholder-data scope. Raises the security minimums to PCI's numbers and adds daily review."
+disclaimer: "This profile is an engineering reading of the cited clauses, not legal advice. A deployer confirms applicability, numbers and scope with its own assessor, auditor or counsel."
+citations:
+  - clause: "10.2.1.1-10.2.1.7: events: user access to cardholder data, administrative actions, access to audit logs, invalid access attempts, credential and privilege changes, starting and stopping of audit logs, creation and deletion of system objects"
+    url: https://www.pcisecuritystandards.org/document_library/
+  - clause: "10.2.2: user identification, type of event, date and time, success or failure, origination, identity of affected data, component or resource"
+    url: https://www.pcisecuritystandards.org/document_library/
+  - clause: "10.3.1-10.3.4: read access on need, protection from modification, prompt backup to a central log server, file-integrity monitoring"
+    url: https://www.pcisecuritystandards.org/document_library/
+  - clause: "10.4.1: daily review of security events; 10.5.1: 12 months retained, 3 months immediately available; 10.6: time synchronisation"
+    url: https://www.pcisecuritystandards.org/document_library/
+floors:
+  audit:
+    retention_days_min: 365
+    hot_days_min: 90
+    lock_min: compliance
+    witness_may_replace_lock: false
+    witness_required: false
+    identity: pseudonym
+    log_access_audited: true
+    clock_sync_check: daily
+    record_classes: [authentication, privileged_access, account_lifecycle, data_access, log_access, logging_control]
+    review_cadence: daily
+    clauses:
+      retention_days_min: "10.5.1: 12 months retained"
+      hot_days_min: "10.5.1: 3 months immediately available"
+      lock_min: "10.3.2 and 10.3.3: protected from modification and promptly backed up to a store that is hard to alter. WORM storage is the reading."
+      review_cadence: "10.4.1"
+    checked: "2026-09"

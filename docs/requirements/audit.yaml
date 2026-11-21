@@ -1,0 +1,1861 @@
+# audit requirements. One row is one rule with one RFC 2119 keyword and one testable behaviour.
+# Moved from sluis's requirements area AUDIT on 2026-11-21. See docs/requirements/README.md for the mapping.
+# status: done, partial or planned, as the rule stood in sluis when it moved. The code is in sluis and atoom until it moves here.
+# owner: audit, or sluis for a row that stays in sluis (the console embedding, sluis's own actions, sluis's grant mechanism, the idle write rate).
+schema: 1
+area: AUDIT
+requirements:
+- id: REQ-AUDIT-001
+  area: AUDIT
+  statement: Every successful action that a product's action table declares auditable MUST produce an audit record.
+  rationale: An action without a record cannot be reviewed.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: record-per-action test over the action table
+- id: REQ-AUDIT-021
+  area: AUDIT
+  split_from: REQ-AUDIT-001
+  statement: Every denial or refusal MUST produce an audit record that carries its reason code.
+  rationale: An action without a record cannot be reviewed.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: refusal record test over the action table
+- id: REQ-AUDIT-002
+  area: AUDIT
+  statement: Every audit record MUST validate against the schema generated from its action table entry.
+  rationale: A closed action table keeps records interpretable.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: the example record of every action and the mutation vectors of kits/conformance/audit, through the Go and the Rust JSON Schema libraries, which run JSON-Schema-Test-Suite themselves
+- id: REQ-AUDIT-022
+  area: AUDIT
+  split_from: REQ-AUDIT-002
+  statement: The emitter MUST refuse an unknown action.
+  rationale: A closed action table keeps records interpretable.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: unknown-action test
+- id: REQ-AUDIT-003
+  area: AUDIT
+  statement: Audit records, logs and traces MUST NOT contain e-mail addresses, names, secrets or tokens.
+  rationale: The trail must not become a personal-data store.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: scan of records and logs for personal data and secrets
+- id: REQ-AUDIT-023
+  area: AUDIT
+  split_from: REQ-AUDIT-003
+  statement: An external actor MUST be recorded under a keyed pseudonym.
+  rationale: The trail must not become a personal-data store.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: pseudonym test
+- id: REQ-AUDIT-004
+  area: AUDIT
+  statement: The hash of an audit record MUST be SHA-384 over its RFC 8785 canonical form.
+  rationale: A canonical form makes hashes reproducible.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: SHA-384 known answers over the RFC 8785 bytes of every record vector, in Go and Rust
+- id: REQ-AUDIT-005
+  area: AUDIT
+  statement: Audit records of a period MUST be organised in a Merkle tree following the RFC 6962 hash rules.
+  rationale: Proofs let anyone verify the log without trusting the operator.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: 'RFC 6962 examples: the Certificate Transparency reference tree, its eight roots, in the first eight leaves of the vector file'
+  - kind: test-vectors
+    ref: 'shared Merkle vector file (merkle-vectors.json): 14 roots and 91 inclusion and 91 consistency proofs from an independent program; Go and Rust both pass it'
+- id: REQ-AUDIT-024
+  area: AUDIT
+  split_from: REQ-AUDIT-005
+  statement: Inclusion and consistency proofs MUST verify offline.
+  rationale: Proofs let anyone verify the log without trusting the operator.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: 'RFC 6962 examples: the proofs of the shared vector file, made by the Go and Rust libraries, verify from the leaf, the proof and the root alone'
+  - kind: integration-test
+    ref: 'offline verification test: every entry''s proof and the consistency of the signed checkpoints of the Go writer''s log verify from its files; a proof of another entry, or for an unsigned root, is refused'
+- id: REQ-AUDIT-025
+  area: AUDIT
+  statement: A sealed period MUST be immutable after sealing.
+  rationale: A sealed period is the unit of evidence.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'immutability test: the objects of a sealed batch are byte for byte what they were after later batches; the port refuses a create over, and a put to, a sealed object; a changed tile no longer verifies'
+- id: REQ-AUDIT-026
+  area: AUDIT
+  statement: A sealed period MUST be verifiable offline using only the public key set and the sealed data.
+  rationale: A sealed period is the unit of evidence.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: offline seal verification test
+- id: REQ-AUDIT-007
+  area: AUDIT
+  statement: There MUST be exactly one writer per log.
+  rationale: Two writers fork the chain.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: two-writer negative test
+- id: REQ-AUDIT-027
+  area: AUDIT
+  split_from: REQ-AUDIT-007
+  statement: An installation with more than one node or with elastic nodes MUST guarantee one writer per log by a create-if-absent fence on the log store.
+  rationale: The fence of each log is its blob and not a lease, so a second writer cannot fork the log.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite blob create-if-absent fence
+- id: REQ-AUDIT-008
+  area: AUDIT
+  statement: The log store MUST be a blob store with an explicit lock mode of none, removable or compliance.
+  rationale: The lock mode defines what tamper-evidence the log gives.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: the blob port suite passes for the `fs` driver (lock mode none); the AuditLog kind refuses a lock mode that is missing or not none, removable or compliance, and the writer does not start on one
+- id: REQ-AUDIT-028
+  area: AUDIT
+  split_from: REQ-AUDIT-008
+  statement: The configuration check MUST report the lock mode of the configured blob driver.
+  rationale: The lock mode defines what tamper-evidence the log gives.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check lock-mode report test
+- id: REQ-AUDIT-009
+  area: AUDIT
+  statement: A cluster MUST keep one log per node.
+  rationale: Peers narrow the window in which one node can rewrite its log.
+  level: MUST
+  status: partial
+  owner: audit
+  runtimes:
+  - host
+  - kubernetes
+  verification:
+  - kind: integration-test
+    ref: per-node log test
+- id: REQ-AUDIT-029
+  area: AUDIT
+  split_from: REQ-AUDIT-009
+  statement: Where peer witnesses are configured, the other nodes of a cluster MUST be the peer witnesses that co-sign a node's checkpoints, two of three.
+  rationale: Peers narrow the window in which one node can rewrite its log.
+  level: MUST
+  status: planned
+  owner: audit
+  runtimes:
+  - host
+  - kubernetes
+  verification:
+  - kind: integration-test
+    ref: co-signing and failure tests
+- id: REQ-AUDIT-010
+  area: AUDIT
+  statement: Where no witness is configured, the configuration check MUST warn.
+  rationale: Witnesses are optional but the risk must be visible.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check warning test
+- id: REQ-AUDIT-030
+  area: AUDIT
+  split_from: REQ-AUDIT-010
+  statement: The documentation MUST state that, with no witness, a compromised writer can obtain a rewritten checkpoint.
+  rationale: Witnesses are optional but the risk must be visible.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: manual
+    ref: documentation review
+- id: REQ-AUDIT-011
+  area: AUDIT
+  statement: audit MAY adopt a published transparency-log checkpoint and witness protocol so that independent parties can witness a log.
+  rationale: Interoperable witnesses strengthen the log.
+  level: MAY
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: spec vectors
+  - kind: integration-test
+    ref: witness protocol test
+- id: REQ-AUDIT-031
+  area: AUDIT
+  split_from: REQ-AUDIT-011
+  statement: audit MAY anchor sealed checkpoints externally with a time-stamp authority.
+  rationale: An external anchor bounds the time of a seal.
+  level: MAY
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: time-stamp anchor test
+- id: REQ-AUDIT-012
+  area: AUDIT
+  statement: The audit emitter MUST be a library inside each application.
+  rationale: The application must not depend on writer availability.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: manual
+    ref: architecture review
+- id: REQ-AUDIT-032
+  area: AUDIT
+  split_from: REQ-AUDIT-012
+  statement: The audit emitter MUST be decoupled from the writer by a transport.
+  rationale: The application must not depend on writer availability.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite transport
+- id: REQ-AUDIT-013
+  area: AUDIT
+  statement: In direct transport mode, when the writer is unavailable, the emitter MUST fall back to a local spool.
+  rationale: Direct mode needs durability.
+  level: MUST
+  status: planned
+  owner: audit
+  runtimes:
+  - host
+  - kubernetes
+  verification:
+  - kind: integration-test
+    ref: writer-down fallback test
+- id: REQ-AUDIT-033
+  area: AUDIT
+  split_from: REQ-AUDIT-013
+  statement: When the transport fails, the emitter MUST return the failure to its caller and not buffer the record in memory.
+  rationale: A record held only in memory is lost with the process, and a failure the caller never sees is a loss that nobody can count; this replaces the earlier ban on dropping records, which a full spool makes impossible to keep.
+  level: MUST
+  status: done
+  owner: audit
+  runtimes:
+  - host
+  - kubernetes
+  verification:
+  - kind: integration-test
+    ref: a failing transport in both kits returns the error, is not retried and is not sent later; through the real spool, a full or an absent spool refuses both calls and the spool holds only what it took
+- id: REQ-AUDIT-186
+  area: AUDIT
+  split_from: REQ-AUDIT-013
+  statement: An emitter MUST carry the running total of the best-effort facts it failed to deliver for a tenant in that tenant's records, as `lost` in the product object with the process, the total and the time of the first, until a record that carries the current total is delivered.
+  rationale: A best-effort fact that is lost while its process lives must be visible in the log, and only to the tenant it concerns.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a lost summary counts the calls it folded in; a refusal at a closed limiter, or one made after the close, is a fact of its own or counted as dropped; producers lose N for N refusals
+  - kind: manual
+    ref: two tenants lose a fact to a full spool; free it; each next record names its own total; restart the component and see a new process id
+- id: REQ-AUDIT-187
+  area: AUDIT
+  split_from: REQ-AUDIT-013
+  statement: An emitter MAY lose a best-effort fact when its delivery fails. The best-effort facts are those that the action table does not declare waiting.
+  rationale: A full spool must never block a revocation or answer a refusal on the log's health, and a fact whose operation failed is not lost.
+  level: MAY
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a revocation with the audit transport down stands and its answer says Audited=false; a ring change stands when the spool is full; a fact of a failed operation is not counted
+- id: REQ-AUDIT-014
+  area: AUDIT
+  statement: Delivery from the emitter to the writer MUST be at least once.
+  rationale: Networks duplicate; the log must not.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite transport
+- id: REQ-AUDIT-034
+  area: AUDIT
+  split_from: REQ-AUDIT-014
+  statement: The writer MUST deduplicate records by record identifier.
+  rationale: Networks duplicate; the log must not.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: duplicate delivery test
+- id: REQ-AUDIT-015
+  area: AUDIT
+  statement: An operation that issues a credential, and every action that its action table declares waiting, SHOULD fail when its record is not durable in the transport, and a tightening change (a revocation, a change of a signer's ring) does not wait for it.
+  rationale: An issuance without a record must not happen. Every transport must answer a non-blocking emit only when the record is durable, because a call that fails on an error relies on it. A full spool must never block a revocation.
+  level: SHOULD
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'blocked-write test: a grant, a signature, a PIN release, a token and an exchange are withheld when their fact is refused; a revocation and a change of the signer''s ring stand'
+- id: REQ-AUDIT-016
+  area: AUDIT
+  statement: The search index MUST be rebuildable from the log alone.
+  rationale: The index is a cache, never the record.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: reindex test
+- id: REQ-AUDIT-035
+  area: AUDIT
+  split_from: REQ-AUDIT-016
+  statement: A reader MUST be able to merge several node logs by time.
+  rationale: The index is a cache, never the record.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite index
+- id: REQ-AUDIT-017
+  area: AUDIT
+  statement: A clock-synchronisation check MUST run.
+  rationale: Seal times depend on the clock.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'the writer observes the clock per batch (REQ-AUDIT-036) and a doctor command checks it on demand; open: nothing runs the check at boot'
+- id: REQ-AUDIT-036
+  area: AUDIT
+  split_from: REQ-AUDIT-017
+  statement: A seal MUST record the observed clock offset.
+  rationale: Seal times depend on the clock.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: seal offset per batch or observed false; kernel reading, unit and sync flags (TestASealRecordsTheClockOffsetObservedForItsBatch, TestTheKernelClockObservationReadsUnitAndSyncFlags)
+- id: REQ-AUDIT-019
+  area: AUDIT
+  statement: Audit records MUST carry enough data to roll state forward after a restore for the kinds that need it.
+  level: MUST
+  status: planned
+  owner: sluis
+  stays_in_sluis: Roll-forward of state after a restore is sluis's
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-019
+- id: REQ-AUDIT-037
+  area: AUDIT
+  split_from: REQ-AUDIT-019
+  statement: Audit records MUST NOT carry secrets.
+  rationale: A secret in an immutable log can never be removed.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: secret scan of records
+- id: REQ-AUDIT-020
+  area: AUDIT
+  statement: Records MUST be routed to a tenant at write time.
+  rationale: Controllers must not read each other's records.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: tenant routing test
+- id: REQ-AUDIT-038
+  area: AUDIT
+  split_from: REQ-AUDIT-020
+  statement: The operator's own view of a tenant's records MUST contain only the class, the outcome and rotating pseudonyms.
+  rationale: Controllers must not read each other's records.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: tenant isolation test
+- id: REQ-AUDIT-039
+  area: AUDIT
+  statement: A witness MUST be optional in every installation.
+  rationale: Witnesses add dependencies that some installations cannot meet.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: no-witness installation test
+- id: REQ-AUDIT-040
+  area: AUDIT
+  statement: The audit writer MUST obtain checkpoint signatures from the `seal` block.
+  rationale: Only the `seal` block touches the log key.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: checkpoint signing test
+- id: REQ-AUDIT-041
+  area: AUDIT
+  statement: The rules of the `seal` host MUST let only the writer instance that owns a log key use it.
+  rationale: A log key used by another component could sign a checkpoint that the writer never made. The rules of a host name components and not instances, so they cannot say which writer instance owns a key until they are extended.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: key access denial test
+- id: REQ-AUDIT-042
+  area: AUDIT
+  statement: audit MUST NOT run a separate notary component for checkpoints.
+  rationale: The notary is folded into the rules of the `seal` host, which signs every checkpoint.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: nothing is named notary; the audit pieces are the writer, the witness, the indexer and the reader, and only the writer may sign with the log key
+- id: REQ-AUDIT-043
+  area: AUDIT
+  statement: The configuration check MUST refuse direct audit transport on a runtime that has no local disk.
+  rationale: Direct mode falls back to a local spool and so needs a disk.
+  level: MUST
+  status: planned
+  owner: audit
+  runtimes:
+  - serverless
+  verification:
+  - kind: integration-test
+    ref: config-check refusal test
+- id: REQ-AUDIT-044
+  area: AUDIT
+  statement: The default audit transport driver MUST be the spool on a host with a disk, SQS on Lambda and NATS JetStream on Kubernetes.
+  rationale: Each default is proved by the reference installation of its runtime, and direct has no default.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: default driver test
+- id: REQ-AUDIT-045
+  area: AUDIT
+  statement: Each node of a cluster MUST have its own audit writer, spool and log key.
+  rationale: One log per node means one writer per log.
+  level: MUST
+  status: partial
+  owner: audit
+  runtimes:
+  - host
+  - kubernetes
+  verification:
+  - kind: integration-test
+    ref: per-node writer test
+- id: REQ-AUDIT-046
+  area: AUDIT
+  statement: A free-text field in an audit record MUST be bounded in length.
+  rationale: An immutable log must not hold unbounded typed text.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: free-text bound test
+- id: REQ-AUDIT-047
+  area: AUDIT
+  statement: The writer MUST seal a batch when it holds 256 records or when its first record is 5 seconds old, whichever comes first, and never seal a batch that took no record and refused none.
+  rationale: A short bound keeps the index and the witnesses within seconds while an idle log signs nothing.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 256 records or 5 s; repeats alone unsealed; refusals alone sealed (TestABatchOfRepeatsOnlyIsNotSealed, TestABatchThatOnlyRefusesIsSealedWithTheCountAndTheReasons)
+- id: REQ-AUDIT-048
+  area: AUDIT
+  statement: Each sealed batch MUST end with a seal entry, inside the tree, that records its record count, the writer instance and the observed clock offset.
+  rationale: The offset inside the tree is cosigned by the witnesses with everything else.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: every batch ends with a seal entry inside the tree that holds its record count, the writer instance and the clock offset (TestEveryBatchEndsWithASealEntryInsideTheTree)
+- id: REQ-AUDIT-049
+  area: AUDIT
+  statement: The writer MUST ask every configured witness to cosign each new checkpoint, at most once per witness every 5 seconds, and ask again for the latest checkpoint every 5 minutes while the log is idle.
+  rationale: The unwitnessed window stays about one seal, and a reader can prove freshness to within 5 minutes.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: witness cadence test
+- id: REQ-AUDIT-050
+  area: AUDIT
+  statement: Every checkpoint of an audit log MUST also be written once, create-if-absent, under its tree size below the log's prefix.
+  rationale: The checkpoint history must survive on a store with no versioning.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite blob create-if-absent fence
+  - kind: integration-test
+    ref: checkpoint history test
+- id: REQ-AUDIT-051
+  area: AUDIT
+  statement: An audit record identifier MUST be a UUIDv7 set by the emitter.
+  rationale: A standard, time-ordered id lets the writer bound how long it remembers ids.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: record id format test
+- id: REQ-AUDIT-052
+  area: AUDIT
+  statement: The writer MUST remember record identifiers for duplicate removal for 14 days.
+  rationale: The window must outlast the longest queue retention of a supported transport.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: an id is remembered across a restart for 14 days with the clock injected, then dropped (TestAnIdIsRememberedForFourteenDaysAndNoLonger)
+- id: REQ-AUDIT-053
+  area: AUDIT
+  statement: The writer MUST quarantine and report a record older than its duplicate-removal window instead of writing it.
+  rationale: A record outside the window could be a duplicate that the writer can no longer recognise.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a record older than the window is quarantined with the reason stale, reported and not written (TestARecordOlderThanTheWindowIsQuarantinedAndReported)
+- id: REQ-AUDIT-054
+  area: AUDIT
+  statement: 'A blocking emit MUST return only once the record is durable in the transport: accepted by the queue, acknowledged by the writer, or fsync''d to the local spool.'
+  rationale: A change must not happen when its record could still be lost, and must not wait for a seal.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: blocking emit durability test
+- id: REQ-AUDIT-055
+  area: AUDIT
+  statement: Each audit log entry MUST be a clear envelope plus the record sealed through the `seal` block under its tenant's evidence key.
+  rationale: The envelope lets a reader route without opening, and the evidence key outlives the personal data.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: an entry opens under the tenant's evidence key and under no other key
+- id: REQ-AUDIT-056
+  area: AUDIT
+  statement: The leaf hash of an audit log MUST cover the whole entry, ciphertext included.
+  rationale: A log must still verify after its records stop opening.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: verify after shred test
+- id: REQ-AUDIT-057
+  area: AUDIT
+  statement: A person's erasure request MUST be met by deleting the mapping from that person's pseudonym to the person, which is kept outside the log.
+  rationale: Records carry pseudonyms only, so deleting the mapping removes the link to the person without a key per subject.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: erasure by pseudonym mapping test
+- id: REQ-AUDIT-058
+  area: AUDIT
+  statement: In a production scope the configuration check MUST refuse an audit log store whose lock mode is not compliance unless a peer or external witness is configured.
+  rationale: A production log without a lock and without a witness must not start by accident.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check production lock-mode refusal test
+- id: REQ-AUDIT-059
+  area: AUDIT
+  statement: Outside production the configuration check MUST warn about an audit log store that has neither a compliance lock nor a witness.
+  rationale: Development and staging may run unprotected logs, but the risk must be visible.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check lock-mode warning test
+- id: REQ-AUDIT-060
+  area: AUDIT
+  statement: Every audit log in a production scope MUST declare its retention period, with no built-in default.
+  rationale: A period locked in compliance mode cannot be shortened, so it must be chosen consciously.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check retention test
+- id: REQ-AUDIT-061
+  area: AUDIT
+  statement: The declared retention MUST be enforced as per-object retention on a compliance store, as the bucket lock rule on a store that has one, and as a lifecycle rule or an expiry sweeper on a store with no lock.
+  rationale: Each backend has its own means, and the declared period must mean the same on all of them.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite blob retention
+  - kind: integration-test
+    ref: retention per backend test
+- id: REQ-AUDIT-062
+  area: AUDIT
+  statement: An audit log expiry sweeper MUST hold a delete right on expired log objects only.
+  rationale: The sweeper is the one credential that may delete from the log.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: sweeper delete-right denial test
+- id: REQ-AUDIT-063
+  area: AUDIT
+  statement: audit MUST NOT place or lift legal holds on the audit log, and each hold placed with the store's own means is recorded as an audit record under the person's name.
+  rationale: Holds stay with cloud IAM and a break-glass role, and the log still shows who held what.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: hold record test
+- id: REQ-AUDIT-064
+  area: AUDIT
+  statement: Before the `seal` block deletes a tenant's evidence wrap, the deletion MUST check for a standing legal hold on the logs that hold the tenant's entries.
+  rationale: A legal hold on the logs must stop the end of the tenant's evidence while it stands.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'a tenant whose evidence retention has ended with a standing hold on a log: the evidence wrap is not deleted'
+- id: REQ-AUDIT-066
+  area: AUDIT
+  statement: A reader MUST NOT claim an order between records of different node logs that are closer in time than those logs' recorded clock offsets.
+  rationale: Within one log the order is exact; across logs it is only as good as the clocks.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: merge order test
+- id: REQ-AUDIT-067
+  area: AUDIT
+  statement: The search index MUST keep full text only over the fields that the action table marks searchable.
+  rationale: Full text over everything would index personal fields.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite index
+  - kind: integration-test
+    ref: searchable fields test
+- id: REQ-AUDIT-068
+  area: AUDIT
+  statement: A tenant's exit MUST purge the tenant's rows from the search index and exclude them from every later rebuild.
+  rationale: A purged index must not bring a tenant's rows back at the next rebuild.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'exit a tenant, then rebuild: no row of the tenant is in the index'
+- id: REQ-AUDIT-069
+  area: AUDIT
+  statement: A `postgres` search index MUST enforce row-level security on its project, log kind and tenant columns.
+  rationale: The index database is a second place where one tenant's rows could be read as another's.
+  level: MUST
+  status: planned
+  owner: audit
+  runtimes:
+  - serverless
+  - kubernetes
+  verification:
+  - kind: integration-test
+    ref: index row-level security test
+- id: REQ-AUDIT-070
+  area: AUDIT
+  statement: Full-text search MUST match words without stemming, folding diacritics, with the same matches on every index driver.
+  rationale: One conformance suite needs the same answer from every driver.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: port suite index full text
+- id: REQ-AUDIT-071
+  area: AUDIT
+  statement: An index rebuild MUST build a new generation beside the serving one and switch the reader to it atomically.
+  rationale: Search stays up during a rebuild, and a failed rebuild leaves the old index serving.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: rebuild switch test
+- id: REQ-AUDIT-072
+  area: AUDIT
+  statement: The reader MUST return a record with an inclusion proof against a cosigned checkpoint.
+  rationale: A record can then be proven to an outsider.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: get with proof test
+- id: REQ-AUDIT-073
+  area: AUDIT
+  statement: The reader MUST decide every call on the projects, log kinds and tenants it names, and apply the resulting grant as a mandatory filter of the query.
+  rationale: Least privilege per tenant is enforced in one policy language.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: reader grant filter test
+- id: REQ-AUDIT-074
+  area: AUDIT
+  statement: Every read of the audit log through the reader MUST itself be audited with the rule that granted it.
+  rationale: Reads of the trail must be accountable.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'read audit test: a read of several tenants carries an authorizations entry for each decision, and the record names the decision that denied it'
+- id: REQ-AUDIT-075
+  area: AUDIT
+  statement: The default search index MUST be `postgres` on Aurora on Lambda and `postgres` on CloudNativePG on Kubernetes.
+  rationale: Search works out of the box on every tested installation.
+  level: MUST
+  status: planned
+  owner: audit
+  runtimes:
+  - serverless
+  - kubernetes
+  verification:
+  - kind: integration-test
+    ref: default index test
+- id: REQ-AUDIT-076
+  area: AUDIT
+  statement: Serverless functions MUST reach a `postgres` index directly with IAM authentication and one database role per piece.
+  rationale: The index runs on Aurora Serverless v2, the indexer and the reader connect without RDS Proxy at first, and each actor kind keeps its own role; RDS Proxy is added if the reader's concurrency grows.
+  level: MUST
+  status: planned
+  owner: audit
+  runtimes:
+  - serverless
+  verification:
+  - kind: integration-test
+    ref: a function connects with an IAM token as the database role of its actor kind, a role of another kind is refused, and no proxy sits between the function and the index
+- id: REQ-AUDIT-077
+  area: AUDIT
+  statement: The audit front MUST be its own edge listener on its own host, also when the audit runs beside an identity product.
+  rationale: The audit front is the same shape on every installation.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'topology test: the generated Compose services and systemd units give the audit front its own entry instance and socket, and the forwarder config gives it its own host'
+- id: REQ-AUDIT-078
+  area: AUDIT
+  statement: The audit console's browser session MUST be held by the audit installation's own `session` actor as an HttpOnly cookie, with no token in the browser.
+  level: MUST
+  status: planned
+  owner: sluis
+  stays_in_sluis: The console page is embedded in sluis's console, and its browser session and writes are sluis's
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-078
+- id: REQ-AUDIT-079
+  area: AUDIT
+  statement: A write from the audit console MUST go through the audit installation's `console` actor to the actor that owns its kind, never through the reader.
+  level: MUST
+  status: planned
+  owner: sluis
+  stays_in_sluis: A write from an embedded console goes through sluis's console actor
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-079
+- id: REQ-AUDIT-080
+  area: AUDIT
+  statement: The audit console page MUST be a static bundle of its own, built on audit's release train, that works with no identity product beside it and that another console can embed.
+  rationale: A smaller bundle allows a tighter content security policy and proves the page stands alone.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: stand-alone audit console test
+- id: REQ-AUDIT-081
+  area: AUDIT
+  statement: A console of another installation MUST reach the audit front with an exchanged token whose `aud` is the audit client id, whose lifetime is at most 5 minutes and which is bound to the console's X.509-SVID by mutual TLS.
+  level: MUST
+  status: planned
+  owner: sluis
+  stays_in_sluis: Another console reaches the audit front with an exchanged token. The exchange is sluis's
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-081
+- id: REQ-AUDIT-082
+  area: AUDIT
+  statement: The audit front MUST accept only tokens of an issuer that the configuration declares as a trusted token source.
+  rationale: A token for one environment's log must not open another's.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: audit front issuer test
+- id: REQ-AUDIT-083
+  area: AUDIT
+  statement: 'The audit console MUST show the health of each project''s logs: the age of the latest checkpoint, the witness cosignatures and the index lag.'
+  rationale: Integrity problems must be visible to the people who read the log, not only in metrics.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: log health view test
+- id: REQ-AUDIT-084
+  area: AUDIT
+  statement: '`audit verify` and `audit read` MUST work from the bucket alone with read-only cloud credentials and no front, reader or sign-in.'
+  rationale: Auditors and incident responders are never locked out by the front or the issuer.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: bucket-only verify and read test
+- id: REQ-AUDIT-085
+  area: AUDIT
+  statement: The audit front's host MUST be a sibling of the identity product's host, never a child of it or a path on it.
+  rationale: A sibling inherits no cookie scope, and one origin per host holds.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'host config test: the forwarder config of the local installation names the audit host as a sibling of the scope host, with no path matcher and its own entry socket'
+- id: REQ-AUDIT-087
+  area: AUDIT
+  statement: The writer MUST store the canonical bytes of an audit record exactly as the emitter produced them.
+  rationale: Any re-encoding would change the hash and could change the record.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: emit-to-read byte equality test
+- id: REQ-AUDIT-088
+  area: AUDIT
+  statement: Each product release MUST pin one OCSF version and name it in the `metadata.version` of every audit record it writes.
+  rationale: A record of any age is read and validated by the version it names.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: pinned OCSF version test
+- id: REQ-AUDIT-089
+  area: AUDIT
+  statement: The build MUST fail when the action table or a field of the product object uses an OCSF class, attribute or enum value that the pinned OCSF version marks deprecated.
+  rationale: OCSF deprecates often, and an upgrade must be a deliberate, checked change.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: deprecated OCSF item check in CI
+- id: REQ-AUDIT-090
+  area: AUDIT
+  statement: An audit record MUST name its actor in `actor.user.uid` as the name of the emitting component, with the actor's kind in `actor.user.type_id`.
+  rationale: One actor name serves every layer, and every principal has one home in the record.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: the record vectors and the example of every action, built by the Go and Rust emitters to the same bytes, and every example through the OCSF toolkit in CI (just ocsf-check)
+- id: REQ-AUDIT-091
+  area: AUDIT
+  statement: A stored audit record MUST hold enum ids only, with no enum captions, observables or enrichments, except the decision of an authorization, which OCSF requires.
+  rationale: Derived data stays out of the hashed evidence and is added on export.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'lean record test: every record vector, in Go and Rust, holds no observables, enrichments or caption outside authorizations[].decision, and a record with each is flagged'
+- id: REQ-AUDIT-092
+  area: AUDIT
+  statement: The audit export MUST be NDJSON of OCSF events that carry the log's scope in `metadata.log_name`.
+  rationale: A record taken out of its log must still say which scope it belongs to.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: export format test
+- id: REQ-AUDIT-093
+  area: AUDIT
+  statement: The writer MUST write the usage part of a message to a usage log that has its own prefix, checkpoints and retention, apart from the audit log, in its project's bucket.
+  rationale: Usage is read by finance without the audit log, so it needs its own prefix, checkpoints and retention.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: two log kinds test
+- id: REQ-AUDIT-094
+  area: AUDIT
+  statement: The writer MUST register the sealed batches of the audit log and the ids it sealed in one conditional write of its state in the project's bucket, and acknowledge the transport only after that write and the checkpoint.
+  rationale: A crash leaves all of it or none of it, and the writer's state never lives in the store.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: crash between seals test
+- id: REQ-AUDIT-166
+  area: AUDIT
+  split_from: REQ-AUDIT-094
+  statement: The writer MUST register the sealed batches of the usage log in the same conditional write of its state as those of the audit log.
+  rationale: A crash leaves both logs or neither, so the two logs never disagree about which messages were written.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: crash between seals test with both log kinds
+- id: REQ-AUDIT-095
+  area: AUDIT
+  statement: A usage event MUST be a CloudEvents 1.0 event in the structured JSON format, in RFC 8785 canonical form.
+  rationale: A usage-event standard serves metering and billing readers without a security schema.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: usage event format test
+- id: REQ-AUDIT-096
+  area: AUDIT
+  statement: The writer MUST ask every configured witness to cosign the checkpoints of the usage log as it does for the audit log.
+  rationale: Balance effects and meters need the same tamper evidence as security records.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: usage log cosignature test
+- id: REQ-AUDIT-098
+  area: AUDIT
+  statement: The indexer MUST NOT follow or index the usage log.
+  rationale: Nobody searches usage, and the indexer then needs no key for it.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: indexer log kind test
+- id: REQ-AUDIT-099
+  area: AUDIT
+  statement: An audit emitter in Go or Rust MUST validate each record against the schema generated from its action table entry before it emits the record.
+  rationale: An ill-formed record is refused where it is made, before a blocking emit waits on it; the writer still validates and stays authoritative.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: emitter refuses an ill-formed record test
+- id: REQ-AUDIT-100
+  area: AUDIT
+  statement: The build MUST fail when an example record of the action table fails the OCSF toolkit's validation against the pinned OCSF version.
+  rationale: The toolkit checks OCSF's cross-field rules, which the generated JSON Schema does not, and it is pre-1.0, so it gates CI rather than the writer.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: 'OCSF toolkit check of every example record in CI (just ocsf-check): any error fails, with no list of tolerated findings; an unknown attribute, a wrong type and an unknown enum value are reported'
+- id: REQ-AUDIT-101
+  area: AUDIT
+  split_from: REQ-AUDIT-100
+  statement: The build MUST fail when the Go, Rust and TypeScript validators of the audit record schema disagree on any test vector.
+  rationale: One schema is enforced in three languages, and a disagreement means one of them accepts what another refuses.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: action table vectors through every language's validator
+- id: REQ-AUDIT-103
+  area: AUDIT
+  statement: Every blob driver MUST refuse to overwrite an existing object on a create-if-absent write.
+  rationale: The blob store is the write-once fence of the audit log, so a second writer cannot overwrite or fork it.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a second create of an existing path through the fs host's guarded socket is refused as taken; atoom's blob conformance suite holds every blob driver to the same rule in atoom's CI
+- id: REQ-AUDIT-106
+  area: AUDIT
+  statement: The writer MUST refuse an audit record whose bytes differ from the RFC 8785 canonical form of the same record.
+  rationale: A record that is not canonical would hash differently in another implementation.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: RFC 8785 test data and non-canonical records
+- id: REQ-AUDIT-107
+  area: AUDIT
+  statement: An audit record MUST NOT carry a floating-point number or an integer outside the range of plus or minus 2^53 minus 1.
+  rationale: RFC 8785 writes numbers as IEEE 754 doubles, and a larger integer would not survive it.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: action table vectors with numbers at and beyond the bound
+- id: REQ-AUDIT-108
+  area: AUDIT
+  statement: The emitter MUST build the audit record and the usage events of an action from one call, with one message id.
+  rationale: One call cannot emit a usage event without its audit record or the audit record twice.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: single-call emit test
+- id: REQ-AUDIT-109
+  area: AUDIT
+  statement: The writer MUST refuse a message whose usage part carries a meter that its action table entry does not declare.
+  rationale: The action table says what an action may meter, so a writer can check usage without parsing the security record.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: undeclared meter refusal test
+- id: REQ-AUDIT-110
+  area: AUDIT
+  statement: The `id` of a usage event MUST be the `metadata.uid` of the audit record of its message, a slash, and the position of the event in the message.
+  rationale: The usage event deduplicates by source and id like the message, and joins to its audit record by the prefix.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: usage event id test
+- id: REQ-AUDIT-111
+  area: AUDIT
+  statement: Every audit record MUST be an OCSF event of a core class of the pinned OCSF version.
+  rationale: A core class is read by any OCSF-aware tool, and audit defines no class of its own.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: action table example records through the OCSF schema validator
+- id: REQ-AUDIT-112
+  area: AUDIT
+  statement: A fact of a product that the pinned OCSF version has no attribute for MUST be in the `unmapped.<product>` object and in no other part of `unmapped`.
+  rationale: One namespaced object keeps a product's facts together and apart from other sources, and the record needs no OCSF extension.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: action table example records through the OCSF schema validator
+- id: REQ-AUDIT-113
+  area: AUDIT
+  statement: The writer MUST refuse an audit record whose `unmapped.<product>` object does not validate against the schema in its project's AuditCatalogue.
+  rationale: OCSF cannot type the object, so the product's own schema must, and the writer stays authoritative.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: unmapped.<product> negative vectors through the writer
+- id: REQ-AUDIT-114
+  area: AUDIT
+  statement: The build MUST generate the JSON Schema of the audit records, the `unmapped.<product>` object included, from the action table in code.
+  rationale: One source keeps the table, the schema and the generated types from drifting apart.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: generated schema equals the committed schema check in CI (just audit-check, and a Go test of tools/gen/audit)
+- id: REQ-AUDIT-115
+  area: AUDIT
+  statement: The audit log MUST NOT hold a catalogue document or a schema entry.
+  rationale: The release identifies the action table, so a log needs no copy of it and no versioned document beside the records.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: every entry of the log is a record or a seal entry, and the log holds no catalogue object and no schema entry (TestTheLogHoldsOnlyRecordsAndSealEntries)
+- id: REQ-AUDIT-116
+  area: AUDIT
+  statement: An audit record MUST name the product that wrote it and its release in `metadata.product.name` and `metadata.product.version`.
+  rationale: The release and `metadata.event_code` identify the action table entry in force, so a record needs no catalogue field.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: the record vectors and the example of every action, built by the Go and Rust emitters to the same bytes, and every example through the OCSF toolkit in CI (just ocsf-check)
+- id: REQ-AUDIT-117
+  area: AUDIT
+  statement: An audit record MUST carry the scope of its log in `metadata.log_name`.
+  rationale: A record taken out of its log must still say which scope it belongs to.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: the record vectors and the example of every action, built by the Go and Rust emitters to the same bytes, and every example through the OCSF toolkit in CI (just ocsf-check)
+- id: REQ-AUDIT-118
+  area: AUDIT
+  statement: The writer MUST refuse an audit record whose `metadata.log_name` differs from the scope of the log.
+  rationale: A record written to the wrong scope's log would be misattributed for as long as the log is kept.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: scope mismatch refusal test
+- id: REQ-AUDIT-119
+  area: AUDIT
+  statement: The build MUST fail when a change to the schema of `unmapped.<product>` removes or retypes a field without a new major version of the product.
+  rationale: Records are never rewritten, so a field has to keep its meaning for every record that carries it.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: unmapped.<product> compatibility check against the previous release in CI
+- id: REQ-AUDIT-120
+  area: AUDIT
+  statement: An audit record MUST declare every OCSF profile whose attributes it uses in `metadata.profiles`.
+  rationale: OCSF validators refuse profile attributes that the record does not declare.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: the record vectors and the example of every action, built by the Go and Rust emitters to the same bytes, and every example through the OCSF toolkit in CI (just ocsf-check)
+- id: REQ-AUDIT-121
+  area: AUDIT
+  statement: An export of an audit log MUST be recorded as an Event Log Activity event with activity 3, Export.
+  rationale: OCSF has an Export activity for the event log, which fits better than an API Activity with activity 99.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: audit export record test
+- id: REQ-AUDIT-122
+  area: AUDIT
+  statement: A step-up of a session MUST be recorded as an Authentication Logon event with `is_mfa` true, the `session.uid` of the session and the `activity_name` "Step-Up".
+  level: MUST
+  status: planned
+  owner: sluis
+  stays_in_sluis: The step-up of a sluis session is a sluis action
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-122
+- id: REQ-AUDIT-123
+  area: AUDIT
+  statement: An issued certificate MUST be recorded in `unmapped.sluis.certificate` and not in the `certificate` object of the event.
+  level: MUST
+  status: planned
+  owner: sluis
+  stays_in_sluis: An issued certificate is a sluis action
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-123
+- id: REQ-AUDIT-124
+  area: AUDIT
+  statement: An audit record MUST NOT use the `delegation` object or declare the `ai_operation` profile.
+  rationale: '`delegation` exists only for AI operations and carries identifiers only, so the actor chain of a delegated call is `actor`, `user` and `unmapped.<product>.actor_chain`.'
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: 'negative vector test over every record vector, in Go and Rust: no delegation object and no profile but security_control; OCSF schema validity is a different row'
+- id: REQ-AUDIT-125
+  area: AUDIT
+  statement: One log key per writer instance MUST sign the checkpoints of its project's audit log.
+  rationale: A writer's log has one audience and one lifetime, so a second key would add a policy for nothing.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: every checkpoint is signed with the log key of its writer instance; one key per instance has no test yet
+- id: REQ-AUDIT-167
+  area: AUDIT
+  split_from: REQ-AUDIT-125
+  statement: The log key of a writer instance MUST sign the checkpoints of its project's usage log as well as those of its audit log.
+  rationale: Both logs of a writer have one audience and one lifetime, so a second key would add a policy for nothing.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the checkpoints of both log kinds of one writer verify against one public key, and those of two writers against two
+- id: REQ-AUDIT-126
+  area: AUDIT
+  statement: Each signed batch head MUST name the log it belongs to, the audit log or the usage log.
+  rationale: With one log key, the name inside the signed head keeps a head of one log from being passed off as a head of the other.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: a checkpoint of the usage log presented as a checkpoint of the audit log; refused
+- id: REQ-AUDIT-127
+  area: AUDIT
+  statement: A pseudonym MUST be computed by the `seal` block with Mac, HMAC-SHA384, under the tenant's pseudonym key of its epoch.
+  rationale: A keyed function cannot be reversed from a list of subjects without the key.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'pseudonym test vectors: the HMAC-SHA384 of Mac under the pseudonym key of the tenant and the epoch; no tenant, a bad epoch or a caller with no rule gets none'
+- id: REQ-AUDIT-128
+  area: AUDIT
+  statement: An emitter MUST replace a subject with its pseudonym before the record leaves the emitting process.
+  rationale: No transport, spool or writer then holds a raw subject.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: spool and transport scan for raw subjects
+- id: REQ-AUDIT-129
+  area: AUDIT
+  statement: The pseudonym key of a tenant MUST start a new epoch at the start of every UTC month.
+  rationale: Pseudonyms rotate so the operator's view links a person within a month only.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: epoch change test with a moved clock
+- id: REQ-AUDIT-130
+  area: AUDIT
+  statement: The reader MUST refuse to reverse a pseudonym for anyone without the tenant's reversal permission.
+  rationale: Only the tenant's own audit role may link a pseudonym to a subject.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: reversal by the installation operator; refused
+- id: REQ-AUDIT-131
+  area: AUDIT
+  statement: Every reversal of a pseudonym MUST produce an audit record under the asking person's name.
+  rationale: A reversal is a use of personal data that must be visible.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: reversal audit record test
+- id: REQ-AUDIT-132
+  area: AUDIT
+  statement: A usage event MUST NOT carry a field that holds personal data.
+  rationale: Usage facts outlive the tenant's personal data, so they must hold none.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: a usage part with a pseudonym, a subject or free text is refused by the writer
+- id: REQ-AUDIT-136
+  area: AUDIT
+  statement: The configuration check MUST refuse, in a production scope, a log retention below the floor of the compliance profile that the project declares in AuditLog, naming the profile.
+  rationale: A profile is a floor that the installation must not go below.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: installations with a retention below each profile floor
+- id: REQ-AUDIT-137
+  area: AUDIT
+  statement: The configuration check MUST refuse, in a production scope, a lock mode below the floor of the compliance profile that the project declares in AuditLog unless the witness that the profile allows in its place is declared.
+  rationale: A profile that demands an immutable log must not run on a removable one unwitnessed.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: installations with a lock below each profile floor
+- id: REQ-AUDIT-138
+  area: AUDIT
+  statement: A transition of an audit object to a colder storage class MUST NOT change the object's lock or retention.
+  rationale: A tier saves cost and must never shorten evidence.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: conformance-suite
+    ref: 'blob suite: a transitioned locked object keeps its lock'
+- id: REQ-AUDIT-139
+  area: AUDIT
+  statement: The checkpoints, the partial tiles and the hash tiles above level 0 of an audit log MUST stay in the hot storage class.
+  rationale: A proof and the newest entries must never wait for a retrieval.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the rendered lifecycle rule names only entry bundles and level-0 tiles
+- id: REQ-AUDIT-140
+  area: AUDIT
+  statement: The audit reader MUST answer a read of an object in a cold storage class with a pending state, not by holding the request until the retrieval ends.
+  rationale: A request must not hang for hours on an archive.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a read of a cold object
+- id: REQ-AUDIT-141
+  area: AUDIT
+  statement: A project's writer MUST write only its own project's bucket and sign only with its own log key.
+  rationale: A flaw in one project's writer then cannot write or sign for another.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the writer of project A attempts a put to project B's bucket and a sign with project B's log key; both refused
+- id: REQ-AUDIT-142
+  area: AUDIT
+  statement: An audit piece MUST NOT write the billing prefix of a project's bucket.
+  rationale: The billing log is the product's, and audit neither builds nor reads it.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the credentials of every audit piece hold no write action on the billing prefix
+- id: REQ-AUDIT-143
+  area: AUDIT
+  statement: Every credential that reaches a project's bucket MUST be scoped to that bucket and, for a person's direct read, to the prefixes of the log kinds that person was granted.
+  rationale: The blob store's own access control is the second of two independent checks on audit access.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a person granted usage reads usage/ and is refused audit/ and billing/ by the bucket policy
+- id: REQ-AUDIT-144
+  area: AUDIT
+  statement: The reader MUST serve a call only under a grant that covers the call's project, log kind and tenant.
+  rationale: Cedar decides every call on project, log kind and tenant, and the grant is a mandatory filter of the query.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a search under a grant for tenant A returns no record of tenant B; a call naming another project is refused
+- id: REQ-AUDIT-145
+  area: AUDIT
+  statement: The search index MUST be partitioned by project and log kind.
+  rationale: A partition is a scope the index itself enforces, apart from the grant.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a query in one partition never returns a row of another
+- id: REQ-AUDIT-146
+  area: AUDIT
+  statement: The writer MUST refuse a record whose release is newer than the release of its AuditCatalogue, and a record whose release is not a semantic version.
+  rationale: The release identifies the action table, so a log needs no copy of it, and a record of an unknown release cannot be validated.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a record of a newer release is quarantined and the batch sealed with the reason (TestABatchOfRecordsTheCatalogueRefusesIsQuarantinedAndSealed); the pipeline step is REQ-AUDIT-147
+- id: REQ-AUDIT-147
+  area: AUDIT
+  statement: The build MUST publish the AuditCatalogue document of a release, together with its schemas, before that release emits.
+  rationale: A product release then needs no writer upgrade.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'unit and recipe tests (the stages, the tree check) and the rehearsal: the release job runs the local installation from the images and both smokes against the release catalogue'
+- id: REQ-AUDIT-148
+  area: AUDIT
+  statement: The writer MUST refuse a record whose metadata.product.name its project does not declare.
+  rationale: A project's log must hold only the records of the product that the AuditLog declares for it.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a record naming a product the project does not declare is refused
+- id: REQ-AUDIT-149
+  area: AUDIT
+  statement: The audit pieces MUST read AuditLog, AuditWitnesses and AuditCatalogue through the `state` block as kinds that it loads and verifies.
+  rationale: The pieces already depend on the `state` block for the other signed documents, so a loader of their own buys no independence.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: an audit piece starts with a changed AuditLog and receives it from the `state` block on the snapshot swap
+- id: REQ-AUDIT-150
+  area: AUDIT
+  statement: The writer MUST have the `seal` block seal every audit entry under the tenant's evidence key and never under another tenant key.
+  rationale: Evidence never shares a key with personal data and outlives it, so an exit deletes everything personal and keeps the evidence.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the data key of the tenant does not open an entry; the evidence key does
+  - kind: integration-test
+    ref: after the tenant's exit the entries still open under the evidence key until the evidence retention ends (not built)
+- id: REQ-AUDIT-168
+  area: AUDIT
+  split_from: REQ-AUDIT-150
+  statement: The writer MUST have the `seal` block seal every usage entry under the tenant's evidence key and never under another tenant key.
+  rationale: Evidence never shares a key with personal data and outlives it, so an exit deletes everything personal and keeps the evidence.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the data key of the tenant does not open a usage entry; the evidence key does
+  - kind: integration-test
+    ref: after the tenant's exit the usage entries still open under the evidence key until the evidence retention ends
+- id: REQ-AUDIT-159
+  area: AUDIT
+  statement: The writer MUST ask `policy` for a grant for each batch of one tenant's records before key@ seals the batch.
+  level: MUST
+  status: done
+  owner: sluis
+  stays_in_sluis: The sealed grant of sluis's policy actor. Audit's own second check is open (record 0013)
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-159
+- id: REQ-AUDIT-160
+  area: AUDIT
+  statement: The indexer MUST open a record at key@ only under a grant that it asked `policy` for and holds only while it is live.
+  level: MUST
+  status: done
+  owner: sluis
+  stays_in_sluis: The sealed grant of sluis's policy actor. Audit's own second check is open (record 0013)
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-160
+- id: REQ-AUDIT-151
+  area: AUDIT
+  statement: The rules of the `seal` host MUST let the writer Seal under the evidence key and give it no Open.
+  rationale: A writer that cannot decrypt what it wrote holds nothing to leak.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the writer asks the `seal` host to Open an entry; refused
+- id: REQ-AUDIT-152
+  area: AUDIT
+  statement: A record that concerns no tenant MUST be sealed under the evidence key of the operator's own tenant.
+  rationale: Every sealed entry has a tenant key, and the operator is a tenant.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a machine-plane record is sealed under the operator tenant's evidence key
+- id: REQ-AUDIT-153
+  area: AUDIT
+  statement: An actor that opens an entry MUST check that the clear envelope agrees with the record.
+  rationale: A writer that lies in the envelope is then caught by the first reader that opens the record.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: 'table test in the indexer: an envelope that differs from the record in one field each (seven fields and the scope) is refused; in the reader, such an entry is not returned'
+- id: REQ-AUDIT-154
+  area: AUDIT
+  statement: A record for a tenant that the scope does not know MUST be held in the transport and raise an alarm.
+  rationale: A mistyped tenant id must never create a tenant.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a record for an unpushed tenant stays in the queue and an alarm is raised; after the push it is written
+- id: REQ-AUDIT-155
+  area: AUDIT
+  statement: The reader MUST verify a search token against the issuer that the configuration declares as the trusted token source.
+  rationale: The decision is made from the token's claims, so the token's source must be one the operator chose.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a token from an undeclared issuer is refused; one from the declared issuer yields a grant
+- id: REQ-AUDIT-156
+  area: AUDIT
+  statement: The push of a tenant by a product MUST be idempotent by request id.
+  rationale: A product retries a push until it succeeds, and a repeat must change nothing.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the same push twice creates one tenant and one set of data keys
+- id: REQ-AUDIT-157
+  area: AUDIT
+  statement: A usage fact MUST count at its time of use when that time is not earlier than the recorded time by more than 72 hours and not later by more than 5 minutes, and otherwise at its recorded time.
+  rationale: A wrong clock, or a replay of old events, cannot place usage in a span it was not used in.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: time rule vectors at 72 hours back, 5 minutes forward and one second beyond each
+- id: REQ-AUDIT-158
+  area: AUDIT
+  statement: A reader MUST mark a fact that it counts at its recorded time as time_adjusted.
+  rationale: A fact moved by the rule shows as moved.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a fact outside the bounds is counted at its recorded time and flagged
+- id: REQ-AUDIT-161
+  area: AUDIT
+  statement: A component MUST audit every call except an answered health or readiness probe.
+  rationale: A probe reads and changes nothing, and auditing it grows the log with no callers; a probe that is refused is a real call and stays audited.
+  level: MUST
+  status: partial
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'an idle installation writes no audit entry; one real call, a refused one included, writes one (entry: a_health_probe_is_not_audited_and_a_real_call_is)'
+- id: REQ-AUDIT-162
+  area: AUDIT
+  statement: A health or readiness probe MUST NOT make another component write an audit record.
+  rationale: A probe that calls a second actor, or provokes one of its refusals, moves the growth of the log there.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: an installation whose probes run for a minute writes no audit entry at any actor (a_health_probe_is_not_audited_and_a_real_call_is covers entry only)
+- id: REQ-AUDIT-163
+  area: AUDIT
+  statement: '`audit verify` MUST accept more than one log key, each with the checkpoint size from which it applies.'
+  rationale: A replaced log key must verify the history it signed up to the last size a witness cosigned, and the new key after it.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'a log with a key-change record: the old key verifies up to the cut-off size and fails after it, and the new key verifies after it'
+- id: REQ-AUDIT-164
+  area: AUDIT
+  statement: A suspected compromise of a tenant's pseudonym key MUST start a new epoch at once.
+  rationale: Until now only prose says so, and the thief must not link new records.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'declare the pseudonym key in the middle of a month: the next record uses a new epoch and older records keep their pseudonyms'
+- id: REQ-AUDIT-165
+  area: AUDIT
+  statement: An audit record of a change across tenants MUST name the person by the source tenant's pseudonym of its own subject in the source's log, and by the owner's pseudonym of the vendor account in the owner's log.
+  level: MUST
+  status: planned
+  owner: sluis
+  stays_in_sluis: A change across tenants is a sluis reconciler action
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-165
+- id: REQ-AUDIT-169
+  area: AUDIT
+  statement: Every request of a blob driver MUST have a bounded duration for each attempt and a bounded number of attempts.
+  rationale: A blob call with no bound can pass the start-up limit of a function on one slow answer, and the worst case of an operation must be known.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: conformance-suite
+    ref: the blob port suite runs a fake that stalls during connect, during the headers and in the middle of the body; the call fails within the attempts times the timeout plus the back-off
+- id: REQ-AUDIT-170
+  area: AUDIT
+  statement: The writer SHOULD log each phase of its start-up with the duration of the phase.
+  rationale: A start-up that is slow, or near the limit of a function, shows which phase takes the time only if each phase is timed.
+  level: SHOULD
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a start of the writer logs one line for each phase of Init and recover with its duration
+- id: REQ-AUDIT-171
+  area: AUDIT
+  statement: For an AWS S3 blob destination, the configuration check MUST report a bucket whose policy lacks a statement that denies s3:BypassGovernanceRetention, s3:DeleteObjectVersion and s3:PutBucketObjectLockConfiguration to every principal except the roles in the break-glass list of the destination (record 0010).
+  rationale: A bucket that audit does not own is open to any role of the account with a broad allow unless its policy denies these actions. audit renders the lifecycle rule and applies none of the rest.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a configuration check against a fake S3 control plane reports a policy without the guard, and accepts a policy with it
+- id: REQ-AUDIT-172
+  area: AUDIT
+  statement: The configuration check MUST refuse a production installation whose S3 blob destination lacks the guard of the bucket policy when the blob destination sets its bucket guard to require (record 0010).
+  rationale: The report alone does not stop an installation from going live without the protection.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: with the guard required, a bucket without it is refused for a production scope and only reported for any other
+- id: REQ-AUDIT-173
+  area: AUDIT
+  statement: The configuration check MUST report a bucket whose policy it cannot read as unchecked rather than as guarded.
+  rationale: A check that cannot run is not a pass. The role of the checker may lack the permission to read the policy.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a fake S3 control plane that denies the read of the policy gives a report that names the bucket as unchecked and the missing permission
+- id: REQ-AUDIT-174
+  area: AUDIT
+  statement: When the store refuses a blob request with 401 or 403, the driver MUST read its credential again without a cache and send the request exactly once more.
+  rationale: A credential that was rotated away answers 401 or 403, a cache can return the credential just refused, and a request sent three times hides a configuration error. A temporary credential that is minted through the store's API showed no delay when measured, so one retry is the rule for it. A locally signed credential was not measured.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: conformance-suite
+    ref: 'blob port suite, fake store: 401 once and 403 once succeed in two attempts, 401 forever fails in two; a streamed body is replayed byte for byte'
+- id: REQ-AUDIT-175
+  area: AUDIT
+  statement: Blob requests of one driver that are refused with 401 or 403 at the same time MUST share one re-read of the credential.
+  rationale: Each request that re-reads on its own multiplies the reads of the credential and can leave the requests with different credentials.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: conformance-suite
+    ref: the blob port suite sends several concurrent requests that the fake store refuses; the credential is read once and every request is retried once
+- id: REQ-AUDIT-176
+  area: AUDIT
+  statement: A blob driver MUST log a refusal of its credential at warning level with the status and the operation and without the credential.
+  rationale: The warning tells an operator that credentials rotate under load, and the log must never be a place where a credential is found.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: conformance-suite
+    ref: after a refused-then-accepted request the log holds one warning with the status and the operation and no part of the credential
+- id: REQ-AUDIT-177
+  area: AUDIT
+  statement: A blob driver MUST decide that its credential changed by comparing the key id, the secret and the session token, not the key id alone.
+  rationale: A credential rotated in place keeps its key id, and a driver that compares the id alone would take the refused credential for a new one.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: conformance-suite
+    ref: 'blob port suite: a secret rotated under the same key id is reported as changed'
+- id: REQ-AUDIT-178
+  area: AUDIT
+  statement: The writer's state MUST stay under the blob port's request limit at the top rate of the design, 51 messages a second for 14 days, by naming write-once segments for the older identifiers.
+  rationale: A state that holds every identifier outgrows the 4 MiB the blob driver takes. The writer then can neither seal a batch nor adopt the entries a crash left, and restarts in a loop.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a state at the top rate of the design stays under the limit, and the references of an hour stay bounded by a run of the real merges at a hundredth of the scale
+- id: REQ-AUDIT-179
+  area: AUDIT
+  statement: The writer MUST NOT take a record identifier as new when a segment of remembered identifiers that its state names is missing or differs from the bytes the state names and stops with an error that names the segment.
+  rationale: An identifier that cannot be looked up could be written twice, so the stop covers every message behind it and a start that must merge the segment too, until the object is restored, and no tool rebuilds one yet.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: 'a segment removed or changed under a running writer: a repeated and a new identifier of its hour both stop the writer with the segment''s path, a stale message does not, and the log is unchanged'
+- id: REQ-AUDIT-180
+  area: AUDIT
+  statement: An installation that is idle, locked or waiting for a peer MUST write no more than 60 audit records an hour.
+  level: MUST
+  status: done
+  owner: sluis
+  runtimes:
+  - host
+  stays_in_sluis: The idle write rate of an installation is sluis's
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-180
+- id: REQ-AUDIT-181
+  area: AUDIT
+  statement: The writer MUST keep the sealed grant that policy gave it for a tenant, with the expiry that policy states in its answer, and present it for every seal of every batch until ten seconds before that expiry.
+  level: MUST
+  status: done
+  owner: sluis
+  stays_in_sluis: The sealed grant of sluis's policy actor. Audit's own second check is open (record 0013)
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-181
+- id: REQ-AUDIT-182
+  area: AUDIT
+  statement: The writer MUST NOT present a grant after ten seconds before its expiry, keep one that policy or key@ refused or that came with no expiry beyond its batch, or hold one across a start.
+  level: MUST
+  status: done
+  owner: sluis
+  stays_in_sluis: The sealed grant of sluis's policy actor. Audit's own second check is open (record 0013)
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-182
+- id: REQ-AUDIT-183
+  area: AUDIT
+  statement: The writer MUST wait between 1 and 30 seconds before it opens the transport stream again after a failure, doubling the wait at each failure in a row and starting from 1 second again after a batch is sealed.
+  rationale: Every try that reaches the decision point is a decision and an audit record. A writer that retried each second while its key host was locked wrote up to 3,600 records an hour for nothing. The wait bounds how long a writer takes to recover after an unlock.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a simulated hour with the key host locked is about 124 tries, the writer seals at the first try after the unlock, and the next failure waits 1 s
+- id: REQ-AUDIT-184
+  area: AUDIT
+  statement: A pass that opens records of the log under a grant MUST ask `policy` for a new grant when the one it holds is half its life old or key@ refuses it with the reason grant.
+  level: MUST
+  status: done
+  owner: sluis
+  stays_in_sluis: The sealed grant of sluis's policy actor. Audit's own second check is open (record 0013)
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-184
+- id: REQ-AUDIT-185
+  area: AUDIT
+  split_from: REQ-AUDIT-184
+  statement: A pass that opens records of the log MUST NOT go on after key@ refuses the new grant it asked for, or refuses for another reason.
+  level: MUST
+  status: done
+  owner: sluis
+  stays_in_sluis: The sealed grant of sluis's policy actor. Audit's own second check is open (record 0013)
+  link: https://sluis.id/requirements/audit/#REQ-AUDIT-185
+- id: REQ-AUDIT-188
+  area: AUDIT
+  statement: An audit record MUST carry every attribute that its OCSF class requires, each filled from what its emitter knows, and no value that the emitter did not take from the transport, from its own name or from a closed word of its table.
+  rationale: A record that leaves out what its class requires fails every OCSF-aware tool, and an attribute filled with a made-up address or a caller's text would make the log say what no emitter knew.
+  level: MUST
+  status: done
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: the record vectors and the example of every action, built by the Go and Rust emitters to the same bytes, every example through the OCSF toolkit (just ocsf-check), and the call sites of the actors
+- id: REQ-AUDIT-189
+  area: AUDIT
+  statement: An operation that produces a usage record MUST fail when the transport does not accept the record durably.
+  rationale: Billing needs exactly-once counting, so a usage record is never dropped and never counted as lost.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: with the spool full, a security fact is lost and counted while the operation that produces a usage record fails and counts no loss
+- id: REQ-AUDIT-190
+  area: AUDIT
+  split_from: REQ-AUDIT-189
+  statement: Every usage record MUST carry an idempotency key made of its source and its id.
+  rationale: A retry after an uncertain answer must neither lose nor double a record.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: a usage record without the key is refused by the writer
+- id: REQ-AUDIT-191
+  area: AUDIT
+  split_from: REQ-AUDIT-189
+  statement: The writer MUST store a usage record whose idempotency key it already holds once.
+  rationale: Exactly-once counting needs a repeat to change nothing.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: the same usage record sent twice is one record in the usage log
+- id: REQ-AUDIT-192
+  area: AUDIT
+  statement: The `aurora` mode MUST provision the audit index on Lambda as an Aurora Serverless v2 cluster that pauses automatically when idle.
+  rationale: An index that nobody reads should cost nothing but its storage.
+  level: MUST
+  status: planned
+  owner: audit
+  runtimes:
+  - serverless
+  verification:
+  - kind: integration-test
+    ref: the provisioned cluster is Aurora Serverless v2 with auto-pause on, and an idle cluster pauses

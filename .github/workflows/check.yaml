@@ -1,0 +1,34 @@
+# The check of this repository: every YAML file parses, every relative markdown link and its anchor resolves, and the requirement
+# rows are well formed (.github/scripts/check.py). The job is named `check`: the organisation's ruleset requires a check of that name,
+# and waives it for a repository until a CI reports it.
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions: {}
+
+concurrency:
+  group: check-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the YAML parser
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet pyyaml==6.0.2
+      - name: Check YAML, links and requirement rows
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" .github/scripts/check.py

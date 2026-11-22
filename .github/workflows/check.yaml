@@ -9,6 +9,13 @@
 #   nothing is cross-compiled.
 # - lint: golangci-lint, rustfmt and clippy, the shell scripts and the workflows.
 # - supply chain: the licences of the Rust dependencies (deny.toml) and known advisories (govulncheck, cargo audit).
+# - release rehearsal: the release flow on a throw-away copy with fixture libraries, and the candidate scripts on fixtures
+#   (docs/release.md, "The rehearsals"). No tag is made here.
+# - release candidate (rehearsal): candidate.yaml with the version 0.0.0, when the change can affect the release; otherwise it does
+#   nothing and succeeds. Nothing is published.
+#
+# A push to master never cancels and never shares a group with the commit before it: the release gate (tools/release/gate.sh) needs a
+# finished, green run of this workflow on the commit it publishes.
 name: Check
 
 on:
@@ -84,11 +91,32 @@ jobs:
       - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
       - run: devbox run -- just check-licenses check-advisories
 
+  release-rehearsal:
+    name: release rehearsal
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      - run: devbox run -- just release-rehearsal release-candidate-test
+
+  release-candidate:
+    name: release candidate (rehearsal)
+    uses: ./.github/workflows/candidate.yaml
+    with:
+      rehearsal: true
+    permissions:
+      contents: read
+
   # The one required check. It passes only when every job above succeeded: a failed, cancelled or skipped job fails it.
   check:
     name: check
     if: ${{ always() }}
-    needs: [docs, build-test, lint, supply]
+    needs: [docs, build-test, lint, supply, release-rehearsal, release-candidate]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {}

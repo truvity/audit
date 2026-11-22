@@ -8,7 +8,7 @@ members = [
 
 [workspace.package]
 # The one version of the whole repository (record 0016, "Distribution"): the Go tags start at v0.17.0, and the Rust crates carry the
-# same version. The release flow is still open (record 0016); no tag of this version exists yet.
+# same version. `just release-prepare` sets it (docs/release.md).
 version = "0.17.0"
 edition = "2024"
 license = "MIT"

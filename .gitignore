@@ -1,0 +1,32 @@
+# Build output
+/bin/
+/dist/
+/out/
+/.cache/
+/target/
+*.test
+*.out
+coverage.*
+*.prof
+
+# Local environment
+.env
+.env.*
+!.env.example
+*.local
+.direnv/
+.devbox/
+/devbox.d/
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Scratch
+/tmp/
+*.log
+__pycache__/

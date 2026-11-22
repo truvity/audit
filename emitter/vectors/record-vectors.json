@@ -1,0 +1,1435 @@
+{
+ "comment": "Record vectors for the audit emitter, read by the Rust crate and the Go package of emitter/. Each case builds a record from resolved inputs: the product, the component, the scope and the release of the emitter, and the event. expected is the RFC 8785 text and sha384 is the hex SHA-384 of those bytes, the hash of the record (REQ-AUDIT-004). The product of every case is the example product `example`, whose product object is `unmapped.example`.",
+ "cases": [
+  {
+   "name": "a minimal success",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"Sign\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399}",
+   "sha384": "ff2291cf7f567ce555ae7a52cfdd8228dce0406884355d32cfdea54c9493163d53ab44dc9fcf13d4d0bbdf659c353dff"
+  },
+  {
+   "name": "a failure with tenant, correlation id and a person",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "correlation": "req-7f3a_01",
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.open",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Open"
+    },
+    "subject": {
+     "tenant": "acme",
+     "kind": "person",
+     "value": "person-1"
+    },
+    "status": 2,
+    "status_code": "grant",
+    "tenant": "acme",
+    "product_object": {
+     "key": {
+      "kind_id": 2,
+      "algorithm": "ES384",
+      "store": {
+       "type_id": 1
+      }
+     },
+     "approver": "policy@dev",
+     "actor_chain": [
+      "exchange@dev",
+      "session@dev"
+     ],
+     "ok": true,
+     "n": 9007199254740991
+    }
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Open\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"Sign\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"correlation_uid\":\"req-7f3a_01\",\"event_code\":\"key.open\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"acme\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"resources\":[{\"type\":\"person\",\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}],\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_code\":\"grant\",\"status_id\":2,\"time\":1793750400000,\"type_uid\":600399,\"unmapped\":{\"example\":{\"actor_chain\":[\"exchange@dev\",\"session@dev\"],\"approver\":\"policy@dev\",\"key\":{\"algorithm\":\"ES384\",\"kind_id\":2,\"store\":{\"type_id\":1}},\"n\":9007199254740991,\"ok\":true}}}",
+   "sha384": "7ca78e04988ecac2aa2876e322e9f4cea7cb746bb744d68a4430180cacc3a207dd0abc2fbcd2941096d5633bfdfe4139"
+  },
+  {
+   "name": "a sign-in is category 3",
+   "product": "example",
+   "component": "session",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "action": {
+     "name": "session.logon",
+     "class_uid": 3002,
+     "activity_id": 1
+    },
+    "status": 1,
+    "tenant": "globex"
+   },
+   "expected": "{\"activity_id\":1,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"session@dev\"}},\"category_uid\":3,\"class_uid\":3002,\"metadata\":{\"event_code\":\"session.logon\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"globex\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"service\":{\"name\":\"session\"},\"severity_id\":1,\"status_id\":1,\"time\":1793750400000,\"type_uid\":300201,\"user\":{\"type_id\":0,\"uid\":\"unknown\"}}",
+   "sha384": "8e14d9481d42b053d52f9adfd382f655fcbc6ad9675c6125f22d18720027b92b1b5717edceea29c6618970ac0b064495"
+  },
+  {
+   "name": "a call names its operation and the peer the transport named",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"Sign\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399}",
+   "sha384": "ff2291cf7f567ce555ae7a52cfdd8228dce0406884355d32cfdea54c9493163d53ab44dc9fcf13d4d0bbdf659c353dff"
+  },
+  {
+   "name": "a call that concerns a client has the client as its resource",
+   "product": "example",
+   "component": "policy",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "caller": "session",
+    "operation": "Decide",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "subject": {
+     "tenant": "acme",
+     "kind": "client",
+     "value": "x-1"
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"policy@dev\"}},\"api\":{\"operation\":\"Decide\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"resources\":[{\"type\":\"client\",\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}],\"severity_id\":1,\"src_endpoint\":{\"name\":\"session\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399}",
+   "sha384": "2d715f0ee6366e4bd38553f619dd0a8fd80058a31a23a8f5742f049a1a68dcb1c4eab5610bd771b5630ad8e5e2e651ff"
+  },
+  {
+   "name": "a call that concerns a workload has the workload as its resource",
+   "product": "example",
+   "component": "policy",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "caller": "session",
+    "operation": "Decide",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "subject": {
+     "tenant": "acme",
+     "kind": "workload",
+     "value": "x-1"
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"policy@dev\"}},\"api\":{\"operation\":\"Decide\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"resources\":[{\"type\":\"workload\",\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}],\"severity_id\":1,\"src_endpoint\":{\"name\":\"session\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399}",
+   "sha384": "70a61cae3ed788c0a83fe04aa47739a1fa9db1238502a59e2fb12ee78a41f1ab1bea98b9a70d09e5cf748e5d6dbf23df"
+  },
+  {
+   "name": "a call that concerns another kind of identity has it as other",
+   "product": "example",
+   "component": "policy",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "caller": "session",
+    "operation": "Decide",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "subject": {
+     "tenant": "acme",
+     "kind": "external-account",
+     "value": "x-1"
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"policy@dev\"}},\"api\":{\"operation\":\"Decide\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"resources\":[{\"type\":\"other\",\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}],\"severity_id\":1,\"src_endpoint\":{\"name\":\"session\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399}",
+   "sha384": "13594152cd5cdbf37137de1558c7ffe848d8c33f488be901ea3f7a1e666db95e25640e703830a465008a7812eeaaa2fc"
+  },
+  {
+   "name": "a call of a node's request names the node",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "node2",
+    "operation": "pin.release",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"pin.release\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"node2\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399}",
+   "sha384": "aa4aa81614a00ccc43fe99f58469007ba46b7c5cbcc3644b0a8a363a576320690c10ffabe540011b2c8c8512f4894b21"
+  },
+  {
+   "name": "a step that concerns a client names it a system, and not a person",
+   "product": "example",
+   "component": "session",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "action": {
+     "name": "session.logon",
+     "class_uid": 3002,
+     "activity_id": 1
+    },
+    "subject": {
+     "tenant": "globex",
+     "kind": "client",
+     "value": "client-1"
+    },
+    "status": 2,
+    "status_code": "client",
+    "tenant": "globex"
+   },
+   "expected": "{\"activity_id\":1,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"session@dev\"}},\"category_uid\":3,\"class_uid\":3002,\"metadata\":{\"event_code\":\"session.logon\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"globex\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"service\":{\"name\":\"session\"},\"severity_id\":1,\"status_code\":\"client\",\"status_id\":2,\"time\":1793750400000,\"type_uid\":300201,\"user\":{\"type_id\":3,\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}}",
+   "sha384": "4d2f0b683ffe681de0836fcf3dd933564906c575d6e32dbb15aab34ee70651ceca1e01640e79e115e6efd38176a29ac1"
+  },
+  {
+   "name": "a step that concerns a workload names it a system",
+   "product": "example",
+   "component": "session",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "action": {
+     "name": "session.logon",
+     "class_uid": 3002,
+     "activity_id": 1
+    },
+    "subject": {
+     "tenant": "globex",
+     "kind": "workload",
+     "value": "client-1"
+    },
+    "status": 2,
+    "status_code": "client",
+    "tenant": "globex"
+   },
+   "expected": "{\"activity_id\":1,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"session@dev\"}},\"category_uid\":3,\"class_uid\":3002,\"metadata\":{\"event_code\":\"session.logon\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"globex\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"service\":{\"name\":\"session\"},\"severity_id\":1,\"status_code\":\"client\",\"status_id\":2,\"time\":1793750400000,\"type_uid\":300201,\"user\":{\"type_id\":3,\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}}",
+   "sha384": "4d2f0b683ffe681de0836fcf3dd933564906c575d6e32dbb15aab34ee70651ceca1e01640e79e115e6efd38176a29ac1"
+  },
+  {
+   "name": "a step that concerns another kind of identity names it other",
+   "product": "example",
+   "component": "session",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "action": {
+     "name": "session.logon",
+     "class_uid": 3002,
+     "activity_id": 1
+    },
+    "subject": {
+     "tenant": "globex",
+     "kind": "external-account",
+     "value": "client-1"
+    },
+    "status": 2,
+    "status_code": "client",
+    "tenant": "globex"
+   },
+   "expected": "{\"activity_id\":1,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"session@dev\"}},\"category_uid\":3,\"class_uid\":3002,\"metadata\":{\"event_code\":\"session.logon\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"globex\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"service\":{\"name\":\"session\"},\"severity_id\":1,\"status_code\":\"client\",\"status_id\":2,\"time\":1793750400000,\"type_uid\":300201,\"user\":{\"type_id\":99,\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}}",
+   "sha384": "1ee448a8f3555f558526f900e200b51e0286500e36f07fde8d6a75d53ce9bbd3a1785457a5e32e7b4192a841ae73231a"
+  },
+  {
+   "name": "an entity names the thing that changed: a type, a name, a uid and a version",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "action": {
+     "name": "key.wrap.write",
+     "class_uid": 3004,
+     "activity_id": 1
+    },
+    "status": 1,
+    "tenant": "acme",
+    "entity": {
+     "type": "key_wrap",
+     "name": "data",
+     "uid": "wrap-key-1",
+     "version": "1"
+    }
+   },
+   "expected": "{\"activity_id\":1,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"category_uid\":3,\"class_uid\":3004,\"entity\":{\"name\":\"data\",\"type\":\"key_wrap\",\"type_id\":99,\"uid\":\"wrap-key-1\",\"version\":\"1\"},\"metadata\":{\"event_code\":\"key.wrap.write\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"acme\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"status_id\":1,\"time\":1793750400000,\"type_uid\":300401}",
+   "sha384": "2f1eadcf473cec6d1a2021a39d88ff58855da524f21364d62bb1d61f05202d478757350824a87bb87c27d2d10467e7a3"
+  },
+  {
+   "name": "an entity of a uid alone",
+   "product": "example",
+   "component": "signer",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "action": {
+     "name": "signer.ring.drop",
+     "class_uid": 3004,
+     "activity_id": 4
+    },
+    "status": 1,
+    "entity": {
+     "type": "signing_key",
+     "uid": "-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+   },
+   "expected": "{\"activity_id\":4,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"signer@dev\"}},\"category_uid\":3,\"class_uid\":3004,\"entity\":{\"type\":\"signing_key\",\"type_id\":99,\"uid\":\"-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"},\"metadata\":{\"event_code\":\"signer.ring.drop\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"status_id\":1,\"time\":1793750400000,\"type_uid\":300404}",
+   "sha384": "28ca73977a114e860d3f84eef26a75e3f47c53c4d7c00d90b2df0e0722e48dc398dfc8dc47c9704f0f80bbfcb3f3d26e"
+  },
+  {
+   "name": "an authentication of a person names the service and the person",
+   "product": "example",
+   "component": "session",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "pseudonym": "p1.202611.AAAAAAAAAAAAAAAAAAAAAA",
+   "event": {
+    "action": {
+     "name": "session.logon",
+     "class_uid": 3002,
+     "activity_id": 1
+    },
+    "subject": {
+     "tenant": "globex",
+     "kind": "person",
+     "value": "person-1"
+    },
+    "status": 1,
+    "tenant": "globex"
+   },
+   "expected": "{\"activity_id\":1,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"session@dev\"}},\"category_uid\":3,\"class_uid\":3002,\"metadata\":{\"event_code\":\"session.logon\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"globex\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"service\":{\"name\":\"session\"},\"severity_id\":1,\"status_id\":1,\"time\":1793750400000,\"type_uid\":300201,\"user\":{\"type_id\":1,\"uid\":\"p1.202611.AAAAAAAAAAAAAAAAAAAAAA\"}}",
+   "sha384": "809c8abdcf5b79e6ecf26799014af9cc1eb16de163488925c05fbd53e2580118c387ac9ce12db3e4a12ca4a3d6baa4fc"
+  },
+  {
+   "name": "an authentication names the service by the component, whatever the component is called",
+   "product": "example",
+   "component": "adapter-upstream-oidc",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "action": {
+     "name": "upstream.begin",
+     "class_uid": 3002,
+     "activity_id": 99,
+     "activity_name": "Upstream Begin"
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Upstream Begin\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"adapter-upstream-oidc@dev\"}},\"category_uid\":3,\"class_uid\":3002,\"metadata\":{\"event_code\":\"upstream.begin\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"service\":{\"name\":\"adapter-upstream-oidc\"},\"severity_id\":1,\"status_id\":1,\"time\":1793750400000,\"type_uid\":300299,\"user\":{\"type_id\":0,\"uid\":\"unknown\"}}",
+   "sha384": "e98b1e294490cb616a0c81b1460301da9054a072c6f72354237bad997c0d2ef7d11994725b369a7a1c641f86e611ed27"
+  },
+  {
+   "name": "a start is Application Lifecycle with the application and the host profile",
+   "product": "example",
+   "component": "store",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "action": {
+     "name": "store.start",
+     "class_uid": 6002,
+     "activity_id": 3
+    },
+    "status": 1
+   },
+   "expected": "{\"activity_id\":3,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"store@dev\"}},\"application\":{\"name\":\"store\"},\"category_uid\":6,\"class_uid\":6002,\"metadata\":{\"event_code\":\"store.start\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"profiles\":[\"host\"],\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"status_id\":1,\"time\":1793750400000,\"type_uid\":600203}",
+   "sha384": "823d8d64a93a64d0089468f5ad956b7e5197e86ff842073ee35e1ed53fbb4e127011debc862d715e442b9e4bafbea2db"
+  },
+  {
+   "name": "a policy decision",
+   "product": "example",
+   "component": "store",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "store.write",
+     "class_uid": 6003,
+     "activity_id": 3
+    },
+    "status": 1,
+    "tenant": "acme",
+    "policy": {
+     "decision_id": "01950000-0000-7000-8000-0000000000aa",
+     "digest": "sha384:abc",
+     "policy_ids": [
+      "p-2",
+      "p-1"
+     ],
+     "decision": 1
+    }
+   },
+   "expected": "{\"action_id\":1,\"activity_id\":3,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"store@dev\"}},\"api\":{\"operation\":\"Sign\"},\"authorizations\":[{\"decision\":\"Allowed\",\"policy\":{\"uid\":\"p-2\"}},{\"decision\":\"Allowed\",\"policy\":{\"uid\":\"p-1\"}}],\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"store.write\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"profiles\":[\"security_control\"],\"tenant_uid\":\"acme\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"policy\":{\"uid\":\"01950000-0000-7000-8000-0000000000aa\",\"version\":\"sha384:abc\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600303}",
+   "sha384": "23c26dd7ecee880b42e2ce3ce6d8a1ac9e0d15a1a101d115c9f40edfc5516803318846c48316031ae236c7b95dab38b1"
+  },
+  {
+   "name": "a denied decision",
+   "product": "example",
+   "component": "store",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "store.read",
+     "class_uid": 6003,
+     "activity_id": 2,
+     "activity_name": "Read"
+    },
+    "status": 2,
+    "status_code": "rule",
+    "tenant": "acme",
+    "policy": {
+     "decision_id": "01950000-0000-7000-8000-0000000000bb",
+     "policy_ids": [
+      "p-9"
+     ],
+     "decision": 2
+    }
+   },
+   "expected": "{\"action_id\":2,\"activity_id\":2,\"activity_name\":\"Read\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"store@dev\"}},\"api\":{\"operation\":\"Sign\"},\"authorizations\":[{\"decision\":\"Denied\",\"policy\":{\"uid\":\"p-9\"}}],\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"store.read\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"profiles\":[\"security_control\"],\"tenant_uid\":\"acme\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"policy\":{\"uid\":\"01950000-0000-7000-8000-0000000000bb\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_code\":\"rule\",\"status_id\":2,\"time\":1793750400000,\"type_uid\":600302}",
+   "sha384": "13892c4e0e3bf20c6ab7ae431c927ab25e6d2bcd2757eeca4c97c885a488e44c54661951e1f66305eed8cc8413005198"
+  },
+  {
+   "name": "a decision id alone, with no outcome",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "store.read",
+     "class_uid": 6003,
+     "activity_id": 2
+    },
+    "status": 1,
+    "policy": {
+     "decision_id": "d-1"
+    }
+   },
+   "expected": "{\"activity_id\":2,\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"Sign\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"store.read\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"profiles\":[\"security_control\"],\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"policy\":{\"uid\":\"d-1\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600302}",
+   "sha384": "904e87784a25334811038115f0b72ccffe6f87edbe7a2c1a43decfce11679831cf31bb3e2b693851e01541e7ddd51a8a"
+  },
+  {
+   "name": "member names sort in the record and in the product object",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "1.2.3",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "action": {
+     "name": "x.y",
+     "class_uid": 6002,
+     "activity_id": 99,
+     "activity_name": "Reload"
+    },
+    "status": 1,
+    "product_object": {
+     "z": "last",
+     "é": "e acute",
+     "a": {
+      "b": [],
+      "a": ""
+     },
+     "text": "tab\there \"quoted\" ☃"
+    }
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Reload\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"application\":{\"name\":\"key\"},\"category_uid\":6,\"class_uid\":6002,\"metadata\":{\"event_code\":\"x.y\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"1.2.3\"},\"profiles\":[\"host\"],\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"status_id\":1,\"time\":1793750400000,\"type_uid\":600299,\"unmapped\":{\"example\":{\"a\":{\"a\":\"\",\"b\":[]},\"text\":\"tab\\there \\\"quoted\\\" ☃\",\"z\":\"last\",\"é\":\"e acute\"}}}",
+   "sha384": "2d40e02c68ad325dcecadf3a2bafa08de0b93a3332fb77a1fc56916d9067a9d08bb7d2bb90dd13faf7dbdb2d21f76704"
+  },
+  {
+   "name": "a record that carries the note of lost facts",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "lost": {
+    "process": "0123456789abcdef",
+    "total": 3,
+    "since": 1793750399000
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"Sign\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399,\"unmapped\":{\"example\":{\"lost\":{\"process\":\"0123456789abcdef\",\"since\":1793750399000,\"total\":3}}}}",
+   "sha384": "cf963cf4641cd9deafb231625c24afd32831810c66453a97c2dd50033ca6be39e68bc3aa3e638c9c37f5048228a55c12"
+  },
+  {
+   "name": "the note of lost facts sits beside the fields of the event",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "product_object": {
+     "purpose": "token-signing",
+     "key_id": "k1"
+    }
+   },
+   "lost": {
+    "process": "fedcba9876543210",
+    "total": 9007199254740991,
+    "since": 1793750300000
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"Sign\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399,\"unmapped\":{\"example\":{\"key_id\":\"k1\",\"lost\":{\"process\":\"fedcba9876543210\",\"since\":1793750300000,\"total\":9007199254740991},\"purpose\":\"token-signing\"}}}",
+   "sha384": "c7cfddc75a6fdbdaec31343f7e5ced604f3af385b52e4cda7cfa20e0d6b93e59ad90c9a312fbf022e59beff9058e5767"
+  },
+  {
+   "name": "the note of lost facts on a record of a tenant",
+   "product": "example",
+   "component": "key",
+   "scope": "dev",
+   "release": "0.0.0-test",
+   "uid": "01950000-0000-7000-8000-000000000001",
+   "time_ms": 1793750400000,
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "tenant": "acme"
+   },
+   "lost": {
+    "process": "0123456789abcdef",
+    "total": 1,
+    "since": 1793750399000
+   },
+   "expected": "{\"activity_id\":99,\"activity_name\":\"Sign\",\"actor\":{\"user\":{\"type_id\":3,\"uid\":\"key@dev\"}},\"api\":{\"operation\":\"Sign\"},\"category_uid\":6,\"class_uid\":6003,\"metadata\":{\"event_code\":\"key.sign\",\"log_name\":\"dev\",\"product\":{\"name\":\"example\",\"version\":\"0.0.0-test\"},\"tenant_uid\":\"acme\",\"uid\":\"01950000-0000-7000-8000-000000000001\",\"version\":\"1.9.0\"},\"severity_id\":1,\"src_endpoint\":{\"name\":\"signer\"},\"status_id\":1,\"time\":1793750400000,\"type_uid\":600399,\"unmapped\":{\"example\":{\"lost\":{\"process\":\"0123456789abcdef\",\"since\":1793750399000,\"total\":1}}}}",
+   "sha384": "95674ee397192a8c2b90e2446c864cb78c6c29eaf95a179adfec73c6e0980a62fe317a01d4ec596c0bab495ad85bd1a5"
+  }
+ ],
+ "pseudonyms": [
+  {
+   "time_ms": 1793750400000,
+   "mac_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+   "epoch": "202611",
+   "expected": "p1.202611.AAECAwQFBgcICQoLDA0ODw"
+  },
+  {
+   "time_ms": 1798761600000,
+   "mac_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+   "epoch": "202701",
+   "expected": "p1.202701.AAECAwQFBgcICQoLDA0ODw"
+  },
+  {
+   "time_ms": 1767225599999,
+   "mac_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+   "epoch": "202512",
+   "expected": "p1.202512.AAECAwQFBgcICQoLDA0ODw"
+  },
+  {
+   "time_ms": 1767225600000,
+   "mac_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f",
+   "epoch": "202601",
+   "expected": "p1.202601.AAECAwQFBgcICQoLDA0ODw"
+  }
+ ],
+ "uuids": [
+  {
+   "ms": 1793750400000,
+   "counter": 0,
+   "rand_b_hex": "0011223344556677",
+   "expected": "01a1a3da-fc00-7000-8011-223344556677"
+  },
+  {
+   "ms": 1793750400001,
+   "counter": 4095,
+   "rand_b_hex": "ffffffffffffffff",
+   "expected": "01a1a3da-fc01-7fff-bfff-ffffffffffff"
+  },
+  {
+   "ms": 0,
+   "counter": 0,
+   "rand_b_hex": "0000000000000000",
+   "expected": "00000000-0000-7000-8000-000000000000"
+  }
+ ],
+ "refusals": [
+  {
+   "name": "a float",
+   "product_object": {
+    "x": 1.5
+   },
+   "reason": "schema",
+   "path": "unmapped.example.x"
+  },
+  {
+   "name": "an integer above 2^53-1",
+   "product_object": {
+    "deep": {
+     "n": 9007199254740992
+    }
+   },
+   "reason": "bound",
+   "path": "unmapped.example.deep.n"
+  },
+  {
+   "name": "an integer below -(2^53-1)",
+   "product_object": {
+    "n": -9007199254740992
+   },
+   "reason": "bound",
+   "path": "unmapped.example.n"
+  },
+  {
+   "name": "an e-mail shape",
+   "product_object": {
+    "who": "alice@example.com"
+   },
+   "reason": "schema",
+   "path": "unmapped.example.who"
+  },
+  {
+   "name": "an e-mail shape in a list",
+   "product_object": {
+    "l": [
+     "ok",
+     "bob@example.org"
+    ]
+   },
+   "reason": "schema",
+   "path": "unmapped.example.l[1]"
+  },
+  {
+   "name": "a string of 1025 bytes",
+   "product_object": {
+    "s": {
+     "$repeat": "a",
+     "times": 1025
+    }
+   },
+   "reason": "bound",
+   "path": "unmapped.example.s"
+  },
+  {
+   "name": "a list of numbers",
+   "product_object": {
+    "l": [
+     1,
+     2
+    ]
+   },
+   "reason": "schema",
+   "path": "unmapped.example.l"
+  },
+  {
+   "name": "a null",
+   "product_object": {
+    "n": null
+   },
+   "reason": "schema",
+   "path": "unmapped.example.n"
+  }
+ ],
+ "accepted": [
+  {
+   "name": "a string of exactly 1024 bytes",
+   "product_object": {
+    "s": {
+     "$repeat": "a",
+     "times": 1024
+    }
+   }
+  }
+ ],
+ "event_refusals": [
+  {
+   "name": "a policy with only a digest",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "policy": {
+     "digest": "sha384:abc"
+    }
+   },
+   "reason": "schema",
+   "path": "policy.decision_id"
+  },
+  {
+   "name": "a policy with policy ids and no decision id",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "policy": {
+     "policy_ids": [
+      "p-1"
+     ]
+    }
+   },
+   "reason": "schema",
+   "path": "policy.decision_id"
+  },
+  {
+   "name": "a policy with a digest and policy ids but no decision id",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "policy": {
+     "digest": "sha384:abc",
+     "policy_ids": [
+      "p-1"
+     ]
+    }
+   },
+   "reason": "schema",
+   "path": "policy.decision_id"
+  },
+  {
+   "name": "an empty policy",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "policy": {}
+   },
+   "reason": "schema",
+   "path": "policy.decision_id"
+  },
+  {
+   "name": "a policy decision id with an e-mail shape",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "policy": {
+     "decision_id": "a@b.example"
+    }
+   },
+   "reason": "schema",
+   "path": "policy.decision_id"
+  },
+  {
+   "name": "activity 99 without an activity name",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": ""
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "action.activity_name"
+  },
+  {
+   "name": "an activity name over 1024 bytes",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": {
+      "$repeat": "a",
+      "times": 1025
+     }
+    },
+    "status": 1
+   },
+   "reason": "bound",
+   "path": "action.activity_name"
+  },
+  {
+   "name": "a subject without a kind",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "subject": {
+     "tenant": "acme",
+     "kind": "",
+     "value": "x"
+    }
+   },
+   "reason": "schema",
+   "path": "subject.kind"
+  },
+  {
+   "name": "a subject without a value",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "subject": {
+     "tenant": "acme",
+     "kind": "person",
+     "value": ""
+    }
+   },
+   "reason": "schema",
+   "path": "subject.value"
+  },
+  {
+   "name": "a subject kind over 1024 bytes",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "subject": {
+     "tenant": "acme",
+     "kind": {
+      "$repeat": "k",
+      "times": 1025
+     },
+     "value": "x"
+    }
+   },
+   "reason": "bound",
+   "path": "subject.kind"
+  },
+  {
+   "name": "a caller that writes unmapped.<product>.lost, which is the emitter's own",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "product_object": {
+     "lost": {
+      "count": 0,
+      "since": 0
+     }
+    }
+   },
+   "reason": "schema",
+   "path": "unmapped.example.lost"
+  },
+  {
+   "name": "a source that is an IPv4 address",
+   "event": {
+    "caller": "10.0.0.1",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is an IPv6 address",
+   "event": {
+    "caller": "::1",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a host and a port",
+   "event": {
+    "caller": "host:8080",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a path",
+   "event": {
+    "caller": "/run/example/key.sock",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is an IPv4 address with a trailing dot",
+   "event": {
+    "caller": "10.0.0.1.",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a short IPv4 form",
+   "event": {
+    "caller": "127.1",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a decimal IPv4",
+   "event": {
+    "caller": "2130706433",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a hexadecimal IPv4",
+   "event": {
+    "caller": "0x7f.0.0.1",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a bracketed IPv6 address",
+   "event": {
+    "caller": "[::1]",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a link-local IPv6 address with a zone",
+   "event": {
+    "caller": "fe80::1%eth0",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a host and a port",
+   "event": {
+    "caller": "localhost:80",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is an IPv4 address and a port",
+   "event": {
+    "caller": "10.0.0.1:443",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a relative path",
+   "event": {
+    "caller": "./x",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source with a full-width colon",
+   "event": {
+    "caller": "a：b",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a tilde",
+   "event": {
+    "caller": "~",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is a dot",
+   "event": {
+    "caller": ".",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that is two dots",
+   "event": {
+    "caller": "..",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source of 65 bytes",
+   "event": {
+    "caller": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source with a user",
+   "event": {
+    "caller": "user@host",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source with a slash inside",
+   "event": {
+    "caller": "a/b",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  },
+  {
+   "name": "a source that begins with a hyphen",
+   "event": {
+    "caller": "-node",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   },
+   "reason": "schema",
+   "path": "src_endpoint.name"
+  }
+ ],
+ "event_accepted": [
+  {
+   "name": "an activity name on an activity other than 99",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 2,
+     "activity_name": "Read"
+    },
+    "status": 1
+   }
+  },
+  {
+   "name": "a person subject",
+   "event": {
+    "caller": "signer",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1,
+    "subject": {
+     "tenant": "acme",
+     "kind": "person",
+     "value": "alice@example.com"
+    }
+   }
+  },
+  {
+   "name": "a host name passes: it cannot be told from a name of the registry",
+   "event": {
+    "caller": "host.example",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   }
+  },
+  {
+   "name": "localhost passes for the same reason",
+   "event": {
+    "caller": "localhost",
+    "operation": "Sign",
+    "action": {
+     "name": "key.sign",
+     "class_uid": 6003,
+     "activity_id": 99,
+     "activity_name": "Sign"
+    },
+    "status": 1
+   }
+  }
+ ],
+ "mac_inputs": [
+  {
+   "scope": "dev",
+   "tenant": "acme",
+   "kind": "person",
+   "value": "person-123",
+   "input_hex": "000000036465760000000461636d6500000006706572736f6e0000000a706572736f6e2d313233"
+  },
+  {
+   "scope": "prod",
+   "tenant": "",
+   "kind": "workload",
+   "value": "spiffe://example.com/ns/a/sa/b",
+   "input_hex": "0000000470726f640000000000000008776f726b6c6f61640000001e7370696666653a2f2f6578616d706c652e636f6d2f6e732f612f73612f62"
+  },
+  {
+   "scope": "ab",
+   "tenant": "c",
+   "kind": "person",
+   "value": "x",
+   "input_hex": "000000026162000000016300000006706572736f6e0000000178"
+  },
+  {
+   "scope": "a",
+   "tenant": "bc",
+   "kind": "person",
+   "value": "x",
+   "input_hex": "000000016100000002626300000006706572736f6e0000000178"
+  },
+  {
+   "scope": "dev",
+   "tenant": "acme",
+   "kind": "client",
+   "value": "é☃ 😀",
+   "input_hex": "000000036465760000000461636d6500000006636c69656e740000000ac3a9e2988320f09f9880"
+  }
+ ],
+ "email": {
+  "match": [
+   "a@b.co",
+   "x a@b.c y",
+   "first.last@sub.example.com",
+   "a b@c.d",
+   "é@é.é",
+   "@@a@b.c"
+  ],
+  "no_match": [
+   "a@b",
+   "@b.c",
+   "a@.c",
+   "a@b.",
+   "key@dev",
+   "a@@b.c",
+   "a @b.c",
+   "a@ b.c",
+   "no at sign.here",
+   "a@b .c",
+   ""
+  ]
+ },
+ "record_max_bytes": 16384
+}

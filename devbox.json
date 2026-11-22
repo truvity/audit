@@ -1,0 +1,19 @@
+{
+  "packages": {
+    "just": "1.58.0",
+    "jq": "1.8.2",
+    "actionlint": "1.7.12",
+    "shellcheck": "0.11.0",
+    "rustup": "1.29.2",
+    "cargo-audit": "0.22.2",
+    "protobuf": "36.2",
+    "cargo-deny": "0.20.2"
+  },
+  "env": {
+    "RUSTUP_AUTO_INSTALL": "0"
+  },
+  "shell": {
+    "init_hook": [],
+    "scripts": {}
+  }
+}

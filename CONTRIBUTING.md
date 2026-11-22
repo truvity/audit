@@ -18,6 +18,7 @@ Thank you for helping. People and AI agents follow the same rules. [AGENTS.md](A
 | `docs/runbooks/` | What an operator does, step by step. |
 | `docs/requirements/` | The testable rules, as data. |
 | `profiles/` | The compliance profiles: floors with their clauses. |
+| `emitter/` | The emitter library: the Rust crate `audit-emitter`, and its shared vectors. |
 
 ## Writing a decision
 
@@ -40,7 +41,7 @@ Thank you for helping. People and AI agents follow the same rules. [AGENTS.md](A
 
 ## The check
 
-Every pull request runs the `check` job: it validates every YAML file and every relative markdown link. Run it locally with `python3 .github/scripts/check.py`.
+Every pull request runs the `check` job. It passes when every other job of the workflow passed: the documentation check (every YAML file and every relative markdown link, `python3 .github/scripts/check.py`), the build and the tests, the format and the lints, and the licences and advisories of the dependencies. Run it all locally with `devbox run -- just check`.
 
 ## Licence
 

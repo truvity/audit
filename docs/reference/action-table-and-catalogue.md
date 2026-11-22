@@ -126,7 +126,7 @@ One set of vectors runs through the Go, Rust and TypeScript validators, and the 
 | Merkle vectors | RFC 6962 trees, for the Go, Rust and Python implementations |
 | Semver vectors | Release comparison |
 
-The corpus files are Anders Rundgren's `testdata` of the JSON Canonicalization Scheme, kept as copies with their licence. The sets live in sluis today and move here with the emitters.
+The corpus files are Anders Rundgren's `testdata` of the JSON Canonicalization Scheme, kept as copies with their licence. The sets that hold for every product (the record, JCS, schema-policy and semver vectors and the corpus) are in [`emitter/vectors/`](../../emitter/README.md#the-vectors), with the example product `example`. The sets of one product's table (its action, domain and schema vectors) stay with the product: sluis's are in sluis. The Merkle vectors move here with the writer.
 
 ## Built and planned
 

@@ -5,7 +5,7 @@ A tamper-evident record of what a system did and what it used. Products emit rec
 audit keeps two kinds of record, and they fail differently:
 
 - **Security audit records** say what happened: a sign-in, a grant, a change, a refusal. They are OCSF events. A record may be lost when the transport is full, but the loss is counted, and audit never blocks an operation that does not need its record.
-- **Usage records** say what was used: a meter, a unit and an amount for a customer, an organisation and a product. They are CloudEvents. A usage record is never dropped. The operation that produces it fails when the record is not accepted.
+- **Usage records** say what was used: a meter, a unit and an amount for a customer and a product, and for an organisation when the emitting product knows it. They are CloudEvents. A usage record is never dropped. The operation that produces it fails when the record is not accepted.
 
 Both go into logs of the same shape: a [C2SP `tlog-tiles`](https://c2sp.org/tlog-tiles) log in a blob store, written once, signed per batch, cosigned by witnesses, and sealed per tenant so that a tenant's exit destroys what is personal and keeps what is evidence.
 

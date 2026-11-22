@@ -1,6 +1,6 @@
 # Usage event
 
-The decisions are in [0006](../decisions/0006-the-usage-class.md) and [0007](../decisions/0007-meters.md). A usage event is a [CloudEvents](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md) 1.0 event (1.0.2) in structured mode, as JSON in RFC 8785 form. Its shape follows OpenMeter's usage events: the `type` selects a meter, the `subject` is the aggregation key, and `data` holds the unit, an amount and the request id.
+The decisions are in [0006](../decisions/0006-the-usage-class.md), [0017](../decisions/0017-the-organisation-of-a-usage-record-is-optional.md) and [0007](../decisions/0007-meters.md). A usage event is a [CloudEvents](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md) 1.0 event (1.0.2) in structured mode, as JSON in RFC 8785 form. Its shape follows OpenMeter's usage events: the `type` selects a meter, the `subject` is the aggregation key, and `data` holds the unit, an amount and the request id.
 
 ## Attributes
 
@@ -22,9 +22,25 @@ The decisions are in [0006](../decisions/0006-the-usage-class.md) and [0007](../
 | `unit` | The meter's unit, a lower-case word |
 | `amount` | A signed 64-bit integer. A count adds up. A gauge is an absolute sample. |
 | `request_id` | The request id, where there is one |
-| The identifiers of the customer, the organisation and the product | Opaque ids, never personal data. **Open: their member names.** |
+| The identifier of the customer | **Required.** An opaque id, never personal data. |
+| The identifier of the product | **Required.** An opaque id, never personal data. |
+| The identifier of the organisation | **Optional.** An opaque id, never personal data. Carried when the emitting product knows the organisation, and left out otherwise. |
+
+**Open: the member names of the three identifiers.** They are fixed with the first emitter.
 
 A usage event has no pseudonym, subject, e-mail address or free text.
+
+### The identifiers
+
+| Case | The writer |
+|---|---|
+| The customer or the product is missing | Refuses the event, and its whole message with it |
+| The organisation is missing | Accepts the event |
+| The organisation is present and empty | Refuses the event |
+
+An emitter that has no organisation leaves the member out. It sends no empty value and no placeholder. sluis has none to send ([0017](../decisions/0017-the-organisation-of-a-usage-record-is-optional.md)).
+
+**A consumer expects the customer and the product on every event, and the organisation on some.** A report by organisation covers the events that carry one. It does not count the others as an organisation of their own, and a total per customer and product still includes them.
 
 ## The idempotency key
 
@@ -35,6 +51,7 @@ The key is `source` plus `id`, as CloudEvents and OpenMeter deduplicate. A bare 
 - the id is the record's `metadata.uid`, a slash and the position;
 - the meter is declared by the action's catalogue entry, and its unit and kind match;
 - the amount is within bounds;
+- the customer and the product are present, and the organisation, if present, is not empty;
 - no field holds personal data.
 
 A message that fails any of these fails whole, security part included.

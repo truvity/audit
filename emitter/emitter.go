@@ -185,9 +185,8 @@ type Mac interface {
 type Pseudonyms struct {
 	// Mac is the host's Mac. Required.
 	Mac Mac
-	// Label is the domain label of the pseudonym's input (record 0011). Open in record 0011: the neutral label. The emitter
-	// has no default, so that the choice stays the product's until audit fixes one: a changed label changes every
-	// pseudonym. Required.
+	// Label is the domain label of the pseudonym's input (record 0011). It is the product's (record 0018): the emitter has
+	// no default, and a changed label changes every pseudonym. sluis's is sluis-pseudonym-v1. Required.
 	Label string
 }
 

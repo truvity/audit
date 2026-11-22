@@ -260,9 +260,9 @@ pub trait Mac: Send + Sync {
 pub struct Pseudonyms {
     /// The host's `Mac`.
     pub mac: Arc<dyn Mac>,
-    /// The domain label of the pseudonym's input (record 0011). **Open in record 0011: the neutral
-    /// label.** The emitter has no default, so that the choice stays the product's until audit
-    /// fixes one: a changed label changes every pseudonym. Not empty.
+    /// The domain label of the pseudonym's input (record 0011). It is the product's (record 0018):
+    /// the emitter has no default, and a changed label changes every pseudonym. sluis's is
+    /// `sluis-pseudonym-v1`. Not empty.
     pub label: String,
 }
 

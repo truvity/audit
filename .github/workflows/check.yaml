@@ -5,9 +5,10 @@
 #
 # - docs: every YAML file parses, every relative markdown link and its anchor resolves, and the requirement rows are well formed
 #   (.github/scripts/check.py).
-# - build and test: every Rust crate of the workspace, on a runner of each architecture; nothing is cross-compiled.
-# - lint: rustfmt and clippy, the shell scripts and the workflows.
-# - supply chain: the licences of the Rust dependencies (deny.toml) and known advisories (cargo audit).
+# - build and test: every Go module (go.work) and every Rust crate of the workspace, on a runner of each architecture;
+#   nothing is cross-compiled.
+# - lint: golangci-lint, rustfmt and clippy, the shell scripts and the workflows.
+# - supply chain: the licences of the Rust dependencies (deny.toml) and known advisories (govulncheck, cargo audit).
 name: Check
 
 on:
@@ -55,10 +56,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
-      - run: devbox run -- just rust-build rust-test
+      - run: devbox run -- just build test
 
   lint:
-    name: lint (Rust, shell, workflows)
+    name: lint (Go, Rust, shell, workflows)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

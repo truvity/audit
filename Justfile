@@ -13,11 +13,49 @@ check: docs lint test check-licenses check-advisories
 docs:
     python3 .github/scripts/check.py
 
-# Format and lint: Rust, the shell scripts and the workflows.
-lint: rust-lint shell-lint workflow-lint
+# Format and lint: Go, Rust, the shell scripts and the workflows.
+lint: go-lint rust-lint shell-lint workflow-lint
 
-# Build and test every library.
-test: rust-test
+# Build every library.
+build: go-build rust-build
+
+# Test every library.
+test: go-test rust-test
+
+# The Go modules of the workspace (go.work), one directory per line.
+[private]
+go-modules:
+    @go work edit -json | jq -r '.Use[].DiskPath'
+
+# Build every Go module.
+go-build:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for d in $(just go-modules); do
+        echo "go build: $d"
+        (cd "$d" && go build -o /dev/null ./... && go vet ./...)
+    done
+
+# Test every Go module with the race detector, uncached. The lines of passing tests are dropped, and the exit status is that of
+# go test.
+go-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for d in $(just go-modules); do
+        echo "go test: $d"
+        (cd "$d" && go test -race -count=1 -v ./... 2>&1 \
+          | awk '!/^=== (RUN|PAUSE|CONT|NAME)/ && !/^[[:space:]]*--- PASS/ && !/^PASS$/ && !/^no test files$/' ; test "${PIPESTATUS[0]}" -eq 0)
+    done
+
+# Lint every Go module with the one configuration of the root.
+go-lint:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root=$PWD
+    for d in $(just go-modules); do
+        echo "golangci-lint: $d"
+        (cd "$d" && golangci-lint run --config "$root/.golangci.yaml" ./...)
+    done
 
 rust-build: rust-toolchain
     cargo build --workspace --locked
@@ -34,8 +72,15 @@ rust-lint: rust-toolchain
 check-licenses: rust-toolchain
     cargo deny --locked check licenses
 
-# The advisory gate: cargo audit over Cargo.lock. Needs the network (the RustSec database).
+# The advisory gate: govulncheck over every Go module and cargo audit over Cargo.lock. Needs the network (vuln.go.dev, the
+# RustSec database).
 check-advisories: rust-toolchain
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for d in $(just go-modules); do
+        echo "govulncheck: $d"
+        (cd "$d" && govulncheck ./...)
+    done
     cargo audit --deny warnings
 
 # shellcheck over every tracked shell script.

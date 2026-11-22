@@ -1,0 +1,955 @@
+package emitter
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"fmt"
+	"log/slog"
+	"maps"
+	"regexp"
+	"strconv"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	"connectrpc.com/connect"
+
+	"github.com/truvity/atoom/common/call"
+	"github.com/truvity/atoom/common/refusal"
+	transportv1alpha1 "github.com/truvity/atoom/transport/gen/atoom/transport/v1alpha1"
+	"github.com/truvity/atoom/transport/gen/atoom/transport/v1alpha1/transportv1alpha1connect"
+)
+
+const (
+	// OCSFVersion is the OCSF release every record pins (record 0004: the first release pins 1.9.0).
+	OCSFVersion = "1.9.0"
+
+	// StringMax is the longest string a record may carry, in bytes (record 0004: free text is bounded).
+	StringMax = 1024
+	// RecordMax is the largest record, in bytes.
+	RecordMax = 16 << 10
+
+	// userTypeSystem is actor.user.type_id 3: "System" in the OCSF 1.9.0 user type enum (0 Unknown, 1 User,
+	// 2 Admin, 3 System, 99 Other) and "component of a product" in record 0004. The two agree.
+	userTypeSystem = 3
+	// severityInformational is OCSF severity_id 1.
+	severityInformational = 1
+
+	// classApplicationLifecycle and classAuthentication are the OCSF classes whose required attributes the record
+	// fills from what the emitter knows (record 0004, "The attributes a class requires").
+	classApplicationLifecycle = 6002
+	classAuthentication       = 3002
+	classAPIActivity          = 6003
+	// userUnknown is the user.uid of an Authentication record whose subject is not known: OCSF requires the user,
+	// and a refusal before anyone is identified has none to name. It cannot be a pseudonym (those begin p1.).
+	userUnknown = "unknown"
+	// user.type_id of the subject (OCSF 1.9.0: 0 Unknown, 1 User, 2 Admin, 3 System, 99 Other): a person is a User, a
+	// client or a workload is a System (a service identity), any other kind of identity is Other, and no subject is Unknown.
+	userTypeUnknown, userTypeUser, userTypeSystemSubject, userTypeOther = 0, 1, 3, 99
+	// entityTypeOther is entity.type_id 99, Other: the type of an entity is the row's own word.
+	entityTypeOther = 99
+
+	// PseudonymPurpose is the purpose of the key a pseudonym is made under (record 0011, "The purposes audit declares"):
+	// MacRequest.Purpose of every request.
+	PseudonymPurpose = "pseudonym"
+	// pseudonymBytes is how much of the MAC a pseudonym keeps: the first 128 bits (record 0011, "Pseudonyms").
+	pseudonymBytes = 16
+)
+
+// Status is OCSF's status_id.
+type Status int
+
+// The outcomes of an action.
+const (
+	StatusSuccess Status = 1 // the action succeeded
+	StatusFailure Status = 2 // the action failed, a refusal included
+)
+
+// An Action is the action of an event, as a row of the product's action table names it (record 0004: the table is code).
+type Action struct {
+	Name       string // metadata.event_code, e.g. "key.sign"
+	ClassUID   int    // OCSF class, e.g. 6003 API Activity
+	ActivityID int    // OCSF activity within the class, e.g. 99 Other
+	// ActivityName is activity_name. It is required when ActivityID is 99 (record 0004: "activity_name only for
+	// activity 99 or where the table names one"), e.g. "Sign" or "Open" for key use.
+	ActivityName string
+}
+
+// Subject is the person or external actor an event concerns.
+type Subject struct {
+	Tenant string // the tenant whose pseudonym key is used
+	// Kind is the kind of identity (record 0011, "Pseudonyms"), e.g. "person", "workload" or "client". It is part of the
+	// pseudonym's input, so the same identifier of two kinds gives two pseudonyms. Required.
+	Kind string
+	// Value is the stable identifier of that kind: the subject of a person; the upstream's issuer and subject for an
+	// identity with no assigned subject; the workload id or client id of a workload or client; a product's
+	// own subject id for a person of a product. The emitter turns it into a pseudonym and never sends it.
+	Value string
+}
+
+// Decision is the outcome of a policy decision: OCSF's security_control action_id.
+type Decision int
+
+// The outcomes of a decision; the zero value says none is recorded.
+const (
+	DecisionAllowed Decision = 1 // action_id 1, Allowed
+	DecisionDenied  Decision = 2 // action_id 2, Denied
+)
+
+func (d Decision) caption() string {
+	if d == DecisionDenied {
+		return "Denied"
+	}
+	return "Allowed"
+}
+
+// PolicyRef is the decision that gated an action (record 0004: part of the record of the action it gates).
+//
+// DecisionID is required: the OCSF policy object needs a uid, and a digest without an id is refused.
+type PolicyRef struct {
+	DecisionID string   // policy.uid
+	Digest     string   // policy.version
+	PolicyIDs  []string // authorizations[].policy.uid, one per policy that took part
+	Decision   Decision // action_id and authorizations[].decision; zero records none
+}
+
+// Entity is the thing an Entity Management action changed (OCSF `entity`): a key of the signing ring, a data key and the
+// wrap of it for a recipient, a document at an export destination. Type is a closed word that names the kind of thing
+// and is the row's own (the schema of the row holds it to that word). Name, UID and Version identify it; at least one of
+// Name and UID is required. They are names, ids and counts the component knows, never text a request carried.
+type Entity struct {
+	Type    string
+	Name    string
+	UID     string
+	Version string // a decimal number, such as the generation of a data key
+}
+
+// Event is one audit event.
+type Event struct {
+	Action     Action
+	Status     Status
+	StatusCode string     // a closed reason, e.g. "grant"; empty on success
+	Tenant     string     // metadata.tenant_uid; "" is the operator's own tenant (the writer fills it)
+	Subject    *Subject   // optional: the person concerned, as user.uid (a pseudonym)
+	Policy     *PolicyRef // optional: the decision that gated this action
+	// ProductObject is the product object, unmapped.<product>: the product's own facts that OCSF has no attribute for
+	// (record 0004, "One product object"). Its values are string, bool, int64 (|v| <= 2^53-1), []string and nested
+	// map[string]any; anything else is refused, and so is the member "lost", which only the emitter writes.
+	ProductObject map[string]any
+	// Facts is the number of facts the event stands for, when it is more than one: a summary of a limiter folds the calls
+	// it did not report one by one. When the event is lost, the total of lost facts counts Facts and not one (record
+	// 0005). Zero and one are one; the emitter does not write it into the record, and the product object may say it too.
+	Facts int64
+	// Entity is the thing an Entity Management action (class 3004) changed; required there and refused elsewhere.
+	Entity *Entity
+	// Caller is the source of an API Activity action (class 6003; OCSF src_endpoint.name): the peer the transport named
+	// (from the platform identity of the caller), the node whose request a fact answers, or the component's own name for what
+	// it started itself. unknown says the transport could not name the peer.
+	// Never an address, and never text a request carried. Required for API Activity and refused elsewhere.
+	Caller string
+	// Operation is what an API Activity action did (class 6003; OCSF api.operation): the Connect method, the store verb or the
+	// route, a closed word the component chooses and never text a request carried. Required for API Activity and refused elsewhere.
+	Operation string
+	// SubjectBestEffort says the record is worth more than the name of its subject: when the Mac cannot make the pseudonym,
+	// the record is written as if it had no subject (user.uid `unknown` in an Authentication), and one warning says so. It is
+	// for a refusal, which is audited whatever else fails (record 0005); a fact that must name its subject leaves it false and fails
+	// when the pseudonym cannot be made.
+	SubjectBestEffort bool
+}
+
+// A MacRequest is one Mac of the pseudonym purpose: what the emitter asks of the host of atoom's seal block (record 0011,
+// "Pseudonyms") to make the pseudonym of a subject.
+type MacRequest struct {
+	Purpose string // always PseudonymPurpose
+	Tenant  string // the tenant whose key is used
+	Label   string // the domain label, Pseudonyms.Label, which the host binds into the MAC
+	// Input is the domain-separated input: the scope, the tenant, the kind of identity and its identifier, each with a
+	// 4-byte big-endian length in front.
+	Input []byte
+	Epoch string // the epoch of the key: the UTC month of the record as YYYYMM
+}
+
+// Mac is the keyed hash a pseudonym is made with: HMAC-SHA384 under the tenant's pseudonym key of the epoch (record
+// 0011), served by the host of atoom's seal block. The key never leaves the host, and the emitter holds no key. A product
+// implements Mac over its host's client.
+type Mac interface {
+	// Mac returns the MAC of the request, at least 16 bytes. An error stops the emit, unless the event allows its subject
+	// to go unnamed (Event.SubjectBestEffort).
+	Mac(ctx context.Context, req MacRequest) ([]byte, error)
+}
+
+// Pseudonyms says how an Emitter makes pseudonyms.
+type Pseudonyms struct {
+	// Mac is the host's Mac. Required.
+	Mac Mac
+	// Label is the domain label of the pseudonym's input (record 0011). Open in record 0011: the neutral label. The emitter
+	// has no default, so that the choice stays the product's until audit fixes one: a changed label changes every
+	// pseudonym. Required.
+	Label string
+}
+
+// Config configures an Emitter. The names are audit's neutral terms (record 0003); a product maps its own words to them.
+type Config struct {
+	// Product is the product: metadata.product.name, and the name of the product object unmapped.<product>. Required.
+	Product string
+	// Release is the release of the product: metadata.product.version. Required.
+	Release string
+	// Scope is the scope the record belongs to: metadata.log_name, and the second half of actor.user.uid
+	// (<component>@<scope>). Required.
+	Scope string
+	// Component is the emitting component: actor.user.uid (<component>@<scope>), and the application or service of the
+	// classes that require one. Required.
+	Component string
+	// Table is the product's action table. The emitter refuses an action that is not a row and a record that does not
+	// validate against the schema of its row. Required.
+	Table *Table
+	// Transport is the client of atoom's transport port, for example
+	// transportv1alpha1connect.NewTransportServiceClient(hc, url, call.ClientOptions()...) over the emit socket. Required.
+	Transport transportv1alpha1connect.TransportServiceClient
+	// Pseudonyms says how pseudonyms are made; nil for a component that never names a subject, which then cannot send a
+	// Subject.
+	Pseudonyms *Pseudonyms
+	// Correlation reads the correlation id of the call being served from the context, for metadata.correlation_uid; nil is
+	// atoom's call.CorrelationID. A product whose server keeps the call elsewhere gives its own. An id that is not 1 to 64
+	// characters of [A-Za-z0-9_-] is dropped.
+	Correlation func(context.Context) string
+	// Now is the clock; nil means time.Now. A test injects one.
+	Now func() time.Time
+}
+
+// An Emitter builds audit messages and hands them to the transport. It is safe for concurrent use.
+//
+// It keeps no queue of records. It does keep, for each tenant, a running total of the best-effort facts it failed to
+// deliver (see Emit); a record of that tenant carries the total as unmapped.<product>.lost until a record that carries the
+// current total has been delivered (record 0005, "Loss is counted while the process lives").
+type Emitter struct {
+	cfg         Config
+	now         func() time.Time
+	table       *Table
+	correlation func(context.Context) string
+	// process names this emitter for the life of the process: 16 random hex digits. A total belongs to one process.
+	process string
+
+	mu       sync.Mutex
+	lost     map[string]*tenantLoss // by the tenant of the lost event; "" is the operator's own tenant
+	overflow bool                   // the map was full once, and the loss went to the operator's own bucket
+	// subjectWarned is the time of the last warning that a record went without its subject, and subjectUnnamed the number of
+	// records that did since (warnSubjectUnnamed).
+	subjectWarned  time.Time
+	subjectUnnamed int64
+}
+
+// subjectWarnEvery is the least time between two warnings that a subject could not be named: while the host of the Mac is
+// down every refusal that names a subject may be such a record, and a warning for each would be the flood the best-effort
+// record is there to avoid.
+const subjectWarnEvery = time.Minute
+
+// warnSubjectUnnamed logs, at most once in subjectWarnEvery, that a record was written without its subject, with how many
+// others were written without one since the last warning. It is tenant-free on purpose: the log of the process is read by the
+// operator, whoever the tenant is.
+func (e *Emitter) warnSubjectUnnamed(now time.Time, action string) {
+	e.mu.Lock()
+	if !e.subjectWarned.IsZero() && now.Sub(e.subjectWarned) < subjectWarnEvery {
+		e.subjectUnnamed++
+		e.mu.Unlock()
+		return
+	}
+	n := e.subjectUnnamed
+	e.subjectWarned, e.subjectUnnamed = now, 0
+	e.mu.Unlock()
+	slog.Warn("audit: a subject could not be named; the record is written without it", "process", e.process, "action", action, "since_last_warning", n)
+}
+
+// maxLostTenants bounds the tenants an emitter keeps a total for, so that a caller cannot grow the map without limit
+// with tenants of its choosing. When the bound is hit, a loss for another tenant is counted in the operator's own
+// bucket (key ""), and one WARN says so.
+const maxLostTenants = 256
+
+// tenantLoss is the running total for one tenant since the process started. since is the time of the first loss that
+// has not been reported yet; reported is the largest total a delivered record has carried.
+type tenantLoss struct{ total, since, reported int64 }
+
+// New returns an Emitter. Product, Release, Scope, Component, Table and Transport are required, and so are the Mac and the
+// Label of Pseudonyms when it is given. Nothing is sent until the first emit.
+func New(cfg Config) (*Emitter, error) {
+	fields := []struct{ name, v string }{
+		{"product", cfg.Product}, {"release", cfg.Release}, {"scope", cfg.Scope}, {"component", cfg.Component},
+	}
+	if cfg.Pseudonyms != nil {
+		fields = append(fields, struct{ name, v string }{"pseudonyms.label", cfg.Pseudonyms.Label})
+	}
+	for _, f := range fields {
+		if f.v == "" {
+			return nil, refusal.New(connect.CodeInvalidArgument, "schema", f.name)
+		}
+		if len(f.v) > StringMax || !utf8.ValidString(f.v) {
+			return nil, refusal.New(connect.CodeInvalidArgument, "bound", f.name)
+		}
+	}
+	if cfg.Pseudonyms != nil && cfg.Pseudonyms.Mac == nil {
+		return nil, refusal.New(connect.CodeInvalidArgument, "schema", "pseudonyms.mac")
+	}
+	if cfg.Table == nil {
+		return nil, refusal.New(connect.CodeInvalidArgument, "schema", "table")
+	}
+	if cfg.Transport == nil {
+		return nil, refusal.New(connect.CodeInvalidArgument, "schema", "transport")
+	}
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
+	correlation := cfg.Correlation
+	if correlation == nil {
+		correlation = call.CorrelationID
+	}
+	return &Emitter{
+		cfg: cfg, now: now, table: cfg.Table, correlation: correlation, process: newProcessID(), lost: map[string]*tenantLoss{},
+	}, nil
+}
+
+// Emit hands the event to the transport and returns once the transport has accepted it (EmitRequest.blocking is
+// false). An error is returned to the caller; the library neither buffers nor retries.
+//
+// Emit is for a best-effort fact: when it fails the fact is gone, so the emitter counts it for the event's tenant, and
+// the next record of that tenant carries the total (record 0005, "Loss is counted while the process lives"). A caller that fails its
+// operation when the emit fails uses EmitRequired.
+func (e *Emitter) Emit(ctx context.Context, ev Event) error { return e.emit(ctx, ev, false, true) }
+
+// EmitRequired is Emit for a caller that fails its operation when the emit fails (it answers unavailable, say): the fact is not lost, because the operation did not happen, so a failure is not counted.
+func (e *Emitter) EmitRequired(ctx context.Context, ev Event) error {
+	return e.emit(ctx, ev, false, false)
+}
+
+// EmitBlocking returns only when the transport says the message is durable (record 0002, "The transport"; blocking is
+// true).
+// The caller decides what a failure means; the library does not retry. A failure is not counted as a lost fact:
+// the caller fails the operation the fact belongs to. A caller that carries on when this fails uses
+// EmitBlockingBestEffort.
+func (e *Emitter) EmitBlocking(ctx context.Context, ev Event) error {
+	return e.emit(ctx, ev, true, false)
+}
+
+// EmitBlockingBestEffort waits for durability like EmitBlocking, for a caller that carries on when it fails (a tightening
+// change, such as a revocation, which a full spool must never block: record 0005, "Wait, never fail"). The fact is then lost, so a failure is counted as
+// for Emit.
+func (e *Emitter) EmitBlockingBestEffort(ctx context.Context, ev Event) error {
+	return e.emit(ctx, ev, true, true)
+}
+
+// Lost is the total of best-effort facts this process has failed to deliver, over all tenants, since it started. It
+// names no tenant; a component can export it as a metric.
+func (e *Emitter) Lost() int64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var n int64
+	for _, l := range e.lost {
+		n = min(n+l.total, maxSafeInt)
+	}
+	return n
+}
+
+// emit builds the record with the note its tenant owes, and sends it. A failure of a best-effort emit adds one to
+// the total of the event's tenant, whatever the cause (the transport, a refusal of the event, the Mac): the fact is gone.
+// Nothing is taken or put back: a total only grows, and a record that carries it and reaches the transport, even if
+// its caller then times out, is repeated harmlessly by the next record, which carries the same total or a larger one.
+func (e *Emitter) emit(ctx context.Context, ev Event, blocking, counted bool) (err error) {
+	defer func() {
+		if err != nil && counted {
+			e.recordLoss(ev.Tenant, e.now().UnixMilli(), factsIn(ev))
+		}
+	}()
+	rec, uid, carried, err := e.build(ctx, ev, e.noteFor(ev.Tenant))
+	if err != nil {
+		return err
+	}
+	req := &transportv1alpha1.EmitRequest{
+		Message:  &transportv1alpha1.AuditMessage{Uid: uid, Record: rec},
+		Blocking: blocking,
+	}
+	if _, err := e.cfg.Transport.Emit(ctx, connect.NewRequest(req)); err != nil {
+		return fmt.Errorf("audit: emit: %w", err)
+	}
+	e.reported(ev.Tenant, carried)
+	return nil
+}
+
+// lostNote is what a record carries: the process, its running total for the record's tenant, and the time (Unix
+// milliseconds) of the first loss not yet reported. The zero total is none.
+type lostNote struct {
+	process      string
+	total, since int64
+}
+
+// bucket is the key a loss of the tenant is counted under: the tenant itself, or the operator's own bucket for a
+// tenant that is too long to be one, or when maxLostTenants tenants have lost facts already. Callers hold e.mu.
+func (e *Emitter) bucket(tenant string) string {
+	if _, ok := e.lost[tenant]; ok {
+		return tenant
+	}
+	if len(tenant) > StringMax || len(e.lost) >= maxLostTenants {
+		if !e.overflow && tenant != "" {
+			e.overflow = true
+			slog.Warn("audit: too many tenants have lost facts; further losses are counted in the operator's own tenant", "process", e.process, "bound", maxLostTenants)
+		}
+		return ""
+	}
+	return tenant
+}
+
+// factsIn is the number of facts an event stands for: Event.Facts when it is more than one, and one otherwise.
+func factsIn(ev Event) int64 {
+	if ev.Facts > 1 {
+		return min(ev.Facts, maxSafeInt)
+	}
+	return 1
+}
+
+// recordLoss adds n lost facts to the tenant's total, at the time at.
+func (e *Emitter) recordLoss(tenant string, at int64, n int64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	k := e.bucket(tenant)
+	l := e.lost[k]
+	if l == nil {
+		l = &tenantLoss{}
+		e.lost[k] = l
+	}
+	if l.total == l.reported {
+		l.since = at // a new run of losses starts
+	}
+	l.total = min(l.total+n, maxSafeInt)
+}
+
+// noteFor is the note a record of the tenant carries: its own total, while a record that carries it has not been
+// delivered, and never another tenant's. Only the operator's own tenant ("") sees the overflow bucket.
+func (e *Emitter) noteFor(tenant string) lostNote {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if l := e.lost[tenant]; l != nil && l.total > l.reported {
+		return lostNote{process: e.process, total: l.total, since: l.since}
+	}
+	return lostNote{}
+}
+
+// reported records that a record carrying n reached the transport, and says so in the log of the process.
+func (e *Emitter) reported(tenant string, n lostNote) {
+	if n.total == 0 {
+		return
+	}
+	e.mu.Lock()
+	l := e.lost[tenant]
+	if l == nil || n.total <= l.reported {
+		e.mu.Unlock()
+		return
+	}
+	l.reported = n.total
+	e.mu.Unlock()
+	// Tenant-free on purpose: the log of the process is read by the operator, whoever the tenant is.
+	slog.Warn("audit: facts were lost and a record now reports them", "process", n.process, "total", n.total, "since", n.since)
+}
+
+// A RecordInput is everything a record depends on, resolved: BuildRecord takes it, so that the bytes depend on no clock
+// and no Mac.
+type RecordInput struct {
+	Product, Component, Scope, Release string // as in Config
+	UID                                string // metadata.uid, a UUIDv7
+	TimeMS                             int64  // time, in Unix milliseconds
+	Correlation                        string // metadata.correlation_uid; "" for none
+	Pseudonym                          string // the pseudonym of the event's subject; "" for none
+	Event                              Event
+}
+
+// BuildRecord lays out the record of an event from resolved inputs and returns its RFC 8785 bytes. It is the pure
+// serialiser behind the emitter, without the action table and without the schema: the shared vectors and a product's
+// generator of example records use it. It carries no note of lost facts.
+func BuildRecord(in RecordInput) ([]byte, error) {
+	if err := validateEvent(in.Event, in.Product); err != nil {
+		return nil, err
+	}
+	return buildRecord(recordInput{
+		product: in.Product, component: in.Component, scope: in.Scope, release: in.Release, uid: in.UID, timeMS: in.TimeMS,
+		correlation: in.Correlation, pseudonym: in.Pseudonym, ev: in.Event,
+	})
+}
+
+// Record builds the message of an event without sending it: the record as RFC 8785 bytes, and its metadata.uid.
+// Tests and the command line use it. It carries no note and changes no total.
+func (e *Emitter) Record(ctx context.Context, ev Event) ([]byte, string, error) {
+	rec, uid, _, err := e.build(ctx, ev, lostNote{})
+	return rec, uid, err
+}
+
+// build makes the record. When the note makes the record larger than RecordMax, the record is built without it and the
+// note stays owed: a fact is never lost to the note, and the note is not lost to a large fact. It returns the note the
+// record carries.
+func (e *Emitter) build(ctx context.Context, ev Event, note lostNote) ([]byte, string, lostNote, error) {
+	if err := validateEvent(ev, e.cfg.Product); err != nil {
+		return nil, "", lostNote{}, err
+	}
+	// REQ-AUDIT-022: an action that is not in the table has no schema to hold its record to.
+	if err := e.table.CheckAction(ev.Action); err != nil {
+		return nil, "", lostNote{}, err
+	}
+	t := e.now()
+	var pseudonym string
+	if ev.Subject != nil {
+		p, err := e.pseudonym(ctx, *ev.Subject, t)
+		switch {
+		case err == nil:
+			pseudonym = p
+		case ev.SubjectBestEffort:
+			e.warnSubjectUnnamed(t, ev.Action.Name)
+		default:
+			return nil, "", lostNote{}, err
+		}
+	}
+	uid := NewUUIDv7(t)
+	correlation := e.correlation(ctx)
+	if !validCorrelation(correlation) {
+		correlation = ""
+	}
+	in := recordInput{
+		product: e.cfg.Product, component: e.cfg.Component, scope: e.cfg.Scope, release: e.cfg.Release,
+		uid: uid, timeMS: t.UnixMilli(), correlation: correlation, pseudonym: pseudonym, ev: ev, lost: note,
+	}
+	rec, err := buildRecord(in)
+	if err != nil && note.total > 0 {
+		in.lost, note = lostNote{}, lostNote{}
+		rec, err = buildRecord(in)
+	}
+	if err != nil {
+		return nil, "", lostNote{}, err
+	}
+	// REQ-AUDIT-099: the record, the note of lost facts included, validates against the schema of its action before
+	// it leaves the process.
+	if err := e.table.Validate(rec); err != nil {
+		return nil, "", lostNote{}, err
+	}
+	return rec, uid, note, nil
+}
+
+// newProcessID is 16 random hex digits: the name of one emitter for the life of its process, so that a reader can tell
+// the totals of two processes of one component apart.
+func newProcessID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("audit: the operating system's random generator failed: " + err.Error())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// validCorrelation says whether id is 1 to 64 characters of [A-Za-z0-9_-], the form of atoom's call context. Anything else
+// is dropped, so a hostile header never reaches a record.
+func validCorrelation(id string) bool {
+	if id == "" || len(id) > 64 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		letter := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+		if !letter && (c < '0' || c > '9') && c != '-' && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// pseudonym asks the Mac for the keyed hash of the subject under the tenant's pseudonym key, with the epoch of the
+// record's month, and formats it by record 0011, "Pseudonyms": p1.<YYYYMM>.<first 128 bits, base64url, no padding>.
+func (e *Emitter) pseudonym(ctx context.Context, s Subject, t time.Time) (string, error) {
+	p := e.cfg.Pseudonyms
+	if p == nil {
+		// Never fall back to the raw subject.
+		return "", refusal.New(connect.CodeFailedPrecondition, "keys", "subject")
+	}
+	epoch := t.UTC().Format("200601")
+	mac, err := p.Mac.Mac(ctx, MacRequest{
+		Purpose: PseudonymPurpose, Tenant: s.Tenant, Label: p.Label,
+		Input: pseudonymInput(e.cfg.Scope, s), Epoch: epoch,
+	})
+	if err != nil {
+		return "", fmt.Errorf("audit: pseudonym: %w", err)
+	}
+	if len(mac) < pseudonymBytes {
+		return "", refusal.New(connect.CodeInternal, "schema", "subject")
+	}
+	return "p1." + epoch + "." + base64.RawURLEncoding.EncodeToString(mac[:pseudonymBytes]), nil
+}
+
+// pseudonymInput is the Mac input of a pseudonym (record 0011, "Pseudonyms"): the scope, the tenant, the kind of identity
+// and its identifier, each with a 4-byte big-endian length in front. The label is the request's own, which the host binds
+// in. The length prefixes make the parts unambiguous: ("ab","c") and ("a","bc") differ.
+func pseudonymInput(scope string, s Subject) []byte {
+	var b []byte
+	for _, part := range []string{scope, s.Tenant, s.Kind, s.Value} {
+		b = binary.BigEndian.AppendUint32(b, uint32(len(part))) //nolint:gosec // every part is at most StringMax bytes
+		b = append(b, part...)
+	}
+	return b
+}
+
+func bound(s, path string) error {
+	if len(s) > StringMax {
+		return refusal.New(connect.CodeInvalidArgument, "bound", path)
+	}
+	if !utf8.ValidString(s) {
+		return refusal.New(connect.CodeInvalidArgument, "schema", path)
+	}
+	return nil
+}
+
+// validateEvent checks what the library can know before it asks for a pseudonym. product is the name of the product
+// object, for the paths of its members.
+func validateEvent(ev Event, product string) error {
+	a := ev.Action
+	if a.Name == "" || a.ClassUID < 1000 || a.ClassUID > 99999 || a.ActivityID < 0 || a.ActivityID > 99 {
+		return refusal.New(connect.CodeInvalidArgument, "schema", "action")
+	}
+	if ev.Status != StatusSuccess && ev.Status != StatusFailure {
+		return refusal.New(connect.CodeInvalidArgument, "schema", "status")
+	}
+	if ev.SubjectBestEffort && ev.Status != StatusFailure {
+		// A subject is optional only on a refusal (record 0005). A success that went without the name of its subject would be
+		// a fact that says less than it should, and nobody would be told.
+		return refusal.New(connect.CodeInvalidArgument, "schema", "subject_best_effort")
+	}
+	if a.ActivityID == 99 && a.ActivityName == "" {
+		// Record 0004: activity 99 (Other) is described by activity_name.
+		return refusal.New(connect.CodeInvalidArgument, "schema", "action.activity_name")
+	}
+	for _, f := range []struct{ v, path string }{
+		{a.Name, "action.name"}, {a.ActivityName, "action.activity_name"}, {ev.StatusCode, "status_code"}, {ev.Tenant, "tenant"},
+	} {
+		if err := bound(f.v, f.path); err != nil {
+			return err
+		}
+		if emailShaped(f.v) {
+			return refusal.New(connect.CodeInvalidArgument, "schema", f.path)
+		}
+	}
+	if s := ev.Subject; s != nil {
+		if s.Value == "" {
+			return refusal.New(connect.CodeInvalidArgument, "schema", "subject.value")
+		}
+		if s.Kind == "" {
+			return refusal.New(connect.CodeInvalidArgument, "schema", "subject.kind")
+		}
+		// The subject is hashed and never sent, so an e-mail address is a fine subject; its size is still bounded.
+		for _, f := range []struct{ v, path string }{
+			{s.Value, "subject.value"}, {s.Tenant, "subject.tenant"}, {s.Kind, "subject.kind"},
+		} {
+			if err := bound(f.v, f.path); err != nil {
+				return err
+			}
+		}
+	}
+	if p := ev.Policy; p != nil {
+		// OCSF's Policy object needs one of name, type or uid, and the record gives it a uid: the decision id.
+		// A digest or a list of policies with no decision id has nothing to hang on.
+		if p.DecisionID == "" {
+			return refusal.New(connect.CodeInvalidArgument, "schema", "policy.decision_id")
+		}
+		if p.Decision != 0 && p.Decision != DecisionAllowed && p.Decision != DecisionDenied {
+			return refusal.New(connect.CodeInvalidArgument, "schema", "policy.decision")
+		}
+		strs := []struct{ v, path string }{{p.DecisionID, "policy.decision_id"}, {p.Digest, "policy.digest"}}
+		for i, id := range p.PolicyIDs {
+			strs = append(strs, struct{ v, path string }{id, "policy.policy_ids[" + strconv.Itoa(i) + "]"})
+		}
+		for _, f := range strs {
+			if err := bound(f.v, f.path); err != nil {
+				return err
+			}
+			if emailShaped(f.v) {
+				return refusal.New(connect.CodeInvalidArgument, "schema", f.path)
+			}
+		}
+	}
+	if a.ClassUID == classAPIActivity {
+		// OCSF's API Activity needs the operation and the source, and the library never invents either.
+		if ev.Operation == "" {
+			return refusal.New(connect.CodeInvalidArgument, "schema", "api.operation")
+		}
+		if ev.Caller == "" {
+			return refusal.New(connect.CodeInvalidArgument, "schema", "src_endpoint.name")
+		}
+	} else if ev.Operation != "" || ev.Caller != "" {
+		// Said for a class that has no place for them, they would be dropped without a word.
+		return refusal.New(connect.CodeInvalidArgument, "schema", "api")
+	}
+	for _, f := range []struct{ v, path string }{{ev.Operation, "api.operation"}, {ev.Caller, "src_endpoint.name"}} {
+		if err := checkText(f.v, f.path); err != nil {
+			return err
+		}
+	}
+	if ev.Caller != "" && !SourceName(ev.Caller) {
+		// The source is a name the transport gave, never an address (record 0004): an IP address of a caller is
+		// personal data of the person behind it, and the library would not know it for a name. The form is the schema's.
+		return refusal.New(connect.CodeInvalidArgument, "schema", "src_endpoint.name")
+	}
+	if e := ev.Entity; e != nil {
+		if e.Type == "" || (e.Name == "" && e.UID == "") {
+			// OCSF's managed entity needs one of name and uid, and the record gives it a type.
+			return refusal.New(connect.CodeInvalidArgument, "schema", "entity")
+		}
+		for _, f := range []struct{ v, path string }{{e.Type, "entity.type"}, {e.Name, "entity.name"}, {e.UID, "entity.uid"}, {e.Version, "entity.version"}} {
+			if err := checkText(f.v, f.path); err != nil {
+				return err
+			}
+		}
+	}
+	// unmapped.<product>.lost is the emitter's own (record 0004, "The emitter's own field"); a caller cannot write it.
+	root := "unmapped." + product
+	if _, taken := ev.ProductObject[lostKey]; taken {
+		return refusal.New(connect.CodeInvalidArgument, "schema", root+"."+lostKey)
+	}
+	return checkObject(ev.ProductObject, root, 0)
+}
+
+// emailRE is the e-mail shape of record 0004 ("A record never carries ... an e-mail address"). It is deliberately broad:
+// a value that looks like an address is refused wherever it is, and the Rust crate applies the same rule.
+var emailRE = regexp.MustCompile(`[^@\s]+@[^@\s]+\.[^@\s]+`)
+
+// SourceName says whether s is a name that src_endpoint.name may hold, the form of the type source of the table: a letter or an
+// underscore, then letters, digits and . _ -, at most 64 bytes. An IP address (numeric forms included), a host and a port, a path
+// and an address with a user have none of that shape; a host name cannot be told from a name of the registry and passes.
+func SourceName(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+		case i > 0 && (c >= '0' && c <= '9' || c == '.' || c == '-'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func emailShaped(s string) bool { return emailRE.MatchString(s) }
+
+// checkObject admits only the types of Event.ProductObject, bounded, with no e-mail shape in any string.
+func checkObject(m map[string]any, path string, depth int) error {
+	if depth > maxDepth {
+		return refusal.New(connect.CodeInvalidArgument, "bound", path)
+	}
+	for k, v := range m {
+		p := path + "." + k
+		if err := bound(k, p); err != nil {
+			return err
+		}
+		switch x := v.(type) {
+		case string:
+			if err := checkText(x, p); err != nil {
+				return err
+			}
+		case bool:
+		case int64:
+			if x > maxSafeInt || x < -maxSafeInt {
+				return refusal.New(connect.CodeInvalidArgument, "bound", p)
+			}
+		case []string:
+			for i, s := range x {
+				if err := checkText(s, p+"["+strconv.Itoa(i)+"]"); err != nil {
+					return err
+				}
+			}
+		case map[string]any:
+			if err := checkObject(x, p, depth+1); err != nil {
+				return err
+			}
+		default:
+			// A float, an int of another width, nil, a slice of another type: refused by name of the field.
+			return refusal.New(connect.CodeInvalidArgument, "schema", p)
+		}
+	}
+	return nil
+}
+
+func checkText(s, path string) error {
+	if err := bound(s, path); err != nil {
+		return err
+	}
+	if emailShaped(s) {
+		return refusal.New(connect.CodeInvalidArgument, "schema", path)
+	}
+	return nil
+}
+
+// recordInput is everything the record depends on, resolved: tests feed it fixed values.
+type recordInput struct {
+	product, component, scope, release string
+	uid                                string
+	timeMS                             int64
+	correlation                        string
+	pseudonym                          string
+	ev                                 Event
+	lost                               lostNote // the running total of facts lost for the record's tenant; none when total is 0
+}
+
+// lostKey is the member of the product object, unmapped.<product>, that carries the loss note: {"process": id, "total": n, "since": ms}.
+const lostKey = "lost"
+
+// subjectType is user.type_id of a subject by its kind of identity (record 0011, "Pseudonyms"), so that a pseudonym of a client does
+// not pass for one of a person.
+func subjectType(s *Subject) int {
+	switch {
+	case s == nil:
+		return userTypeOther
+	case s.Kind == "person":
+		return userTypeUser
+	case s.Kind == "client" || s.Kind == "workload":
+		return userTypeSystemSubject
+	}
+	return userTypeOther
+}
+
+// resourceType is resources[].type of the subject of an API Activity record, by its kind of identity (record 0011, "Pseudonyms").
+func resourceType(s *Subject) string {
+	switch {
+	case s != nil && s.Kind == "person":
+		return "person"
+	case s != nil && s.Kind == "client":
+		return "client"
+	case s != nil && s.Kind == "workload":
+		return "workload"
+	}
+	return "other"
+}
+
+// buildRecord lays out the record of record 0004 and returns its RFC 8785 bytes. The members are OCSF 1.9.0 base event
+// attributes: activity_id, category_uid, class_uid, severity_id, status_id, status_code, time and type_uid; the
+// metadata object (correlation_uid, event_code, log_name, product, tenant_uid, uid, version); actor.user; user;
+// and, from the security_control profile, policy and authorizations.
+func buildRecord(in recordInput) ([]byte, error) {
+	a := in.ev.Action
+	md := map[string]any{
+		"event_code": a.Name,
+		"log_name":   in.scope,
+		"product":    map[string]any{"name": in.product, "version": in.release},
+		"uid":        in.uid,
+		"version":    OCSFVersion,
+	}
+	// REQ-AUDIT-120: the record declares the profiles whose attributes it uses. The security_control profile holds
+	// policy, action_id and authorizations; Application Lifecycle takes `actor` from the host profile.
+	var profiles []string
+	if a.ClassUID == classApplicationLifecycle {
+		profiles = append(profiles, "host")
+	}
+	if in.ev.Policy != nil {
+		profiles = append(profiles, "security_control")
+	}
+	if len(profiles) > 0 {
+		md["profiles"] = profiles
+	}
+	if in.correlation != "" {
+		md["correlation_uid"] = in.correlation
+	}
+	if in.ev.Tenant != "" {
+		md["tenant_uid"] = in.ev.Tenant
+	}
+	rec := map[string]any{
+		"activity_id":  int64(a.ActivityID),
+		"category_uid": int64(a.ClassUID / 1000),
+		"class_uid":    int64(a.ClassUID),
+		"metadata":     md,
+		"actor":        map[string]any{"user": map[string]any{"type_id": int64(userTypeSystem), "uid": in.component + "@" + in.scope}},
+		"severity_id":  int64(severityInformational),
+		"status_id":    int64(in.ev.Status),
+		"time":         in.timeMS,
+		"type_uid":     int64(a.ClassUID)*100 + int64(a.ActivityID),
+	}
+	if a.ActivityName != "" {
+		rec["activity_name"] = a.ActivityName
+	}
+	if in.ev.StatusCode != "" {
+		rec["status_code"] = in.ev.StatusCode
+	}
+	switch {
+	case in.pseudonym != "" && a.ClassUID == classAPIActivity:
+		// OCSF gives API Activity no user: the person or client a call concerns is the resource of the call, with the kind of
+		// identity as its type.
+		rec["resources"] = []any{map[string]any{"type": resourceType(in.ev.Subject), "uid": in.pseudonym}}
+	case in.pseudonym != "":
+		rec["user"] = map[string]any{"uid": in.pseudonym, "type_id": int64(subjectType(in.ev.Subject))}
+	case a.ClassUID == classAuthentication:
+		// OCSF requires the subject of an authentication; none is known, and the record says so.
+		rec["user"] = map[string]any{"uid": userUnknown, "type_id": int64(userTypeUnknown)}
+	}
+	if e := in.ev.Entity; e != nil {
+		// OCSF's managed entity: type_id 99 (Other) is required beside a type of the sender's own.
+		ent := map[string]any{"type": e.Type, "type_id": int64(entityTypeOther)}
+		for k, v := range map[string]string{"name": e.Name, "uid": e.UID, "version": e.Version} {
+			if v != "" {
+				ent[k] = v
+			}
+		}
+		rec["entity"] = ent
+	}
+	// The attributes a class requires that the emitter's own name fills: the application that started or reloaded,
+	// the service that authenticated. Both are the emitting component.
+	switch a.ClassUID {
+	case classAPIActivity:
+		// The call and where it came from, both chosen by the component from what the transport told it (Event.Caller).
+		if in.ev.Operation != "" {
+			rec["api"] = map[string]any{"operation": in.ev.Operation}
+		}
+		if in.ev.Caller != "" {
+			rec["src_endpoint"] = map[string]any{"name": in.ev.Caller}
+		}
+	case classApplicationLifecycle:
+		rec["application"] = map[string]any{"name": in.component}
+	case classAuthentication:
+		rec["service"] = map[string]any{"name": in.component}
+	}
+	object := in.ev.ProductObject
+	if in.lost.total > 0 {
+		object = maps.Clone(object) // the caller's map is theirs; a nil map clones to nil
+		if object == nil {
+			object = map[string]any{}
+		}
+		object[lostKey] = map[string]any{"process": in.lost.process, "total": in.lost.total, "since": in.lost.since}
+	}
+	if len(object) > 0 {
+		rec["unmapped"] = map[string]any{in.product: object}
+	}
+	if p := in.ev.Policy; p != nil {
+		// security_control profile: the policy object names the decision (uid) and the policy bundle (version,
+		// the digest); action_id is the outcome; each policy that took part is an authorization_result with its
+		// policy.uid and the same decision.
+		pol := map[string]any{"uid": p.DecisionID}
+		if p.Digest != "" {
+			pol["version"] = p.Digest
+		}
+		rec["policy"] = pol
+		if p.Decision != 0 {
+			rec["action_id"] = int64(p.Decision)
+		}
+		if len(p.PolicyIDs) > 0 {
+			auths := make([]any, 0, len(p.PolicyIDs))
+			for _, id := range p.PolicyIDs {
+				au := map[string]any{"policy": map[string]any{"uid": id}}
+				if p.Decision != 0 {
+					au["decision"] = p.Decision.caption()
+				}
+				auths = append(auths, au)
+			}
+			rec["authorizations"] = auths
+		}
+	}
+	out, err := Canonical(rec)
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > RecordMax {
+		return nil, refusal.New(connect.CodeInvalidArgument, "bound", "record")
+	}
+	return out, nil
+}

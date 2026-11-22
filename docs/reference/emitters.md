@@ -61,4 +61,4 @@ The emitter talks to atoom's [transport port](https://github.com/truvity/atoom/b
 
 ## Built and planned
 
-Built: the Rust emitter in this repository ([`emitter/`](../../emitter/README.md)), with the three calls, the checks, the note and the shared vectors, configured by each product with its name, scope, component, action table and `Mac`; the product object is `unmapped.<product>` for every product. The Go emitter with the same, in sluis. Planned: the Go emitter here, and the usage part in both.
+Built: the Go and Rust emitters in this repository ([`emitter/`](../../emitter/README.md)), with the three calls, the checks, the note and the shared vectors, configured by each product with its name, scope, component, action table and `Mac`; the product object is `unmapped.<product>` for every product. Planned: the usage part in both.

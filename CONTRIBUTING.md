@@ -18,7 +18,7 @@ Thank you for helping. People and AI agents follow the same rules. [AGENTS.md](A
 | `docs/runbooks/` | What an operator does, step by step. |
 | `docs/requirements/` | The testable rules, as data. |
 | `profiles/` | The compliance profiles: floors with their clauses. |
-| `emitter/` | The emitter library: the Rust crate `audit-emitter`, and its shared vectors. |
+| `emitter/` | The emitter library: the Go module `github.com/truvity/audit/emitter`, the Rust crate `audit-emitter`, and their shared vectors. |
 
 ## Writing a decision
 

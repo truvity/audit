@@ -30,7 +30,7 @@ audit is built on [atoom](https://github.com/truvity/atoom) ports (blob, transpo
 
 ## Status
 
-This repository starts as design. The code that this design describes runs today inside [sluis](https://github.com/truvity/sluis) (the Go emitter, the writer, the first indexer and reader, `audit verify`) and in atoom (the blob, transport and index ports and their first drivers). It moves here in steps. The first is here: the Rust emitter, in [emitter/](emitter/README.md). Each page and record says what is built and what is planned. The requirement rows in [docs/requirements/audit.yaml](docs/requirements/audit.yaml) carry a status for each rule: `done`, `partial` or `planned`.
+This repository starts as design. The code that this design describes runs today inside [sluis](https://github.com/truvity/sluis) (the writer, the first indexer and reader, `audit verify`) and in atoom (the blob, transport and index ports and their first drivers). It moves here in steps. The first is here: the Go and Rust emitters, in [emitter/](emitter/README.md). Each page and record says what is built and what is planned. The requirement rows in [docs/requirements/audit.yaml](docs/requirements/audit.yaml) carry a status for each rule: `done`, `partial` or `planned`.
 
 ## Read next
 

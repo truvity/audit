@@ -1,6 +1,13 @@
-# The check of this repository: every YAML file parses, every relative markdown link and its anchor resolves, and the requirement
-# rows are well formed (.github/scripts/check.py). The job is named `check`: the organisation's ruleset requires a check of that name,
-# and waives it for a repository until a CI reports it.
+# The check of this repository. It judges pull requests and master, and never publishes.
+#
+# `check` is the one aggregate job: the organisation's ruleset requires a check of that name, and waives it for a repository until a
+# CI reports it. It fails when any other job fails, is cancelled or is skipped, so that adding a job here needs no change in the rules.
+#
+# - docs: every YAML file parses, every relative markdown link and its anchor resolves, and the requirement rows are well formed
+#   (.github/scripts/check.py).
+# - build and test: every Rust crate of the workspace, on a runner of each architecture; nothing is cross-compiled.
+# - lint: rustfmt and clippy, the shell scripts and the workflows.
+# - supply chain: the licences of the Rust dependencies (deny.toml) and known advisories (cargo audit).
 name: Check
 
 on:
@@ -15,8 +22,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
-    name: check
+  docs:
+    name: docs
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -32,3 +39,67 @@ jobs:
       - name: Check YAML, links and requirement rows
         run: |
           "$RUNNER_TEMP/venv/bin/python" .github/scripts/check.py
+
+  build-test:
+    name: build and test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      - run: devbox run -- just rust-build rust-test
+
+  lint:
+    name: lint (Rust, shell, workflows)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      - run: devbox run -- just lint
+
+  supply:
+    name: supply chain (licences, advisories)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      - run: devbox run -- just check-licenses check-advisories
+
+  # The one required check. It passes only when every job above succeeded: a failed, cancelled or skipped job fails it.
+  check:
+    name: check
+    if: ${{ always() }}
+    needs: [docs, build-test, lint, supply]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every job succeeded
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          bad=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result != "success") | .key] | join(", ")')
+          if [ -n "$bad" ]; then
+            echo "::error::not successful: $bad"
+            exit 1
+          fi

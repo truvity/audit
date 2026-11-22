@@ -1,0 +1,29 @@
+# cargo-deny, for the licence rule only (`just check-licenses`). Advisories are checked by `cargo audit` (`just check-advisories`), so
+# none are checked here. The allow list is the one of sluis (the decision of 2026-11-06 and its additions): any other licence needs a
+# decision of the same kind before it is added here. An `OR` expression passes under its permissive choice.
+[graph]
+# The shipped targets: the boards and servers (arm64 and amd64, glibc and musl), and macOS for development. A crate that only a Windows
+# build uses is not linked into an atoom artifact.
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
+  "aarch64-unknown-linux-musl",
+  "aarch64-apple-darwin",
+]
+
+[licenses]
+allow = [
+  "MIT",
+  "MIT-0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Apache-2.0",
+  "ISC",
+  "Zlib",
+  "Unicode-3.0",
+  "Apache-2.0 WITH LLVM-exception",
+]
+confidence-threshold = 0.9
+# The list is the estate's; a licence that no current dependency uses is not a warning.
+unused-allowed-license = "allow"

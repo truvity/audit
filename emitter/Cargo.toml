@@ -1,0 +1,32 @@
+[package]
+name = "audit-emitter"
+description = "The audit emitter: from one call, one OCSF security record as RFC 8785 canonical JSON, checked against the product's action table and handed to atoom's transport port."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+atoom-common.workspace = true
+atoom-socket.workspace = true
+atoom-transport.workspace = true
+base64 = "0.23"
+connectrpc = { version = "=0.9.1", default-features = false, features = ["json", "gzip", "client"] }
+jsonschema = { version = "0.60", default-features = false }
+regex = { version = "1", default-features = false, features = ["std", "perf"] }
+rustix = { version = "1", features = ["rand"] }
+serde_json = "1"
+serde_json_canonicalizer = "0.4.1"
+tracing = "0.1"
+
+[dev-dependencies]
+anyhow = "1"
+proptest = "1"
+rustix = { version = "1", features = ["rand", "process"] }
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }

@@ -1,0 +1,29 @@
+# One Cargo workspace for every Rust library of audit. The member list is explicit, with no globs: a new crate is added here by the
+# change that adds it.
+[workspace]
+resolver = "3"
+members = [
+  "emitter",
+]
+
+[workspace.package]
+# The one version of the whole repository (record 0016, "Distribution"): the Go tags start at v0.17.0, and the Rust crates carry the
+# same version. The release flow is still open (record 0016); no tag of this version exists yet.
+version = "0.17.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/truvity/audit"
+rust-version = "1.99.1"
+
+# atoom, pinned by release tag. Cargo.lock records the commit the tag names.
+[workspace.dependencies]
+atoom-common = { git = "https://github.com/truvity/atoom", tag = "v0.3.0" }
+atoom-socket = { git = "https://github.com/truvity/atoom", tag = "v0.3.0" }
+atoom-transport = { git = "https://github.com/truvity/atoom", tag = "v0.3.0" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "warn"

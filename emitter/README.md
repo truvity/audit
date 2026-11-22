@@ -78,7 +78,7 @@ The emitter speaks audit's neutral model ([0003](../docs/decisions/0003-the-neut
 | `correlation` | Where the correlation id of the call being served is read; by default atoom's call context | `metadata.correlation_uid` |
 
 - **The `Mac`** is a trait: the emitter holds no key and no client of a key service. A product implements it over the host of atoom's `seal` block that serves it; until that block exists, over its own key service ([0011](../docs/decisions/0011-evidence-encryption-and-pseudonyms.md), "Planned work in atoom").
-- **The label has no default.** Open in [0011](../docs/decisions/0011-evidence-encryption-and-pseudonyms.md): the neutral domain label. A label is part of every pseudonym, so the emitter leaves it to the product until audit fixes one.
+- **The label has no default.** It is the product's ([0018](../docs/decisions/0018-the-pseudonym-domain-label-is-the-products.md)): a label is part of every pseudonym, so each product names its own, and sluis keeps `sluis-pseudonym-v1`.
 - **A summary that stands for several facts** says so in `Event.Facts` (Go): when it is lost, the total of lost facts counts them all ([0005](../docs/decisions/0005-the-security-class.md)). The Rust crate has no such field yet, as sluis's had none.
 - **The table has no default.** A product's table, its generator and the vectors of its own actions stay in the product's repository ([action table and catalogue](../docs/reference/action-table-and-catalogue.md)).
 

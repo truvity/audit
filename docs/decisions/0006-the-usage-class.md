@@ -1,6 +1,6 @@
 # 0006. The usage class: what was used, never dropped
 
-Status: accepted, 2026-11-21
+Status: accepted, 2026-11-21. Partly superseded by [0017](0017-the-organisation-of-a-usage-record-is-optional.md): the organisation of a usage record is optional.
 
 ## Context
 

@@ -6,7 +6,17 @@ These records are the design of audit. Each one stands alone: Status and date, C
 
 The records 0001 to 0016 are **the first set**. They were written as one clean rewrite, from the design that grew inside sluis and from the archived audit-v1. Nothing in them is an amendment of an earlier text, and none has a history in this repository, because this repository began with them.
 
-**From this set on, records are append-only.** An accepted record is not rewritten. To change a decision, write a new record with the next number that supersedes the old one, and move the old record to `archive/` with a pointer to its successor. A typo or a broken link may be fixed in place. The same rule is in [CONTRIBUTING.md](../../CONTRIBUTING.md) and [AGENTS.md](../../AGENTS.md).
+**From this set on, records are append-only.** An accepted record is not rewritten. To change a decision, write a new record with the next number that supersedes the old one, and move the old record to `archive/` with a pointer to its successor. A typo or a broken link may be fixed in place. A record that a later one supersedes only in part stays where it is, and its Status line changes (see [Status values](#status-values)). The same rule is in [CONTRIBUTING.md](../../CONTRIBUTING.md) and [AGENTS.md](../../AGENTS.md).
+
+## Status values
+
+The Status line of a record is one of:
+
+- `accepted, <date>`
+- `accepted, <date>. Partly superseded by [NNNN](NNNN-slug.md): <what changed>`: a later record changed one part of it. The record stays in place and is otherwise unchanged. The successor says in its own text which words it overtakes.
+- `superseded by [NNNN](NNNN-slug.md)`: the whole record is replaced. It moves to `archive/`.
+
+The successor of a partly superseded record has a Status line that says `Partly supersedes [NNNN](NNNN-slug.md)`.
 
 ## The records
 
@@ -28,6 +38,13 @@ The records 0001 to 0016 are **the first set**. They were written as one clean r
 | [0014](0014-the-front-the-console-page-and-audit-verify.md) | The front, the console page and `audit verify` | What audit owns at the edge |
 | [0015](0015-configuration-kinds.md) | Configuration kinds | AuditLog, AuditWitnesses, AuditCatalogue, Meter, through atoom's `state` registry |
 | [0016](0016-distribution-and-the-lambda-shape.md) | Distribution and the Lambda shape | Forms per piece, every function behind the Web Adapter |
+| [0017](0017-the-organisation-of-a-usage-record-is-optional.md) | The organisation of a usage record is optional | A usage record carries the customer and the product, and the organisation when the emitter knows it. Partly supersedes 0006. |
+
+## Records changed by a later record
+
+| Record | Changed by | What changed |
+|---|---|---|
+| [0006](0006-the-usage-class.md) The usage class | [0017](0017-the-organisation-of-a-usage-record-is-optional.md) | The organisation is optional in a usage record. The customer and the product stay required. |
 
 ## What each record replaces
 

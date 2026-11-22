@@ -22,7 +22,7 @@ Thank you for helping. People and AI agents follow the same rules. [AGENTS.md](A
 ## Writing a decision
 
 - A record stands alone: Status and date, Context, Decision, Consequences, Roads not taken. Fold what you learned into the text.
-- **The first set, 0001 to 0016, was written as one clean rewrite. From it on, records are append-only.** To change a decision, write a new record that supersedes the old one, and move the old one to `docs/decisions/archive/` with a note that names its successor. Do not edit an accepted record, except to fix a typo or a broken link.
+- **The first set, 0001 to 0016, was written as one clean rewrite. From it on, records are append-only.** To change a decision, write a new record that supersedes the old one, and move the old one to `docs/decisions/archive/` with a note that names its successor. Do not edit an accepted record, except to fix a typo or a broken link. When a later record supersedes only part of it, leave the record in place and change its Status line to `accepted, <date>. Partly superseded by [NNNN](NNNN-slug.md): <what changed>`; the new record says `Partly supersedes` in its own Status line and names the words it overtakes.
 - State each fact once, where it belongs, and link to it from everywhere else.
 - Say what is built and what is planned. Where something is open, write `Open:` and name the question. Do not invent a decision.
 - Record the roads not taken, with the reason.

@@ -31,6 +31,10 @@ A row that no longer applies gets `status: withdrawn` and `superseded_by`. It is
 - **Rows that need an installation to prove them** keep their `verification` as a short, neutral line. The hardware checks of one installation are not carried here.
 - **Dropped fields:** the sluis issue numbers, the milestones and the gap keys of sluis's roadmap, the standards register ids (which name sluis's own register), the feature tags, and the paths of sluis's tests and actors.
 
+## Rows added in audit
+
+REQ-AUDIT-193 to 195 are new in audit. They say which identifiers a usage event must carry and that the organisation is optional ([0017](../decisions/0017-the-organisation-of-a-usage-record-is-optional.md)).
+
 ## Rows that stay in sluis
 
 14 rows are marked `owner: sluis`, with a link to sluis's copy. They are the rows audit does not own:

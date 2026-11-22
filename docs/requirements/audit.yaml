@@ -1859,3 +1859,36 @@ requirements:
   verification:
   - kind: integration-test
     ref: the provisioned cluster is Aurora Serverless v2 with auto-pause on, and an idle cluster pauses
+- id: REQ-AUDIT-193
+  area: AUDIT
+  split_from: REQ-AUDIT-095
+  statement: The writer MUST refuse a usage event that carries no customer identifier or no product identifier, together with its whole message.
+  rationale: The customer and the product are the aggregation key that every consumer of the usage stream relies on.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: a usage part without the customer, and one without the product, is refused by the writer with its security part
+- id: REQ-AUDIT-194
+  area: AUDIT
+  split_from: REQ-AUDIT-095
+  statement: The writer MUST accept a usage event that carries no organisation identifier.
+  rationale: An emitter does not always know an organisation. sluis never uses one, and a made-up value would pollute every grouping by organisation.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: a usage part with the customer and the product and without the organisation is stored
+- id: REQ-AUDIT-195
+  area: AUDIT
+  split_from: REQ-AUDIT-095
+  statement: The writer MUST refuse a usage event whose organisation identifier is present and empty.
+  rationale: Absent means that the emitter does not know the organisation. An empty value cannot be told from a placeholder, and it would form a group of its own.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: a usage part with an empty organisation is refused by the writer

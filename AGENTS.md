@@ -14,7 +14,7 @@ The working rules of this repository, for AI agents. People follow the same rule
 
 ## Records are append-only from the first set
 
-- The records 0001 to 0016 are the first set, written as one clean rewrite. **From this set on, decision records are append-only.** Do not rewrite an accepted record. Write a new record that supersedes it, and move the old one to `docs/decisions/archive/` with a pointer to its successor. A typo or a broken link may be fixed in place.
+- The records 0001 to 0016 are the first set, written as one clean rewrite. **From this set on, decision records are append-only.** Do not rewrite an accepted record. Write a new record that supersedes it, and move the old one to `docs/decisions/archive/` with a pointer to its successor. A typo or a broken link may be fixed in place. When a new record supersedes only part of an old one, the old record stays in place and its Status line says `Partly superseded by [NNNN](NNNN-slug.md)`; see [the decisions README](docs/decisions/README.md#status-values).
 - A new record has the next free number and the shape of the others: Status and date, Context, Decision, Consequences, Roads not taken.
 - Requirement ids are stable and never reused. Withdraw a row; do not delete it.
 - State each fact once and link to it. Mark what is built and what is planned. Write `Open:` where a question is open, and never invent an answer.

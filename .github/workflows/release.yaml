@@ -1,0 +1,199 @@
+# The release of audit (docs/release.md). It starts on the root tag vX.Y.Z only, which the maintainer makes and signs by hand
+# (`just release-tag X.Y.Z`); this workflow never makes a tag. The tag of the Go module (emitter/vX.Y.Z) has a slash and does not match the
+# trigger: it is pushed first, the root tag alone last. Copied from atoom's release.yaml; audit releases libraries only (record 0016), so
+# there are no images to push.
+#
+# Four jobs. `gate` refuses a tag that is not a release tag, a commit that is not on master or whose run of check.yaml on master is not
+# green, and a tag set that is not the whole release (tools/release/verify-tags.sh), and finds the run of the candidate (candidate.yaml)
+# that built and smoked this commit (tools/release/candidate-run.sh). `consume` proves that the libraries can be consumed: `go get` of every
+# Go module through the public proxy and a smoke Rust crate against the git tag. `attest` makes a provenance attestation of the files of
+# the candidate (GitHub artifact attestations, keyless): it is the one job with an id-token, and it holds no other write permission.
+# `release` has the only write permission over contents, builds nothing, holds every file to the evidence of the candidate
+# (tools/release/check-dist.sh, evidence.sh verify), publishes the GitHub release as a draft first with every asset, makes it public only
+# when its checks pass, and then checks that the published release is immutable (tools/release/publish.sh; fails the job if it is not).
+#
+# Nothing is signed here (the tags are signed by the maintainer by hand). What carries trust: the signed tags, SHA256SUMS, and the GitHub
+# attestation of the files.
+#
+# Prerequisites (docs/release.md): tag rulesets on `v*` and `*/v*` that let only the owner create a tag and nobody update or delete one,
+# and immutable releases. The gate is in this file and GitHub runs the file of the tagged commit, so only those rulesets stop a tag on a
+# branch whose copy of the workflow has no gate.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*.[0-9]*.[0-9]*']
+
+# No permission at workflow level: each job asks for its own.
+permissions: {}
+
+# One release at a time, and a release is never cancelled by another.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: gate (a release tag, on master, green, the whole set, a candidate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      candidate_run: ${{ steps.candidate.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The commit the tag names, whatever the ref is when the run starts, and the history of master to know it is an ancestor.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The tag
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [ "$REF_TYPE" = tag ] || { echo "gate: refused: the ref is a $REF_TYPE, not a tag" >&2; exit 1; }
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            { echo "gate: refused: $TAG is not a release tag (vX.Y.Z)" >&2; exit 1; }
+      - name: The gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/release/gate.sh "$GITHUB_SHA"
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      - name: The tag set
+        env:
+          TAG: ${{ github.ref_name }}
+        run: devbox run -- tools/release/verify-tags.sh "$TAG"
+      # The run of candidate.yaml, from a push to master, that built and smoked this commit: green, and still holding its artifacts. What they
+      # hold is checked by the jobs that use them, by digest; this only finds the run.
+      - name: The candidate
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=$(tools/release/candidate-run.sh "$GITHUB_SHA")
+          echo "run=$run" >>"$GITHUB_OUTPUT"
+
+  consume:
+    name: consume (go get through the proxy, a Rust crate against the tag)
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      - name: Consume the release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: devbox run -- just rust-toolchain && devbox run -- tools/release/consume.sh "${TAG#v}"
+
+  # The provenance attestation of the files of the candidate: GitHub's keyless artifact attestation (Sigstore, signed by GitHub's OIDC identity
+  # of this workflow run) over the digests of SHA256SUMS. It says that these digests were published by this workflow, on this tag and commit;
+  # the files were built by the candidate run whose id the evidence names. The job holds an id-token and the right to attest, and no write
+  # permission over contents. It runs only after the files have been held to the evidence of the candidate.
+  attest:
+    name: attest (provenance of the files of the candidate)
+    needs: [gate, consume]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist/release
+          run-id: ${{ needs.gate.outputs.candidate_run }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: evidence
+          path: dist/candidate
+          run-id: ${{ needs.gate.outputs.candidate_run }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - name: The tree is as the tag has it
+        run: git diff --quiet HEAD
+      - name: The files are the candidate's, and the whole release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tools/release/check-dist.sh dist/release "${TAG#v}"
+          tools/release/evidence.sh verify dist/release dist/candidate/evidence.json "${TAG#v}" "$GITHUB_SHA"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/release/SHA256SUMS
+
+  # The one job that can change what users see: it holds the only write permission over contents of this workflow. It builds nothing: the
+  # files are the candidate's.
+  release:
+    name: release (verify, draft, checks, publish)
+    needs: [gate, consume, attest]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      # Reads the artifacts of the candidate's run.
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist/release
+          run-id: ${{ needs.gate.outputs.candidate_run }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: evidence
+          path: dist/candidate
+          run-id: ${{ needs.gate.outputs.candidate_run }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+      # Nothing that the downloads did may have changed a tracked file (dist/ is ignored by git).
+      - name: The tree is as the tag has it
+        run: git diff --quiet HEAD
+      - name: The files are the candidate's, and the whole release
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tools/release/check-dist.sh dist/release "${TAG#v}"
+          tools/release/evidence.sh verify dist/release dist/candidate/evidence.json "${TAG#v}" "$GITHUB_SHA"
+      - name: The release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version=${TAG#v}
+          # The changelog section of this version, up to the next section.
+          awk -v h="## $version " 'index($0, h) == 1 { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md >notes.md
+          [ -s notes.md ] || { echo "release: refused: CHANGELOG.md has no section for $version" >&2; exit 1; }
+      # A draft first with every asset, checked, then public, then checked for immutability (tools/release/publish.sh).
+      - name: Draft, check, publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: tools/release/publish.sh "$TAG" notes.md dist/release/*

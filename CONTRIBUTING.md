@@ -41,7 +41,11 @@ Thank you for helping. People and AI agents follow the same rules. [AGENTS.md](A
 
 ## The check
 
-Every pull request runs the `check` job. It passes when every other job of the workflow passed: the documentation check (every YAML file and every relative markdown link, `python3 .github/scripts/check.py`), the build and the tests, the format and the lints, and the licences and advisories of the dependencies. Run it all locally with `devbox run -- just check`.
+Every pull request runs the `check` job. It passes when every other job of the workflow passed: the documentation check (every YAML file and every relative markdown link, `python3 .github/scripts/check.py`), the build and the tests, the format and the lints, the licences and advisories of the dependencies, and the rehearsals of the release flow. Run it all locally with `devbox run -- just check`.
+
+## Releasing
+
+The maintainer releases, by the checklist in [docs/release.md](docs/release.md). A pull request does not change the version or the tags.
 
 ## Licence
 

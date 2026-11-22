@@ -1,0 +1,228 @@
+# The release candidate (docs/release.md, "The candidate"). A release is published from the bytes of a candidate: the files that this
+# workflow made once (the source archive of the commit and SHA256SUMS, tools/release/assemble.sh), unpacked, built and tested, Go and Rust,
+# on an amd64 and an arm64 hosted runner, and named by digest in a report of that smoke (evidence.json). The tag run (release.yaml) builds
+# nothing: it takes these artifacts, holds every file it will publish to the digests of the report, and publishes them. So the bytes that
+# were tested are the bytes that ship, and a failure of the smoke costs no version number: nothing is tagged until this workflow has passed
+# on the commit. Copied from atoom's candidate.yaml; audit releases libraries only (record 0016), so there are no executables, packages or
+# images to build.
+#
+# When it runs. On a push to master that changes the first heading of CHANGELOG.md to a release version with no tag (the pull request that
+# `just release-prepare` makes; tools/release/candidate-scope.sh decides), with the version of that heading. And as a rehearsal: check.yaml
+# calls it (workflow_call, rehearsal: true) on every pull request and push to master that can affect the release, with the version 0.0.0
+# that no release is, so that the whole path (the archive, the smoke on both architectures, the evidence and the mutants of its gate) runs
+# before a candidate has to. A rehearsal keeps its artifacts for a day, a candidate for 30: the owner tags a candidate days later, and an
+# expired candidate is built again by a new commit that changes the first heading of CHANGELOG.md.
+#
+# Safety. Every job holds `contents: read` and nothing else, no id-token, and no job passes a token to a step that runs the code of a
+# dependency; it runs on GitHub-hosted runners only. The evidence is a defect gate and not a supply-chain control (tools/release/evidence.sh).
+# Nothing is pushed and nothing is signed here.
+name: Candidate
+
+on:
+  push:
+    branches: [master]
+    paths: [CHANGELOG.md]
+  workflow_call:
+    inputs:
+      rehearsal:
+        description: Rehearse the candidate (the version 0.0.0, short-lived artifacts) instead of building the one that the CHANGELOG names
+        type: boolean
+        default: false
+
+permissions: {}
+
+# A pull request's rehearsal cancels the one it supersedes; a push to master never cancels, and shares no group with another commit's. The
+# workflow's name is in the group because, called by check.yaml, this workflow runs on the same commit as its own push run, and the two
+# must not queue behind each other.
+concurrency:
+  group: candidate-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scope:
+    name: scope (a release candidate or a rehearsal, and its version)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+      version: ${{ steps.scope.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The tags (a candidate's version has no tag) and the history (what a push or a pull request changes).
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Is this a candidate, or a rehearsal that is needed, and which version
+        id: scope
+        env:
+          REHEARSAL: ${{ inputs.rehearsal }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$REHEARSAL" != true ]; then
+            # A push to master: a candidate when the heading of CHANGELOG.md became an untagged release version.
+            tools/release/candidate-scope.sh "$BEFORE" "$GITHUB_SHA" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # What changed: against the base of a pull request, or the commit before a push. With nothing to compare with (the first push, a
+          # base that is not in the clone) the rehearsal runs.
+          base=${BASE:-$BEFORE}
+          run=true
+          if [ -n "$base" ] && ! [[ "$base" =~ ^0+$ ]] && git cat-file -e "$base^{commit}" 2>/dev/null; then
+            run=
+            changed=$(git diff --no-renames --name-only "$base" HEAD)
+            while IFS= read -r f; do
+              case "$f" in
+                Justfile | devbox.json | devbox.lock | rust-toolchain.toml | Cargo.toml | Cargo.lock | go.work | go.work.sum) run=true ;;
+                */Cargo.toml | */go.mod | */go.sum | .cargo/*) run=true ;;
+                tools/release/* | CHANGELOG.md | LICENSE) run=true ;;
+                .github/workflows/check.yaml | .github/workflows/candidate.yaml | .github/workflows/release.yaml) run=true ;;
+              esac
+            done <<<"$changed"
+            run=${run:-false}
+          fi
+          echo "run=$run" >>"$GITHUB_OUTPUT"
+          echo "the candidate is rehearsed: $run"
+          if [ "$run" = true ]; then
+            echo "version=0.0.0" >>"$GITHUB_OUTPUT"
+          fi
+
+  # The files of the release: the source archive of this commit and SHA256SUMS (tools/release/assemble.sh), held to what a release is.
+  assemble:
+    name: assemble (the source archive and its sums)
+    needs: scope
+    if: ${{ needs.scope.outputs.run == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.scope.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      # A candidate is prepared by `just release-prepare`: the tree says the version it is built as.
+      - name: The tree is prepared for this version
+        if: ${{ !inputs.rehearsal }}
+        run: devbox run -- tools/release/check-tree.sh "$VERSION"
+      - run: devbox run -- just release-assemble "$VERSION"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-files
+          # A re-run of this job (gh run rerun --failed) uploads again; this job is the only one that writes the name.
+          overwrite: true
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: ${{ inputs.rehearsal && 1 || 30 }}
+          path: dist/release
+
+  # The smoke (tools/release/smoke.sh): the archive of the previous job, unpacked in a clean directory, built and tested, the Go modules and
+  # the Rust workspace, on a runner of each architecture; nothing is cross-compiled. No token: the build runs the build scripts and macros of
+  # every dependency.
+  smoke:
+    name: 'smoke (${{ matrix.arch }}: the archive built and tested, Go and Rust)'
+    needs: [scope, assemble]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      VERSION: ${{ needs.scope.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist/release
+      - name: The files are exactly the release
+        run: tools/release/check-dist.sh dist/release "$VERSION"
+      - uses: truvity/ci-actions/setup-devbox@82e404675ef3f826755e2939d1072cddcd07ed26 # v3.9.0
+      - name: The archive, built and tested
+        run: devbox run -- just release-smoke "$VERSION"
+      - name: The record of this smoke
+        run: tools/release/evidence.sh record "${{ matrix.arch }}" "$VERSION" "$GITHUB_SHA" "smoke-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          # One name for each architecture and attempt of the run: a re-run of the failed smoke job (gh run rerun --failed) uploads under a
+          # new name, and the job candidate takes the newest attempt of each architecture.
+          name: smoke-${{ matrix.arch }}-${{ github.run_attempt }}
+          path: smoke-${{ matrix.arch }}.json
+          if-no-files-found: error
+          retention-days: ${{ inputs.rehearsal && 1 || 30 }}
+
+  # Joins the records of the two architectures into the evidence of the candidate, with the digest of every file of the release, and holds
+  # the files to it with the gate of the tag run. Then the gate is shown to bite on these very bytes: a changed byte, a file added, a file
+  # taken away, another commit, a rehearsal's evidence, a missing architecture and a smoke left out must each be refused. It runs the
+  # scripts of this tree, from the checkout.
+  candidate:
+    name: candidate (join the evidence, hold the files to it, break them)
+    needs: [scope, assemble, smoke]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.scope.outputs.version }}
+      REHEARSAL: ${{ inputs.rehearsal && 'true' || 'false' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-files
+          path: dist/release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: smoke-*
+          path: dist/smoke
+      # Nothing that a download did may have changed a tracked file (dist/ is ignored by git).
+      - name: The tree is as the commit has it
+        run: git diff --quiet HEAD
+      - name: Join the evidence of the architectures
+        run: |
+          set -euo pipefail
+          mkdir -p dist/candidate
+          # The newest attempt of each architecture.
+          records=()
+          for arch in amd64 arm64; do
+            f=$(find dist/smoke -path "*/smoke-$arch-*/smoke-$arch.json" | sort -t- -k3 -n | tail -n 1)
+            [ -n "$f" ] || { echo "no smoke record of $arch" >&2; exit 1; }
+            records+=("$f")
+          done
+          tools/release/evidence.sh merge dist/release "$VERSION" "$GITHUB_SHA" "$REHEARSAL" "${records[@]}" >dist/candidate/evidence.json
+      - name: Hold the files to the evidence, as the tag run does
+        run: |
+          set -euo pipefail
+          tools/release/check-dist.sh dist/release "$VERSION"
+          tools/release/candidate-mutants.sh dist/release dist/candidate/evidence.json "$VERSION" "$GITHUB_SHA"
+      - name: Summary
+        run: |
+          {
+            echo "### Release candidate $VERSION"
+            echo
+            echo "Commit \`$GITHUB_SHA\`$([ "$REHEARSAL" = true ] && echo ', a rehearsal: it is not published.' || echo '.')"
+            echo "Evidence: $(jq '.files | length' dist/candidate/evidence.json) files by digest, smoke on $(jq -r '.smoke | keys | join(" and ")' dist/candidate/evidence.json): $(jq -r '.smoke.amd64.smokes | join(" and ")' dist/candidate/evidence.json)."
+          } >>"$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evidence
+          overwrite: true
+          if-no-files-found: error
+          retention-days: ${{ inputs.rehearsal && 1 || 30 }}
+          path: dist/candidate/evidence.json

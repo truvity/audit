@@ -38,6 +38,7 @@ This repository starts as design. The code that this design describes runs today
 - [Reference](docs/reference/README.md): record fields, the log layout, the reader API, the usage event, `audit verify`, configuration kinds, compliance profiles, threats and the glossary.
 - [Runbooks](docs/runbooks/README.md): verify a log, investigate a failed verification, place a legal hold, rebuild the index, handle quarantine, recover from a writer or witness outage.
 - [Requirements](docs/requirements/README.md): the testable rules.
+- [Releasing](docs/release.md): the versions, the tags and the release workflow. [CHANGELOG.md](CHANGELOG.md) says what each release holds.
 
 ## Neighbours
 

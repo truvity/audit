@@ -5,8 +5,9 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 default:
     @just --list
 
-# Everything CI runs, in one go: the documentation check, format and lint, build and test, licences and advisories.
-check: docs lint test check-licenses check-advisories
+# Everything CI runs, in one go: the documentation check, format and lint, build and test, licences and advisories, and the rehearsals of
+# the release flow.
+check: docs lint test check-licenses check-advisories release-rehearsal release-candidate-test
 
 # Every YAML file parses, every relative markdown link and its anchor resolves, and the requirement rows are well formed.
 # It needs a Python 3 with PyYAML; the CI job installs PyYAML into a virtual environment of its own.
@@ -90,6 +91,38 @@ shell-lint:
 # actionlint over the workflows.
 workflow-lint:
     actionlint
+
+# The release (docs/release.md). The maintainer chooses X.Y.Z, runs `release-prepare` on a branch, commits it as `release: X.Y.Z` and opens
+# the PR, waits for the candidate (.github/workflows/candidate.yaml) on the merge commit, and runs `release-tag` there. Nothing here pushes.
+# `just release-prepare X.Y.Z`: the Cargo workspace version and Cargo.lock, the sibling Go requires, and the CHANGELOG.md section.
+release-prepare version *flags: rust-toolchain
+    tools/release/prepare.sh {{ flags }} {{ version }}
+
+# The tags of one release: vX.Y.Z and <dir>/vX.Y.Z for every Go library (emitter/vX.Y.Z), all or none, signed by hand.
+# `just release-tag X.Y.Z --dry-run` runs every check and makes none.
+release-tag version *flags:
+    tools/release/tag.sh {{ flags }} {{ version }}
+
+# The rehearsal of the release flow on a throw-away copy of the repository with fixture libraries: release-prepare, release-tag as a
+# dry run and for real with unsigned tags in the copy, the tag verification and the consumption listing. No tag here, nothing pushed.
+release-rehearsal: rust-toolchain
+    tools/release/rehearse.sh
+
+# The files of a release in dist/release (the source archive of HEAD and SHA256SUMS), checked. The version defaults to 0.0.0, which no
+# release is; the candidate workflow runs the same scripts.
+release-assemble version="0.0.0":
+    tools/release/assemble.sh {{ version }}
+    tools/release/check-dist.sh dist/release {{ version }}
+
+# The smoke of the candidate on this machine: the archive of dist/release unpacked in a clean directory, built and tested, Go and Rust.
+# Run `release-assemble` first.
+release-smoke version="0.0.0": rust-toolchain
+    tools/release/smoke.sh dist/release {{ version }}
+
+# Tests of the candidate scripts on fixtures: the scope of a push, check-dist, the evidence gate and its mutants, and the publication
+# against a stand-in for `gh`.
+release-candidate-test:
+    tools/release/test-candidate.sh
 
 # Install and check the pinned Rust toolchain (`devbox run -- just rust-toolchain`). It is safe to run at any time and in parallel: a
 # complete toolchain is a check of a fraction of a second; an incomplete one is installed under a lock, by one process at a time. The

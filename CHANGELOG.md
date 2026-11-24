@@ -4,8 +4,14 @@ One version for the whole repository ([record 0016](docs/decisions/0016-distribu
 
 <!-- release-prepare: new sections go below this line -->
 
-## Unreleased
+## 0.19.0 - 2026-11-24
 
+One version for the whole repository: every library is tagged 0.19.0, changed or not.
+
+Libraries that changed since v0.18.0:
+- `emitter`
+
+What is in it:
 - atoom 0.5.0: both libraries move from atoom 0.4.0 to 0.5.0 (the Rust crates `atoom-common`, `atoom-socket` and `atoom-transport`, and the Go modules `github.com/truvity/atoom/common` and `github.com/truvity/atoom/transport`). atoom's transport port and wire are the same in both releases, so records do not change. The emitter names no variant of `atoom_socket::ResponseBody`, which atoom 0.5.0 makes opaque, so no code changes. A product on atoom 0.5.0 now gets one copy of atoom in its Rust build, and the emitter's default reader of the correlation id reads that product's call context.
 
 ## 0.18.0 - 2026-11-24

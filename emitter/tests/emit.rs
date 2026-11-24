@@ -679,6 +679,79 @@ async fn the_correlation_id_of_the_call_being_served_is_taken_when_none_is_given
     assert!(v["metadata"].get("correlation_uid").is_none());
 }
 
+/// A handler of a server of `atoom-socket` that emits from inside the call it serves: it keeps the bytes of the record.
+struct Front {
+    emitter: Emitter,
+    records: Mutex<Vec<Vec<u8>>>,
+}
+
+impl TransportService for Front {
+    async fn emit(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, EmitRequest>,
+    ) -> ServiceResult<EmitResponse> {
+        let (rec, _) = self.emitter.record(sign_event()).await?;
+        self.records.lock().unwrap().push(rec);
+        Response::ok(EmitResponse::default())
+    }
+
+    async fn receive(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, ReceiveRequest>,
+    ) -> ServiceResult<ServiceStream<ReceiveResponse>> {
+        Err(refusal(ErrorCode::Unimplemented, "unsupported", ""))
+    }
+
+    async fn ack(
+        &self,
+        _ctx: RequestContext,
+        _request: ServiceRequest<'_, AckRequest>,
+    ) -> ServiceResult<AckResponse> {
+        Err(refusal(ErrorCode::Unimplemented, "unsupported", ""))
+    }
+}
+
+/// The default reader is the one the server of the same `atoom-socket` fills: an id that a caller sends on the wire reaches
+/// `metadata.correlation_uid` of a record emitted inside the handler, with no plumbing. A product that pins another release
+/// of atoom than the emitter's would have two copies of the task-local, and this is the test that would stop it.
+#[tokio::test]
+async fn the_correlation_id_a_server_reads_from_the_wire_reaches_the_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut u = up(dir.path()).await;
+    let front = Arc::new(Front {
+        emitter: emitter(&u, false),
+        records: Mutex::new(Vec::new()),
+    });
+    let socket = serve(
+        dir.path(),
+        "front.sock",
+        Arc::clone(&front).register(Router::new()),
+        &mut u._stop,
+    )
+    .await;
+    let c = atoom_socket::dial(&socket);
+    let client = atoom_transport::atoom::transport::v1alpha1::TransportServiceClient::new(
+        c.transport(),
+        c.config(),
+    );
+    call::scope(
+        Call::new().with_correlation("req-wire"),
+        client.emit(EmitRequest::default()),
+    )
+    .await
+    .unwrap();
+    client.emit(EmitRequest::default()).await.unwrap();
+
+    let records = front.records.lock().unwrap();
+    assert_eq!(records.len(), 2);
+    let v: Value = serde_json::from_slice(&records[0]).unwrap();
+    assert_eq!(v["metadata"]["correlation_uid"], "req-wire", "{v}");
+    let v: Value = serde_json::from_slice(&records[1]).unwrap();
+    assert!(v["metadata"].get("correlation_uid").is_none(), "{v}");
+}
+
 /// A product whose server keeps the call elsewhere gives its own reader of the correlation id.
 #[tokio::test]
 async fn a_product_gives_its_own_reader_of_the_correlation_id() {

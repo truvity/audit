@@ -6,4 +6,4 @@ toolchain go1.27.4
 // go.mod and the tags of one release.
 use ./emitter
 
-replace github.com/truvity/audit/emitter v0.17.0 => ./emitter
+replace github.com/truvity/audit/emitter v0.18.0 => ./emitter

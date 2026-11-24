@@ -4,8 +4,14 @@ One version for the whole repository ([record 0016](docs/decisions/0016-distribu
 
 <!-- release-prepare: new sections go below this line -->
 
-## Unreleased
+## 0.18.0 - 2026-11-24
 
+One version for the whole repository: every library is tagged 0.18.0, changed or not.
+
+Libraries that changed since v0.17.0:
+- `emitter`
+
+What is in it:
 - atoom 0.4.0: both libraries move from atoom 0.3.0 to 0.4.0 (the Rust crates `atoom-common`, `atoom-socket` and `atoom-transport`, and the Go modules `github.com/truvity/atoom/common` and `github.com/truvity/atoom/transport`). The transport port is the same in both releases, so records and the wire do not change. A product on atoom 0.4.0 now gets one copy of atoom in its Rust build: with two, the emitter's default reader of the correlation id read the other copy's call context and records lost `metadata.correlation_uid`. A new test emits inside a handler of an `atoom-socket` server and checks that the id the caller sent reaches the record.
 
 ## 0.17.0 - 2026-11-22

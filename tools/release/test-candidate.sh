@@ -29,6 +29,22 @@ d=$(heading "## 0.2.0 - 2026-11-21" 4)
 expect "an unchanged heading is no candidate" "run=false reason=the head of CHANGELOG.md did not change (## Unreleased) " "$(scope "$a" "$b")"
 expect "a version heading is a candidate" "run=true version=0.2.0 " "$(scope "$b" "$c")"
 expect "the first push has nothing to compare" "run=false reason=the push has no commit before it to compare with " "$(scope 0000000000000000000000000000000000000000 "$c")"
+# The commit before the push has no CHANGELOG.md at all (the first one adds it): a git error there is no reason to fail.
+repo2=$tmp/repo2
+mkdir "$repo2"
+g2() { git -C "$repo2" -c user.name=t -c user.email=t@example.invalid -c commit.gpgsign=false "$@"; }
+g2 init -q -b master
+echo x >"$repo2/README.md"
+g2 add -A
+g2 commit -q -m readme
+nochangelog=$(g2 rev-parse HEAD)
+printf '# Changelog\n\n## Unreleased\n' >"$repo2/CHANGELOG.md"
+g2 add -A
+g2 commit -q -m changelog
+withchangelog=$(g2 rev-parse HEAD)
+expect "a commit before it with no CHANGELOG.md is no candidate" \
+    "run=false reason=the head of CHANGELOG.md is '## Unreleased': 'Unreleased' is not a release version (X.Y.Z) " \
+    "$(cd "$repo2" && "$here/candidate-scope.sh" "$nochangelog" "$withchangelog" | tr '\n' ' ')"
 g tag v0.2.0 "$c"
 expect "a tagged version is no candidate" "run=false reason=v0.2.0 is already tagged " "$(scope "$b" "$d")"
 e=$(heading "## Unreleased" 5)

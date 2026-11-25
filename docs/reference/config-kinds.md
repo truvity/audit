@@ -2,7 +2,7 @@
 
 The decision is in [0015](../decisions/0015-configuration-kinds.md). audit declares four kinds to atoom's `state` registry. A document is signed, reviewed and verified before a piece uses it. The pieces write none of them.
 
-The kinds exist today as kinds of sluis's store actor. The fields below are those that the records require. The schemas are written with the kinds in the registry. **Open: the exact field names and the schemas.**
+The kinds exist today as kinds of sluis's store actor. Until a host runs atoom's `state` block, audit's writer reads the same signed documents through the source port ([0020](../decisions/0020-the-writer-moves-here-first-and-reads-nats-jetstream.md#the-configuration-before-b7), proposed). The fields below are those that the records require. The schemas are written with the kinds in the registry. **Open: the exact field names and the schemas.**
 
 ## AuditLog
 

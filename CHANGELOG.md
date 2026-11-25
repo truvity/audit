@@ -4,6 +4,10 @@ One version for the whole repository ([record 0016](docs/decisions/0016-distribu
 
 <!-- release-prepare: new sections go below this line -->
 
+## Unreleased
+
+- [Record 0020](docs/decisions/0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) (proposed; the owner's D90 A and D91 A), partly superseding 0015 and 0011: the writer moves here first, before usage, as a Go service in its own image that reads NATS JetStream through atoom's `transport/nats`, takes its signed documents through the source port until atoom's `state` block exists, and seals through audit's own host of the `seal` block; mimic gets its own action table. The plan's steps are reordered: the writer is step 1 and usage step 2. Docs only.
+
 ## 0.20.0 - 2026-11-25
 
 One version for the whole repository: every library is tagged 0.20.0, changed or not.

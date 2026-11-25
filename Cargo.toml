@@ -17,9 +17,9 @@ rust-version = "1.99.1"
 
 # atoom, pinned by release tag. Cargo.lock records the commit the tag names.
 [workspace.dependencies]
-atoom-common = { git = "https://github.com/truvity/atoom", tag = "v0.5.0" }
-atoom-socket = { git = "https://github.com/truvity/atoom", tag = "v0.5.0" }
-atoom-transport = { git = "https://github.com/truvity/atoom", tag = "v0.5.0" }
+atoom-common = { git = "https://github.com/truvity/atoom", tag = "v0.7.0" }
+atoom-socket = { git = "https://github.com/truvity/atoom", tag = "v0.7.0" }
+atoom-transport = { git = "https://github.com/truvity/atoom", tag = "v0.7.0" }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

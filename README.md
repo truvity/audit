@@ -30,11 +30,12 @@ audit is built on [atoom](https://github.com/truvity/atoom) ports (blob, transpo
 
 ## Status
 
-This repository starts as design. The code that this design describes runs today inside [sluis](https://github.com/truvity/sluis) (the writer, the first indexer and reader, `audit verify`) and in atoom (the blob, transport and index ports and their first drivers). It moves here in steps. The first is here: the Go and Rust emitters, in [emitter/](emitter/README.md). Each page and record says what is built and what is planned. The requirement rows in [docs/requirements/audit.yaml](docs/requirements/audit.yaml) carry a status for each rule: `done`, `partial` or `planned`.
+The emitters are built and released: the Go and Rust libraries in [emitter/](emitter/README.md), security part, in releases 0.17.0, 0.18.0 and 0.19.0 ([CHANGELOG.md](CHANGELOG.md)). The rest of the design is not built here yet. The writer, the first indexer and reader, and `audit verify` run inside [sluis](https://github.com/truvity/sluis), and the blob, transport and index ports and their first drivers are atoom's. [The plan](docs/plan.md) gives the steps in order: usage first, then the moves of the writer, the indexer and reader, and `audit verify`, then the witness. Each page and record says what is built and what is planned. The requirement rows in [docs/requirements/audit.yaml](docs/requirements/audit.yaml) carry a status for each rule: `done`, `partial` or `planned`.
 
 ## Read next
 
-- [Decision records](docs/decisions/README.md): the design, one subject per record, 0001 to 0016.
+- [The plan](docs/plan.md): what is built and the steps that come next, with what each needs from atoom and sluis.
+- [Decision records](docs/decisions/README.md): the design, one subject per record, 0001 to 0018.
 - [Reference](docs/reference/README.md): record fields, the log layout, the reader API, the usage event, `audit verify`, configuration kinds, compliance profiles, threats and the glossary.
 - [Runbooks](docs/runbooks/README.md): verify a log, investigate a failed verification, place a legal hold, rebuild the index, handle quarantine, recover from a writer or witness outage.
 - [Requirements](docs/requirements/README.md): the testable rules.

@@ -28,7 +28,7 @@ For each log kind it covers (`audit` or `usage`):
 ## How the floors apply
 
 - A project's logs name the profiles they keep in `AuditLog`. The strictest value of each floor applies: the longest retention, the strongest lock, and a witness if any requires it.
-- The configuration check refuses, in a production scope, a retention, lock or identity treatment below the floor, and names the profile and the clause.
+- The configuration check refuses, for a log whose `floors` is `enforce` (the default), a retention, lock or identity treatment below the floor, and names the profile and the clause; for a log whose `floors` is `report` it warns ([0019](../decisions/0019-floors-are-a-declared-switch.md)).
 - The check cannot say that a standard is met. It says that the installation is not below the floor the file states.
 
 ## The five profiles

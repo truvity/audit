@@ -1,6 +1,6 @@
 # 0010. Lock modes, retention, legal holds, lifecycle tiers and compliance floors
 
-Status: accepted, 2026-11-21
+Status: accepted, 2026-11-21. Partly superseded by [0019](0019-floors-are-a-declared-switch.md): the floors apply by a log's declared `floors` (`enforce` or `report`), not in a "production scope"
 
 ## Context
 

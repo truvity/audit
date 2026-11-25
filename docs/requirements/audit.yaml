@@ -623,7 +623,8 @@ requirements:
   statement: In a production scope the configuration check MUST refuse an audit log store whose lock mode is not compliance unless a peer or external witness is configured.
   rationale: A production log without a lock and without a witness must not start by accident.
   level: MUST
-  status: planned
+  status: withdrawn
+  superseded_by: REQ-AUDIT-196
   owner: audit
   verification:
   - kind: integration-test
@@ -633,7 +634,8 @@ requirements:
   statement: Outside production the configuration check MUST warn about an audit log store that has neither a compliance lock nor a witness.
   rationale: Development and staging may run unprotected logs, but the risk must be visible.
   level: MUST
-  status: planned
+  status: withdrawn
+  superseded_by: REQ-AUDIT-197
   owner: audit
   verification:
   - kind: integration-test
@@ -643,7 +645,8 @@ requirements:
   statement: Every audit log in a production scope MUST declare its retention period, with no built-in default.
   rationale: A period locked in compliance mode cannot be shortened, so it must be chosen consciously.
   level: MUST
-  status: planned
+  status: withdrawn
+  superseded_by: REQ-AUDIT-198
   owner: audit
   verification:
   - kind: integration-test
@@ -1338,7 +1341,8 @@ requirements:
   statement: The configuration check MUST refuse, in a production scope, a log retention below the floor of the compliance profile that the project declares in AuditLog, naming the profile.
   rationale: A profile is a floor that the installation must not go below.
   level: MUST
-  status: planned
+  status: withdrawn
+  superseded_by: REQ-AUDIT-199
   owner: audit
   verification:
   - kind: test-vectors
@@ -1348,7 +1352,8 @@ requirements:
   statement: The configuration check MUST refuse, in a production scope, a lock mode below the floor of the compliance profile that the project declares in AuditLog unless the witness that the profile allows in its place is declared.
   rationale: A profile that demands an immutable log must not run on a removable one unwitnessed.
   level: MUST
-  status: planned
+  status: withdrawn
+  superseded_by: REQ-AUDIT-200
   owner: audit
   verification:
   - kind: test-vectors
@@ -1677,7 +1682,8 @@ requirements:
   statement: The configuration check MUST refuse a production installation whose S3 blob destination lacks the guard of the bucket policy when the blob destination sets its bucket guard to require (record 0010).
   rationale: The report alone does not stop an installation from going live without the protection.
   level: MUST
-  status: planned
+  status: withdrawn
+  superseded_by: REQ-AUDIT-201
   owner: audit
   verification:
   - kind: integration-test
@@ -1892,3 +1898,83 @@ requirements:
   verification:
   - kind: test-vectors
     ref: a usage part with an empty organisation is refused by the writer
+- id: REQ-AUDIT-196
+  area: AUDIT
+  statement: For a log whose floors is enforce the configuration check MUST refuse an audit log store whose lock mode is not compliance unless a peer or external witness is configured.
+  rationale: A log under enforced floors without a lock and without a witness must not start by accident (record 0019).
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check lock-mode refusal test under floors enforce
+- id: REQ-AUDIT-197
+  area: AUDIT
+  statement: For a log whose floors is report the configuration check MUST warn about an audit log store that has neither a compliance lock nor a witness.
+  rationale: A deployment may run unprotected logs on purpose, but the risk must be visible (record 0019).
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check lock-mode warning test under floors report
+- id: REQ-AUDIT-198
+  area: AUDIT
+  statement: Every audit log whose floors is enforce MUST declare its retention period, with no built-in default.
+  rationale: A period locked in compliance mode cannot be shortened, so it must be chosen consciously.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: config-check retention test under floors enforce
+- id: REQ-AUDIT-199
+  area: AUDIT
+  statement: For a log whose floors is enforce the configuration check MUST refuse a log retention below the floor of the compliance profile that the project declares in AuditLog, naming the profile.
+  rationale: A profile is a floor that the installation must not go below.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: logs under floors enforce with a retention below each profile floor
+- id: REQ-AUDIT-200
+  area: AUDIT
+  statement: For a log whose floors is enforce the configuration check MUST refuse a lock mode below the floor of the compliance profile that the project declares in AuditLog unless the witness that the profile allows in its place is declared.
+  rationale: A profile that demands an immutable log must not run on a removable one unwitnessed.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: logs under floors enforce with a lock below each profile floor
+- id: REQ-AUDIT-201
+  area: AUDIT
+  statement: For a log whose floors is enforce the configuration check MUST refuse an S3 blob destination that lacks the guard of the bucket policy when the blob destination sets its bucket guard to require (record 0010).
+  rationale: The report alone does not stop a log from going live without the protection.
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: integration-test
+    ref: with the guard required, a bucket without it is refused under floors enforce and only reported under floors report
+- id: REQ-AUDIT-202
+  area: AUDIT
+  statement: The configuration check MUST treat a log that declares no floors as floors enforce.
+  rationale: A forgotten field must not let an unprotected log start silently (record 0019).
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: a log with no floors field is refused as under floors enforce
+- id: REQ-AUDIT-203
+  area: AUDIT
+  statement: The configuration check MUST NOT take a scope, installation or environment name as a switch of its floors.
+  rationale: audit knows no deployment shape; the deployment declares floors (record 0019).
+  level: MUST
+  status: planned
+  owner: audit
+  verification:
+  - kind: test-vectors
+    ref: two logs that differ only in their scope name, one called production, are checked the same

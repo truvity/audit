@@ -13,7 +13,8 @@ One item for each project.
 | `bucket` | The blob destination: its driver, bucket and settings | `bucket_guard` (`report` or `require`) and `breakglass_roles` for a bucket that audit does not own |
 | `logs` | The logs of each kind, `audit` and `usage` | |
 | `lock` | The lock mode of each log: `none`, `removable` or `compliance` | Set by the backend and checked against it |
-| `retention` | The retention of each log, in days or as the profile's rule | A production log must declare one. No default. |
+| `retention` | The retention of each log, in days or as the profile's rule | No default. A log whose `floors` is `enforce` must declare one. |
+| `floors` | How the configuration check applies the floors to each log: `enforce` or `report` | `enforce` refuses, `report` warns; `enforce` when absent. The deployment sets it; no scope or installation name is a switch ([0019](../decisions/0019-floors-are-a-declared-switch.md)) |
 | `tiers` | For each log, a list of age and storage class | A tier the driver lacks is refused. A tier never touches retention. |
 | `profiles` | The compliance profiles each log keeps | The strictest value of each floor applies |
 | `products` | The product names the project's writer accepts in `metadata.product.name` | The writer refuses another |

@@ -35,6 +35,8 @@ A row that no longer applies gets `status: withdrawn` and `superseded_by`. It is
 
 REQ-AUDIT-193 to 195 are new in audit. They say which identifiers a usage event must carry and that the organisation is optional ([0017](../decisions/0017-the-organisation-of-a-usage-record-is-optional.md)).
 
+REQ-AUDIT-196 to 203 are new in audit ([0019](../decisions/0019-floors-are-a-declared-switch.md), proposed). They replace REQ-AUDIT-058, 059, 060, 136, 137 and 172, which named a production scope and are withdrawn: the floors apply by a log's declared `floors`, `enforce` or `report`, `enforce` when absent, and no name is a switch.
+
 ## Rows that stay in sluis
 
 14 rows are marked `owner: sluis`, with a link to sluis's copy. They are the rows audit does not own:

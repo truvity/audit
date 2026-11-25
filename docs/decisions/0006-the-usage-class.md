@@ -1,6 +1,6 @@
 # 0006. The usage class: what was used, never dropped
 
-Status: accepted, 2026-11-21. Partly superseded by [0017](0017-the-organisation-of-a-usage-record-is-optional.md): the organisation of a usage record is optional.
+Status: accepted, 2026-11-21. Partly superseded by [0017](0017-the-organisation-of-a-usage-record-is-optional.md): the organisation of a usage record is optional. Partly superseded by [0019](0019-floors-are-a-declared-switch.md): a log's retention has no default anywhere, and no installation name is a switch.
 
 ## Context
 

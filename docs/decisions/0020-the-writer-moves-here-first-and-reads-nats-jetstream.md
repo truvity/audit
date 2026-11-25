@@ -87,7 +87,7 @@ Nothing new is asked of atoom for this step.
 ### sluis's switch and the dual period
 
 - **audit's writer runs first where nothing runs:** the JetStream stream of session's development site, and mimic's (below). sluis's boards keep sluis's writer.
-- **During the dual period sluis's writer is frozen.** A change to the writer is made here. A security fix is made here and carried to sluis's copy in the same week, until sluis has switched.
+- **During the dual period sluis's writer is frozen.** A change to the writer is made here. A security fix is made here and carried to sluis's copy in the same week, until sluis has switched. The people who maintain sluis v2 have accepted the freeze (2026-11-25).
 - **sluis switches when three things hold:** sluis `key@` hosts atoom's `seal` block and serves the seal port (sluis's own step); sluis's signed `AuditLog` and `AuditCatalogue` reach the writer through the source port or B7; and audit's writer, run beside sluis's on a board against a copy of a real log, continues it and passes sluis's tests. Then sluis's units run `audit-writer --transport-socket` with the spool, and `actors/writer` is deleted with a "moved to" note.
 - **sluis continues its logs; it does not start new ones** ([C7](#c7-sluiss-logs-at-the-switch)). The log format, the state format and the seal addresses are the same, so audit's writer opens sluis's state and goes on. The log key stays the same key: sluis's host maps the purpose `log` to the key it holds as `audit-log`.
 - **The usage path is built in audit's writer** (plan step 2), not in sluis's. sluis emits no usage until it has switched.
@@ -103,7 +103,7 @@ On a shared Kubernetes cluster of a development environment, for session's devel
 - the key driver's and the store's credentials for `audit-seal` alone, through the cluster's workload identity;
 - the floors of the project's logs declared `report` or `enforce` in its `AuditLog` ([0019](0019-floors-are-a-declared-switch.md)): the writer reads the field and the deployment chooses it.
 
-The project's catalogue must exist before the writer can take a record: a record whose release has no catalogue is quarantined ([0008](0008-the-log.md)). session's table and schemas are code in session; publishing them as session's signed `AuditCatalogue` is session's follow-up ([session record 0023](https://github.com/truvity/session/blob/master/docs/decisions/0023-audit-emitter.md)), and it is a condition of the first records being written and not quarantined.
+The project's catalogue must exist before the writer can take a record: a record whose release has no catalogue is quarantined ([0008](0008-the-log.md)). session's table and schemas are code in session; session publishes them as its signed `AuditCatalogue` for its project. That is session's follow-up ([session record 0023](https://github.com/truvity/session/blob/master/docs/decisions/0023-audit-emitter.md)), not audit's, and it must be done before the first records are written rather than quarantined.
 
 ### mimic's action table
 
@@ -124,11 +124,11 @@ mimic is an emitting unit of its own, so it is a project of its own on the devel
 - **A refused sign-in is a `lease` with `failure`,** so a person who tried an identity without the act-as group is on the record.
 - **The pseudonym label is mimic's,** `mimic-pseudonym-v1` ([0018](0018-the-pseudonym-domain-label-is-the-products.md)). **Open:** where mimic's `Mac` comes from: the `audit-seal` host of mimic's project, or a seal block mimic hosts in its own process. It is decided in mimic's emitter change.
 - **The classes are checked against OCSF 1.9.0** when the rows are written, as for every table ([0004](0004-the-record-format.md)); a class that the check refuses changes in that pull request and not here.
-- **The table file** lives with mimic ([C8](#c8-where-mimics-table-lives)), and its catalogue is published as mimic's signed `AuditCatalogue` for its project.
+- **The table file** lives with mimic, in sluis's `tools/mimic` ([C8](#c8-where-mimics-table-lives), decided), and its catalogue is published as mimic's signed `AuditCatalogue` for its project.
 
 ## The owner's choices
 
-Each has options, their pros and cons, and a recommendation. The record is proposed until the owner chooses.
+Each has options, their pros and cons, and a recommendation. On 2026-11-25 the owner took the recommendation of C1 to C5, C7 and C8 (D107 to D111, D113 and D114). C6 is still being discussed, and the record stays proposed until it is settled.
 
 ### C1. Log storage of the first deployment
 
@@ -137,7 +137,7 @@ Each has options, their pros and cons, and a recommendation. The record is propo
 | **A. `blob/fs` on a volume now; copy to a bucket when `blob/s3` is released** | Starts with what is released; the fence is proven on `fs`; nothing waits for atoom | A sidecar; a volume tied to one zone; a later copy and a switch of the writer's blob flag |
 | B. Wait for `blob/s3` (B9) | The bucket from the first record; object lock and lifecycle at once | session's records stay unread until atoom builds and releases `blob/s3` |
 
-Recommendation: **A.** The copy is safe because every object but the pointers is written once.
+Decided: **A** (the owner's D107 A, 2026-11-25). The copy is safe because every object but the pointers is written once.
 
 ### C2. Whether the writer starts before B7
 
@@ -147,7 +147,7 @@ Recommendation: **A.** The copy is safe because every object but the pointers is
 | B. Wait for B7 | One read path, as 0015 says | B7 comes after B12 in atoom's order; the stream stays unread for that long |
 | C. An unsigned file or environment variables until B7 | Least code | 0015 refused it: no signature, no review |
 
-Recommendation: **A.**
+Decided: **A** (the owner's D108 A, 2026-11-25).
 
 ### C3. The source of the documents in the first deployment
 
@@ -156,7 +156,7 @@ Recommendation: **A.**
 | **A. `source/file` over a read-only mount** | The cluster's usual way; nothing outside the cluster | A reload needs the mount updated |
 | B. `source/appconfig` | The same path as a Lambda function; polling built in | A cloud service for a cluster workload |
 
-Recommendation: **A**, with B kept as a switch for the Lambda shape.
+Decided: **A** (the owner's D109 A, 2026-11-25). B stays a switch for the Lambda shape.
 
 ### C4. One writer per project, per environment, or per vendor
 
@@ -166,7 +166,7 @@ Recommendation: **A**, with B kept as a switch for the Lambda shape.
 | B. One per environment for every project | One workload | One credential and one key for every project: refused by 0002 |
 | C. One per vendor | Fewer workloads than A | Still several projects under one key; a vendor is not a unit of audit's model |
 
-Recommendation: **A.** On the first deployment that is two writers, session's and mimic's.
+Decided: **A** (the owner's D110 A, 2026-11-25). On the first deployment that is two writers, session's and mimic's.
 
 ### C5. Keys and wraps of the first deployment
 
@@ -176,7 +176,7 @@ Recommendation: **A.** On the first deployment that is two writers, session's an
 | B. `key/software` from a secret, and `store/rqlite` | All inside the cluster | A root key in a secret; an rqlite cluster to run and back up, and its Rust driver as one more sidecar |
 | C. The block in the writer's own process | One container fewer | The writer's process holds the evidence data keys and could open what it wrote: against 0002 and 0011 |
 
-Recommendation: **A**, in the separate `audit-seal` container.
+Decided: **A** (the owner's D111 A, 2026-11-25). In the separate `audit-seal` container.
 
 ### C6. The workload shape
 
@@ -194,7 +194,7 @@ Recommendation: **A.** The fence holds in either.
 | **A. Continue each node's log** | One chain per node for a verifier; no closed logs to keep track of | The switch must prove it opens sluis's state (a test on a copy) |
 | B. Close sluis's logs and start new ones | No dependence on the old state | Twice the logs for every node, and a final checkpoint to sign at the switch |
 
-Recommendation: **A.**
+Decided: **A** (the owner's D113 A, 2026-11-25).
 
 ### C8. Where mimic's table lives
 
@@ -204,7 +204,7 @@ Recommendation: **A.**
 | B. In this repository | One place for the tables of the group's test tools | audit would hold a product's table and follow its changes |
 | C. Rows in sluis's own table, product `sluis` | No new product | mimic is not part of sluis's product (0054); its records would mix with sluis's |
 
-Recommendation: **A.**
+Decided: **A** (the owner's D114 A, 2026-11-25).
 
 ## Built and planned
 

@@ -11,11 +11,11 @@ The usage part ([0006](../docs/decisions/0006-the-usage-class.md), [0017](../doc
 
 ## Use it from Rust
 
-The crate is consumed from git, by tag, like atoom's crates. **Open:** the release flow of this repository ([0016](../docs/decisions/0016-distribution-and-the-lambda-shape.md)); until the first tag a consumer pins a commit.
+The crate is consumed from git, by tag, like atoom's crates. Releases follow [releasing](../docs/release.md) ([0016](../docs/decisions/0016-distribution-and-the-lambda-shape.md)); pin the latest tag.
 
 ```toml
 [dependencies]
-audit-emitter = { git = "https://github.com/truvity/audit", tag = "v0.17.0" }
+audit-emitter = { git = "https://github.com/truvity/audit", tag = "v0.19.0" }
 ```
 
 ```rust
@@ -38,7 +38,7 @@ emitter.emit(Event { action, status: Status::Success, ..Event::default() }).awai
 
 ## Use it from Go
 
-The module is tagged `emitter/vX.Y.Z`, with the one version of the repository; the first Go tag is at least v0.17.0 ([0016](../docs/decisions/0016-distribution-and-the-lambda-shape.md)). **Open:** the release flow, as for Rust.
+The module is tagged `emitter/vX.Y.Z`, with the one version of the repository; the first Go tag was v0.17.0 ([0016](../docs/decisions/0016-distribution-and-the-lambda-shape.md)), and releases follow [releasing](../docs/release.md), as for Rust.
 
 ```go
 import (

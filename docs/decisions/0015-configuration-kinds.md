@@ -1,6 +1,6 @@
 # 0015. Configuration kinds, declared through atoom's `state` registry
 
-Status: accepted, 2026-11-21. Partly superseded by [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) (proposed): until a host runs the `state` block, the pieces read the same signed documents through the source port
+Status: accepted, 2026-11-21. Partly superseded by [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md): until a host runs the `state` block, the pieces read the same signed documents through the source port
 
 ## Context
 

@@ -41,7 +41,7 @@ The successor of a partly superseded record has a Status line that says `Partly 
 | [0017](0017-the-organisation-of-a-usage-record-is-optional.md) | The organisation of a usage record is optional | A usage record carries the customer and the product, and the organisation when the emitter knows it. Partly supersedes 0006. |
 | [0018](0018-the-pseudonym-domain-label-is-the-products.md) | The pseudonym domain label is the product's | The label is product configuration with no default; sluis keeps `sluis-pseudonym-v1`; revisit when a second product names people. Partly supersedes 0011. |
 | [0019](0019-floors-are-a-declared-switch.md) | The floors are a declared switch | Each log declares `floors: enforce \| report`, `enforce` when absent; no scope or installation name is a switch. Partly supersedes 0010 and 0006. |
-| [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) | The writer moves here first and reads NATS JetStream | Proposed. The writer leaves sluis before usage: a Go service in its own image, `transport/nats` in the process, documents through the source port until B7, audit's own `seal` host; mimic's action table. Partly supersedes 0015 and 0011. |
+| [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) | The writer moves here first and reads NATS JetStream | The writer leaves sluis before usage: a Go service in its own image, `transport/nats` and `blob/s3` in the process, two replicas with one active by a lease and fenced by its epoch, documents through the source port until B7, audit's own `seal` host; mimic's action table. Partly supersedes 0008, 0011 and 0015. |
 
 ## Records changed by a later record
 
@@ -49,10 +49,11 @@ The successor of a partly superseded record has a Status line that says `Partly 
 |---|---|---|
 | [0006](0006-the-usage-class.md) The usage class | [0017](0017-the-organisation-of-a-usage-record-is-optional.md) | The organisation is optional in a usage record. The customer and the product stay required. |
 | [0006](0006-the-usage-class.md) The usage class | [0019](0019-floors-are-a-declared-switch.md) | A log's retention has no default anywhere ("in production" is gone). |
+| [0008](0008-the-log.md) The log | [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) | A writer under a lease writes one log per project, one replica at a time, with one log key per log; the blob is still the fence. |
 | [0010](0010-lock-modes-retention-and-compliance-floors.md) Lock modes, retention and compliance floors | [0019](0019-floors-are-a-declared-switch.md) | The floors apply by a log's declared `floors`, `enforce` (refuse) or `report` (warn), `enforce` when absent; "in a production scope" is gone. |
 | [0011](0011-evidence-encryption-and-pseudonyms.md) Evidence encryption and pseudonyms | [0018](0018-the-pseudonym-domain-label-is-the-products.md) | The open point on the domain label is decided: per product, configured by the product, no default. |
-| [0011](0011-evidence-encryption-and-pseudonyms.md) Evidence encryption and pseudonyms | [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) (proposed) | The open point on the host of `seal` for audit alone is decided: audit ships `audit-seal`, beside each writer instance. |
-| [0015](0015-configuration-kinds.md) Configuration kinds | [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) (proposed) | Until a host runs the `state` block, the pieces read the same signed documents through the source port. |
+| [0011](0011-evidence-encryption-and-pseudonyms.md) Evidence encryption and pseudonyms | [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) | The open point on the host of `seal` for audit alone is decided: audit ships `audit-seal`, beside each writer instance. |
+| [0015](0015-configuration-kinds.md) Configuration kinds | [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) | Until a host runs the `state` block, the pieces read the same signed documents through the source port. |
 
 ## What each record replaces
 

@@ -1,6 +1,6 @@
 # 0011. Evidence encryption, pseudonyms and crypto-shredding, through atoom's `seal` block
 
-Status: accepted, 2026-11-21. Partly superseded by [0018](0018-the-pseudonym-domain-label-is-the-products.md): the domain label is per product, configured by the product; sluis keeps `sluis-pseudonym-v1`. Partly superseded by [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) (proposed): the host of `seal` for audit alone is `audit-seal`, beside each writer instance
+Status: accepted, 2026-11-21. Partly superseded by [0018](0018-the-pseudonym-domain-label-is-the-products.md): the domain label is per product, configured by the product; sluis keeps `sluis-pseudonym-v1`. Partly superseded by [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md): the host of `seal` for audit alone is `audit-seal`, beside each writer replica
 
 ## Context
 

@@ -1,6 +1,6 @@
 # 0008. The log: tlog-tiles, a write-once fence, signed checkpoints, and a writer whose state lives in the blob
 
-Status: accepted, 2026-11-21
+Status: accepted, 2026-11-21. Partly superseded by [0020](0020-the-writer-moves-here-first-and-reads-nats-jetstream.md): a writer under a lease writes one log per project, one replica at a time, with one log key per log; the blob is still the fence
 
 ## Context
 

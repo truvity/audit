@@ -15,23 +15,24 @@ In order. Each step is one pull request or a few. A step that needs an atoom ste
 
 | Step | What | Needs |
 | --- | --- | --- |
-| 1 | **The writer moves here** from sluis: a Go service in its own image that reads NATS JetStream, with audit's own `seal` host, the documents through the source port, and mimic's action table | Released atoom only: `transport/nats` (0.8.0), `source/file`, the signed document verifier, the `seal` block, `blob/fs`. Not B7 and not B12; B9's `blob/s3` for a bucket and for the Lambda shape |
+| 1 | **The writer moves here** from sluis: a Go service in its own image that reads NATS JetStream, with audit's own `seal` host, the documents through the source port, and mimic's action table | atoom 0.9.0 (B12, with `blob/s3`) to deploy; besides it, released atoom only: `transport/nats`, `source/file`, the signed document verifier, the `seal` block, `store/dynamodb`. Not B7 |
 | 2 | **Usage**: the usage part of the emitters, a writer path that never drops a usage record and stores it once, and the redelivery test of each at-least-once transport | Step 1; the transports as built (spool, `transport/nats`, `transport/sqs`) |
 | 3 | **The indexer and the reader move here** from sluis | B12; B15 for more index backends |
-| 4 | **`audit verify` moves here** from sluis's CLI | step 1's log layout; B9 for the check over a bucket |
+| 4 | **`audit verify` moves here** from sluis's CLI | step 1's log layout; `blob/s3` (atoom 0.9.0) for the check over a bucket |
 | 5 | **The witness**, new | step 1 |
 
 ### 1. The writer
 
-The decision and the owner's choices are in [0020](decisions/0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) (proposed).
+The decision and the owner's choices are in [0020](decisions/0020-the-writer-moves-here-first-and-reads-nats-jetstream.md).
 
 - **The code.** sluis's `actors/writer` moves as the module `github.com/truvity/audit/writer`, with its state, segments, quarantine and the fence ([0008](decisions/0008-the-log.md)) unchanged, and its checks over the emitter module. Only the side facing sluis changes: its store, key and policy clients.
-- **The transport.** atoom's Go `transport/nats` in the process (`--transport-nats`), or the receive socket of a driver beside it (`--transport-socket`, the spool on a board); exactly one. It speaks today's transport message and adopts B12's when B12 is released.
+- **The transport.** atoom's Go `transport/nats` in the process (`--transport-nats`), or the receive socket of a driver beside it (`--transport-socket`, the spool on a board); exactly one. It speaks B12's generic message, whose wire bytes are today's.
 - **The configuration.** `AuditLog` and `AuditCatalogue`, defined here as audit's kinds and signed as [0015](decisions/0015-configuration-kinds.md) asks, read through the source port (`source/file`, or `source/appconfig`) and verified with atoom's signed document verifier. B7 adds a third path; the documents do not change.
 - **The keys.** `audit-seal`, audit's host of atoom's `seal` block, beside each writer instance: the writer signs under `log` and seals under `evidence`, and never opens.
-- **The blob.** `blob/fs` beside the writer on a volume; `blob/s3` in the process when B9 releases it.
+- **The blob.** atoom's Go `blob/s3` in the process from the start, with S3's conditional writes; it is built in atoom's B12 and released in 0.9.0, and the writer deploys on that release (the owner's D107 B and D112 A).
+- **The shape.** On Kubernetes, a Deployment of two replicas with one active: the active one holds a lease in the store port, renews it well before it expires and stops writing when it cannot; the standby takes over after the expiry; the lease's epoch is in the state, the checkpoints and the seal entries (D112 A).
 - **The image.** `audit-writer` and `audit-seal` in the forms of [0016](decisions/0016-distribution-and-the-lambda-shape.md) except the Lambda app zip, which needs `blob/s3`, `transport/sqs` and the SQS pass-through test.
-- **The first deployment.** One writer per project on a shared Kubernetes cluster of a development environment: session's development site, and mimic. Its shape is the deployment repository's, in a pull request of its own. session publishes its catalogue for its project.
+- **The first deployment.** One writer of two replicas per project on a shared Kubernetes cluster of a development environment: session's development site, and mimic. Its shape is the deployment repository's, in a pull request of its own. session publishes its catalogue for its project.
 - **mimic's action table** (the owner's D91 A): `mimic.identity.create`, `lease`, `use` and `revoke`, the actor the real subject and the target the test identity ([0020](decisions/0020-the-writer-moves-here-first-and-reads-nats-jetstream.md#mimics-action-table)).
 - **sluis's switch.** sluis keeps its writer, frozen, until its key service hosts the `seal` block and its documents reach the writer; it then runs audit's writer and continues its logs.
 - **Done when:** the writer runs from this repository's image on the development cluster, reads session's stream, seals session's records into a log that `sluis audit verify` checks, and refuses nothing that session's catalogue declares; and the writer's tests that moved from sluis pass here.
@@ -66,7 +67,7 @@ The other usage rows belong to later steps: the witness's cosignature of the usa
 ### 4. `audit verify`
 
 - The command moves from sluis's CLI (`sluis audit verify`) and takes its own name ([0014](decisions/0014-the-front-the-console-page-and-audit-verify.md)).
-- The check over a bucket needs `blob/s3` (B9). The check of cosignatures comes with step 5.
+- The check over a bucket needs `blob/s3` (atoom 0.9.0). The check of cosignatures comes with step 5.
 
 ### 5. The witness
 

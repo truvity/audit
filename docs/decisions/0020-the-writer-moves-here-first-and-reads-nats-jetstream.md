@@ -1,6 +1,6 @@
 # 0020. The writer moves here first, as a Go service in its own image that reads NATS JetStream, before the usage step
 
-Status: proposed, 2026-11-25 (owner decisions D90 A and D91 A). Partly supersedes [0015](0015-configuration-kinds.md) and [0011](0011-evidence-encryption-and-pseudonyms.md).
+Status: accepted, 2026-11-25 (owner decisions on the pull request: D90 A, D91 A, D107 B, D108 to D111 A, D112 A, D113 A, D114 A). Partly supersedes [0008](0008-the-log.md), [0011](0011-evidence-encryption-and-pseudonyms.md) and [0015](0015-configuration-kinds.md).
 
 ## Context
 
@@ -32,23 +32,40 @@ sluis's `master` branch (v1) carries the older audit module of the archived audi
 
 - **The code.** `writerd` and the writer's `main`, with every test, move into this repository as the Go module `github.com/truvity/audit/writer`, with the same bytes where nothing below changes them. The checks against the catalogue use the emitter module (`Canonical`, `ParseSchemas`, `CheckPolicy`, `ValidRelease`), not a second copy. The Merkle vectors move into `emitter/vectors/` beside the others, as [the catalogue page](../reference/action-table-and-catalogue.md#conformance-vectors) planned. The interoperability test with sluis's Rust indexer (the `go-writer` fixture) stays an interoperability test: the fixture is made here and copied to sluis by a test that fails when they differ.
 - **What changes in it** is only the side facing sluis: the clients of `store@`, `key@` and `policy` are replaced (below). The log, the state, the segments, the quarantine and the clock rules do not change, so a log written by sluis's writer and one written by audit's are the same objects, and a verifier or an indexer cannot tell them apart.
-- **The image.** The writer is the binary `audit-writer` (`serve`, `check`, `version`), released in the forms of [0016](0016-distribution-and-the-lambda-shape.md) for the writer except the Lambda app zip, which needs `blob/s3`, `transport/sqs` and the pass-through test of 0016. The OCI image is distroless, runs as a user that is not root, and is built for `linux/amd64` and `linux/arm64`. The release flow ([releasing](../release.md)) gains the packages and images of atoom's flow.
+- **The image.** The writer is the binary `audit-writer` (`serve`, `check`, `version`), released in the forms of [0016](0016-distribution-and-the-lambda-shape.md) for the writer except the Lambda app zip, which waits for the SQS pass-through test of 0016. The OCI image is distroless, runs as a user that is not root, and is built for `linux/amd64` and `linux/arm64`. The release flow ([releasing](../release.md)) gains the packages and images of atoom's flow.
 
 ### How it runs
 
 ```text
-emitters ──publish──> JetStream stream of the project ──durable consumer──> audit-writer ──blob port──> blob-fs sidecar ──> the project's volume
-                                                                                │
-                                                                                └──seal port──> audit-seal sidecar ──key port──> key driver
-                                                                                                                  └──store port──> the wraps
+emitters ──publish──> JetStream stream ──durable consumer──> audit-writer (active) ──blob/s3, in process──> the project's bucket
+                                                              │      │
+                                                              │      ├──store port──> the lease (one item, version guard)
+                                                              │      └──seal port──> audit-seal sidecar ──> key driver, wraps
+                                                              └ audit-writer (standby): holds no lease, receives nothing, writes nothing
 ```
 
-- **A Go service, one per project.** One writer instance per project and environment, as [0002](0002-pieces-and-holders.md) has it: its own stream, its own blob root or bucket, its own log key. One image serves every project; the project is a start-up flag and a document.
+- **A Go service, one per project.** One writer per project and environment, as [0002](0002-pieces-and-holders.md) has it: its own stream, its own bucket, its own log key. One image serves every project; the project is a start-up flag and a document. On Kubernetes the writer of a project is two replicas, of which one is active ([below](#one-active-replica-by-lease)).
 - **The transport is a switch, exactly one.** `--transport-nats URL` links atoom's Go `transport/nats` (0.8.0) in the process: the host's connection, the stream and the durable consumer the deployment made (`--nats-stream`, `--nats-consumer`, `Create` off), the credentials as a credentials file or a token file read at every connect, and a CA file for TLS. `--transport-socket PATH` keeps the receive socket of a driver beside the process, the spool on a board. Neither or both are refused at the start. The JetStream consumer's ack wait must be longer than the writer's longest bounded batch (0002); the writer refuses to start when the consumer's ack wait is shorter than that bound.
-- **The blob is a socket.** The `fs` driver is Rust, so it runs beside the writer (`blob-fs serve --root DIR`) on a volume with an atomic create-if-absent ([0008](0008-the-log.md#the-write-once-fence)). `blob/s3` (atoom's B9, not built) is linked in the process when it is released, and the writer then takes the switch `--blob-s3`. A log moves from a volume to a bucket by copying its objects, because every object but the two pointers is written once and the pointers are copied last.
+- **The blob is S3, in the process, from the start** ([C1](#c1-log-storage-of-the-first-deployment)). The writer links atoom's Go `blob/s3`, which atoom builds in B12's blob step ([atoom record 0025](https://github.com/truvity/atoom/blob/master/docs/decisions/0025-generic-blob-transport-and-index.md)). Every write-once object is a `Create`, which is `PutObject` with `If-None-Match: *`, so of two writers that create one path exactly one wins ([0008](0008-the-log.md#the-write-once-fence)). The two pointers, `checkpoint` and `writer-state`, are declared to the driver as the host's pointers (0025), and `Put` on them is the driver's compare-and-swap. No volume and no `blob/fs` sidecar are used, and no log is copied later. `--blob-socket PATH` stays for a host whose blob driver runs beside it, such as `blob/fs` on a board.
 - **Keys go through atoom's `seal` block, behind audit's own host.** See [below](#the-seal-host).
-- **The start-up settings are flags; the documents come through the source port** ([0016](0016-distribution-and-the-lambda-shape.md)). Flags: the project, the instance, the scope, the transport switch, the sockets, the source switch, and the file of publisher pins. No environment variable carries configuration.
-- **On Kubernetes** it runs in a shared cluster as one StatefulSet per project with one replica: the instance name is the pod's ordinal and stays the same across restarts, and the volume follows it. More than one replica per project would need a blob root per instance, because the writer's state is one object per bucket ([log layout](../reference/log-layout.md)); one replica is the shape until a project needs more.
+- **The start-up settings are flags; the documents come through the source port** ([0016](0016-distribution-and-the-lambda-shape.md)). Flags: the project, the replica's name, the scope, the transport switch, the blob switch, the lease settings, the sockets, the source switch, and the file of publisher pins. No environment variable carries configuration.
+- **The transport message is atoom 0.9.0's.** The writer is built on atoom 0.9.0 (it needs `blob/s3`), so it reads B12's generic message (`id`, `payload`; 0025). The wire bytes are those of today's message, so the records session already published read the same. Until the usage step the payload is the record's bytes alone; the usage step decides the form that carries the usage part.
+
+### One active replica by lease
+
+The owner's D112 A ([C6](#c6-the-workload-shape)). On Kubernetes the writer of a project is a Deployment of two replicas, and one of them is active. The second takes over when the first stops. Rolling deploys are ordinary rollouts.
+
+- **The lease is one item of atoom's store port** per project (`store/dynamodb` on the first deployment, linked in the writer's process), with an owner id (the replica's name and a random part drawn at start), an expiry, and the item's version. It is created and renewed only by a conditional write under the port's version guard, so two replicas never both believe they hold it. A lossy store is refused at start.
+- **The holder renews it well before the expiry:** by default a lease of 30 seconds renewed every 10. All three figures are flags; a deployment may lengthen them, and the writer refuses a renewal period that is not at most a third of the lease.
+- **A replica that loses the lease, or cannot renew it in time, stops writing at once, before the expiry.** It counts on the clock that does not step: when no renewal has been confirmed for two thirds of the lease, it stops taking deliveries, abandons the batch it holds without acknowledging it, writes nothing more, and closes its stream. It then waits as a standby. A batch that was half written is finished by the next holder, as after a crash ([0008](0008-the-log.md#sealing)).
+- **The standby takes over only after the expiry,** with a margin for the offset between the two clocks (5 seconds by default, a flag). It takes over by a conditional write on the version it read, which raises the version. That version is the lease's **epoch**.
+- **The standby receives nothing.** Only the holder opens the consumer's stream. The durable consumer keeps every message that was not acknowledged across the switch, and JetStream delivers it again to the new holder after the ack wait. A message that the old holder sealed but did not acknowledge is dropped as a repeat by its id ([writer state](../reference/writer-state.md)), so the switch loses nothing and stores nothing twice.
+- **The epoch fences a stale writer.** The blob is still the fence ([0008](0008-the-log.md#the-write-once-fence)): every write-once object is a conditional create on its one name, and the state is a conditional put. The epoch makes a stale writer fail at the first write and say why:
+  - the writer's state carries the epoch of the holder that wrote it, and a writer refuses to put a state, sign a checkpoint or move a pointer when the state names a higher epoch than its own lease;
+  - every checkpoint carries the epoch as an extension line of the note, which `tlog-checkpoint` allows and a generic verifier skips, and so does every seal entry;
+  - the write-once objects that audit names carry it in their bytes. **Their paths do not change.** The entry bundles and hash tiles keep the paths that `tlog-tiles` fixes, and `checkpoints/<size>` keeps its name. A stale writer that creates one of them fails, because the new holder already created it or the state no longer lets it in. An epoch in a path would let the two writers create objects side by side and never collide, which is the one thing the fence must stop.
+- **One log per project, not per replica.** Both replicas write the same log, one at a time, so a verifier and an indexer see one chain. The log key is the project's: both seal hosts sign with the same key under `log`. The seal entry names the replica that sealed each batch.
+- **What this record overtakes in 0008:** "a cluster keeps one log per node", "on Kubernetes there is one log per writer instance" and "one log key per writer instance" now read, for a writer that runs under a lease, "one log per project, written by the replica that holds the lease, with one log key per log". The rest of 0008 stands, and the blob is still the fence. A writer without a lease, such as one per node on a board, keeps one log per instance as before.
 
 ### The configuration before B7
 
@@ -63,7 +80,7 @@ emitters ──publish──> JetStream stream of the project ──durable cons
 
 - **audit ships its own host of the `seal` block,** the binary `audit-seal`, a small Go process that links atoom's `blocks/seal` and its key and store drivers in process, and serves the seal port on a socket. It closes the open point of [0011](0011-evidence-encryption-and-pseudonyms.md) on "the host of `seal` for audit alone". It is a host of an atoom block, not a sixth piece: it holds keys and writes no log.
 - **Its rules are audit's,** by the caller's uid on the socket: the writer may `Sign` and `PublicKey` under `log`, and `Seal` under `evidence` for any scope, making a missing key (`MayCreate`); it may never `Open`. The indexer and the reader, when they move, are admitted to `Open` under `evidence` by the grant of [0013](0013-access.md); emitters may `Mac` under `pseudonym`. Every other call is refused.
-- **It runs beside each writer instance,** in the same pod as a separate container with its own uid, so the writer's process never holds a key that opens what it wrote (0002, 0011). The log key is the instance's: one key under `log` per seal host and instance.
+- **It runs beside each writer replica,** in the same pod as a separate container with its own uid, so the writer's process never holds a key that opens what it wrote (0002, 0011). The log key is the log's: under a lease the two replicas' seal hosts use the project's one key under `log`, and their wraps are in the same strict store.
 - **It needs a key driver and a strict store for the wraps.** The data keys are kept only wrapped, in the store port (atoom's `seal` block). A lossy store (`store/memory`) is refused at start, because a lost wrap is a record that never opens again. Which drivers is the installation's choice ([C5](#c5-keys-and-wraps-of-the-first-deployment)).
 - **The grants of sluis's policy go.** Outside sluis no policy service gives the writer a grant per tenant: the seal host's rules admit the writer by its caller identity. Where sluis hosts the block, sluis's rules may still want its grant: that is sluis's change.
 - **What this record overtakes in 0011:** the line "Open: the host of `seal` for audit alone" is decided as above. The purposes of 0011 (`log`, `witness`, `evidence`, `pseudonym`) and its rules stand. sluis's writer signs under the purpose `audit-log`; audit's writer signs under `log`, and the switch of [sluis](#sluiss-switch-and-the-dual-period) maps one to the other.
@@ -77,12 +94,12 @@ emitters ──publish──> JetStream stream of the project ──durable cons
 | The signed document verifier | Released in `policy` (0.5.0) | Used by the writer for its kinds |
 | The `seal` block in Go | Released in 0.4.0 | Linked by `audit-seal` |
 | Key and store drivers | `key/awskms`, `key/software` and `store/dynamodb` released in Go; `store/rqlite` released in Rust | Linked by `audit-seal`; `store/rqlite` as a socket beside it |
-| `blob/fs` | Released, Rust | A sidecar |
-| `blob/s3` (B9) | Not built | Not needed to start; needed for a bucket and for the Lambda shape |
+| `blob/s3` in Go | Not built: B12's blob step, released in 0.9.0 ([atoom record 0025](https://github.com/truvity/atoom/blob/master/docs/decisions/0025-generic-blob-transport-and-index.md)) | Linked by the writer from the start. **The writer cannot deploy until atoom 0.9.0** |
+| The store port in Go for the lease | `store/dynamodb` released | Linked by the writer |
 | The `state` block (B7) | Not built | Not needed to start (above) |
-| The generic transport message (B12) | Not built | Not needed: the writer reads today's message (`uid`, `record`, `usage`) and adopts B12 in the change that follows its release, as the emitter does |
+| The generic transport message (B12) | Not built: released in 0.9.0 with `blob/s3` | The writer reads it from the start; the wire bytes are today's |
 
-Nothing new is asked of atoom for this step.
+The one thing this step asks of atoom is `blob/s3`, which atoom builds in B12 (the owner's D112 A, 0025). The writer's code can move and be tested before 0.9.0, against the blob kit's fake and the release candidate; it deploys on 0.9.0.
 
 ### sluis's switch and the dual period
 
@@ -97,10 +114,11 @@ Nothing new is asked of atoom for this step.
 On a shared Kubernetes cluster of a development environment, for session's development site and for mimic. The shape is written in the deployment's own repository, in a later pull request of its own; this record names only what the writer needs from it:
 
 - for each project: the JetStream stream (storage, replicas, duplicate window of at least two minutes, a retention longer than the writer's longest outage), the writer's durable consumer with an explicit ack and an ack wait above the writer's bound, and NATS credentials that may consume that consumer and nothing else; the emitters' credentials may publish to the subject and nothing else;
-- a StatefulSet of one replica with three containers (`audit-writer`, `audit-seal`, `blob-fs`), each its own uid, sharing a socket directory, the volume mounted by `blob-fs` alone;
-- a volume with an atomic create-if-absent (a block device with a local file system; not a network file system whose `link()` is not atomic);
+- a Deployment of two replicas, each a pod of two containers (`audit-writer`, `audit-seal`), each its own uid, sharing a socket directory; an ordinary rolling update; no volume;
+- the project's bucket, with the writer's right to create objects and to replace its two pointers, and no delete right ([0008](0008-the-log.md#the-write-once-fence));
+- the lease item's table (or prefix) for the writer, apart from the seal host's wraps;
 - the signed documents of the project, mounted read-only for `--config-dir`, and the publisher pins;
-- the key driver's and the store's credentials for `audit-seal` alone, through the cluster's workload identity;
+- the key driver's and the wraps store's credentials for `audit-seal` alone, and the bucket's and the lease's for `audit-writer` alone, through the cluster's workload identity;
 - the floors of the project's logs declared `report` or `enforce` in its `AuditLog` ([0019](0019-floors-are-a-declared-switch.md)): the writer reads the field and the deployment chooses it.
 
 The project's catalogue must exist before the writer can take a record: a record whose release has no catalogue is quarantined ([0008](0008-the-log.md)). session's table and schemas are code in session; session publishes them as its signed `AuditCatalogue` for its project. That is session's follow-up ([session record 0023](https://github.com/truvity/session/blob/master/docs/decisions/0023-audit-emitter.md)), not audit's, and it must be done before the first records are written rather than quarantined.
@@ -128,16 +146,16 @@ mimic is an emitting unit of its own, so it is a project of its own on the devel
 
 ## The owner's choices
 
-Each has options, their pros and cons, and a recommendation. On 2026-11-25 the owner took the recommendation of C1 to C5, C7 and C8 (D107 to D111, D113 and D114). C6 is still being discussed, and the record stays proposed until it is settled.
+Each has options, their pros and cons, and the recommendation that was made. The owner decided all eight on the pull request on 2026-11-25: C2 to C5, C7 and C8 as recommended (D108 to D111, D113, D114), C6 against it (D112 A), which also changed C1 (D107 B).
 
 ### C1. Log storage of the first deployment
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. `blob/fs` on a volume now; copy to a bucket when `blob/s3` is released** | Starts with what is released; the fence is proven on `fs`; nothing waits for atoom | A sidecar; a volume tied to one zone; a later copy and a switch of the writer's blob flag |
-| B. Wait for `blob/s3` (B9) | The bucket from the first record; object lock and lifecycle at once | session's records stay unread until atoom builds and releases `blob/s3` |
+| A. `blob/fs` on a volume now; copy to a bucket when `blob/s3` is released | Starts with what is released; the fence is proven on `fs`; nothing waits for atoom | A sidecar; a volume tied to one zone, so two replicas cannot share it; a later copy and a switch of the writer's blob flag |
+| **B. `blob/s3` in the process from the start** | The bucket from the first record; object lock and lifecycle at once; two replicas share it; no copy | The writer deploys only after atoom builds and releases `blob/s3` (0.9.0) |
 
-Decided: **A** (the owner's D107 A, 2026-11-25). The copy is safe because every object but the pointers is written once.
+Decided: **B** (the owner's D107, changed to B by D112 A, 2026-11-25). The recommendation was A. With two replicas under a lease (C6), the log must sit where both can reach it, so atoom builds `blob/s3` in B12 ([atoom record 0025](https://github.com/truvity/atoom/blob/master/docs/decisions/0025-generic-blob-transport-and-index.md)).
 
 ### C2. Whether the writer starts before B7
 
@@ -162,11 +180,11 @@ Decided: **A** (the owner's D109 A, 2026-11-25). B stays a switch for the Lambda
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. One per project (0002)** | One credential and one key write and sign for one emitting unit; a flaw stays in it | One StatefulSet per project |
+| **A. One per project (0002)** | One credential and one key write and sign for one emitting unit; a flaw stays in it | One Deployment per project |
 | B. One per environment for every project | One workload | One credential and one key for every project: refused by 0002 |
 | C. One per vendor | Fewer workloads than A | Still several projects under one key; a vendor is not a unit of audit's model |
 
-Decided: **A** (the owner's D110 A, 2026-11-25). On the first deployment that is two writers, session's and mimic's.
+Decided: **A** (the owner's D110 A, 2026-11-25). On the first deployment that is two writers, session's and mimic's, each of two replicas.
 
 ### C5. Keys and wraps of the first deployment
 
@@ -182,10 +200,11 @@ Decided: **A** (the owner's D111 A, 2026-11-25). In the separate `audit-seal` co
 
 | Option | Pros | Cons |
 |---|---|---|
-| **A. A StatefulSet of one replica** | A stable instance name and log; the volume follows the pod; never two pods of one ordinal | A stuck node holds the pod until it is evicted |
-| B. A Deployment with the Recreate strategy | Simpler | A new pod name per rollout, so a new log id unless the name is pinned by a flag |
+| **A. A Deployment of two replicas, one active by a lease in the store port, fenced by the lease's epoch** | A standby takes over after the lease expires, without waiting for a node to be evicted; ordinary rolling deploys; the durable consumer and the bucket already hold everything that must survive a switch | A lease to keep, with a store item per project and clocks to bound; the epoch in the state, the checkpoints and the seal entries |
+| B. A StatefulSet of one replica | A stable instance name and log; never two pods of one ordinal | A stuck node holds the pod until it is evicted; a volume per pod |
+| C. A Deployment of one replica with the Recreate strategy | Simplest | A gap at every deploy; a new log per pod name unless the name is pinned |
 
-Recommendation: **A.** The fence holds in either.
+Decided: **A** (the owner's D112 A, 2026-11-25). The recommendation was B. The owner's reason: the durable consumer keeps what was not acknowledged, and the bucket and the store hold everything else, so a pod need not keep anything of its own. The shape is in [One active replica by lease](#one-active-replica-by-lease).
 
 ### C7. sluis's logs at the switch
 
@@ -208,7 +227,7 @@ Decided: **A** (the owner's D114 A, 2026-11-25).
 
 ## Built and planned
 
-Nothing of this record is built. Planned, in order: the writer and its tests here with the replaced clients, the kinds' schemas, `audit-seal`, the image and packages in the release flow, the first deployment, session's catalogue, mimic's emitter and table, and sluis's switch. The requirement rows of the move are written when the record is accepted.
+Nothing of this record is built. Planned, in order: the writer and its tests here with the replaced clients, the lease and its epoch, the kinds' schemas, `audit-seal`, the image and packages in the release flow, then atoom 0.9.0 (`blob/s3`), the first deployment, session's catalogue, mimic's emitter and table, and sluis's switch. The requirement rows of the move, the lease included, are written with the code.
 
 ## Consequences
 
@@ -217,7 +236,9 @@ Nothing of this record is built. Planned, in order: the writer and its tests her
 - The usage path is built once, in audit's writer.
 - Two read paths for the documents exist until B7; both verify the same signatures.
 - audit ships two binaries more (`audit-writer`, `audit-seal`) and their images, so the release flow grows packages and images.
-- A writer pod is three containers; each holds only its own credential.
+- A writer pod is two containers, each holding only its own credential, and a project has two pods.
+- The writer's first deployment waits for atoom 0.9.0.
+- A switch of replicas costs at most the lease, the clock margin and the ack wait, and loses nothing.
 - sluis's writer is frozen and carried for security fixes only until sluis switches.
 
 ## Roads not taken
@@ -226,4 +247,8 @@ Nothing of this record is built. Planned, in order: the writer and its tests her
 - **A NATS transport driver beside the writer as a process.** atoom's Go driver links in the process, as session's does, and one sidecar fewer.
 - **Run sluis's writer on the cluster for session.** It needs sluis's store, key service and policy, which the cluster does not run.
 - **Keep the policy grant outside sluis.** No policy service gives it there; the seal host's rules admit the writer by its identity.
-- **Move the writer, the indexer and the reader together.** The reader and the indexer need B12's index contract; the writer needs nothing new.
+- **Move the writer, the indexer and the reader together.** The reader and the indexer need B12's index contract.
+- **`blob/fs` on a volume first, and a copy to a bucket later** (the first recommendation for C1). A volume tied to one pod does not let a standby take over.
+- **A StatefulSet of one replica** (the first recommendation for C6). A stuck node holds the log until the pod is evicted.
+- **The epoch in the paths of the tiles and checkpoints.** The paths of `tlog-tiles` are fixed by the format, and two writers whose paths differ never collide on a create.
+- **A Kubernetes Lease object.** It would tie the writer to one platform. The store port serves every shape the writer runs in.

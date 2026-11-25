@@ -40,7 +40,7 @@ The successor of a partly superseded record has a Status line that says `Partly 
 | [0016](0016-distribution-and-the-lambda-shape.md) | Distribution and the Lambda shape | Forms per piece, every function behind the Web Adapter |
 | [0017](0017-the-organisation-of-a-usage-record-is-optional.md) | The organisation of a usage record is optional | A usage record carries the customer and the product, and the organisation when the emitter knows it. Partly supersedes 0006. |
 | [0018](0018-the-pseudonym-domain-label-is-the-products.md) | The pseudonym domain label is the product's | The label is product configuration with no default; sluis keeps `sluis-pseudonym-v1`; revisit when a second product names people. Partly supersedes 0011. |
-| [0019](0019-floors-are-a-declared-switch.md) | The floors are a declared switch (proposed) | Each log declares `floors: enforce \| report`, `enforce` when absent; no scope or installation name is a switch. Partly supersedes 0010 and 0006. |
+| [0019](0019-floors-are-a-declared-switch.md) | The floors are a declared switch | Each log declares `floors: enforce \| report`, `enforce` when absent; no scope or installation name is a switch. Partly supersedes 0010 and 0006. |
 
 ## Records changed by a later record
 

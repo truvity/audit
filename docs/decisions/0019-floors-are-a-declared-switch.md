@@ -1,6 +1,6 @@
 # 0019. The floors are a declared switch, `floors: enforce | report`; no installation name is a switch
 
-Status: proposed, 2026-11-25. Partly supersedes [0010](0010-lock-modes-retention-and-compliance-floors.md) and [0006](0006-the-usage-class.md).
+Status: accepted, 2026-11-25 (owner decision on the pull request). Partly supersedes [0010](0010-lock-modes-retention-and-compliance-floors.md) and [0006](0006-the-usage-class.md).
 
 ## Context
 

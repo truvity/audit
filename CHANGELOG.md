@@ -8,7 +8,7 @@ One version for the whole repository ([record 0016](docs/decisions/0016-distribu
 
 Documentation only; no library changes.
 
-- [Record 0019](docs/decisions/0019-floors-are-a-declared-switch.md) (proposed), partly superseding 0010 and 0006: each log declares `floors: enforce | report` in `AuditLog`, `enforce` when absent, and the configuration check takes no scope, installation or environment name as a switch; "in a production scope" is gone. REQ-AUDIT-058, 059, 060, 136, 137 and 172 are withdrawn and replaced by REQ-AUDIT-196 to 201, with REQ-AUDIT-202 (no `floors` is `enforce`) and REQ-AUDIT-203 (no name is a switch).
+- [Record 0019](docs/decisions/0019-floors-are-a-declared-switch.md), partly superseding 0010 and 0006: each log declares `floors: enforce | report` in `AuditLog`, `enforce` when absent, and the configuration check takes no scope, installation or environment name as a switch; "in a production scope" is gone. REQ-AUDIT-058, 059, 060, 136, 137 and 172 are withdrawn and replaced by REQ-AUDIT-196 to 201, with REQ-AUDIT-202 (no `floors` is `enforce`) and REQ-AUDIT-203 (no name is a switch).
 
 ## 0.19.0 - 2026-11-24
 

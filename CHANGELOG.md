@@ -4,7 +4,14 @@ One version for the whole repository ([record 0016](docs/decisions/0016-distribu
 
 <!-- release-prepare: new sections go below this line -->
 
-## Unreleased
+## 0.21.0 - 2026-11-26
+
+One version for the whole repository: every library is tagged 0.21.0, changed or not.
+
+Libraries that changed since v0.20.0:
+- `emitter`
+
+What is in it:
 
 - atoom 0.9.0: the emitter moves from atoom 0.7.0 to 0.9.0 (the Rust crates `atoom-common`, `atoom-socket` and `atoom-transport`, and the Go modules `github.com/truvity/atoom/common` and `github.com/truvity/atoom/transport`), one copy of atoom in each build. atoom's transport message is now generic ([atoom record 0025](https://github.com/truvity/atoom/blob/v0.9.0/docs/decisions/0025-generic-blob-transport-and-index.md), step B12): `AuditMessage { uid, record, usage }` is `Message { id, payload }`, with field 3 (`usage`) reserved. Both emitters build `Message { id: uid, payload: record }` (Go `transportv1alpha1.Message{Id, Payload}`, Rust `Message { id, payload }`). The field numbers 1 and 2 are kept, so the bytes on the wire, in a spool, a JetStream stream or an SQS queue, are the same: a writer of either release reads them, and records do not change. The payload is the bare record (RFC 8785 JSON, which begins with `{`); the usage part of step 2 goes into the payload in a versioned envelope that a writer tells apart from a bare record by its first byte ([emitters](docs/reference/emitters.md#the-message)).
 - [Record 0020](docs/decisions/0020-the-writer-moves-here-first-and-reads-nats-jetstream.md) (accepted; the owner's D90 A, D91 A and D107 to D114 on the pull request), partly superseding 0008, 0011 and 0015: the writer moves here first, before usage, as a Go service in its own image that reads NATS JetStream through atoom's `transport/nats` and writes S3 through atoom's `blob/s3` (atoom 0.9.0), runs as two replicas with one active by a lease in the store port, fenced by the lease's epoch, takes its signed documents through the source port until atoom's `state` block exists, and seals through audit's own host of the `seal` block; mimic gets its own action table. The plan's steps are reordered: the writer is step 1 and usage step 2. Docs only.

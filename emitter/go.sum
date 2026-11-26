@@ -10,10 +10,10 @@ github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 h1:1EYB5IzjZawrrnELUi78f9fPu57Hu
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.3/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
-github.com/truvity/atoom/common v0.7.0 h1:GIXsYOH+k7vdlgBOKIFetYyTPxQklrYQdYDYKaIgKvg=
-github.com/truvity/atoom/common v0.7.0/go.mod h1:j4/sfCnyowvfb+0FP6lFT5tOAU8d/xStWPJZxiy3Rcw=
-github.com/truvity/atoom/transport v0.7.0 h1:ggPXO8NzrdkJUbiP57iJMTsGJlyeeUrDlneVB8nPF0U=
-github.com/truvity/atoom/transport v0.7.0/go.mod h1:SY7TktyHhuYTwp6BtCU7ZkBQ8s8TKTBVLedt8uO1JJw=
+github.com/truvity/atoom/common v0.9.0 h1:sC1pddIqw0yB4RHWFgA0UFVfzblT3UfOgF0N8TB7weI=
+github.com/truvity/atoom/common v0.9.0/go.mod h1:j4/sfCnyowvfb+0FP6lFT5tOAU8d/xStWPJZxiy3Rcw=
+github.com/truvity/atoom/transport v0.9.0 h1:y3Yemd3h4nmGCOdlN+bZVMfdg6t3gT2zmKR/s+448VI=
+github.com/truvity/atoom/transport v0.9.0/go.mod h1:JDwL0j5t3Pc8XrAQZFbkgbQfMo4du/JN7E39Xp6SQPw=
 go.yaml.in/yaml/v3 v3.0.5 h1:N6y/pJk8buWs9NY5ERU2HSMfm+IuD/OtfdAnq6kESPw=
 go.yaml.in/yaml/v3 v3.0.5/go.mod h1:HVTZu1O7/Vkt2N+BFy8Zza+lnLsABggaTM2ZpNIGuKg=
 golang.org/x/text v0.44.0 h1:YItdp/mQNGnsmrgpcdA5yQ3bnRxCfo/Tj/iByGW9GGo=

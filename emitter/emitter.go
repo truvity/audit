@@ -366,7 +366,7 @@ func (e *Emitter) emit(ctx context.Context, ev Event, blocking, counted bool) (e
 		return err
 	}
 	req := &transportv1alpha1.EmitRequest{
-		Message:  &transportv1alpha1.AuditMessage{Uid: uid, Record: rec},
+		Message:  &transportv1alpha1.Message{Id: uid, Payload: rec},
 		Blocking: blocking,
 	}
 	if _, err := e.cfg.Transport.Emit(ctx, connect.NewRequest(req)); err != nil {

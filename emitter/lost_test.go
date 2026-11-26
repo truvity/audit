@@ -39,7 +39,7 @@ func lostOf(t *testing.T, r *transportv1alpha1.EmitRequest) (n noteOf, ok bool) 
 			Example map[string]json.RawMessage `json:"example"`
 		} `json:"unmapped"`
 	}
-	if err := json.Unmarshal(r.GetMessage().GetRecord(), &rec); err != nil {
+	if err := json.Unmarshal(r.GetMessage().GetPayload(), &rec); err != nil {
 		t.Fatal(err)
 	}
 	raw, ok := rec.Unmapped.Example["lost"]
@@ -400,7 +400,7 @@ func TestTheNoteSitsBesideTheCallersFieldsAndTheCallersMapIsUntouched(t *testing
 			Example map[string]any `json:"example"`
 		} `json:"unmapped"`
 	}
-	if err := json.Unmarshal(tr.reqs[1].GetMessage().GetRecord(), &rec); err != nil {
+	if err := json.Unmarshal(tr.reqs[1].GetMessage().GetPayload(), &rec); err != nil {
 		t.Fatal(err)
 	}
 	if rec.Unmapped.Example["purpose"] != "token-signing" || rec.Unmapped.Example["lost"] == nil {
@@ -569,7 +569,7 @@ func TestAFailedRecordIsReturnedAndNotKeptInMemoryForLater(t *testing.T) {
 	}
 	uids := map[string]bool{}
 	for _, r := range tr.reqs {
-		uids[r.GetMessage().GetUid()] = true
+		uids[r.GetMessage().GetId()] = true
 	}
 	if len(uids) != 5 {
 		t.Fatalf("%d distinct messages, want 5: a failed record was sent again", len(uids))

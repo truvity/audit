@@ -116,7 +116,7 @@ func TestTheRecordThatCarriesTheNoteOfLostFactsValidates(t *testing.T) {
 	if err := e.Emit(context.Background(), Event{Action: sign, Status: StatusSuccess, ProductObject: good, Caller: "signer", Operation: "Sign"}); err != nil {
 		t.Fatalf("a record with the note: %v", err)
 	}
-	if len(tr.reqs) != 1 || !bytes.Contains(tr.reqs[0].GetMessage().GetRecord(), []byte(`"lost":{"process":`)) {
+	if len(tr.reqs) != 1 || !bytes.Contains(tr.reqs[0].GetMessage().GetPayload(), []byte(`"lost":{"process":`)) {
 		t.Fatalf("the record does not carry the note: %v", tr.reqs)
 	}
 }

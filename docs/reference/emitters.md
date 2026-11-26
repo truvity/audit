@@ -18,6 +18,13 @@ A product describes an action once: the action, the outcome, the tenant, the fie
 
 A browser emitter does not validate. The writer is authoritative.
 
+## The message
+
+The transport port's message is an id and an opaque payload, `Message { id, payload }` (atoom 0.9.0, [atoom record 0025](https://github.com/truvity/atoom/blob/v0.9.0/docs/decisions/0025-generic-blob-transport-and-index.md)). What the payload holds is audit's.
+
+- **Built:** the id is the message id (`metadata.uid`), and the payload is the security record's canonical bytes alone, a bare record. A bare record is RFC 8785 JSON and begins with `{`.
+- **Planned with the usage part (step 2 of [the plan](../plan.md)):** a message that carries usage events has a payload in a versioned envelope, which a writer tells apart from a bare record by its first byte without guessing: a version byte that is not `{` (`0x01` for the first form), then the security record and the usage events, each one length-prefixed. A payload that begins with `{` stays a bare record with no usage part, so a message emitted before the change and one emitted after it are read the same. The exact form is fixed in step 2.
+
 ## The three calls
 
 | Call | Waits? | On failure |

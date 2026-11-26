@@ -23,7 +23,7 @@ The terms of the model ([0003](../decisions/0003-the-neutral-model.md)), and the
 | **Log** | One tiled log of one kind, written by one writer instance. |
 | **Log kind** | A kind of log a project keeps: `audit` or `usage`. |
 | **Lock mode** | The blob backend's lock: `none`, `removable` or `compliance`. |
-| **Message** | What the emitter hands to the transport: an id, a record and its usage events. |
+| **Message** | What the emitter hands to the transport: an id and a payload. The payload is the record, and from the usage step the record and its usage events in one envelope ([emitters](emitters.md#the-message)). |
 | **Meter** | A named, fixed measure of use, with a unit and a kind ([0007](../decisions/0007-meters.md)). |
 | **Product** | The software that emits. Its name is `metadata.product.name`. |
 | **Product object** | `unmapped.<product>`: a product's own facts that OCSF has no attribute for. |

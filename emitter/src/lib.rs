@@ -47,9 +47,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use atoom_common::refusal::new as refusal;
-use atoom_transport::atoom::transport::v1alpha1::{
-    AuditMessage, EmitRequest, TransportServiceClient,
-};
+use atoom_transport::atoom::transport::v1alpha1::{EmitRequest, Message, TransportServiceClient};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use connectrpc::ConnectError;
@@ -696,10 +694,10 @@ impl Emitter {
         let note = self.lost.note_for(&tenant);
         let (record, uid, carried) = self.build(ev, note).await?;
         let req = EmitRequest {
-            message: AuditMessage {
-                uid,
-                record,
-                ..AuditMessage::default()
+            message: Message {
+                id: uid,
+                payload: record,
+                ..Message::default()
             }
             .into(),
             blocking,

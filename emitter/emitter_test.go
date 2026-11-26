@@ -182,7 +182,7 @@ func TestAnExternalActorIsRecordedUnderAKeyedPseudonym(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return tr.reqs[0].GetMessage().GetRecord(), wire
+		return tr.reqs[0].GetMessage().GetPayload(), wire
 	}
 	pseudonymOf := func(t *testing.T, rec []byte) string {
 		t.Helper()
@@ -256,7 +256,7 @@ func TestAnExternalActorIsRecordedUnderAKeyedPseudonym(t *testing.T) {
 			t.Fatal(err)
 		}
 		var got map[string]any
-		if err := json.Unmarshal(tr.reqs[0].GetMessage().GetRecord(), &got); err != nil {
+		if err := json.Unmarshal(tr.reqs[0].GetMessage().GetPayload(), &got); err != nil {
 			t.Fatal(err)
 		}
 		if _, has := got["user"]; has || len(keys.reqs) != 0 {
@@ -291,11 +291,11 @@ func TestTheRecordIdIsAUUIDv7TheEmitterSets(t *testing.T) {
 				UID string `json:"uid"`
 			} `json:"metadata"`
 		}
-		if err := json.Unmarshal(r.GetMessage().GetRecord(), &rec); err != nil {
+		if err := json.Unmarshal(r.GetMessage().GetPayload(), &rec); err != nil {
 			t.Fatal(err)
 		}
-		if rec.Metadata.UID != r.GetMessage().GetUid() {
-			t.Errorf("metadata.uid = %q, message uid = %q", rec.Metadata.UID, r.GetMessage().GetUid())
+		if rec.Metadata.UID != r.GetMessage().GetId() {
+			t.Errorf("metadata.uid = %q, message uid = %q", rec.Metadata.UID, r.GetMessage().GetId())
 		}
 		ids = append(ids, rec.Metadata.UID)
 	}
@@ -416,7 +416,7 @@ func TestARecordWhoseSubjectIsBestEffortIsWrittenWhenTheMacCannotNameIt(t *testi
 		} `json:"user"`
 		Unmapped *struct{} `json:"unmapped"`
 	}
-	if err := json.Unmarshal(tr.reqs[0].GetMessage().GetRecord(), &rec); err != nil {
+	if err := json.Unmarshal(tr.reqs[0].GetMessage().GetPayload(), &rec); err != nil {
 		t.Fatal(err)
 	}
 	if rec.User.UID != "unknown" || rec.User.TypeID != 0 {
@@ -542,17 +542,17 @@ func TestEmitAndEmitBlockingSetTheFlagAndSendTheRecordOnce(t *testing.T) {
 				UID string `json:"uid"`
 			} `json:"metadata"`
 		}
-		if err := json.Unmarshal(r.GetMessage().GetRecord(), &md); err != nil {
+		if err := json.Unmarshal(r.GetMessage().GetPayload(), &md); err != nil {
 			t.Fatal(err)
 		}
-		if md.Metadata.UID == "" || md.Metadata.UID != r.GetMessage().GetUid() {
-			t.Errorf("message uid %q, record uid %q", r.GetMessage().GetUid(), md.Metadata.UID)
+		if md.Metadata.UID == "" || md.Metadata.UID != r.GetMessage().GetId() {
+			t.Errorf("message id %q, record uid %q", r.GetMessage().GetId(), md.Metadata.UID)
 		}
-		if len(r.GetMessage().GetUsage()) != 0 {
-			t.Error("a usage part was sent")
+		if p := r.GetMessage().GetPayload(); len(p) == 0 || p[0] != '{' {
+			t.Error("the payload is not the bare record")
 		}
 	}
-	if tr.reqs[0].GetMessage().GetUid() == tr.reqs[1].GetMessage().GetUid() {
+	if tr.reqs[0].GetMessage().GetId() == tr.reqs[1].GetMessage().GetId() {
 		t.Error("two emits share a uid")
 	}
 }

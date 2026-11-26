@@ -271,13 +271,17 @@ async fn emit_and_emit_blocking_set_the_flag_and_send_the_record_once() {
     assert!(reqs[1].blocking);
     for r in reqs.iter() {
         let m = &*r.message;
-        let rec: Value = serde_json::from_slice(&m.record).unwrap();
-        assert_eq!(rec["metadata"]["uid"], m.uid.as_str());
-        assert!(m.usage.is_empty(), "a usage part was sent");
+        let rec: Value = serde_json::from_slice(&m.payload).unwrap();
+        assert_eq!(rec["metadata"]["uid"], m.id.as_str());
+        assert_eq!(
+            m.payload.first(),
+            Some(&b'{'),
+            "the payload is not the bare record"
+        );
     }
-    let second: Value = serde_json::from_slice(&reqs[1].message.record).unwrap();
+    let second: Value = serde_json::from_slice(&reqs[1].message.payload).unwrap();
     assert_eq!(second["metadata"]["correlation_uid"], "req-9");
-    assert_ne!(reqs[0].message.uid, reqs[1].message.uid);
+    assert_ne!(reqs[0].message.id, reqs[1].message.id);
 }
 
 #[tokio::test]
@@ -358,10 +362,10 @@ async fn an_external_actor_is_recorded_under_a_keyed_pseudonym() {
     let pseudonym_of = |u: &Up| -> (String, Vec<u8>) {
         let reqs = u.spool.reqs.lock().unwrap();
         let m = &*reqs.last().unwrap().message;
-        let rec: Value = serde_json::from_slice(&m.record).unwrap();
+        let rec: Value = serde_json::from_slice(&m.payload).unwrap();
         (
             rec["resources"][0]["uid"].as_str().unwrap().to_owned(),
-            [m.record.clone(), m.uid.clone().into_bytes()].concat(),
+            [m.payload.clone(), m.id.clone().into_bytes()].concat(),
         )
     };
     let ev = |s: Subject| {
@@ -432,7 +436,7 @@ async fn an_external_actor_is_recorded_under_a_keyed_pseudonym() {
     e.emit(sign_event()).await.unwrap();
     assert_eq!(u.keys.reqs.lock().unwrap().len(), macs);
     let reqs = u.spool.reqs.lock().unwrap();
-    let rec: Value = serde_json::from_slice(&reqs.last().unwrap().message.record).unwrap();
+    let rec: Value = serde_json::from_slice(&reqs.last().unwrap().message.payload).unwrap();
     assert!(rec.get("user").is_none());
 }
 
@@ -479,9 +483,9 @@ async fn the_record_id_is_a_uuid_v7_the_emitter_sets() {
         .unwrap()
         .iter()
         .map(|r| {
-            let rec: Value = serde_json::from_slice(&r.message.record).unwrap();
-            assert_eq!(rec["metadata"]["uid"], r.message.uid.as_str());
-            r.message.uid.clone()
+            let rec: Value = serde_json::from_slice(&r.message.payload).unwrap();
+            assert_eq!(rec["metadata"]["uid"], r.message.id.as_str());
+            r.message.id.clone()
         })
         .collect();
     ids.push(via_record);
@@ -554,7 +558,7 @@ async fn a_record_whose_subject_is_best_effort_is_written_when_the_mac_cannot_na
     let reqs = u.spool.reqs.lock().unwrap();
     assert_eq!(reqs.len(), 1, "the record was not sent");
     let rec: serde_json::Value =
-        serde_json::from_slice(&reqs[0].message.as_option().unwrap().record).unwrap();
+        serde_json::from_slice(&reqs[0].message.as_option().unwrap().payload).unwrap();
     assert!(
         rec.get("user").is_none() && rec.get("resources").is_none(),
         "{rec}"
@@ -796,7 +800,7 @@ async fn another_client_transport_carries_the_emits() {
 /// `unmapped.example.lost` of the `n`th request the spool saw: `(process, total, since)`, `None` when absent.
 fn lost_of(u: &Up, n: usize) -> Option<(String, i64, i64)> {
     let reqs = u.spool.reqs.lock().unwrap();
-    let rec: Value = serde_json::from_slice(&reqs[n].message.record).unwrap();
+    let rec: Value = serde_json::from_slice(&reqs[n].message.payload).unwrap();
     let l = &rec["unmapped"]["example"]["lost"];
     l.is_null().not().then(|| {
         (
@@ -1127,7 +1131,7 @@ async fn the_note_sits_beside_the_callers_fields_and_a_caller_cannot_write_it() 
     e.emit(ev).await.unwrap();
     {
         let reqs = u.spool.reqs.lock().unwrap();
-        let rec: Value = serde_json::from_slice(&reqs[1].message.record).unwrap();
+        let rec: Value = serde_json::from_slice(&reqs[1].message.payload).unwrap();
         assert_eq!(rec["unmapped"]["example"]["purpose"], "token-signing");
         assert_eq!(rec["unmapped"]["example"]["lost"]["total"], 1);
     }
@@ -1234,7 +1238,7 @@ async fn a_failed_record_is_returned_and_not_kept_in_memory_for_later() {
     );
     e.emit_blocking(sign_event()).await.unwrap();
     let reqs = u.spool.reqs.lock().unwrap();
-    let uids: std::collections::HashSet<_> = reqs.iter().map(|r| r.message.uid.clone()).collect();
+    let uids: std::collections::HashSet<_> = reqs.iter().map(|r| r.message.id.clone()).collect();
     assert_eq!(uids.len(), 3, "a failed record was sent again");
 }
 
@@ -1317,6 +1321,6 @@ async fn the_record_that_carries_the_note_of_lost_facts_validates() {
     e.emit(begin).await.unwrap();
     assert_eq!(e.lost(), 1);
     let reqs = u.spool.reqs.lock().unwrap();
-    let rec: Value = serde_json::from_slice(&reqs.last().unwrap().message.record).unwrap();
+    let rec: Value = serde_json::from_slice(&reqs.last().unwrap().message.payload).unwrap();
     assert_eq!(rec["unmapped"]["example"]["lost"]["total"], 1, "{rec}");
 }

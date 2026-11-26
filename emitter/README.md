@@ -1,6 +1,6 @@
 # emitter
 
-The audit emitter: the library inside each emitting process ([0002](../docs/decisions/0002-pieces-and-holders.md)). From one call it builds one message, an OCSF security record as RFC 8785 canonical JSON ([0004](../docs/decisions/0004-the-record-format.md)), checks it against the product's action table, and hands it to atoom's [transport port](https://github.com/truvity/atoom/blob/master/transport/docs/transport-port.md). What one call does, the three calls and what the emitter refuses are on the [emitters page](../docs/reference/emitters.md).
+The audit emitter: the library inside each emitting process ([0002](../docs/decisions/0002-pieces-and-holders.md)). From one call it builds one message, an OCSF security record as RFC 8785 canonical JSON ([0004](../docs/decisions/0004-the-record-format.md)), checks it against the product's action table, and hands it to atoom's [transport port](https://github.com/truvity/atoom/blob/master/transport/docs/transport-port.md) as a `Message` whose id is the record's `metadata.uid` and whose payload is the record ([the message](../docs/reference/emitters.md#the-message)). What one call does, the three calls and what the emitter refuses are on the [emitters page](../docs/reference/emitters.md).
 
 | Language | Name | State |
 |---|---|---|
